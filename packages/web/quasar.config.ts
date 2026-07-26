@@ -3,7 +3,7 @@ import { defineConfig } from "@quasar/app-vite";
 const API_TARGET = process.env.LARES_API_TARGET ?? "http://127.0.0.1:30141";
 
 export default defineConfig(() => ({
-	boot: [],
+	boot: ["icons"],
 
 	css: ["app.scss"],
 
@@ -36,6 +36,10 @@ export default defineConfig(() => ({
 		config: {
 			dark: "auto",
 		},
+		// Must match the font shipped by `extras`, or every component emits
+		// `material-icons` class names that no bundled @font-face claims and
+		// icons render as their literal ligature names.
+		iconSet: "material-symbols-outlined",
 		plugins: ["Notify", "Dialog"],
 	},
 

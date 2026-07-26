@@ -1,4 +1,6 @@
-import { MODEL_DEFAULTS, type ModelDefinition, type ModelsConfig } from "@lares/shared";
+import { readFileSync, renameSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { GATEWAY_PROVIDER_ID, MODEL_DEFAULTS, type ModelDefinition, type ModelsConfig } from "@lares/shared";
 import { authHeaders, type GatewayAuth } from "./client.ts";
 
 interface GatewayModelObject {
@@ -94,4 +96,38 @@ export function mergeDiscoveredModels(
 		added,
 		kept,
 	};
+}
+
+export function readModelsConfig(path: string): ModelsConfig {
+	try {
+		const parsed = JSON.parse(readFileSync(path, "utf8")) as ModelsConfig;
+		return parsed.providers ? parsed : { providers: {} };
+	} catch {
+		return { providers: {} };
+	}
+}
+
+export function writeModelsConfig(path: string, config: ModelsConfig): void {
+	const tmp = `${path}.tmp`;
+	writeFileSync(tmp, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+	renameSync(tmp, path);
+}
+
+export interface SyncResult {
+	discovered: string[];
+	added: string[];
+	kept: string[];
+}
+
+/** Discover the endpoint's models and fold the new ones into models.json. */
+export async function syncGatewayModels(
+	auth: GatewayAuth,
+	agentDir: string,
+	signal?: AbortSignal,
+): Promise<SyncResult> {
+	const discovered = await fetchGatewayModels(auth, signal);
+	const path = join(agentDir, "models.json");
+	const merged = mergeDiscoveredModels(readModelsConfig(path), GATEWAY_PROVIDER_ID, discovered);
+	if (merged.added.length > 0) writeModelsConfig(path, merged.config);
+	return { discovered: discovered.map((model) => model.id), added: merged.added, kept: merged.kept };
 }

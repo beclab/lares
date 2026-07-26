@@ -64,6 +64,16 @@ export class SessionRegistry {
 		return all.find((info) => info.id === id);
 	}
 
+	/** Tear a session down without touching its file, so it can be deleted or replaced. */
+	close(id: string): boolean {
+		const wrapper = this.sessions.get(id);
+		if (!wrapper) return false;
+		wrapper.dispose();
+		this.sessions.delete(id);
+		this.notifyRunning();
+		return true;
+	}
+
 	private register(wrapper: SessionWrapper): void {
 		this.sessions.set(wrapper.id, wrapper);
 		wrapper.onRunningChange(() => this.notifyRunning());

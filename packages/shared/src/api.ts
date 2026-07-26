@@ -46,6 +46,42 @@ export interface SessionListResponse {
 	runningSessionIds: string[];
 }
 
+/**
+ * A branch point in a session. pi keeps every abandoned path in the same file,
+ * so the tree is what makes those paths reachable again.
+ */
+export interface SessionTreeNode {
+	id: string;
+	parentId: string | null;
+	/** Entry kind from pi: message, compaction, branch_summary, and so on. */
+	kind: string;
+	role?: string;
+	/** First line of the entry, for labelling the node. */
+	preview: string;
+	label?: string;
+	timestamp: string;
+	/** True when this node lies on the path to the current leaf. */
+	onCurrentPath: boolean;
+	children: SessionTreeNode[];
+}
+
+export interface SessionTreeResponse {
+	roots: SessionTreeNode[];
+	leafId: string | null;
+	/** Entry ids of user messages, in order, for the "restart from here" picker. */
+	forkPoints: { entryId: string; text: string }[];
+}
+
+export interface ForkResponse {
+	sessionId: string;
+	path: string;
+}
+
+export interface ExportResponse {
+	path: string;
+	format: "html" | "jsonl";
+}
+
 export interface AvailableModel {
 	provider: string;
 	modelId: string;

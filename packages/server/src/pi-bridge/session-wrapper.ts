@@ -244,9 +244,6 @@ export class SessionWrapper {
 				await this.session.reload();
 				return null;
 
-			case "fork":
-				throw new Error("Forking is not implemented yet");
-
 			default: {
 				const exhaustive: never = command;
 				throw new Error(`Unknown command ${JSON.stringify(exhaustive)}`);

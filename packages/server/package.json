@@ -19,6 +19,7 @@
     "@hono/node-server": "^2.0.12",
     "@lares/shared": "*",
     "hono": "^4.12.32",
+    "mammoth": "^1.12.0",
     "undici": "^8.5.0"
   },
   "devDependencies": {

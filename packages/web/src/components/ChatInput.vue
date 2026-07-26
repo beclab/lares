@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import type { ImageAttachment } from "@lares/shared";
-import { computed, ref } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
+import { api } from "../lib/api";
 import { type PendingImage, imagesFromDataTransfer, MAX_IMAGES, readImage, releaseImage } from "../lib/images";
+import { applyMention, mentionAt, type MentionToken } from "../lib/mentions";
 import type { SubmitIntent } from "../lib/messages";
+import { useFilesStore } from "../stores/files-store";
 
 const props = defineProps<{
 	busy: boolean;
@@ -19,11 +22,19 @@ const emit = defineEmits<{
 	recallQueue: [];
 }>();
 
+const files = useFilesStore();
+
 const text = ref("");
 const images = ref<PendingImage[]>([]);
 const attachError = ref<string | null>(null);
 const dragging = ref(false);
 const fileInput = ref<HTMLInputElement | null>(null);
+const inputRef = ref<{ getNativeElement: () => HTMLTextAreaElement } | null>(null);
+
+const mentionToken = ref<MentionToken | null>(null);
+const mentionMatches = ref<string[]>([]);
+const mentionIndex = ref(0);
+const mentionOpen = computed(() => mentionToken.value !== null && mentionMatches.value.length > 0);
 
 const trimmed = computed(() => text.value.trim());
 const hasText = computed(() => trimmed.value.length > 0);
@@ -37,6 +48,84 @@ const totalQueued = computed(() => props.queued.steering.length + props.queued.f
 const placeholder = computed(() => {
 	if (props.busy) return "Steer the current turn, or queue a follow-up";
 	return "Ask pi to do something. Prefix with ! to run a shell command.";
+});
+
+function textarea(): HTMLTextAreaElement | null {
+	return inputRef.value?.getNativeElement() ?? null;
+}
+
+let mentionRequest = 0;
+
+/**
+ * The picker follows the caret rather than a keystroke, so moving the cursor
+ * back into an existing `@path` reopens it on the same token.
+ */
+async function refreshMentions(): Promise<void> {
+	const element = textarea();
+	const token = element ? mentionAt(text.value, element.selectionStart) : null;
+	mentionToken.value = token;
+
+	if (!token) {
+		mentionMatches.value = [];
+		return;
+	}
+
+	const request = ++mentionRequest;
+	try {
+		const { files } = await api.fileIndex(token.query);
+		// A slower earlier request must not overwrite a newer result.
+		if (request !== mentionRequest) return;
+		mentionMatches.value = files;
+		mentionIndex.value = 0;
+	} catch {
+		if (request === mentionRequest) mentionMatches.value = [];
+	}
+}
+
+function closeMentions(): void {
+	mentionToken.value = null;
+	mentionMatches.value = [];
+}
+
+async function chooseMention(path: string): Promise<void> {
+	const token = mentionToken.value;
+	if (!token) return;
+
+	const isDir = path.endsWith("/");
+	const result = applyMention(text.value, token, isDir ? path.slice(0, -1) : path, isDir);
+	text.value = result.text;
+	closeMentions();
+
+	await nextTick();
+	const element = textarea();
+	element?.focus();
+	element?.setSelectionRange(result.caret, result.caret);
+}
+
+/** Appends a path the file tree or the viewer asked to reference. */
+async function insertMention(path: string): Promise<void> {
+	const separator = text.value.length === 0 || /\s$/.test(text.value) ? "" : " ";
+	const quoted = /\s/.test(path) ? `@"${path}"` : `@${path}`;
+	text.value = `${text.value}${separator}${quoted} `;
+	closeMentions();
+
+	await nextTick();
+	const element = textarea();
+	element?.focus();
+	element?.setSelectionRange(text.value.length, text.value.length);
+}
+
+watch(
+	() => files.pendingMention,
+	(path) => {
+		if (!path) return;
+		files.clearMention();
+		void insertMention(path);
+	},
+);
+
+watch(text, () => {
+	void refreshMentions();
 });
 
 async function attach(files: File[]): Promise<void> {
@@ -85,6 +174,33 @@ function submit(intent: SubmitIntent): void {
 }
 
 function onKeydown(event: KeyboardEvent): void {
+	if (mentionOpen.value) {
+		const count = mentionMatches.value.length;
+		if (event.key === "ArrowDown") {
+			event.preventDefault();
+			mentionIndex.value = (mentionIndex.value + 1) % count;
+			return;
+		}
+		if (event.key === "ArrowUp") {
+			event.preventDefault();
+			mentionIndex.value = (mentionIndex.value - 1 + count) % count;
+			return;
+		}
+		if (event.key === "Enter" || event.key === "Tab") {
+			const choice = mentionMatches.value[mentionIndex.value];
+			if (choice) {
+				event.preventDefault();
+				void chooseMention(choice);
+				return;
+			}
+		}
+		if (event.key === "Escape") {
+			event.preventDefault();
+			closeMentions();
+			return;
+		}
+	}
+
 	if (event.key === "Escape" && props.busy) {
 		event.preventDefault();
 		emit("abort");
@@ -146,18 +262,35 @@ async function onFilePicked(event: Event): Promise<void> {
 
 		<div v-if="attachError" class="composer__error">{{ attachError }}</div>
 
-		<q-input
-			v-model="text"
-			type="textarea"
-			autogrow
-			outlined
-			dense
-			:disable="disabled"
-			:placeholder="placeholder"
-			input-class="composer__textarea"
-			@keydown="onKeydown"
-			@paste="onPaste"
-		/>
+		<div class="composer__field">
+			<ul v-if="mentionOpen" class="composer__mentions">
+				<li
+					v-for="(match, index) in mentionMatches"
+					:key="match"
+					class="composer__mention"
+					:class="{ 'composer__mention--active': index === mentionIndex }"
+					@mousedown.prevent="chooseMention(match)"
+				>
+					{{ match }}
+				</li>
+			</ul>
+
+			<q-input
+				ref="inputRef"
+				v-model="text"
+				type="textarea"
+				autogrow
+				outlined
+				dense
+				:disable="disabled"
+				:placeholder="placeholder"
+				input-class="composer__textarea"
+				@keydown="onKeydown"
+				@paste="onPaste"
+				@click="refreshMentions"
+				@blur="closeMentions"
+			/>
+		</div>
 
 		<div class="composer__actions">
 			<q-btn dense flat size="sm" icon="image" :disable="!canAttach" @click="fileInput?.click()">
@@ -250,6 +383,46 @@ async function onFilePicked(event: Event): Promise<void> {
 	margin-bottom: 6px;
 	color: var(--lares-danger);
 	font-size: 12px;
+}
+
+.composer__field {
+	position: relative;
+}
+
+.composer__mentions {
+	position: absolute;
+	bottom: calc(100% + 4px);
+	left: 0;
+	right: 0;
+	z-index: 10;
+	max-height: 240px;
+	overflow-y: auto;
+	margin: 0;
+	padding: 4px 0;
+	list-style: none;
+	border: 1px solid var(--lares-border);
+	border-radius: 6px;
+	background: var(--lares-surface-2);
+	box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+.composer__mention {
+	padding: 3px 10px;
+	cursor: pointer;
+	font-family: var(--lares-mono);
+	font-size: 12.5px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+
+	&:hover {
+		background: var(--lares-surface);
+	}
+}
+
+.composer__mention--active {
+	background: var(--lares-accent);
+	color: #fff;
 }
 
 .composer__actions {

@@ -1,25 +1,8 @@
-import { readFileSync, renameSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { GATEWAY_PROVIDER_ID, type GatewayStatus, type ModelsConfig } from "@lares/shared";
+import type { GatewayStatus } from "@lares/shared";
 import { Hono } from "hono";
 import type { GatewayAuth } from "../gateway/client.ts";
 import { authHeaders } from "../gateway/client.ts";
-import { fetchGatewayModels, mergeDiscoveredModels } from "../gateway/models.ts";
-
-function readModelsConfig(path: string): ModelsConfig {
-	try {
-		const parsed = JSON.parse(readFileSync(path, "utf8")) as ModelsConfig;
-		return parsed.providers ? parsed : { providers: {} };
-	} catch {
-		return { providers: {} };
-	}
-}
-
-function writeModelsConfig(path: string, config: ModelsConfig): void {
-	const tmp = `${path}.tmp`;
-	writeFileSync(tmp, `${JSON.stringify(config, null, 2)}\n`, "utf8");
-	renameSync(tmp, path);
-}
+import { syncGatewayModels } from "../gateway/models.ts";
 
 export function createGatewayRoutes(auth: GatewayAuth, agentDir: string): Hono {
 	const app = new Hono();
@@ -45,23 +28,11 @@ export function createGatewayRoutes(auth: GatewayAuth, agentDir: string): Hono {
 	});
 
 	app.post("/sync-models", async (c) => {
-		let discovered: Awaited<ReturnType<typeof fetchGatewayModels>>;
 		try {
-			discovered = await fetchGatewayModels(auth, AbortSignal.timeout(10_000));
+			return c.json(await syncGatewayModels(auth, agentDir, AbortSignal.timeout(10_000)));
 		} catch (err) {
 			return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
 		}
-
-		const path = join(agentDir, "models.json");
-		const config = readModelsConfig(path);
-		const merged = mergeDiscoveredModels(config, GATEWAY_PROVIDER_ID, discovered);
-		if (merged.added.length > 0) writeModelsConfig(path, merged.config);
-
-		return c.json({
-			discovered: discovered.map((model) => model.id),
-			added: merged.added,
-			kept: merged.kept,
-		});
 	});
 
 	return app;

@@ -2,6 +2,7 @@ import { existsSync, statSync } from "node:fs";
 import type { LaresEvent } from "@lares/shared";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
+import { PathDenied, resolveInWorkspace } from "../files/paths.ts";
 import type { SessionRegistry } from "../pi-bridge/session-registry.ts";
 import { CommandParseError, parseCommand } from "./command-parser.ts";
 
@@ -11,7 +12,7 @@ function errorMessage(err: unknown): string {
 	return err instanceof Error ? err.message : String(err);
 }
 
-export function createAgentRoutes(registry: SessionRegistry): Hono {
+export function createAgentRoutes(registry: SessionRegistry, workspace: string): Hono {
 	const app = new Hono();
 
 	app.post("/new", async (c) => {
@@ -23,9 +24,20 @@ export function createAgentRoutes(registry: SessionRegistry): Hono {
 		}
 
 		const record = body as Record<string, unknown>;
-		const cwd = typeof record.cwd === "string" ? record.cwd : "";
-		if (!cwd || !existsSync(cwd) || !statSync(cwd).isDirectory()) {
-			return c.json({ success: false, error: `Working directory does not exist: ${cwd}` }, 400);
+		const requested = typeof record.cwd === "string" ? record.cwd : "";
+
+		// The agent can read and write anything its working directory reaches, so
+		// it is held to the same tree the file routes serve.
+		let cwd: string;
+		try {
+			cwd = resolveInWorkspace(workspace, requested);
+		} catch (err) {
+			if (err instanceof PathDenied) return c.json({ success: false, error: err.message }, 403);
+			throw err;
+		}
+
+		if (!existsSync(cwd) || !statSync(cwd).isDirectory()) {
+			return c.json({ success: false, error: `Working directory does not exist: ${requested}` }, 400);
 		}
 
 		const toolNames = Array.isArray(record.toolNames)

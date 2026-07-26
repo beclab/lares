@@ -1,6 +1,7 @@
-import type { AgentMessage, ToolResultMessage } from "@lares/shared";
+import type { AgentMessage, ToolResultMessage, UserMessage } from "@lares/shared";
 import { describe, expect, it } from "vitest";
 import {
+	commitUserEcho,
 	extractPatch,
 	formatCost,
 	formatTokens,
@@ -132,6 +133,80 @@ describe("tool result content", () => {
 
 		expect(toolResultImages(result)).toHaveLength(1);
 		expect(toolResultText(result)).toBe("a");
+	});
+});
+
+describe("commitUserEcho", () => {
+	const user = (text: string, timestamp = 0): UserMessage =>
+		({ role: "user", content: text, timestamp }) as UserMessage;
+
+	it("replaces the optimistic bubble instead of appending a second copy", () => {
+		const bubble = user("hello");
+		const echo = user("hello", 99);
+
+		const result = commitUserEcho([bubble], [bubble], echo);
+
+		expect(result.messages).toEqual([echo]);
+		expect(result.pending).toEqual([]);
+	});
+
+	it("appends a steered message, which never had a bubble", () => {
+		const earlier = user("first");
+		const steered = user("stop and do this instead", 99);
+
+		const result = commitUserEcho([earlier], [], steered);
+
+		expect(result.messages).toEqual([earlier, steered]);
+	});
+
+	it("keeps both copies of the same text sent twice", () => {
+		const first = user("again");
+		const second = user("again");
+		const messages = [first, second];
+		const pending = [first, second];
+
+		const afterFirst = commitUserEcho(messages, pending, user("again", 1));
+		const afterSecond = commitUserEcho(afterFirst.messages, afterFirst.pending, user("again", 2));
+
+		expect(afterSecond.messages).toHaveLength(2);
+		expect(afterSecond.messages.map((message) => message.timestamp)).toEqual([1, 2]);
+		expect(afterSecond.pending).toEqual([]);
+	});
+
+	it("matches a bubble that carried images alongside its text", () => {
+		const bubble = {
+			role: "user",
+			content: [
+				{ type: "text", text: "look at this" },
+				{ type: "image", data: "AA", mimeType: "image/png" },
+			],
+			timestamp: 0,
+		} as UserMessage;
+		const echo = user("look at this", 99);
+
+		const result = commitUserEcho([bubble], [bubble], echo);
+
+		expect(result.messages).toEqual([echo]);
+	});
+
+	it("appends assistant messages untouched", () => {
+		const bubble = user("hello");
+		const assistant = { role: "assistant", content: [{ type: "text", text: "hi" }], timestamp: 1 } as AgentMessage;
+
+		const result = commitUserEcho([bubble], [bubble], assistant);
+
+		expect(result.messages).toEqual([bubble, assistant]);
+		expect(result.pending).toEqual([bubble]);
+	});
+
+	it("appends the echo when its bubble is gone from the transcript", () => {
+		const bubble = user("hello");
+		const echo = user("hello", 99);
+
+		const result = commitUserEcho([], [bubble], echo);
+
+		expect(result.messages).toEqual([echo]);
+		expect(result.pending).toEqual([]);
 	});
 });
 

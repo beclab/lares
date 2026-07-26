@@ -1,13 +1,23 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
+import FileTree from "../components/FileTree.vue";
+import FileViewer from "../components/FileViewer.vue";
+import SessionList from "../components/SessionList.vue";
+import WorktreeSwitcher from "../components/WorktreeSwitcher.vue";
 import { useAppStore } from "../stores/app-store";
+import { useFilesStore } from "../stores/files-store";
 import { useSessionStore } from "../stores/session-store";
+import { useWorkspaceStore } from "../stores/workspace-store";
 
 const app = useAppStore();
 const session = useSessionStore();
+const files = useFilesStore();
+const workspace = useWorkspaceStore();
 const router = useRouter();
 const drawerOpen = ref(true);
+const filesOpen = ref(false);
+const viewerPath = ref<string | null>(null);
 
 const gatewayLabel = computed(() => {
 	if (!app.gateway) return "gateway ?";
@@ -15,6 +25,13 @@ const gatewayLabel = computed(() => {
 });
 
 const gatewayIcon = computed(() => (app.gateway?.reachable ? "cloud_done" : "cloud_off"));
+
+const viewerVisible = computed({
+	get: () => viewerPath.value !== null,
+	set: (open: boolean) => {
+		if (!open) viewerPath.value = null;
+	},
+});
 
 const gatewayTooltip = computed(() => {
 	if (!app.gateway) return "Gateway status unknown";
@@ -26,8 +43,18 @@ onMounted(async () => {
 	await Promise.all([app.loadConfig(), app.loadSessions(), app.loadGatewayStatus()]);
 });
 
+// Switching checkouts re-roots the tree, so what the user browses is always the
+// branch the next session will run against.
+watch(
+	() => workspace.relativeCwd,
+	async (path) => {
+		if (filesOpen.value) await files.setRoot(path);
+		else files.root = path;
+	},
+);
+
 async function onNewSession(): Promise<void> {
-	const cwd = app.config?.workspace;
+	const cwd = workspace.cwd;
 	if (!cwd) return;
 	await session.startSession(cwd);
 	await app.loadSessions();
@@ -36,6 +63,23 @@ async function onNewSession(): Promise<void> {
 
 async function onOpenSession(id: string): Promise<void> {
 	await router.push({ name: "session", params: { id } });
+}
+
+async function onSessionDeleted(id: string): Promise<void> {
+	if (session.sessionId !== id) return;
+	session.reset();
+	await router.push({ name: "chat" });
+}
+
+async function toggleFiles(): Promise<void> {
+	filesOpen.value = !filesOpen.value;
+	// The tree is only worth loading once someone asks to see it.
+	if (filesOpen.value && files.children.size === 0) await files.init();
+}
+
+function onMention(path: string): void {
+	files.requestMention(path);
+	viewerPath.value = null;
 }
 </script>
 
@@ -54,39 +98,47 @@ async function onOpenSession(id: string): Promise<void> {
 					{{ gatewayLabel }}
 					<q-tooltip>{{ gatewayTooltip }}</q-tooltip>
 				</q-chip>
+
+				<q-btn flat dense round icon="folder" aria-label="Files" @click="toggleFiles">
+					<q-badge v-if="files.changedCount > 0" floating color="orange">{{ files.changedCount }}</q-badge>
+					<q-tooltip>Workspace files</q-tooltip>
+				</q-btn>
+
+				<q-btn flat dense round icon="settings" aria-label="Settings" :to="{ name: 'settings' }">
+					<q-tooltip>Settings</q-tooltip>
+				</q-btn>
 			</q-toolbar>
 		</q-header>
 
 		<q-drawer v-model="drawerOpen" show-if-above side="left" :width="300" bordered>
 			<div class="q-pa-sm">
 				<q-btn class="full-width" color="primary" icon="add" label="New session" @click="onNewSession" />
+				<WorktreeSwitcher class="q-mt-sm" />
 			</div>
 			<q-separator />
-			<q-list>
-				<q-item-label header>Sessions</q-item-label>
-				<q-item
-					v-for="item in app.sessions"
-					:key="item.id"
-					clickable
-					:active="item.id === session.sessionId"
-					@click="onOpenSession(item.id)"
-				>
-					<q-item-section>
-						<q-item-label lines="1">{{ item.name || item.firstMessage || "Untitled" }}</q-item-label>
-						<q-item-label caption lines="1">{{ item.cwd }}</q-item-label>
-					</q-item-section>
-					<q-item-section v-if="app.runningSessionIds.includes(item.id)" side>
-						<q-spinner-dots color="primary" />
-					</q-item-section>
-				</q-item>
-				<q-item v-if="app.sessions.length === 0">
-					<q-item-section class="text-grey-6">No sessions yet</q-item-section>
-				</q-item>
-			</q-list>
+			<SessionList :active-id="session.sessionId" @open="onOpenSession" @deleted="onSessionDeleted" />
+		</q-drawer>
+
+		<q-drawer v-model="filesOpen" side="right" :width="330" bordered>
+			<FileTree @open="viewerPath = $event" @mention="onMention" />
 		</q-drawer>
 
 		<q-page-container>
 			<router-view />
 		</q-page-container>
+
+		<q-dialog v-model="viewerVisible" maximized>
+			<q-card class="viewer-card">
+				<FileViewer :path="viewerPath" @close="viewerPath = null" @mention="onMention" />
+			</q-card>
+		</q-dialog>
 	</q-layout>
 </template>
+
+<style scoped lang="scss">
+.viewer-card {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+}
+</style>

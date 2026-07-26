@@ -1,4 +1,4 @@
-import type { AgentMessage, ImageContent, TextContent, ToolResultMessage } from "@lares/shared";
+import type { AgentMessage, ImageContent, TextContent, ToolResultMessage, UserMessage } from "@lares/shared";
 
 export type AssistantBlock = AgentMessage extends { role: "assistant"; content: infer C }
 	? C extends readonly (infer B)[]
@@ -25,6 +25,35 @@ export function userContent(content: string | (TextContent | ImageContent)[]): {
 		.map((block) => block.text)
 		.join("\n");
 	return { text, images: content.filter(isImage) };
+}
+
+/**
+ * Reconcile a user message arriving on the stream with the bubble already shown.
+ *
+ * pi echoes every user message back, including the one `submit` rendered
+ * optimistically. The echo cannot simply be dropped: steered and queued
+ * messages travel the same path and never had a bubble, so they would vanish.
+ * Instead the matching bubble is swapped for the authoritative message, which
+ * also picks up the real timestamp and id.
+ */
+export function commitUserEcho(
+	messages: AgentMessage[],
+	pending: UserMessage[],
+	echo: AgentMessage,
+): { messages: AgentMessage[]; pending: UserMessage[] } {
+	if (echo.role !== "user") return { messages: [...messages, echo], pending };
+
+	const text = userContent(echo.content).text;
+	const bubble = pending.find((candidate) => userContent(candidate.content).text === text);
+	if (!bubble) return { messages: [...messages, echo], pending };
+
+	const remaining = pending.filter((candidate) => candidate !== bubble);
+	const index = messages.indexOf(bubble);
+	if (index === -1) return { messages: [...messages, echo], pending: remaining };
+
+	const next = [...messages];
+	next[index] = echo;
+	return { messages: next, pending: remaining };
 }
 
 export function toolResultText(result: ToolResultMessage): string {

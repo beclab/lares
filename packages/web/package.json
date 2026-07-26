@@ -9,7 +9,8 @@
     "dev": "quasar dev",
     "build": "quasar build",
     "typecheck": "vue-tsc --noEmit",
-    "test": "vitest --run"
+    "test": "vitest --run",
+    "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
     "@lares/shared": "*",
@@ -31,6 +32,7 @@
     "@types/node": "^24.9.2",
     "autoprefixer": "^10.4.21",
     "jsdom": "^29.1.1",
+    "playwright": "^1.62.0",
     "sass-embedded": "^1.94.1",
     "vitest": "^4.1.10",
     "vue-tsc": "^3.2.0"

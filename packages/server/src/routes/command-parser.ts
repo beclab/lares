@@ -20,7 +20,6 @@ const KNOWN_TYPES = new Set<AgentCommandType>([
 	"set_auto_retry",
 	"clear_queue",
 	"compact",
-	"fork",
 	"navigate_tree",
 	"bash",
 	"reload",
@@ -83,8 +82,6 @@ export function parseCommand(input: unknown): AgentCommand {
 			}
 			return { type, toolNames: names as string[] };
 		}
-		case "fork":
-			return { type, entryId: requireString(record, "entryId") };
 		case "navigate_tree":
 			return { type, targetId: requireString(record, "targetId") };
 		case "bash":

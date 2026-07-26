@@ -1,7 +1,13 @@
 import type { GatewayStatus, SessionSummary } from "@lares/shared";
 import { defineStore } from "pinia";
-import { ref } from "vue";
-import { type AppConfig, api } from "../lib/api";
+import { computed, ref } from "vue";
+import { type AppConfig, api, type ForkMode } from "../lib/api";
+
+export interface SessionGroup {
+	cwd: string;
+	label: string;
+	sessions: SessionSummary[];
+}
 
 export const useAppStore = defineStore("app", () => {
 	const config = ref<AppConfig | null>(null);
@@ -10,6 +16,32 @@ export const useAppStore = defineStore("app", () => {
 	const gateway = ref<GatewayStatus | null>(null);
 	const loading = ref(false);
 	const error = ref<string | null>(null);
+	const filter = ref("");
+
+	const matching = computed(() => {
+		const needle = filter.value.trim().toLowerCase();
+		if (!needle) return sessions.value;
+		return sessions.value.filter((session) => {
+			const haystack = `${session.name ?? ""} ${session.firstMessage} ${session.cwd}`.toLowerCase();
+			return haystack.includes(needle);
+		});
+	});
+
+	/**
+	 * Sessions are grouped by working directory because that is what a project
+	 * means to pi: the session files live in a per-cwd directory.
+	 */
+	const groups = computed<SessionGroup[]>(() => {
+		const byCwd = new Map<string, SessionSummary[]>();
+		for (const session of matching.value) {
+			const list = byCwd.get(session.cwd);
+			if (list) list.push(session);
+			else byCwd.set(session.cwd, [session]);
+		}
+		return [...byCwd.entries()]
+			.map(([cwd, list]) => ({ cwd, label: cwd.split("/").filter(Boolean).pop() ?? cwd, sessions: list }))
+			.sort((a, b) => a.label.localeCompare(b.label));
+	});
 
 	async function loadConfig(): Promise<void> {
 		config.value = await api.config();
@@ -22,7 +54,7 @@ export const useAppStore = defineStore("app", () => {
 			sessions.value = result.sessions;
 			runningSessionIds.value = result.runningSessionIds;
 		} catch (err) {
-			error.value = err instanceof Error ? err.message : String(err);
+			error.value = describe(err);
 		} finally {
 			loading.value = false;
 		}
@@ -33,9 +65,44 @@ export const useAppStore = defineStore("app", () => {
 			gateway.value = await api.gatewayStatus();
 		} catch (err) {
 			gateway.value = null;
-			error.value = err instanceof Error ? err.message : String(err);
+			error.value = describe(err);
 		}
 	}
 
-	return { config, sessions, runningSessionIds, gateway, loading, error, loadConfig, loadSessions, loadGatewayStatus };
+	async function rename(id: string, name: string): Promise<void> {
+		await api.renameSession(id, name);
+		await loadSessions();
+	}
+
+	async function remove(id: string): Promise<void> {
+		await api.deleteSession(id);
+		await loadSessions();
+	}
+
+	async function fork(id: string, entryId?: string, mode?: ForkMode): Promise<string> {
+		const result = await api.forkSession(id, entryId, mode);
+		await loadSessions();
+		return result.sessionId;
+	}
+
+	return {
+		config,
+		sessions,
+		groups,
+		filter,
+		runningSessionIds,
+		gateway,
+		loading,
+		error,
+		loadConfig,
+		loadSessions,
+		loadGatewayStatus,
+		rename,
+		remove,
+		fork,
+	};
 });
+
+function describe(err: unknown): string {
+	return err instanceof Error ? err.message : String(err);
+}

@@ -70,11 +70,24 @@ describe("mergeDefaultModel", () => {
 		expect(settings).toMatchObject({ defaultProvider: "olares", defaultModel: "claude-opus-4-5" });
 	});
 
-	it("never overrides a model the user already picked", () => {
+	it("keeps a model the user picked while PI_DEFAULT_MODEL is unchanged", () => {
 		const existing = { defaultProvider: "anthropic", defaultModel: "claude-opus-4-5", theme: "dark" };
-		const { settings, changed } = mergeDefaultModel(existing, "openai/gpt-5");
+		const { settings, changed } = mergeDefaultModel(existing, "openai/gpt-5", "openai/gpt-5");
 		expect(changed).toBe(false);
 		expect(settings).toBe(existing);
+	});
+
+	it("lets a newly edited PI_DEFAULT_MODEL take over the user's pick", () => {
+		const existing = { defaultProvider: "anthropic", defaultModel: "claude-opus-4-5", theme: "dark" };
+		const { settings, changed } = mergeDefaultModel(existing, "openai/gpt-5", "openai/gpt-4");
+		expect(changed).toBe(true);
+		expect(settings).toMatchObject({ defaultProvider: "openai", defaultModel: "gpt-5", theme: "dark" });
+	});
+
+	it("reports no change when the env already matches what is configured", () => {
+		const existing = { defaultProvider: "openai", defaultModel: "gpt-5" };
+		const { changed } = mergeDefaultModel(existing, "openai/gpt-5", null);
+		expect(changed).toBe(false);
 	});
 });
 
@@ -98,6 +111,31 @@ describe("bootstrapPiConfig", () => {
 
 		expect(second.modelsConfigChanged).toBe(false);
 		expect(second.settingsChanged).toBe(false);
+	});
+
+	it("applies a changed PI_DEFAULT_MODEL on the next start", () => {
+		const agentDir = tempAgentDir();
+		bootstrapPiConfig({ agentDir, port: 30141, defaultModel: "olares/first" });
+
+		const second = bootstrapPiConfig({ agentDir, port: 30141, defaultModel: "olares/second" });
+		expect(second.settingsChanged).toBe(true);
+
+		const settings = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf8")) as Record<string, unknown>;
+		expect(settings).toMatchObject({ defaultProvider: "olares", defaultModel: "second" });
+	});
+
+	it("leaves a model picked in the UI alone when PI_DEFAULT_MODEL is unchanged", () => {
+		const agentDir = tempAgentDir();
+		bootstrapPiConfig({ agentDir, port: 30141, defaultModel: "olares/from-env" });
+
+		const settingsPath = join(agentDir, "settings.json");
+		writeFileSync(settingsPath, JSON.stringify({ defaultProvider: "olares", defaultModel: "picked-in-ui" }), "utf8");
+
+		const second = bootstrapPiConfig({ agentDir, port: 30141, defaultModel: "olares/from-env" });
+		expect(second.settingsChanged).toBe(false);
+
+		const settings = JSON.parse(readFileSync(settingsPath, "utf8")) as Record<string, unknown>;
+		expect(settings.defaultModel).toBe("picked-in-ui");
 	});
 
 	it("refuses to clobber a malformed models.json", () => {

@@ -32,7 +32,6 @@ export type AgentCommand =
 	| { type: "set_auto_retry"; enabled: boolean }
 	| { type: "clear_queue" }
 	| { type: "compact"; customInstructions?: string }
-	| { type: "fork"; entryId: string }
 	| { type: "navigate_tree"; targetId: string }
 	| { type: "bash"; command: string; excludeFromContext?: boolean }
 	| { type: "reload" };

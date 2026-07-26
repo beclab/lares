@@ -4,12 +4,14 @@ import type {
 	ImageAttachment,
 	LaresEvent,
 	SessionState,
+	SessionTreeResponse,
 	ToolResultMessage,
+	UserMessage,
 } from "@lares/shared";
 import { defineStore } from "pinia";
 import { computed, ref, shallowRef } from "vue";
 import { api, subscribeToSession } from "../lib/api";
-import { indexToolResults, type SubmitIntent } from "../lib/messages";
+import { commitUserEcho, indexToolResults, type SubmitIntent } from "../lib/messages";
 
 /** What the agent is doing between messages, so the UI can say more than "thinking". */
 export type AgentPhase =
@@ -41,6 +43,8 @@ export const useSessionStore = defineStore("session", () => {
 	const sessionId = ref<string | null>(null);
 	const cwd = ref<string>("");
 	const messages = shallowRef<AgentMessage[]>([]);
+	/** Bubbles rendered on send, still waiting for pi to echo them back. */
+	const pendingOptimistic = shallowRef<UserMessage[]>([]);
 	const streamingMessage = shallowRef<AgentMessage | null>(null);
 	const state = ref<SessionState | null>(null);
 	const connected = ref(false);
@@ -51,6 +55,7 @@ export const useSessionStore = defineStore("session", () => {
 	const runningToolIds = ref<Set<string>>(new Set());
 	const compactResult = ref<CompactResult | null>(null);
 	const retryInfo = ref<RetryInfo | null>(null);
+	const tree = ref<SessionTreeResponse | null>(null);
 
 	let unsubscribe: (() => void) | null = null;
 
@@ -73,6 +78,7 @@ export const useSessionStore = defineStore("session", () => {
 		unsubscribe = null;
 		sessionId.value = null;
 		messages.value = [];
+		pendingOptimistic.value = [];
 		streamingMessage.value = null;
 		state.value = null;
 		connected.value = false;
@@ -82,6 +88,7 @@ export const useSessionStore = defineStore("session", () => {
 		runningToolIds.value = new Set();
 		compactResult.value = null;
 		retryInfo.value = null;
+		tree.value = null;
 	}
 
 	function applyEvent(event: LaresEvent): void {
@@ -114,10 +121,13 @@ export const useSessionStore = defineStore("session", () => {
 				phase.value = { kind: "waiting_model" };
 				break;
 
-			case "message_end":
+			case "message_end": {
 				streamingMessage.value = null;
-				messages.value = appendMessage(messages.value, event.message);
+				const committed = commitUserEcho(messages.value, pendingOptimistic.value, event.message);
+				messages.value = committed.messages;
+				pendingOptimistic.value = committed.pending;
 				break;
+			}
 
 			case "tool_execution_start": {
 				const next = new Set(runningToolIds.value);
@@ -205,11 +215,29 @@ export const useSessionStore = defineStore("session", () => {
 		}
 	}
 
-	/** Re-reads the transcript from disk, which compaction and forking rewrite. */
+	/** Re-reads the transcript from disk, which compaction and branching rewrite. */
 	async function reload(): Promise<void> {
 		if (!sessionId.value) return;
 		const detail = await api.getSession(sessionId.value);
 		messages.value = extractMessages(detail.entries);
+		// Disk is authoritative, so any bubble still waiting for an echo is
+		// either already in the transcript or was never persisted.
+		pendingOptimistic.value = [];
+		if (tree.value) await loadTree();
+	}
+
+	async function loadTree(): Promise<void> {
+		if (!sessionId.value) return;
+		tree.value = await api.getSessionTree(sessionId.value);
+	}
+
+	/**
+	 * Moves the leaf pointer back to an earlier entry. The abandoned path stays
+	 * in the file, which is what makes the branch tree worth showing.
+	 */
+	async function navigateTo(entryId: string): Promise<void> {
+		await send({ type: "navigate_tree", targetId: entryId });
+		await reload();
 	}
 
 	function attach(id: string): void {
@@ -254,7 +282,9 @@ export const useSessionStore = defineStore("session", () => {
 		const attachments = images.length > 0 ? { images } : {};
 
 		if (!busy.value) {
-			messages.value = appendMessage(messages.value, optimisticUserMessage(text, images));
+			const bubble = optimisticUserMessage(text, images);
+			messages.value = [...messages.value, bubble];
+			pendingOptimistic.value = [...pendingOptimistic.value, bubble];
 			agentRunning.value = true;
 			phase.value = { kind: "waiting_model" };
 			await send({ type: "prompt", message: text, ...attachments });
@@ -310,10 +340,13 @@ export const useSessionStore = defineStore("session", () => {
 		contextUsage,
 		compactResult,
 		retryInfo,
+		tree,
 		reset,
 		startSession,
 		openSession,
 		reload,
+		loadTree,
+		navigateTo,
 		send,
 		submit,
 		abort,
@@ -328,12 +361,8 @@ function describe(err: unknown): string {
 	return err instanceof Error ? err.message : String(err);
 }
 
-function appendMessage(list: AgentMessage[], message: AgentMessage): AgentMessage[] {
-	return [...list, message];
-}
-
 /** Shown immediately on send so the input clears without waiting for a round trip. */
-function optimisticUserMessage(text: string, images: ImageAttachment[]): AgentMessage {
+function optimisticUserMessage(text: string, images: ImageAttachment[]): UserMessage {
 	const content = images.length
 		? [
 				{ type: "text" as const, text },

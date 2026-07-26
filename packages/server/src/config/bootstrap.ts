@@ -27,6 +27,14 @@ interface Settings {
 	[key: string]: unknown;
 }
 
+/** lares-owned state, kept out of settings.json because pi owns that file. */
+const STATE_FILE = "lares-bootstrap.json";
+
+interface BootstrapState {
+	/** PI_DEFAULT_MODEL as of the previous boot; null when it was unset. */
+	appliedDefaultModel?: string | null;
+}
+
 export function shimBaseUrl(port: number): string {
 	return `http://127.0.0.1:${port}${GATEWAY_SHIM_PREFIX}`;
 }
@@ -58,14 +66,22 @@ export function mergeGatewayProvider(config: ModelsConfig, port: number): { conf
 }
 
 /**
- * Seed the default model. Existing values win, so a model picked in the UI
- * survives restarts even when PI_DEFAULT_MODEL still points elsewhere.
+ * Seed the default model.
+ *
+ * Two sources compete here. PI_DEFAULT_MODEL is declarative and the operator
+ * edits it in Olares Settings, which restarts the app; the model picker in the
+ * UI writes the same setting and must survive restarts. Neither can win
+ * outright, so the tie-break is which one changed last: a PI_DEFAULT_MODEL
+ * that differs from the value applied on the previous boot is a fresh edit and
+ * takes over, otherwise whatever is already in settings.json stands.
  */
 export function mergeDefaultModel(
 	settings: Settings,
 	defaultModel: string | null,
+	appliedDefaultModel: string | null = null,
 ): { settings: Settings; changed: boolean } {
-	if (settings.defaultProvider && settings.defaultModel) {
+	const envIsFreshEdit = defaultModel !== null && defaultModel !== appliedDefaultModel;
+	if (settings.defaultProvider && settings.defaultModel && !envIsFreshEdit) {
 		return { settings, changed: false };
 	}
 
@@ -79,6 +95,10 @@ export function mergeDefaultModel(
 		} else {
 			modelId = defaultModel;
 		}
+	}
+
+	if (settings.defaultProvider === provider && settings.defaultModel === modelId) {
+		return { settings, changed: false };
 	}
 
 	return {
@@ -129,10 +149,17 @@ export function bootstrapPiConfig(input: BootstrapInput): BootstrapReport {
 	if (settings.error) {
 		warnings.push(`settings.json is unreadable, leaving it untouched: ${settings.error}`);
 	} else {
-		const merged = mergeDefaultModel(settings.value ?? {}, input.defaultModel);
+		const state = readJsonFile<BootstrapState>(join(input.agentDir, STATE_FILE)).value ?? {};
+		const merged = mergeDefaultModel(settings.value ?? {}, input.defaultModel, state.appliedDefaultModel ?? null);
 		if (merged.changed) {
 			writeJsonAtomic(settingsPath, merged.settings);
 			settingsChanged = true;
+		}
+		if (state.appliedDefaultModel !== input.defaultModel) {
+			writeJsonAtomic(join(input.agentDir, STATE_FILE), {
+				...state,
+				appliedDefaultModel: input.defaultModel,
+			} satisfies BootstrapState);
 		}
 	}
 

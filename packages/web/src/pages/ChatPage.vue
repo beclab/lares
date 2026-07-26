@@ -2,19 +2,23 @@
 import type { ImageAttachment } from "@lares/shared";
 import { onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import BranchTree from "../components/BranchTree.vue";
 import ChatInput from "../components/ChatInput.vue";
 import ContextMeter from "../components/ContextMeter.vue";
 import MessageList from "../components/MessageList.vue";
 import type { SubmitIntent } from "../lib/messages";
 import { useAppStore } from "../stores/app-store";
 import { useSessionStore } from "../stores/session-store";
+import { useWorkspaceStore } from "../stores/workspace-store";
 
 const route = useRoute();
 const router = useRouter();
 const app = useAppStore();
 const session = useSessionStore();
+const workspace = useWorkspaceStore();
 
 const recalled = ref("");
+const showBranches = ref(false);
 
 watch(
 	() => route.params.id,
@@ -29,7 +33,7 @@ watch(
 onUnmounted(() => session.reset());
 
 async function startSession(): Promise<void> {
-	const cwd = app.config?.workspace;
+	const cwd = workspace.cwd;
 	if (!cwd) return;
 	await session.startSession(cwd);
 	await app.loadSessions();
@@ -48,6 +52,26 @@ async function onBash(command: string, excludeFromContext: boolean): Promise<voi
 async function onRecallQueue(): Promise<void> {
 	const cleared = await session.clearQueue();
 	recalled.value = [...cleared.steering, ...cleared.followUp].join("\n");
+}
+
+async function toggleBranches(): Promise<void> {
+	showBranches.value = !showBranches.value;
+	if (showBranches.value) await session.loadTree();
+}
+
+async function onNavigate(entryId: string): Promise<void> {
+	await session.navigateTo(entryId);
+}
+
+async function onFork(entryId: string, mode: "at" | "before"): Promise<void> {
+	if (!session.sessionId) return;
+	try {
+		const id = await app.fork(session.sessionId, entryId, mode);
+		showBranches.value = false;
+		await router.push({ name: "session", params: { id } });
+	} catch (err) {
+		session.error = err instanceof Error ? err.message : String(err);
+	}
 }
 </script>
 
@@ -80,6 +104,17 @@ async function onRecallQueue(): Promise<void> {
 		</div>
 
 		<template v-else>
+			<q-slide-transition>
+				<div v-show="showBranches" class="chat__branches">
+					<BranchTree
+						:roots="session.tree?.roots ?? []"
+						:leaf-id="session.tree?.leafId ?? null"
+						@navigate="onNavigate"
+						@fork="onFork"
+					/>
+				</div>
+			</q-slide-transition>
+
 			<MessageList
 				:messages="session.messages"
 				:streaming-message="session.streamingMessage"
@@ -91,6 +126,16 @@ async function onRecallQueue(): Promise<void> {
 
 			<div class="chat__status">
 				<span class="chat__cwd">{{ session.cwd }}</span>
+				<q-btn
+					dense
+					flat
+					size="sm"
+					icon="account_tree"
+					:color="showBranches ? 'primary' : undefined"
+					@click="toggleBranches"
+				>
+					<q-tooltip>Branches</q-tooltip>
+				</q-btn>
 				<ContextMeter :usage="session.contextUsage" />
 				<q-icon
 					:name="session.connected ? 'wifi' : 'wifi_off'"
@@ -139,6 +184,13 @@ async function onRecallQueue(): Promise<void> {
 	border-top: 1px solid var(--lares-border);
 	color: var(--lares-text-muted);
 	font-size: 11.5px;
+}
+
+.chat__branches {
+	max-height: 34vh;
+	overflow-y: auto;
+	border-bottom: 1px solid var(--lares-border);
+	background: var(--lares-surface);
 }
 
 .chat__cwd {

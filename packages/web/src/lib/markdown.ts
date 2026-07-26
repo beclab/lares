@@ -1,7 +1,12 @@
-import katexPlugin from "@vscode/markdown-it-katex";
+import katexImport from "@vscode/markdown-it-katex";
 import DOMPurify from "dompurify";
 import hljs from "highlight.js/lib/common";
 import MarkdownIt from "markdown-it";
+
+// The package is CommonJS with an `exports.default`. The dev server unwraps
+// that to the function, the production bundle hands back the module object,
+// and markdown-it then calls `.apply` on a non-function.
+const katexPlugin = (katexImport as { default?: typeof katexImport }).default ?? katexImport;
 
 const md = new MarkdownIt({
 	html: true,

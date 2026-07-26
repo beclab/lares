@@ -14,6 +14,14 @@ scripts           mock gateway for local development
 docs              design specs
 ```
 
+## What it does
+
+- **Chat** with streaming output, rendered tool calls, Markdown with Mermaid and KaTeX, image attachments, steering and follow-up queues, abort, and manual or automatic compaction.
+- **Sessions** grouped by working directory, with a branch tree you can rewind into, forking either at or just before a message, renaming, deletion, and HTML or JSONL export.
+- **Files** as a lazy tree with git status, previews for source, Markdown, images, audio, video, PDF and DOCX, unified diffs, and `@`-mention autocomplete backed by a git-aware index.
+- **Configuration** for models, provider API keys and OAuth logins, thinking level, skills, plugins, and per-session tool toggles.
+- **Worktrees**: create a checkout per branch, switch the file tree and new sessions onto it, and remove it when the work lands.
+
 ## How it fits together
 
 The backend does four things in one process: it hosts the SPA, serves the REST and SSE API, holds the live pi sessions, and proxies pi's LLM traffic to the gateway.
@@ -66,6 +74,12 @@ The end-to-end test boots the real server against a fake gateway and drives a fu
 | `LARES_WEB_ROOT` | `/app/web` in the image | Directory holding the built SPA. |
 
 Config is seeded, not enforced: the first boot writes the gateway provider into `models.json` and a default model into `settings.json`, then leaves your later edits alone.
+
+## The workspace
+
+Everything the app can read or write lives under `LARES_WORKSPACE`. Paths are resolved through `realpath` and checked against that root, so a symlink pointing outside is refused rather than followed, and a session cannot be started outside it either.
+
+Worktrees are created inside the workspace at `.worktrees/<repo>/<branch>` rather than beside the repository, which is where git would normally put them, because the file routes only serve the workspace. When the repository *is* the workspace root, `.worktrees/` is added to `.git/info/exclude` so the checkouts do not show up as untracked.
 
 ## Container
 
