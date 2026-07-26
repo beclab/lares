@@ -1,0 +1,9 @@
+**/node_modules
+**/dist
+**/.quasar
+.git
+.github
+docs
+chart
+*.log
+.DS_Store

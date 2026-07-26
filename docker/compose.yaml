@@ -1,0 +1,16 @@
+# Reference deployment for local runs. The Olares chart under chart/ is
+# generated from this shape and then refined for the platform.
+services:
+  lares:
+    image: docker.io/library/lares:0.1.0
+    ports:
+      - "30141:30141"
+    environment:
+      LLM_GATEWAY_URL: http://llm-gateway-backend.os-framework:8080/v1
+      PI_CODING_AGENT_DIR: /data/pi/agent
+      LARES_WORKSPACE: /data/workspace
+    volumes:
+      - lares-data:/data
+
+volumes:
+  lares-data:

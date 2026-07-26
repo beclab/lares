@@ -1,0 +1,14 @@
+.lares-message {
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+.lares-mono {
+	font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+	font-size: 12px;
+}
+
+.lares-chat-scroll {
+	height: 100%;
+	overflow-y: auto;
+}

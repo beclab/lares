@@ -1,0 +1,50 @@
+olaresManifest.version: '0.12.0'
+olaresManifest.type: app
+apiVersion: v3
+
+metadata:
+  name: lares
+  appid: lares
+  title: Lares
+  description: The pi coding agent with a web UI, wired to the built-in LLM gateway.
+  icon: https://app.cdn.olares.com/appstore/default/defaulticon.webp
+  version: 0.0.1
+  categories:
+  - Utilities
+
+entrances:
+- name: lares
+  host: lares
+  port: 30141
+  title: Lares
+  icon: https://app.cdn.olares.com/appstore/default/defaulticon.webp
+  authLevel: private
+  openMethod: default
+
+spec:
+  versionName: 0.1.0
+  runAsUser: true
+  runAsInternal: false
+  supportArch:
+  - amd64
+  - arm64
+  requiredCpu: 200m
+  limitedCpu: 2000m
+  requiredMemory: 512Mi
+  limitedMemory: 4Gi
+  requiredDisk: 2Gi
+
+permission:
+  appData: true
+
+options:
+  # Agent turns stream for minutes. The entrance proxy cuts every request at 15s
+  # unless this is disabled, which would kill the SSE event stream mid-answer.
+  apiTimeout: 0
+  dependencies:
+  - name: olares
+    version: '>=1.12.6-0'
+    type: system
+
+workloadReplicas:
+  lares: 1

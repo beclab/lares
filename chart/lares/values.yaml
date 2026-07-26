@@ -1,0 +1,19 @@
+image:
+  repository: docker.io/library/lares
+  tag: 0.1.0
+  pullPolicy: IfNotPresent
+
+workloads:
+  lares:
+    replicaCount: 1
+
+# Points pi at the in-cluster llm-gateway. Override to use an external
+# OpenAI-compatible endpoint instead.
+gateway:
+  url: http://llm-gateway-backend.os-framework:8080/v1
+  # Leave empty to authenticate as this Olares app; set to use a user API key.
+  apiKey: ""
+
+# `provider/id` written into settings.json on first boot. Empty means the
+# gateway's own default model.
+defaultModel: ""

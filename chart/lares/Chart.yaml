@@ -1,0 +1,6 @@
+apiVersion: v2
+name: lares
+type: application
+description: The pi coding agent with a web UI, wired to the built-in LLM gateway.
+version: 0.0.1
+appVersion: 0.1.0
