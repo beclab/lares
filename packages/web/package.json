@@ -8,11 +8,18 @@
   "scripts": {
     "dev": "quasar dev",
     "build": "quasar build",
-    "typecheck": "vue-tsc --noEmit"
+    "typecheck": "vue-tsc --noEmit",
+    "test": "vitest --run"
   },
   "dependencies": {
     "@lares/shared": "*",
     "@quasar/extras": "^2.0.2",
+    "@vscode/markdown-it-katex": "^1.1.2",
+    "dompurify": "^3.4.12",
+    "highlight.js": "^11.11.1",
+    "katex": "^0.18.1",
+    "markdown-it": "^14.3.0",
+    "mermaid": "^11.16.0",
     "pinia": "^4.0.2",
     "quasar": "^2.23.1",
     "vue": "^3.5.40",
@@ -20,9 +27,12 @@
   },
   "devDependencies": {
     "@quasar/app-vite": "^3.2.0",
+    "@types/markdown-it": "^14.1.2",
     "@types/node": "^24.9.2",
     "autoprefixer": "^10.4.21",
+    "jsdom": "^29.1.1",
     "sass-embedded": "^1.94.1",
+    "vitest": "^4.1.10",
     "vue-tsc": "^3.2.0"
   }
 }

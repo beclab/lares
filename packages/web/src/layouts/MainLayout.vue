@@ -1,3 +1,44 @@
+<script setup lang="ts">
+import { computed, onMounted, ref } from "vue";
+import { useRouter } from "vue-router";
+import { useAppStore } from "../stores/app-store";
+import { useSessionStore } from "../stores/session-store";
+
+const app = useAppStore();
+const session = useSessionStore();
+const router = useRouter();
+const drawerOpen = ref(true);
+
+const gatewayLabel = computed(() => {
+	if (!app.gateway) return "gateway ?";
+	return app.gateway.reachable ? "gateway ok" : "gateway down";
+});
+
+const gatewayIcon = computed(() => (app.gateway?.reachable ? "cloud_done" : "cloud_off"));
+
+const gatewayTooltip = computed(() => {
+	if (!app.gateway) return "Gateway status unknown";
+	const auth = app.gateway.usesBearer ? "user api key" : (app.gateway.appId ?? "no credentials");
+	return `${app.gateway.baseUrl} (${auth})${app.gateway.error ? ` - ${app.gateway.error}` : ""}`;
+});
+
+onMounted(async () => {
+	await Promise.all([app.loadConfig(), app.loadSessions(), app.loadGatewayStatus()]);
+});
+
+async function onNewSession(): Promise<void> {
+	const cwd = app.config?.workspace;
+	if (!cwd) return;
+	await session.startSession(cwd);
+	await app.loadSessions();
+	await router.push({ name: "session", params: { id: session.sessionId } });
+}
+
+async function onOpenSession(id: string): Promise<void> {
+	await router.push({ name: "session", params: { id } });
+}
+</script>
+
 <template>
 	<q-layout view="hHh LpR fFf">
 		<q-header elevated>
@@ -5,8 +46,8 @@
 				<q-btn flat dense round icon="menu" aria-label="Sessions" @click="drawerOpen = !drawerOpen" />
 				<q-toolbar-title>Lares</q-toolbar-title>
 
-				<q-chip v-if="app.state?.model" dense outline color="white" text-color="white" icon="memory">
-					{{ app.state.model.provider }}/{{ app.state.model.modelId }}
+				<q-chip v-if="session.state?.model" dense outline color="white" text-color="white" icon="memory">
+					{{ session.state.model.provider }}/{{ session.state.model.modelId }}
 				</q-chip>
 
 				<q-chip dense outline color="white" text-color="white" :icon="gatewayIcon">
@@ -24,21 +65,21 @@
 			<q-list>
 				<q-item-label header>Sessions</q-item-label>
 				<q-item
-					v-for="item in store.sessions"
+					v-for="item in app.sessions"
 					:key="item.id"
 					clickable
-					:active="item.id === app.sessionId"
+					:active="item.id === session.sessionId"
 					@click="onOpenSession(item.id)"
 				>
 					<q-item-section>
 						<q-item-label lines="1">{{ item.name || item.firstMessage || "Untitled" }}</q-item-label>
 						<q-item-label caption lines="1">{{ item.cwd }}</q-item-label>
 					</q-item-section>
-					<q-item-section v-if="store.runningSessionIds.includes(item.id)" side>
+					<q-item-section v-if="app.runningSessionIds.includes(item.id)" side>
 						<q-spinner-dots color="primary" />
 					</q-item-section>
 				</q-item>
-				<q-item v-if="store.sessions.length === 0">
+				<q-item v-if="app.sessions.length === 0">
 					<q-item-section class="text-grey-6">No sessions yet</q-item-section>
 				</q-item>
 			</q-list>
@@ -49,44 +90,3 @@
 		</q-page-container>
 	</q-layout>
 </template>
-
-<script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
-import { useRouter } from "vue-router";
-import { useAppStore } from "../stores/app-store";
-import { useSessionStore } from "../stores/session-store";
-
-const store = useAppStore();
-const app = useSessionStore();
-const router = useRouter();
-const drawerOpen = ref(true);
-
-const gatewayLabel = computed(() => {
-	if (!store.gateway) return "gateway ?";
-	return store.gateway.reachable ? "gateway ok" : "gateway down";
-});
-
-const gatewayIcon = computed(() => (store.gateway?.reachable ? "cloud_done" : "cloud_off"));
-
-const gatewayTooltip = computed(() => {
-	if (!store.gateway) return "Gateway status unknown";
-	const auth = store.gateway.usesBearer ? "user api key" : (store.gateway.appId ?? "no credentials");
-	return `${store.gateway.baseUrl} (${auth})${store.gateway.error ? ` - ${store.gateway.error}` : ""}`;
-});
-
-onMounted(async () => {
-	await Promise.all([store.loadConfig(), store.loadSessions(), store.loadGatewayStatus()]);
-});
-
-async function onNewSession(): Promise<void> {
-	const cwd = store.config?.workspace;
-	if (!cwd) return;
-	await app.startSession(cwd);
-	await store.loadSessions();
-	await router.push({ name: "session", params: { id: app.sessionId } });
-}
-
-async function onOpenSession(id: string): Promise<void> {
-	await router.push({ name: "session", params: { id } });
-}
-</script>

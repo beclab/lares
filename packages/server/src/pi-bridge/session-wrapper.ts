@@ -218,8 +218,16 @@ export class SessionWrapper {
 			case "clear_queue":
 				return this.session.clearQueue();
 
-			case "compact":
-				return await this.session.compact(command.customInstructions);
+			case "compact": {
+				// Compaction runs an LLM call of its own and can take a while. It
+				// reports through compaction_start/compaction_end, so holding the
+				// HTTP request open would only keep the abort button unreachable.
+				void this.session.compact(command.customInstructions).catch((err: unknown) => {
+					this.emit({ type: "prompt_error", error: err instanceof Error ? err.message : String(err) });
+				});
+				this.checkRunningChange();
+				return null;
+			}
 
 			case "navigate_tree":
 				return await this.session.navigateTree(command.targetId);

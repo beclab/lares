@@ -19,7 +19,7 @@
     "typecheck": "npm run typecheck -w @lares/shared && npm run typecheck -w @lares/server && npm run typecheck -w @lares/web",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "test": "npm run test -w @lares/server",
+    "test": "npm run test -w @lares/server && npm run test -w @lares/web",
     "check": "npm run lint && npm run typecheck"
   },
   "devDependencies": {

@@ -1,50 +1,11 @@
-<template>
-	<q-page class="column" style="height: calc(100vh - 50px)">
-		<q-banner v-if="session.error" dense class="bg-negative text-white">
-			{{ session.error }}
-			<template #action>
-				<q-btn flat dense label="Dismiss" @click="session.error = null" />
-			</template>
-		</q-banner>
-
-		<div v-if="!session.sessionId" class="col column flex-center text-grey-6">
-			<q-icon name="forum" size="64px" />
-			<div class="q-mt-md">Pick a session or start a new one.</div>
-			<q-btn
-				class="q-mt-md"
-				color="primary"
-				icon="add"
-				label="New session"
-				:disable="!app.config"
-				@click="startSession"
-			/>
-		</div>
-
-		<template v-else>
-			<div class="col" style="min-height: 0">
-				<MessageList :messages="session.messages" />
-			</div>
-			<q-separator />
-			<div class="row items-center q-px-md q-pt-xs text-caption text-grey-6">
-				<span>{{ session.cwd }}</span>
-				<q-space />
-				<span v-if="contextLabel">{{ contextLabel }}</span>
-				<q-icon
-					class="q-ml-sm"
-					:name="session.connected ? 'wifi' : 'wifi_off'"
-					:color="session.connected ? 'positive' : 'grey'"
-				/>
-			</div>
-			<ChatInput :streaming="session.isStreaming" @submit="onSubmit" @abort="onAbort" />
-		</template>
-	</q-page>
-</template>
-
 <script setup lang="ts">
-import { computed, onUnmounted, watch } from "vue";
+import type { ImageAttachment } from "@lares/shared";
+import { onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import ChatInput from "../components/ChatInput.vue";
+import ContextMeter from "../components/ContextMeter.vue";
 import MessageList from "../components/MessageList.vue";
+import type { SubmitIntent } from "../lib/messages";
 import { useAppStore } from "../stores/app-store";
 import { useSessionStore } from "../stores/session-store";
 
@@ -53,11 +14,7 @@ const router = useRouter();
 const app = useAppStore();
 const session = useSessionStore();
 
-const contextLabel = computed(() => {
-	const usage = session.state?.contextUsage;
-	if (!usage || usage.percent === null) return "";
-	return `context ${usage.percent.toFixed(0)}%`;
-});
+const recalled = ref("");
 
 watch(
 	() => route.params.id,
@@ -79,12 +36,117 @@ async function startSession(): Promise<void> {
 	await router.push({ name: "session", params: { id: session.sessionId } });
 }
 
-async function onSubmit(text: string): Promise<void> {
-	await session.sendPrompt(text);
+async function onSubmit(text: string, images: ImageAttachment[], intent: SubmitIntent): Promise<void> {
+	await session.submit(text, images, intent);
 	await app.loadSessions();
 }
 
-async function onAbort(): Promise<void> {
-	await session.send({ type: "abort" });
+async function onBash(command: string, excludeFromContext: boolean): Promise<void> {
+	await session.runBash(command, excludeFromContext);
+}
+
+async function onRecallQueue(): Promise<void> {
+	const cleared = await session.clearQueue();
+	recalled.value = [...cleared.steering, ...cleared.followUp].join("\n");
 }
 </script>
+
+<template>
+	<q-page class="chat">
+		<q-banner v-if="session.error" dense class="bg-negative text-white">
+			{{ session.error }}
+			<template #action>
+				<q-btn flat dense label="Dismiss" @click="session.error = null" />
+			</template>
+		</q-banner>
+
+		<q-banner v-if="session.retryInfo" dense class="bg-warning text-black">
+			Retrying after an error (attempt {{ session.retryInfo.attempt }} of {{ session.retryInfo.maxAttempts }}):
+			{{ session.retryInfo.error }}
+		</q-banner>
+
+		<q-banner v-if="session.compactResult" dense class="bg-positive text-white">
+			Compacted {{ session.compactResult.tokensBefore }} tokens down to about
+			{{ session.compactResult.tokensAfter }}.
+			<template #action>
+				<q-btn flat dense label="Dismiss" @click="session.compactResult = null" />
+			</template>
+		</q-banner>
+
+		<div v-if="!session.sessionId" class="chat__empty">
+			<q-icon name="forum" size="64px" />
+			<div>Pick a session or start a new one.</div>
+			<q-btn color="primary" icon="add" label="New session" :disable="!app.config" @click="startSession" />
+		</div>
+
+		<template v-else>
+			<MessageList
+				:messages="session.messages"
+				:streaming-message="session.streamingMessage"
+				:tool-results="session.toolResults"
+				:running-tool-ids="session.runningToolIds"
+				:phase="session.phase"
+				:agent-running="session.agentRunning"
+			/>
+
+			<div class="chat__status">
+				<span class="chat__cwd">{{ session.cwd }}</span>
+				<ContextMeter :usage="session.contextUsage" />
+				<q-icon
+					:name="session.connected ? 'wifi' : 'wifi_off'"
+					:color="session.connected ? 'positive' : 'grey'"
+					size="16px"
+				/>
+			</div>
+
+			<ChatInput
+				:busy="session.busy"
+				:compacting="session.isCompacting"
+				:queued="session.queued"
+				@submit="onSubmit"
+				@bash="onBash"
+				@abort="session.abort"
+				@compact="session.compact()"
+				@recall-queue="onRecallQueue"
+			/>
+		</template>
+	</q-page>
+</template>
+
+<style scoped lang="scss">
+.chat {
+	display: flex;
+	flex-direction: column;
+	height: calc(100vh - 50px);
+	min-height: 0;
+}
+
+.chat__empty {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 16px;
+	color: var(--lares-text-muted);
+}
+
+.chat__status {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 4px 14px;
+	border-top: 1px solid var(--lares-border);
+	color: var(--lares-text-muted);
+	font-size: 11.5px;
+}
+
+.chat__cwd {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-family: var(--lares-mono);
+}
+</style>
