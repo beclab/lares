@@ -2,6 +2,7 @@ import type { GatewayStatus, SessionSummary } from "@lares/shared";
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import { type AppConfig, api, type ForkMode } from "../lib/api";
+import { forgetSession } from "../lib/session-cache";
 
 export interface SessionGroup {
 	cwd: string;
@@ -51,13 +52,44 @@ export const useAppStore = defineStore("app", () => {
 		loading.value = true;
 		try {
 			const result = await api.listSessions();
-			sessions.value = result.sessions;
+			sessions.value = [...result.sessions].sort(byRecency);
 			runningSessionIds.value = result.runningSessionIds;
 		} catch (err) {
 			error.value = describe(err);
 		} finally {
 			loading.value = false;
 		}
+	}
+
+	/** Returns false when the session is not in the list, so callers can refetch. */
+	function patch(id: string, changes: (session: SessionSummary) => Partial<SessionSummary> | null): boolean {
+		const index = sessions.value.findIndex((entry) => entry.id === id);
+		const current = sessions.value[index];
+		if (!current) return false;
+		const delta = changes(current);
+		if (!delta) return true;
+		const next = [...sessions.value];
+		next[index] = { ...current, ...delta };
+		sessions.value = next.sort(byRecency);
+		return true;
+	}
+
+	/**
+	 * Records a message the live stream just reported, so the sidebar keeps up
+	 * without refetching the whole list after every turn. One `message_end` is
+	 * one entry in the transcript file, which is exactly what the server counts.
+	 */
+	function noteMessage(id: string, text: string): boolean {
+		return patch(id, (session) => ({
+			modified: new Date().toISOString(),
+			messageCount: session.messageCount + 1,
+			...(session.firstMessage || !text ? {} : { firstMessage: text }),
+		}));
+	}
+
+	/** Picks up auto-naming, which otherwise only shows after a full reload. */
+	function noteName(id: string, name: string | undefined): void {
+		patch(id, (session) => (name && name !== session.name ? { name } : null));
 	}
 
 	async function loadGatewayStatus(): Promise<void> {
@@ -76,6 +108,7 @@ export const useAppStore = defineStore("app", () => {
 
 	async function remove(id: string): Promise<void> {
 		await api.deleteSession(id);
+		forgetSession(id);
 		await loadSessions();
 	}
 
@@ -97,11 +130,17 @@ export const useAppStore = defineStore("app", () => {
 		loadConfig,
 		loadSessions,
 		loadGatewayStatus,
+		noteMessage,
+		noteName,
 		rename,
 		remove,
 		fork,
 	};
 });
+
+function byRecency(a: SessionSummary, b: SessionSummary): number {
+	return new Date(b.modified).getTime() - new Date(a.modified).getTime();
+}
 
 function describe(err: unknown): string {
 	return err instanceof Error ? err.message : String(err);

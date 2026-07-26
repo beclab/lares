@@ -37,11 +37,27 @@ describe("agent over the gateway shim", () => {
 		});
 		expect(created.sessionId).toBeTruthy();
 
-		const events = collectEvents(harness.baseUrl, created.sessionId, (event) => event.type === "agent_end");
-		await postJson(`/api/agent/${created.sessionId}`, { type: "prompt", message: "say hi" });
+		const events = collectEvents(harness.baseUrl, created.sessionId, (event) => event.type === "state");
+		const sent = await postJson<{ state: SessionState }>(`/api/agent/${created.sessionId}`, {
+			type: "prompt",
+			message: "say hi",
+		});
 		const received = await events;
 
-		expect(received[0]).toEqual({ type: "connected", sessionId: created.sessionId });
+		// Both the command response and the handshake carry state, so neither
+		// sending a prompt nor opening a session needs a second round trip.
+		expect(sent.state.sessionId).toBe(created.sessionId);
+
+		const handshake = received[0];
+		if (handshake?.type !== "connected") throw new Error(`Expected a handshake, got ${handshake?.type}`);
+		expect(handshake.sessionId).toBe(created.sessionId);
+		expect(handshake.state.model).toEqual({ provider: "olares", modelId: "default" });
+
+		// The turn ends with a state frame, which is what replaces polling.
+		const settled = received.at(-1);
+		if (settled?.type !== "state") throw new Error(`Expected a state frame, got ${settled?.type}`);
+		expect(settled.state.isStreaming).toBe(false);
+		expect(received.some((event) => event.type === "agent_end")).toBe(true);
 
 		const assistant = lastAssistantMessage(received);
 		const text = assistant.content.find((block) => block.type === "text");

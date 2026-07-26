@@ -6,6 +6,7 @@ import { buildContextEntries, type SessionInfo, SessionManager } from "@earendil
 import type { SessionSummary } from "@lares/shared";
 import { Hono } from "hono";
 import type { SessionRegistry } from "../pi-bridge/session-registry.ts";
+import { findSession, invalidateSessions, listSessions } from "../sessions/catalog.ts";
 import { repairHtmlExport } from "../sessions/export.ts";
 import { forkPoints, toTree } from "../sessions/tree.ts";
 
@@ -23,16 +24,11 @@ function toSummary(info: SessionInfo): SessionSummary {
 	};
 }
 
-async function findSession(id: string): Promise<SessionInfo | undefined> {
-	const all = await SessionManager.listAll();
-	return all.find((entry) => entry.id === id);
-}
-
 export function createSessionRoutes(registry: SessionRegistry): Hono {
 	const app = new Hono();
 
 	app.get("/", async (c) => {
-		const all = await SessionManager.listAll();
+		const all = await listSessions();
 		const sessions = all.map(toSummary).sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime());
 		return c.json({ sessions, runningSessionIds: registry.runningIds() });
 	});
@@ -72,12 +68,14 @@ export function createSessionRoutes(registry: SessionRegistry): Hono {
 		const live = registry.get(id);
 		if (live) {
 			await live.send({ type: "set_session_name", name });
+			invalidateSessions();
 			return c.json({ name });
 		}
 
 		const info = await findSession(id);
 		if (!info) return c.json({ error: `Unknown session ${id}` }, 404);
 		SessionManager.open(info.path).appendSessionInfo(name);
+		invalidateSessions();
 		return c.json({ name });
 	});
 
@@ -88,6 +86,7 @@ export function createSessionRoutes(registry: SessionRegistry): Hono {
 
 		registry.close(id);
 		await rm(info.path, { force: true });
+		invalidateSessions();
 		return c.json({ deleted: id });
 	});
 
@@ -126,6 +125,7 @@ export function createSessionRoutes(registry: SessionRegistry): Hono {
 		}
 
 		const forked = SessionManager.open(path);
+		invalidateSessions();
 		return c.json({ sessionId: forked.getSessionId(), path });
 	});
 

@@ -10,7 +10,8 @@
     "build": "quasar build",
     "typecheck": "vue-tsc --noEmit",
     "test": "vitest --run",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "round-trips": "node scripts/round-trips.mjs"
   },
   "dependencies": {
     "@lares/shared": "*",

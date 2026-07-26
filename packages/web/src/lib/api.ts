@@ -68,8 +68,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 interface CommandEnvelope<T> {
 	success: boolean;
 	data: T;
+	state: SessionState;
 	sessionId?: string;
 	error?: string;
+}
+
+/** A command result plus the state it produced, so callers never poll for it. */
+export interface CommandResult<T> {
+	data: T;
+	state: SessionState;
 }
 
 export const api = {
@@ -202,24 +209,26 @@ export const api = {
 			method: "POST",
 		}),
 
-	async createSession(cwd: string, command: AgentCommand): Promise<string> {
+	async createSession(cwd: string, command: AgentCommand): Promise<{ sessionId: string; state: SessionState }> {
 		const result = await request<CommandEnvelope<unknown>>("/api/agent/new", {
 			method: "POST",
 			body: JSON.stringify({ cwd, command }),
 		});
 		if (!result.sessionId) throw new ApiError(500, "Server did not return a session id");
-		return result.sessionId;
+		return { sessionId: result.sessionId, state: result.state };
 	},
 
-	async send<T = unknown>(sessionId: string, command: AgentCommand): Promise<T> {
+	async send<T = unknown>(sessionId: string, command: AgentCommand): Promise<CommandResult<T>> {
 		const result = await request<CommandEnvelope<T>>(`/api/agent/${encodeURIComponent(sessionId)}`, {
 			method: "POST",
 			body: JSON.stringify(command),
 		});
-		return result.data;
+		return { data: result.data, state: result.state };
 	},
 
-	getState: (sessionId: string) => api.send<SessionState>(sessionId, { type: "get_state" }),
+	async getState(sessionId: string): Promise<SessionState> {
+		return (await api.send(sessionId, { type: "get_state" })).state;
+	},
 };
 
 /**

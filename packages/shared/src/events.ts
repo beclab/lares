@@ -1,4 +1,5 @@
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
+import type { SessionState } from "./api.ts";
 
 export type { AgentSessionEvent };
 
@@ -6,6 +7,18 @@ export type { AgentSessionEvent };
 export interface ConnectedEvent {
 	type: "connected";
 	sessionId: string;
+	state: SessionState;
+}
+
+/**
+ * A state snapshot pushed after the agent settles.
+ *
+ * The SDK's own events say what happened but not what the session looks like
+ * afterwards, and asking costs a round trip the client can feel.
+ */
+export interface StateEvent {
+	type: "state";
+	state: SessionState;
 }
 
 /** Emitted when a prompt finishes, so the client can settle its local state. */
@@ -24,4 +37,4 @@ export interface RunningSessionsEvent {
 	runningSessionIds: string[];
 }
 
-export type LaresEvent = ConnectedEvent | PromptDoneEvent | PromptErrorEvent | AgentSessionEvent;
+export type LaresEvent = ConnectedEvent | StateEvent | PromptDoneEvent | PromptErrorEvent | AgentSessionEvent;

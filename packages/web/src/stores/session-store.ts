@@ -11,7 +11,9 @@ import type {
 import { defineStore } from "pinia";
 import { computed, ref, shallowRef } from "vue";
 import { api, subscribeToSession } from "../lib/api";
-import { commitUserEcho, indexToolResults, type SubmitIntent } from "../lib/messages";
+import { commitUserEcho, indexToolResults, type SubmitIntent, userContent } from "../lib/messages";
+import { readSession, writeSession } from "../lib/session-cache";
+import { useAppStore } from "./app-store";
 
 /** What the agent is doing between messages, so the UI can say more than "thinking". */
 export type AgentPhase =
@@ -58,6 +60,8 @@ export const useSessionStore = defineStore("session", () => {
 	const tree = ref<SessionTreeResponse | null>(null);
 
 	let unsubscribe: (() => void) | null = null;
+	/** Bumped whenever the transcript changes, so a late fetch cannot undo it. */
+	let transcriptEpoch = 0;
 
 	const busy = computed(() => agentRunning.value || (state.value?.isBashRunning ?? false));
 	const isCompacting = computed(() => state.value?.isCompacting === true || phase.value.kind === "compacting");
@@ -74,8 +78,14 @@ export const useSessionStore = defineStore("session", () => {
 	const visibleMessages = computed(() => messages.value.filter(isRenderable));
 
 	function reset(): void {
+		// Leaving is the moment the transcript on screen is worth keeping: it is
+		// the newest version anyone has, stream updates included.
+		if (sessionId.value && messages.value.length > 0) {
+			writeSession(sessionId.value, { cwd: cwd.value, messages: messages.value });
+		}
 		unsubscribe?.();
 		unsubscribe = null;
+		transcriptEpoch += 1;
 		sessionId.value = null;
 		messages.value = [];
 		pendingOptimistic.value = [];
@@ -94,8 +104,10 @@ export const useSessionStore = defineStore("session", () => {
 	function applyEvent(event: LaresEvent): void {
 		switch (event.type) {
 			case "connected":
-				connected.value = true;
-				void refreshState();
+			case "state":
+				state.value = event.state;
+				if (event.type === "connected") connected.value = true;
+				if (sessionId.value) useAppStore().noteName(sessionId.value, event.state.sessionName);
 				break;
 
 			case "agent_start":
@@ -109,7 +121,6 @@ export const useSessionStore = defineStore("session", () => {
 				streamingMessage.value = null;
 				phase.value = { kind: "idle" };
 				runningToolIds.value = new Set();
-				void refreshState();
 				break;
 
 			case "message_start":
@@ -126,6 +137,14 @@ export const useSessionStore = defineStore("session", () => {
 				const committed = commitUserEcho(messages.value, pendingOptimistic.value, event.message);
 				messages.value = committed.messages;
 				pendingOptimistic.value = committed.pending;
+				transcriptEpoch += 1;
+				if (sessionId.value) {
+					const text = event.message.role === "user" ? userContent(event.message.content).text : "";
+					const app = useAppStore();
+					// pi writes the session file only once it holds a reply, so a new
+					// session is missing from the list until its first message lands.
+					if (!app.noteMessage(sessionId.value, text) && !app.loading) void app.loadSessions();
+				}
 				break;
 			}
 
@@ -181,16 +200,11 @@ export const useSessionStore = defineStore("session", () => {
 				if (!event.success && event.finalError) error.value = event.finalError;
 				break;
 
-			case "session_info_changed":
-				if (state.value) state.value = { ...state.value, sessionName: event.name };
-				break;
-
 			case "prompt_error":
 				error.value = event.error;
 				agentRunning.value = false;
 				streamingMessage.value = null;
 				phase.value = { kind: "idle" };
-				void refreshState();
 				break;
 
 			case "prompt_done":
@@ -198,7 +212,6 @@ export const useSessionStore = defineStore("session", () => {
 				agentRunning.value = false;
 				streamingMessage.value = null;
 				phase.value = { kind: "idle" };
-				void refreshState();
 				break;
 
 			default:
@@ -223,6 +236,7 @@ export const useSessionStore = defineStore("session", () => {
 		// Disk is authoritative, so any bubble still waiting for an echo is
 		// either already in the transcript or was never persisted.
 		pendingOptimistic.value = [];
+		transcriptEpoch += 1;
 		if (tree.value) await loadTree();
 	}
 
@@ -251,27 +265,58 @@ export const useSessionStore = defineStore("session", () => {
 	async function startSession(workingDirectory: string): Promise<string> {
 		reset();
 		cwd.value = workingDirectory;
-		const id = await api.createSession(workingDirectory, { type: "ensure_session" });
-		attach(id);
-		await refreshState();
-		return id;
+		const created = await api.createSession(workingDirectory, { type: "ensure_session" });
+		attach(created.sessionId);
+		state.value = created.state;
+		return created.sessionId;
 	}
 
+	/**
+	 * Opens a session, painting a cached transcript first when there is one.
+	 *
+	 * State arrives on the stream's handshake frame, so this costs one request
+	 * rather than two, and none at all on screen when the cache answers.
+	 */
 	async function openSession(id: string): Promise<void> {
 		reset();
+		const cached = readSession(id);
+		if (cached) {
+			cwd.value = cached.cwd;
+			messages.value = cached.messages;
+			attach(id);
+			void revalidate(id);
+			return;
+		}
+
 		const detail = await api.getSession(id);
 		cwd.value = detail.session.cwd;
 		messages.value = extractMessages(detail.entries);
 		attach(id);
-		await refreshState();
+	}
+
+	/**
+	 * Replaces a cached transcript with the one on disk, unless the session
+	 * moved on while the request was in flight. Anything the stream delivered
+	 * in the meantime is newer than what the server was asked for.
+	 */
+	async function revalidate(id: string): Promise<void> {
+		const epoch = transcriptEpoch;
+		try {
+			const detail = await api.getSession(id);
+			if (sessionId.value !== id || transcriptEpoch !== epoch) return;
+			cwd.value = detail.session.cwd;
+			messages.value = extractMessages(detail.entries);
+		} catch (err) {
+			error.value = describe(err);
+		}
 	}
 
 	async function send<T = unknown>(command: AgentCommand): Promise<T> {
 		if (!sessionId.value) throw new Error("No active session");
 		error.value = null;
-		const data = await api.send<T>(sessionId.value, command);
-		await refreshState();
-		return data;
+		const result = await api.send<T>(sessionId.value, command);
+		state.value = result.state;
+		return result.data;
 	}
 
 	/**
@@ -285,6 +330,7 @@ export const useSessionStore = defineStore("session", () => {
 			const bubble = optimisticUserMessage(text, images);
 			messages.value = [...messages.value, bubble];
 			pendingOptimistic.value = [...pendingOptimistic.value, bubble];
+			transcriptEpoch += 1;
 			agentRunning.value = true;
 			phase.value = { kind: "waiting_model" };
 			await send({ type: "prompt", message: text, ...attachments });

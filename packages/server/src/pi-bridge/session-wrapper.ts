@@ -9,6 +9,7 @@ import {
 	SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import type { AgentCommand, ImageAttachment, LaresEvent, SessionState } from "@lares/shared";
+import { invalidateSessions } from "../sessions/catalog.ts";
 
 export type EventListener = (event: LaresEvent) => void;
 
@@ -24,6 +25,26 @@ function toImageContent(images: ImageAttachment[] | undefined): ImageContent[] |
 	if (!images?.length) return undefined;
 	return images.map((image) => ({ type: "image", data: image.data, mimeType: image.mimeType }));
 }
+
+/**
+ * Events after which the session has come to rest and the client wants to know
+ * what it settled into: token usage, queue depth, model, name.
+ *
+ * `agent_end` is deliberately absent. pi clears its run flag only when emitting
+ * `agent_settled`, because a finished turn can still be followed by a retry, an
+ * auto-compaction, or a queued message, so a snapshot taken at `agent_end`
+ * would report the session as still streaming.
+ *
+ * Mid-turn events are left out for a different reason: they arrive by the
+ * hundreds, and a snapshot on each would cost more than it tells anyone.
+ */
+const SETTLING_EVENTS: ReadonlySet<string> = new Set([
+	"agent_settled",
+	"compaction_end",
+	"prompt_done",
+	"prompt_error",
+	"session_info_changed",
+]);
 
 /**
  * One live pi session plus the plumbing the HTTP layer needs: a fan-out event
@@ -97,6 +118,11 @@ export class SessionWrapper {
 				// A broken subscriber must not stall the agent or its other subscribers.
 			}
 		}
+		// Every committed message is a line appended to the transcript file, which
+		// is what the session list reports on.
+		if (event.type === "message_end") invalidateSessions();
+		// `state` is not itself a settling event, so this recurses exactly once.
+		if (SETTLING_EVENTS.has(event.type)) this.emit({ type: "state", state: this.getState() });
 	}
 
 	private checkRunningChange(): void {

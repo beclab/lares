@@ -41,8 +41,8 @@ async function startSession(): Promise<void> {
 }
 
 async function onSubmit(text: string, images: ImageAttachment[], intent: SubmitIntent): Promise<void> {
+	// The sidebar follows the live stream, so sending costs one request.
 	await session.submit(text, images, intent);
-	await app.loadSessions();
 }
 
 async function onBash(command: string, excludeFromContext: boolean): Promise<void> {

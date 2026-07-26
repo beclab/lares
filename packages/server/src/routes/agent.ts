@@ -48,7 +48,7 @@ export function createAgentRoutes(registry: SessionRegistry, workspace: string):
 			const command = parseCommand(record.command ?? { type: "ensure_session" });
 			const wrapper = await registry.create(cwd, toolNames);
 			const data = await wrapper.send(command);
-			return c.json({ success: true, sessionId: wrapper.id, data });
+			return c.json({ success: true, sessionId: wrapper.id, data, state: wrapper.getState() });
 		} catch (err) {
 			const status = err instanceof CommandParseError ? 400 : 500;
 			return c.json({ success: false, error: errorMessage(err) }, status);
@@ -95,7 +95,7 @@ export function createAgentRoutes(registry: SessionRegistry, workspace: string):
 				void stream.writeSSE({ data: JSON.stringify(event) }).catch(resolveClosed);
 			};
 
-			write({ type: "connected", sessionId: wrapper.id });
+			write({ type: "connected", sessionId: wrapper.id, state: wrapper.getState() });
 			const unsubscribe = wrapper.subscribe(write);
 			const heartbeat = setInterval(() => {
 				void stream.writeSSE({ data: "", event: "ping" }).catch(resolveClosed);
@@ -129,7 +129,9 @@ export function createAgentRoutes(registry: SessionRegistry, workspace: string):
 			const wrapper = await registry.resolve(id);
 			if (!wrapper) return c.json({ success: false, error: `Unknown session ${id}` }, 404);
 			const data = await wrapper.send(command);
-			return c.json({ success: true, data });
+			// Every command response carries the state it produced, so the client
+			// never has to spend a second round trip asking what changed.
+			return c.json({ success: true, data, state: wrapper.getState() });
 		} catch (err) {
 			const status = err instanceof CommandParseError ? 400 : 500;
 			return c.json({ success: false, error: errorMessage(err) }, status);

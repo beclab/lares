@@ -1,4 +1,5 @@
-import { type SessionInfo, SessionManager } from "@earendil-works/pi-coding-agent";
+import type { SessionInfo } from "@earendil-works/pi-coding-agent";
+import { findSession } from "../sessions/catalog.ts";
 import { SessionWrapper } from "./session-wrapper.ts";
 
 export interface RegistryOptions {
@@ -60,8 +61,7 @@ export class SessionRegistry {
 	}
 
 	private async findSessionInfo(id: string): Promise<SessionInfo | undefined> {
-		const all = await SessionManager.listAll();
-		return all.find((info) => info.id === id);
+		return findSession(id);
 	}
 
 	/** Tear a session down without touching its file, so it can be deleted or replaced. */

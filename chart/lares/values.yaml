@@ -1,6 +1,6 @@
 image:
   repository: docker.io/aboveos/lares
-  tag: 0.3.4
+  tag: 0.3.5
   pullPolicy: IfNotPresent
 
 workloads:
