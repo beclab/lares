@@ -189,8 +189,30 @@ Olares chart 与 `OlaresManifest.yaml`：声明入口、端口、持久化卷。
 5. 配置面板：模型配置与 gateway 同步、API key 与 OAuth、skills、plugins、thinking 级别、工具开关。
 6. worktree 与整体打磨。
 
-## 10. 风险
+## 10. 真机验证结果（2026-07-26）
 
-- 跨 namespace 访问 `os-framework` 是否被 Olares 网络策略放行，以及 `X-Olares-App-ID` 由谁注入，都需要真机验证。第 1 期必须先打通这条链路，否则后面的功能都建在沙上。
+第 1 期在 `uranusflare@olares.com`（Olares 1.12.6-rc.2，amd64 单节点）上跑通。
+
+集群上还没有 llm-gateway，所以把 `LLM_GATEWAY_URL` 指向同一集群里已装的 llama.cpp 共享应用
+`http://sharedentrances-api.llamacppqwen3627bmtpq4kxlv3-shared:80/v1`。它同样是 OpenAI 兼容端点，
+除了 gateway 特有的鉴权语义之外，链路的每一环都被真实覆盖到了。
+
+验证到的：
+
+- 镜像以 uid 1000 跑起来，appData 落盘，会话 jsonl 写在 `/data/pi/agent/sessions/` 下
+- 入口反代 → SSE → pi SDK → shim → 集群内端点，一次完整对话拿到 thinking 与正文，用时约 40 秒，
+  证明 `options.apiTimeout: 0` 确实解掉了 15 秒截断
+- `/api/gateway/sync-models` 从上游发现模型并写回 `models.json`
+
+还没验证的只有一件事：gateway 自己的 `X-Olares-App-ID` 懒注册。它得等 gateway 装进 `os-framework`
+才能测。shim 剥 `Authorization` 的行为有单元测试兜着，但真机上 gateway 认不认这个身份仍是未知数。
+
+期间踩到一个坑：`{{ .Values.userspace.appData }}/lares` 这个子目录由 `DirectoryOrCreate` 创建，
+属主是 root，uid 1000 的进程写不进去，容器起不来。修法是加一个 busybox initContainer 把目录 chown
+过来；chown 前先判断属主，否则升级时 root 去 chown 一个已经属于 uid 1000 的目录会 EPERM。
+
+## 11. 风险
+
+- `X-Olares-App-ID` 由谁注入、gateway 是否认这个身份，仍需等 gateway 上线后验证。
 - pi SDK 迭代很快，版本必须锁死，升级单独走一次并跑回归。
 - 复刻 pi-web 的工作量集中在前端，约 16000 行 React 需要翻译成 Vue。分期交付是为了让每一期都能独立验收，而不是攒一个大版本。

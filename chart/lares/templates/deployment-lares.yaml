@@ -17,21 +17,37 @@ spec:
       labels:
         io.kompose.service: lares
     spec:
+      enableServiceLinks: false
+      initContainers:
+      # DirectoryOrCreate makes the appData subdirectory root-owned, which the
+      # uid-1000 app cannot write. The ownership test keeps upgrades working:
+      # re-chowning a directory the app already owns fails with EPERM here.
+      - name: fix-permissions
+        image: beclab/aboveos-busybox:1.37.0
+        command:
+        - sh
+        - -c
+        - '[ "$(stat -c %u /data)" = 1000 ] || chown 1000:1000 /data'
+        securityContext:
+          runAsUser: 0
+        volumeMounts:
+        - name: lares-data
+          mountPath: /data
       containers:
       - name: lares
         image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         env:
         - name: LLM_GATEWAY_URL
-          value: {{ .Values.gateway.url | quote }}
+          value: {{ .Values.olaresEnv.LLM_GATEWAY_URL | quote }}
         # The gateway lazily registers whatever app name it sees, so this value
         # is the app's identity in the LLM Gateway console and usage reports.
         - name: OLARES_APP_ID
           value: lares
         - name: LARES_GATEWAY_API_KEY
-          value: {{ .Values.gateway.apiKey | quote }}
+          value: {{ .Values.olaresEnv.LARES_GATEWAY_API_KEY | quote }}
         - name: PI_DEFAULT_MODEL
-          value: {{ .Values.defaultModel | quote }}
+          value: {{ .Values.olaresEnv.PI_DEFAULT_MODEL | quote }}
         ports:
         - containerPort: 30141
           protocol: TCP
