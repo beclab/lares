@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.quasar/
+*.log
+.DS_Store
+.env
+.env.local
+coverage/
+packages/web/dist/
+packages/server/dist/
+packages/shared/dist/
