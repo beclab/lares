@@ -1,0 +1,198 @@
+# =============================================================================
+# docker-publish -- build the Lares image and push a multi-arch manifest to
+# Docker Hub.
+#
+# Lares is a single-image app: one Node backend that also hosts the built
+# Quasar SPA (see docker/Dockerfile). So there is ONE image to build, published
+# as a multi-arch (linux/amd64 + linux/arm64) manifest.
+#
+# The arm64 leg is built via QEMU emulation on the amd64 runner (Plan 1: one
+# job, simplest to maintain). That leg is CPU-bound (`npm ci` + `npm run build`
+# + a Vite/Quasar bundle) so it is noticeably slower than native; the buildx
+# GHA layer cache below softens the cost when dependencies are unchanged. If
+# release latency ever becomes a problem, the follow-up is to split the build
+# across native runners (ubuntu-latest + ubuntu-24.04-arm) and merge the
+# manifest with `docker buildx imagetools create`.
+#
+# Required repository secrets:
+#   DOCKERHUB_USERNAME  login identity with push rights to the `aboveos` org
+#   DOCKERHUB_TOKEN     Docker Hub access token (NOT the account password;
+#                       Account Settings -> Security -> New Access Token)
+# =============================================================================
+
+name: docker-publish
+
+on:
+  push:
+    branches: [main]
+    # NB: `paths:` only filters branch pushes; tag pushes (below) fire
+    # regardless of which files the tagged commit touches -- a tag publishes
+    # whatever sits at the tagged commit.
+    paths:
+      - 'packages/**'
+      - 'docker/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.base.json'
+      - 'biome.json'
+      - '.dockerignore'
+      - '.github/workflows/docker-publish.yml'
+    # SemVer release tags. Pushing a `v*` tag publishes the image to Docker Hub
+    # tagged :<tag> (e.g. :v0.3.5) + :sha-<short>. STABLE tags also move
+    # :latest; PRE-RELEASE tags (any hyphen, e.g. :v0.4.0-rc.1) publish
+    # :<tag> + :sha only and DO NOT touch :latest.
+    tags: ['v*']
+  pull_request:
+    paths:
+      - 'packages/**'
+      - 'docker/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.base.json'
+      - 'biome.json'
+      - '.dockerignore'
+      - '.github/workflows/docker-publish.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Cancel superseded runs of the same ref (PR force-push; rapid pushes to main)
+# so the queue doesn't backlog a runner on stale commits.
+concurrency:
+  group: docker-publish-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: check (lint + typecheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # typecheck resolves `@lares/shared` through its built dist, so the
+      # shared package must be compiled before biome/tsc run across the tree.
+      - name: build shared types
+        run: npm run build -w @lares/shared
+      - name: lint + typecheck
+        run: npm run check
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # server + web tests import `@lares/shared` from its dist output.
+      - name: build shared types
+        run: npm run build -w @lares/shared
+      - name: run tests
+        run: npm test
+
+  docker-build:
+    name: docker-build
+    needs: [check, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # QEMU provides the arm64 emulation layer for the cross-arch build.
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      # Compute push?, tags, and version in one shell step.
+      #
+      # The image namespace is HARDCODED to `aboveos` (Docker Hub org) and is
+      # intentionally NOT derived from DOCKERHUB_USERNAME: the secret carries
+      # the LOGIN identity (an account with push rights to the org), while the
+      # namespace is the publishing destination. Conflating the two would push
+      # to whichever account holds the credential -- wrong the moment the
+      # release operator rotates.
+      #
+      # Event flavors:
+      #   push to main                 -- :latest + :sha-<short>
+      #   push to v* tag               -- :<tag> + :sha-<short> (+ :latest for
+      #                                   stable tags only)
+      #   workflow_dispatch on main/v* -- treated like the matching push event
+      #                                   (re-publish escape hatch)
+      #   PR / other ref               -- build-only, no push, local tag
+      - name: compute image metadata
+        id: meta
+        env:
+          DH_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+          DH_NAMESPACE: aboveos
+          DH_REPO: lares
+        run: |
+          set -euo pipefail
+          SHORT_SHA=${GITHUB_SHA::7}
+          IMAGE="${DH_NAMESPACE}/${DH_REPO}"
+          IS_MAIN=false
+          IS_TAG=false
+          TAG_NAME=""
+          if [ "${{ github.event_name }}" = "push" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            case "${{ github.ref }}" in
+              refs/heads/main) IS_MAIN=true ;;
+              refs/tags/v*) IS_TAG=true; TAG_NAME="${GITHUB_REF#refs/tags/}" ;;
+            esac
+          fi
+          SHOULD_PUSH=false
+          if [ "$IS_MAIN" = "true" ] || [ "$IS_TAG" = "true" ]; then
+            SHOULD_PUSH=true
+          fi
+          {
+            echo "push=${SHOULD_PUSH}"
+            if [ "$SHOULD_PUSH" = "true" ]; then
+              if [ -z "${DH_USER:-}" ]; then
+                echo "::error::DOCKERHUB_USERNAME secret is empty; cannot log in to Docker Hub"
+                exit 1
+              fi
+              echo "tags<<EOF"
+              if [ "$IS_TAG" = "true" ]; then
+                # Pre-release tags (any hyphen, e.g. v0.4.0-rc.1) must NOT move
+                # :latest -- it tracks the newest STABLE release only.
+                case "$TAG_NAME" in
+                  *-*) : ;;
+                  *) echo "${IMAGE}:latest" ;;
+                esac
+                echo "${IMAGE}:${TAG_NAME}"
+              else
+                echo "${IMAGE}:latest"
+              fi
+              echo "${IMAGE}:sha-${SHORT_SHA}"
+              echo "EOF"
+            else
+              echo "tags=${DH_REPO}:ci-${SHORT_SHA}"
+            fi
+          } >> "$GITHUB_OUTPUT"
+
+      # Skipped on PRs (no push planned; fork PRs can't see repo secrets).
+      # DOCKERHUB_TOKEN must be an access token -- Docker Hub blocks
+      # password-based `docker login` for 2FA-enabled accounts.
+      - name: log in to Docker Hub
+        if: steps.meta.outputs.push == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Build context is the repo root: docker/Dockerfile does `COPY packages
+      # ...` and expects package.json / lockfile at ./.
+      - name: build + push multi-arch image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: ${{ steps.meta.outputs.push }}
+          tags: ${{ steps.meta.outputs.tags }}
+          # GHA layer cache -- the arm64/QEMU leg's `npm ci` dominates build
+          # time, so caching it back pays off hard on unchanged-dependency runs.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
