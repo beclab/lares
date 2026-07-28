@@ -107,90 +107,48 @@ jobs:
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
 
-      # Compute push?, tags, and version in one shell step.
+      # docker/metadata-action derives the tag list from the git ref, so we
+      # don't hand-roll it:
+      #   push to main    -> :latest + :sha-<short>
+      #   push to v* tag  -> :<version> + :sha-<short> (+ :latest for STABLE
+      #                      tags only; pre-release tags with a hyphen such as
+      #                      v0.4.0-rc.1 skip :latest, via flavor latest=auto)
+      #   PR              -> :pr-<n> + :sha-<short> (build-only, never pushed)
       #
-      # The image namespace is HARDCODED to `aboveos` (Docker Hub org) and is
-      # intentionally NOT derived from DOCKERHUB_USERNAME: the secret carries
-      # the LOGIN identity (an account with push rights to the org), while the
-      # namespace is the publishing destination. Conflating the two would push
-      # to whichever account holds the credential -- wrong the moment the
-      # release operator rotates.
-      #
-      # Event flavors:
-      #   push to main                 -- :latest + :sha-<short>
-      #   push to v* tag               -- :<tag> + :sha-<short> (+ :latest for
-      #                                   stable tags only)
-      #   workflow_dispatch on main/v* -- treated like the matching push event
-      #                                   (re-publish escape hatch)
-      #   PR / other ref               -- build-only, no push, local tag
-      - name: compute image metadata
+      # The image namespace is hardcoded to `aboveos` (the publishing
+      # destination) rather than derived from DOCKERHUB_USERNAME (the login
+      # identity), so rotating the release operator can't redirect the image.
+      - name: compute tags
         id: meta
-        env:
-          DH_USER: ${{ secrets.DOCKERHUB_USERNAME }}
-          DH_NAMESPACE: aboveos
-          DH_REPO: lares
-        run: |
-          set -euo pipefail
-          SHORT_SHA=${GITHUB_SHA::7}
-          IMAGE="${DH_NAMESPACE}/${DH_REPO}"
-          IS_MAIN=false
-          IS_TAG=false
-          TAG_NAME=""
-          if [ "${{ github.event_name }}" = "push" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            case "${{ github.ref }}" in
-              refs/heads/main) IS_MAIN=true ;;
-              refs/tags/v*) IS_TAG=true; TAG_NAME="${GITHUB_REF#refs/tags/}" ;;
-            esac
-          fi
-          SHOULD_PUSH=false
-          if [ "$IS_MAIN" = "true" ] || [ "$IS_TAG" = "true" ]; then
-            SHOULD_PUSH=true
-          fi
-          {
-            echo "push=${SHOULD_PUSH}"
-            if [ "$SHOULD_PUSH" = "true" ]; then
-              if [ -z "${DH_USER:-}" ]; then
-                echo "::error::DOCKERHUB_USERNAME secret is empty; cannot log in to Docker Hub"
-                exit 1
-              fi
-              echo "tags<<EOF"
-              if [ "$IS_TAG" = "true" ]; then
-                # Pre-release tags (any hyphen, e.g. v0.4.0-rc.1) must NOT move
-                # :latest -- it tracks the newest STABLE release only.
-                case "$TAG_NAME" in
-                  *-*) : ;;
-                  *) echo "${IMAGE}:latest" ;;
-                esac
-                echo "${IMAGE}:${TAG_NAME}"
-              else
-                echo "${IMAGE}:latest"
-              fi
-              echo "${IMAGE}:sha-${SHORT_SHA}"
-              echo "EOF"
-            else
-              echo "tags=${DH_REPO}:ci-${SHORT_SHA}"
-            fi
-          } >> "$GITHUB_OUTPUT"
+        uses: docker/metadata-action@v5
+        with:
+          images: aboveos/lares
+          flavor: latest=auto
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{raw}}
+            type=sha,prefix=sha-
 
       # Skipped on PRs (no push planned; fork PRs can't see repo secrets).
       # DOCKERHUB_TOKEN must be an access token -- Docker Hub blocks
       # password-based `docker login` for 2FA-enabled accounts.
       - name: log in to Docker Hub
-        if: steps.meta.outputs.push == 'true'
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # Build context is the repo root: docker/Dockerfile does `COPY packages
-      # ...` and expects package.json / lockfile at ./.
+      # ...` and expects package.json / lockfile at ./. PRs build both arches
+      # to catch regressions but never push.
       - name: build + push multi-arch image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: docker/Dockerfile
           platforms: linux/amd64,linux/arm64
-          push: ${{ steps.meta.outputs.push }}
+          push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           # GHA layer cache -- the arm64/QEMU leg's `npm ci` dominates build
           # time, so caching it back pays off hard on unchanged-dependency runs.
