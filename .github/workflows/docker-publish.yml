@@ -122,7 +122,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: aboveos/lares
+          images: beclab/lares
           flavor: latest=auto
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
