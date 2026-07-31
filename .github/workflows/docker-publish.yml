@@ -16,7 +16,7 @@
 #
 # Required repository secrets:
 #   DOCKERHUB_USERNAME  login identity with push rights to the `aboveos` org
-#   DOCKERHUB_TOKEN     Docker Hub access token (NOT the account password;
+#   DOCKERHUB_PASS      Docker Hub access token (NOT the account password;
 #                       Account Settings -> Security -> New Access Token)
 # =============================================================================
 
@@ -130,14 +130,14 @@ jobs:
             type=sha,prefix=sha-
 
       # Skipped on PRs (no push planned; fork PRs can't see repo secrets).
-      # DOCKERHUB_TOKEN must be an access token -- Docker Hub blocks
+      # DOCKERHUB_PASS must be an access token -- Docker Hub blocks
       # password-based `docker login` for 2FA-enabled accounts.
       - name: log in to Docker Hub
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          password: ${{ secrets.DOCKERHUB_PASS }}
 
       # Build context is the repo root: docker/Dockerfile does `COPY packages
       # ...` and expects package.json / lockfile at ./. PRs build both arches
