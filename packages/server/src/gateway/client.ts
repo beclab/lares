@@ -1,5 +1,3 @@
-import { OLARES_APP_ID_HEADER } from "@lares/shared";
-
 export interface GatewayAuth {
 	baseUrl: string;
 	appId: string | null;
@@ -9,13 +7,14 @@ export interface GatewayAuth {
 /**
  * Build the credential headers for a gateway call.
  *
- * The gateway's data plane treats a present Authorization header as an
- * exclusive claim to user identity, so the two schemes must never be mixed:
- * either a bearer key, or the app id header alone.
+ * A user api key is sent as a bearer token. Every other case (app identity or
+ * nothing configured) sends no credential header at all; the gateway resolves
+ * the caller without X-Olares-App-ID.
  */
 export function authHeaders(auth: GatewayAuth): Record<string, string> {
 	if (auth.apiKey) return { authorization: `Bearer ${auth.apiKey}` };
-	if (auth.appId) return { [OLARES_APP_ID_HEADER]: auth.appId };
+	// Non-bearer calls no longer send X-Olares-App-ID; the gateway resolves the
+	// caller's app identity without it. Bearer stays the only credential header.
 	return {};
 }
 
