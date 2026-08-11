@@ -64,11 +64,11 @@ describe("agent over the gateway shim", () => {
 		expect(text?.type === "text" ? text.text : "").toContain("hello from the fake gateway");
 	});
 
-	it("reaches the gateway as the configured Olares app, never as a bearer client", () => {
+	it("reaches the gateway without any credential header when no bearer key is set", () => {
 		const completion = gateway.requests.filter((request) => request.path === "/v1/chat/completions").at(-1);
 		expect(completion).toBeDefined();
 		expect(completion?.headers.authorization).toBeUndefined();
-		expect(completion?.headers["x-olares-app-id"]).toBe("com.olares.lares");
+		expect(completion?.headers["x-olares-app-id"]).toBeUndefined();
 	});
 
 	it("reports the finished session as idle", async () => {

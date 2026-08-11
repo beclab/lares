@@ -19,7 +19,7 @@ function shimFor(overrides: Partial<GatewayAuth> = {}) {
 }
 
 describe("gateway shim", () => {
-	it("replaces the SDK's Authorization header with the app identity", async () => {
+	it("drops the SDK's Authorization header without adding any app identity", async () => {
 		const response = await shimFor().request("/llm/v1/chat/completions", {
 			method: "POST",
 			headers: { authorization: "Bearer olares", "content-type": "application/json" },
@@ -30,7 +30,7 @@ describe("gateway shim", () => {
 		const captured = gateway.requests.at(-1);
 		expect(captured?.path).toBe("/v1/chat/completions");
 		expect(captured?.headers.authorization).toBeUndefined();
-		expect(captured?.headers["x-olares-app-id"]).toBe("com.olares.lares");
+		expect(captured?.headers["x-olares-app-id"]).toBeUndefined();
 	});
 
 	it("sends a bearer token instead of the app id when a user key is configured", async () => {
@@ -53,7 +53,7 @@ describe("gateway shim", () => {
 			body: JSON.stringify({ model: "default", messages: [] }),
 		});
 
-		expect(gateway.requests.at(-1)?.headers["x-olares-app-id"]).toBe("com.olares.lares");
+		expect(gateway.requests.at(-1)?.headers["x-olares-app-id"]).toBeUndefined();
 	});
 
 	it("forwards the query string", async () => {
