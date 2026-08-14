@@ -1,0 +1,38 @@
+{
+  "machines": [
+    {
+      "id": 1,
+      "name": "机器1",
+      "profile": "luolong01@olares.com",
+      "olares_id": "luolong01@olares.com",
+      "desktop_url": "https://desktop.luolong01.olares.com",
+      "lan_ip": "192.168.50.184",
+      "ssh": "192.168.50.184",
+      "dest_dir": "/olares/rootfs/userspace/pvc-userspace-luolong01-8u4lbybsd3shpm2v/Data/dina/devsrc",
+      "kube_ns": "dina-luolong01",
+      "login": {
+        "olares_password": "",
+        "ssh_user": "olares",
+        "ssh_password": "",
+        "root_ssh": "key ~/.ssh/olares_flowstudio"
+      }
+    },
+    {
+      "id": 2,
+      "name": "机器2",
+      "profile": "<olares-cli-profile>",
+      "olares_id": "<user>@olares.com",
+      "desktop_url": "https://desktop.<user>.olares.com",
+      "lan_ip": "192.168.50.x",
+      "ssh": "192.168.50.x",
+      "dest_dir": "",
+      "kube_ns": "dina-<user>",
+      "login": {
+        "olares_password": "",
+        "ssh_user": "olares",
+        "ssh_password": "",
+        "root_ssh": ""
+      }
+    }
+  ]
+}

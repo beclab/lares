@@ -1,0 +1,48 @@
+---
+description: Dina 项目核心约束（绿场、dsh 内核、dsh UI 主壳）
+alwaysApply: true
+---
+
+# 项目核心约束
+
+写 / 改代码时优先清晰可维护；禁止堆兼容、堆冗余、堆设计。
+面向用户的回答用**简体中文**；代码、路径、日志、标识符保持原样。
+
+## 产品面（已锁定）
+
+- **内核**：DeepSeek Harness（dsh / Cordis 插件树）。Agent、LLM、工具、skills、会话走 dsh Host。
+- **UI 主壳**：官方 **dsh web**（`dsh-base` + `dsh-web-app`，`ui-layout` 三栏 + slots）。产品通过 profile patch / `dsh.client` inject 定制；可安装社区 client 插件。
+- **WorkBuddy**：仅作交互与信息密度参考，**不是**平行 SPA 框架；禁止再扩自研 Chat 壳业务面。
+- **禁止 pi / pi-web / pi-coding-agent** 进入依赖或作为聊天壳；`test_lares` 仅作 Router / olares-cli 语义参考。
+- **禁止**把 WorkBuddy `app.asar` 源码当产品面拷贝进仓；禁止 fork `ui-layout` 另起四栏导航。
+
+## 仓库结构
+
+```text
+packages/           应用核心（bundle-web、host-dina、client-dina、server boot）
+deploy/dina/        Olares chart
+scripts/            镜像、chart 打包、dev-sync
+_参考/              外部参考（默认忽略；勿当本仓业务）
+```
+
+- 应用代码落在 `packages/`；禁止另起平行应用目录。
+- 单文件职责过多时，按**功能**拆成文件夹/子模块；依赖单向，禁止循环依赖。
+- 同一能力只有一处权威实现；先复用已有模块，禁止平行旁路与过度设计。
+- 本仓库是**全新项目**：禁止兼容旧版/迁移过渡分支；删除无关代码与死路径。
+- 浏览器只打本服务 Host（dsh webserver `/api`）；LLM 经 Host shim / 适配器，禁止直连 Router。
+- **测试分发**见 `.cursor/rules/dev-machines.mdc`：不重装则热更新；chart 走 upload 源；镜像 save+ssh；仅明确发版才上市场 / push。
+
+## 注释
+
+- 默认不加；只写意图、约束、外部契约。禁止复述「做了什么」。
+
+## 配置与安全
+
+- 可变项与密钥走环境变量；**严禁提交密钥**；用 `.env.example` 说明。
+- 外部输入严格校验；涉及租户/用户数据时按 `owner_id` / `tenant` 隔离。
+- 网络调用：超时 + 重试 + 降级；失败明确上报，不静默。
+
+## 测试
+
+- 核心逻辑须有单元测试；外部依赖 mock；修 bug 先写复现用例再修。
+- UI 疑难以本机浏览器对照 dsh web / WorkBuddy 参考截图验证；禁止只靠读代码猜界面。

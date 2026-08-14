@@ -1,0 +1,17 @@
+---
+description: dsh UI 主壳 + WorkBuddy 交互参考；改 client-dina / bundle-web UI 相关时加载
+globs: packages/client-dina/**/*.{tsx,ts,css,js},packages/bundle-web/**/*.{yml,js,ts},packages/**/ui-*/**/*.{tsx,ts,css}
+alwaysApply: false
+---
+
+# 前端（dsh UI 主壳）
+
+产品 UI 以官方 **dsh web**（`ui-layout` / slots）为主；WorkBuddy Desktop **5.3.8** 仅作交互与密度参考。
+
+## 强制
+
+- 保留 `ui-layout` 三栏（`sidebar` / `conversation` / `details`）；定制用 `ctx.slots.inject` 或替换 **inner** slot occupant，禁止注册 `root` 影子掉 AppFrame。
+- 侧栏策略：默认保留 `ui-sidebar`；靠拢 WorkBuddy 时优先 inject `sidebar.workspaces` / `sidebar.settings` / `sidebar.footer.action`。
+- 视觉遵循 dsh `--dsw-*` / `docs/web-styling.md`；禁止另起 `--wb-*` 平行 token 体系作为主主题。
+- 社区 UI 插件（如 `dsh-better-sidebar`）只经 profile `dsh plugin add` 接入，禁止把其源码拷进仓。
+- WorkBuddy 截图基准仍在 `_参考/workbuddy-ui/`（交互参考，非实现蓝本）。

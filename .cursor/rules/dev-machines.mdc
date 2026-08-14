@@ -1,0 +1,82 @@
+---
+description: 测试机部署与分发约定：热更新优先、upload 包、镜像 save+ssh；仅明确发版才上市场
+alwaysApply: true
+---
+
+# 测试机部署与分发约定
+
+机器清单见 `scripts/dev-sync/machines.json`。
+
+## 测试阶段默认：热更新，不重装
+
+**只要环境（chart / 镜像底座）已在目标机装好，且本次改动不要求重装环境，一律走热更新。**
+
+- 改 `packages/` 下前后端代码、样式、配置（不改 chart 结构、不换镜像底座）→  
+  `scripts/dev-sync/sync.sh <机器号>`（默认先本地 `npm run build` 再同步产物）。
+- **禁止**为日常迭代执行：`market uninstall` / `market install` / `market upgrade`、重新打 chart 上传、重建并推送镜像。
+- 只有下列情况才允许重装 / 换镜像底座（仍优先装 **dev 包**，见下节）：
+  - 首次装机或环境已卸干净
+  - 改了 `deploy/dina/`（Deployment、init、volume、env 契约等）
+  - 改了 Dockerfile / 生产依赖集合，热更新卷里的 `node_modules` 无法再对齐
+  - 用户**明确要求**重装或换镜像
+
+## 机器1（luolong01）
+
+**未特别声明时，机器1 始终是热更新模式**（`dev.hotReload=true`）。
+
+任何会覆盖机器1 部署的操作（重装、升级、装正式包）默认都要装 **dev 包**；
+若确实需要装生产包，事后必须主动说明并在验证结束后装回 dev 包。
+
+安装 / 重装后至少验证到这四项，缺一即热更新未生效：
+
+```
+command       含 npm run start:watch
+HOT_RELOAD    true
+volumeMounts  含 app-data → /app (subPath: devsrc)
+initContainers  fix-dev-perms、seed-dev-src
+```
+
+生产包不挂 `devsrc`，此时 `scripts/dev-sync/sync.sh` 会正常跑完、文件也确实写进了
+`devsrc`，但容器读的是镜像里的代码——同步「成功却不生效」的典型现象。
+
+## Chart 分发：开发用 upload 源，市场仅发版
+
+| 场景 | 做法 | 禁止 |
+|------|------|------|
+| 测试 / 日常迭代 | `scripts/package-chart.sh --dev` → `olares-cli market upload …` → `market install … -s upload` | 上架公共市场、发 beclab/apps PR |
+| 正式发版 | **仅当用户明确说「打包发版 / 上架 / 发市场」** 时再打 release 包并走发布流程 | 测试包顺手上市场 |
+
+测试包不稳定，**默认不要**把 chart 推到公共市场；本地 / 用户侧的 `upload` 源足够装机与重装。
+
+## 镜像分发：save + SSH，默认不 push
+
+测试期换镜像底座时：
+
+1. `scripts/build-image.sh`（默认 `--load`，**不要**加 `--push`）
+2. `scripts/deploy-image.sh <机器号>`：`docker save` → SSH 传到目标机 → `ctr -n k8s.io images import`
+3. 再按需装 / 重装 **dev chart**（或仅重启 pod 拉本地已有 tag）
+
+- **禁止**测试迭代默认 `docker push` / 走 registry 喂集群。
+- `--push` 与公共市场发版一样：**仅用户明确要求发版时**使用。
+
+## dev chart 版本号
+
+`scripts/package-chart.sh --dev` 生成的版本受两条外部限制，脚本已内建校验：
+
+- **不得带预发布后缀。** app-service 用空版本查 Helm index，semver 视作 `*` 约束，
+  而 `*` 不匹配预发布版本。带 `-dev.x` 的包安装时报
+  `no chart version found for dina-`，与 index 内容无关。
+- **总长 ≤ 16 字符。** market 的版本列是 `varchar(16)`，超长在上传时报 HTTP 400。
+
+## 安装失败后的脏记录
+
+超长版本上传会出现「chart 进了 chartrepo、数据库 upsert 失败」的半成功状态，
+之后所有安装都拿到空版本。清理方式是删掉整个应用的所有版本再重新上传：
+
+```bash
+olares-cli market delete dina          # 不带 --version，清掉所有版本
+olares-cli market upload dist/dina-<v>.tgz
+```
+
+`market upgrade` 对这类应用会报 `opID not found in response data`，
+走 `market uninstall` + `market install` 更可靠。

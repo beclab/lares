@@ -1,0 +1,46 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
+*.code-workspace
+
+# Cursor local-only（规则可入仓）
+.cursor/*
+!.cursor/rules/
+!.cursor/rules/**
+
+# Local secrets / machine inventory
+olares-machines.local.yaml
+scripts/dev-sync/machines.json
+.env
+.env.*
+!.env.example
+
+# Local reference sources（外部参考源码，非本仓业务；默认全部忽略，需显式指定才纳入）
+_参考/
+
+# Node / Next
+node_modules/
+**/node_modules/
+.next/
+**/.next/
+dist/
+**/dist/
+dist-server/
+**/dist-server/
+.turbo/
+.pnpm-store/
+*.local
+
+# Logs / temp / cache
+*.log
+tmp/
+temp/
+.cache/
+coverage/
+
+# Packaging scratch（deploy 下禁止保留源码拷贝）
+deploy/files/

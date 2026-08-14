@@ -1,0 +1,66 @@
+apiVersion: v3
+olaresManifest.version: '0.15.0'
+olaresManifest.type: app
+metadata:
+  name: dina
+  appid: dina
+  title: Dina
+  description: WorkBuddy-style chat shell wired to Olares Router (dsh core next)
+  icon: https://example.com/dina-icon.png
+  version: 0.15.0
+  categories:
+    - Utilities
+spec:
+  versionName: "0.15.0"
+  runAsUser: true
+  requiredCpu: 200m
+  limitedCpu: "2"
+  requiredMemory: 512Mi
+  limitedMemory: 4Gi
+  requiredDisk: 2Gi
+  limitedDisk: 20Gi
+  supportArch:
+    - amd64
+permission:
+  appData: true
+entrances:
+  - name: dina
+    host: dina-svc
+    port: 8080
+    title: Dina
+    icon: https://example.com/dina-icon.png
+    authLevel: private
+    openMethod: window
+envs:
+  - envName: LLM_GATEWAY_URL
+    description: OpenAI-compatible Router data plane (/v1).
+    default: http://router-svc.router-shared/v1
+    type: url
+    editable: true
+    applyOnChange: true
+  - envName: OLARES_APP_ID
+    description: App id sent as x-caller-appid for zero-config Router auth.
+    default: dina
+    type: string
+    editable: false
+  - envName: DINA_ROUTER_API_KEY
+    description: Optional sk- key. Empty uses in-cluster app identity.
+    type: password
+    editable: true
+    applyOnChange: true
+  - envName: DINA_DEFAULT_MODEL
+    description: Default model id from Router catalog.
+    type: string
+    editable: true
+    applyOnChange: true
+options:
+  apiTimeout: 0
+  dependencies:
+    - name: olares
+      version: '>=1.12.7-0'
+      type: system
+    - name: router
+      version: '>=1.0.0'
+      type: application
+workloadReplicas:
+  dina: 1
