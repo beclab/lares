@@ -53,9 +53,14 @@ console.log(\"bundles:\",pj.dsh.profile.bundles.join(\", \"));
 '"
 
 echo "[2/3] 安装（原生模块首次会 node-gyp 编译，约数分钟）"
-"${SSH[@]}" "$K exec deploy/dina -c dina -- sh -c 'cd $PROFILE && HOME=/data/home npm install --no-audit --no-fund 2>&1 | tail -5'"
+# 复用服务端唯一权威入口：npm flags（尤其 --legacy-peer-deps，见 profile.ts）只在一处定义。
+"${SSH[@]}" "$K exec deploy/dina -c dina -- env HOME=/data/home node -e '
+import("/app/dist/service/dsh-web/profile.js")
+  .then((m) => m.installProfileDeps(\"$PROFILE\"))
+  .catch((err) => { console.error(err); process.exit(1); });
+'"
 
 echo "[3/3] 热重载"
 "${SSH[@]}" "DEVSRC=\$(find /olares/rootfs/userspace /olares/userdata -maxdepth 8 -type d -path '*/Data/dina/devsrc' 2>/dev/null | head -1); [ -n \"\$DEVSRC\" ] && touch \"\$DEVSRC/.dina-reload\" || $K rollout restart deploy/dina"
 
-echo "完成：$BUNDLE@$VERSION。浏览器硬刷新查看。"
+echo "完成：${BUNDLE}@${VERSION}。浏览器硬刷新查看。"

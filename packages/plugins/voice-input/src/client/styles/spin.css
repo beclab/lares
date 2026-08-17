@@ -1,0 +1,9 @@
+.dina-voice-spin {
+  animation: dina-voice-spin 0.8s linear infinite;
+}
+
+@keyframes dina-voice-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

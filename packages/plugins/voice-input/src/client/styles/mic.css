@@ -1,0 +1,64 @@
+/* Mirror official composer add button (dsh-client-ui-conversation): 28px circle. */
+.dina-voice-mic {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: var(--dsw-specific-selector);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.dina-voice-mic:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover-solid);
+}
+
+.dina-voice-mic:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.dina-voice-mic[data-phase="recording"] {
+  display: inline-flex;
+  align-items: center;
+  width: auto;
+  padding: 0 10px;
+  color: var(--dsw-alias-state-error-primary);
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+}
+
+.dina-voice-mic[data-phase="error"] {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.dina-voice-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dina-voice-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: dina-voice-pulse 1s ease-in-out infinite;
+}
+
+@keyframes dina-voice-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}

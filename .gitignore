@@ -27,10 +27,9 @@ node_modules/
 **/node_modules/
 .next/
 **/.next/
+# Generated: tsc → dist/service/, build-client → dist/plugins/
 dist/
 **/dist/
-dist-server/
-**/dist-server/
 .turbo/
 .pnpm-store/
 *.local
@@ -44,3 +43,6 @@ coverage/
 
 # Packaging scratch（deploy 下禁止保留源码拷贝）
 deploy/files/
+
+# Chart packages（与运行时 dist/ 分离）
+artifacts/

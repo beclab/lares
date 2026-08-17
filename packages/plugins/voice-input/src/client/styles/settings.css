@@ -1,0 +1,108 @@
+/* Rows follow official Language row; selector is a ghost Button with three overrides. */
+.dina-voice {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 720px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.dina-voice-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 24px;
+}
+
+.dina-voice-intro {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.dina-voice-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.dina-voice-status.is-warn {
+  color: var(--dsw-alias-state-warn-label);
+}
+
+.dina-voice-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.dina-voice-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.dina-voice-row:last-child {
+  border-bottom: none;
+}
+
+.dina-voice-row-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 4px;
+  min-width: 0;
+  padding-right: 48px;
+}
+
+.dina-voice-row-title {
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.dina-voice-hint {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.dina-voice-selector {
+  gap: 12px;
+  max-width: 260px;
+  background: var(--dsw-alias-bg-module-platform);
+}
+
+.dina-voice-selector-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dina-voice-chevron {
+  flex: none;
+}
+
+.dina-voice-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.dina-voice-notice {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.dina-voice-notice.is-ok {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.dina-voice-notice.is-error {
+  color: var(--dsw-alias-state-error-primary);
+}

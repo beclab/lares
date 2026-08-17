@@ -1,0 +1,171 @@
+/**
+ * STT via Dina /llm/v1 → Router POST /audio/transcriptions (one-shot multipart).
+ */
+import { randomBytes } from "node:crypto";
+
+const STT_HINTS = /whisper|stt|speech|transcri|asr/i;
+
+// Cold STT engine / stopped app resume; matches Ashia's audio hop budget.
+const REQUEST_TIMEOUT_MS = 180_000;
+const CATALOG_TIMEOUT_MS = 15_000;
+
+const RETRY_BACKOFF_MS = [1_000, 3_000];
+const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+
+// Non-retryable: same bytes will fail again.
+const UNDECODABLE_HINTS = [
+  "end of file",
+  "format not recognised",
+  "format not recognized",
+  "invalid data found",
+  "moov atom not found",
+  "unknown file extension",
+  "failed to load audio",
+];
+
+const RESOLVED_TTL_MS = 120_000;
+
+/** Browser maps these codes to UI copy (Ashia vocabulary). */
+export class VoiceError extends Error {
+  /** @param {string} code @param {number} status @param {string} message */
+  constructor(code, status, message) {
+    super(message);
+    this.code = code;
+    this.status = status;
+  }
+}
+
+export function shimBaseUrl() {
+  const configured = process.env.DINA_LLM_BASE_URL?.trim();
+  if (configured) return configured.replace(/\/+$/, "");
+  return `http://127.0.0.1:${process.env.PORT ?? 8080}/llm/v1`;
+}
+
+/**
+ * Prefer a listed id; otherwise first whisper/stt-like row.
+ * @param {string[]} ids @param {string} [preferred]
+ */
+export function pickSttModelId(ids, preferred) {
+  const want = (preferred ?? "").trim();
+  if (want && ids.includes(want)) return want;
+  return ids.find((id) => STT_HINTS.test(id)) ?? null;
+}
+
+/** @param {number} status @param {string} body */
+export function classifyFailure(status, body) {
+  const lowered = body.toLowerCase();
+  if (UNDECODABLE_HINTS.some((hint) => lowered.includes(hint))) return "voice_audio_unreadable";
+  if (status === 400 || status === 415 || status === 422) return "voice_audio_unreadable";
+  if (status === 404) return "voice_model_unavailable";
+  return "voice_failed";
+}
+
+/** @param {number} status */
+export function retryable(status) {
+  return RETRYABLE_STATUS.has(status);
+}
+
+/** @returns {Promise<string[]>} */
+export async function listModelIds() {
+  const res = await fetch(`${shimBaseUrl()}/models`, {
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(CATALOG_TIMEOUT_MS),
+  });
+  if (!res.ok) throw new VoiceError("voice_model_unavailable", 503, `Router /models returned ${res.status}`);
+  const payload = await res.json();
+  const data = Array.isArray(payload?.data) ? payload.data : [];
+  return data.map((item) => String(item?.id ?? "").trim()).filter(Boolean);
+}
+
+/** @type {{ expires: number, id: string } | null} */
+let resolved = null;
+
+/** Cached STT model id (short TTL). @param {string} [preferred] */
+export async function resolveSttModel(preferred, options) {
+  if (!options?.refresh && resolved && resolved.expires > Date.now()) return resolved.id;
+  const id = pickSttModelId(await listModelIds(), preferred);
+  resolved = id ? { expires: Date.now() + RESOLVED_TTL_MS, id } : null;
+  return id;
+}
+
+export function forgetSttModel() {
+  resolved = null;
+}
+
+/** @param {Record<string, string>} fields @param {{ filename: string, contentType: string, bytes: Buffer }} file */
+function multipartBody(fields, file) {
+  const boundary = `----dina-voice-${randomBytes(12).toString("hex")}`;
+  const parts = [];
+  for (const [name, value] of Object.entries(fields)) {
+    parts.push(
+      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`),
+    );
+  }
+  parts.push(
+    Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${file.filename}"\r\n`
+      + `Content-Type: ${file.contentType}\r\n\r\n`,
+    ),
+  );
+  parts.push(file.bytes);
+  parts.push(Buffer.from(`\r\n--${boundary}--\r\n`));
+  return { boundary, body: Buffer.concat(parts) };
+}
+
+/** @param {Response} res */
+async function readTranscript(res) {
+  const text = await res.text();
+  try {
+    const payload = JSON.parse(text);
+    if (payload && typeof payload === "object" && payload.text != null) return String(payload.text).trim();
+    if (typeof payload === "string") return payload.trim();
+  } catch {
+    if (text.trim()) return text.trim();
+  }
+  throw new VoiceError("voice_failed", 502, "invalid transcription response");
+}
+
+/**
+ * @param {{ bytes: Buffer, filename: string, contentType: string, model: string, language?: string, prompt?: string, preferred?: string }} take
+ * @returns {Promise<string>}
+ */
+export async function transcribe(take) {
+  let model = take.model;
+  for (let attempt = 0; ; attempt += 1) {
+    const fields = { model };
+    if (take.language) fields.language = take.language;
+    if (take.prompt) fields.prompt = take.prompt;
+    const { boundary, body } = multipartBody(fields, {
+      filename: take.filename,
+      contentType: take.contentType,
+      bytes: take.bytes,
+    });
+
+    /** @type {VoiceError} */
+    let failure;
+    try {
+      const res = await fetch(`${shimBaseUrl()}/audio/transcriptions`, {
+        method: "POST",
+        headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+        body,
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      if (res.ok) return await readTranscript(res);
+      const text = await res.text();
+      failure = new VoiceError(classifyFailure(res.status, text), res.status, text.slice(0, 400));
+      if (!retryable(res.status)) throw failure;
+    } catch (err) {
+      if (err instanceof VoiceError) throw err;
+      const timedOut = err?.name === "TimeoutError" || err?.name === "AbortError";
+      failure = timedOut
+        ? new VoiceError("voice_timeout", 504, "transcription timed out")
+        : new VoiceError("voice_failed", 502, `router unreachable: ${err?.message ?? err}`);
+    }
+
+    if (attempt >= RETRY_BACKOFF_MS.length) throw failure;
+    await new Promise((resolve) => setTimeout(resolve, RETRY_BACKOFF_MS[attempt]));
+    // Restart may republish weights under a new model id.
+    const refreshed = await resolveSttModel(take.preferred, { refresh: true }).catch(() => null);
+    if (refreshed) model = refreshed;
+  }
+}

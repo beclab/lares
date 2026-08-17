@@ -1,0 +1,31 @@
+{
+  "name": "dina",
+  "version": "0.15.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch packages/service/index.ts",
+    "build": "npm run build:client && npm run build:server",
+    "build:client": "node scripts/build-client.mjs",
+    "build:server": "tsc -p tsconfig.server.json",
+    "start": "node dist/service/index.js",
+    "start:watch": "node dist/service/dev-supervisor.js",
+    "typecheck": "tsc -p tsconfig.server.json --noEmit",
+    "test": "sh -c 'tsx --test tests/olares/*.test.ts tests/plugins/*.test.ts'",
+    "dump-config": "tsx packages/service/dsh-web/dump-config.ts"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-app-boot": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-base": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-web-app": "^0.1.0-rc.6",
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.21",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  }
+}

@@ -37,7 +37,7 @@ source "$ROOT/scripts/lib/project.sh"
 
 CHART_SRC="$CHART_DIR"
 VERSION="$(awk '/^version:/{print $2; exit}' "$CHART_SRC/Chart.yaml")"
-DIST="$ROOT/dist"
+DIST="$ROOT/artifacts"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 

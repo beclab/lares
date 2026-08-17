@@ -3,17 +3,19 @@
 Olares Chat：**dsh web UI 主壳** + **Olares Router LLM shim**（WorkBuddy 仅作交互参考）。
 
 ```text
-packages/           dsh web boot + @dina/bundle-web / client-dina
+packages/
+  service/          业务：dsh web boot / Olares 集成
+  plugins/          自研 dsh 插件（bundle-web、client-dina、voice-input）
+  skills/           bundled agent skills
+tests/              单元测试（与源码分离）
 deploy/dina/        Olares chart（可选热更新）
-scripts/            镜像、chart 打包、dev-sync、better-sidebar 安装
+scripts/            镜像、chart 打包、dev-sync、better-sidebar、无头浏览器验证
 _参考/              deepseek-harness / WorkBuddy 截图
-docs/               调研文档
 ```
 
 ## Local
 
 ```bash
-cd packages
 cp .env.example .env   # 可选
 npm ci
 npm run build
@@ -22,11 +24,16 @@ npm run start          # http://127.0.0.1:8080  （dsh web）
 
 本地无 Router 时，把 `LLM_GATEWAY_URL` 指到任意 OpenAI 兼容 `/v1`，或设置 `DINA_ROUTER_API_KEY`。
 
-社区右侧工作台：
+社区插件（装进运行中的 `dina-web` profile）：
 
 ```bash
-scripts/install-better-sidebar.sh
+scripts/install-better-sidebar.sh 1   # 右侧工作台
 ```
+
+语音输入是自研插件 `@dina/voice-input`（随镜像内建，无需单独安装）：输入框旁的
+麦克风录音，录完经 `/api/dina/voice/transcribe` 走 Router STT 回填文本；在
+**设置 → 语音输入** 里选模型 / 语言、一键安装语音市场应用（默认
+`audiofwwhisperx3v3`）。
 
 ## Cluster（机器 1）
 
@@ -49,5 +56,8 @@ scripts/dev-sync/sync.sh 1
 | `LLM_GATEWAY_URL` | `http://router-svc.router-shared/v1` | Router |
 | `OLARES_APP_ID` | `dina` | `x-caller-appid` |
 | `DINA_ROUTER_API_KEY` | empty | 可选 sk- |
-| `DINA_DEFAULT_MODEL` | empty | 默认模型 id |
+| `DINA_DEFAULT_MODEL` | empty | 默认 chat 模型 id |
 | `DSH_HOME` | `$DINA_DATA_DIR/dsh-home` | dsh profiles |
+
+语音输入的模型 / 语言 / 市场应用改在 **设置 → 语音输入** 面板配置，持久化到
+`$DSH_HOME/voice-input/config.json`。

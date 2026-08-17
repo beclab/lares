@@ -4,9 +4,11 @@ WORKDIR /app
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates g++ make python3 \
   && rm -rf /var/lib/apt/lists/*
-COPY packages/package.json packages/package-lock.json ./
+COPY package.json package-lock.json ./
 RUN npm ci
-COPY packages/ ./
+COPY tsconfig.base.json tsconfig.json tsconfig.server.json ./
+COPY scripts/build-client.mjs ./scripts/
+COPY packages/ ./packages/
 RUN npm run build \
   && npm prune --omit=dev \
   && date -u +%Y%m%d%H%M%S > .dina-image-id
@@ -17,7 +19,7 @@ FROM node:22-bookworm-slim
 # time. The cluster forbids root pods, so the toolchain must live in the image
 # and the boot-time `npm install` runs as uid 1000 with build scripts enabled.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates fd-find git ripgrep tini build-essential python3 \
+  && apt-get install -y --no-install-recommends ca-certificates curl fd-find git jq ripgrep tini build-essential python3 \
   && ln -sf "$(command -v fdfind)" /usr/local/bin/fd \
   && rm -rf /var/lib/apt/lists/*
 
@@ -37,14 +39,13 @@ RUN npm install -g @olares/cli@1.12.7-cli.0 \
   && ln -sf "$(npm root -g)/@olares/cli/bin/olares-cli.js" /usr/local/bin/olares-cli \
   && olares-cli -v
 
-# Ship pre-built server + nested dsh packages + production deps.
+# Ship pre-built server + packages/plugins + packages/skills + production deps.
 COPY --from=build --chown=node:node /app/.dina-image-id ./
 COPY --from=build --chown=node:node /app/package.json /app/package-lock.json ./
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
-COPY --from=build --chown=node:node /app/dist-server ./dist-server
-COPY --from=build --chown=node:node /app/bundle-web ./bundle-web
-COPY --from=build --chown=node:node /app/client-dina ./client-dina
-COPY --from=build --chown=node:node /app/skills ./skills
+COPY --from=build --chown=node:node /app/dist ./dist
+COPY --from=build --chown=node:node /app/packages/plugins ./packages/plugins
+COPY --from=build --chown=node:node /app/packages/skills ./packages/skills
 
 RUN mkdir -p /data/home /data/dina /data/workspace /data/cli \
   && chown -R node:node /data

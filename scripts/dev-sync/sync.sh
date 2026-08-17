@@ -19,7 +19,7 @@
 #   scripts/dev-sync/sync.sh 3 all --watch
 #
 # 同步范围：
-#   all|packages  同步 packages/（pi-web UI + Node API）到热更新目录
+#   all|packages  同步应用根（packages/ + dist/）到热更新目录
 #
 # 选项：
 #   --watch     持续监听源码变更后自动同步
@@ -338,21 +338,35 @@ ensure_dest_dir() {
   fi
 }
 
-PACKAGES_SRC="${REPO_ROOT}/packages/"
+# App root layout at DEST_DIR (/app): package.json, dist/, packages/{service,plugins,skills}
+APP_ROOT="${REPO_ROOT}"
 
 RSYNC_EXCLUDES=(
   --exclude 'node_modules/'
   --exclude '.next/'
   --exclude '.git/'
+  --exclude '.cursor/'
+  --exclude '_参考/'
+  --exclude 'deploy/'
+  --exclude 'scripts/'
+  --exclude 'tests/'
   --exclude 'coverage/'
   --exclude '.env'
   --exclude '.env.*'
+  --exclude '*.md'
   --exclude '*.log'
   --exclude '.dina-reload'
   --exclude '.dina-lock-sha'
   # Image identity stamped by seed-dev-src; deleting it makes the next pod
   # re-seed devsrc from the image and discard everything synced here.
   --exclude '.dina-image-id'
+  --exclude 'artifacts/'
+  --exclude '*.tgz'
+  --exclude 'Dockerfile'
+  --exclude 'project.json'
+  --exclude '.dockerignore'
+  --exclude '.gitignore'
+  --exclude '.cursorignore'
 )
 
 wait_api_ready() {
@@ -385,8 +399,8 @@ sync_once() {
 
   if [[ "${SYNC_PACKAGES}" -eq 1 ]]; then
     if [[ "${DO_BUILD}" -eq 1 ]]; then
-      log "本地构建 packages（产物写入 dist-server/ + bundle-web）"
-      ( cd "${REPO_ROOT}/packages" && npm run build )
+      log "本地构建（产物写入 dist/）"
+      ( cd "${APP_ROOT}" && npm run build )
     fi
 
     if [[ -n "${DEST_SSH}" ]]; then
@@ -396,14 +410,13 @@ sync_once() {
       mkdir -p "${DEST_DIR}"
     fi
 
-    log "同步 packages/ → ${remote_prefix}${DEST_DIR}/（保留远端 node_modules/.next）"
+    log "同步应用根 → ${remote_prefix}${DEST_DIR}/（保留远端 node_modules）"
     rsync -az --delete "${rsh_opt[@]}" "${RSYNC_EXCLUDES[@]}" \
-      "${PACKAGES_SRC}" "${remote_prefix}${DEST_DIR}/"
+      "${APP_ROOT}/" "${remote_prefix}${DEST_DIR}/"
 
     # rsync -a 保留本机 uid/gid，文件落地成 macOS 的 501:staff；容器以 node(1000)
-    # 运行，next dev 首启要改写 tsconfig.json，属主不符即 EACCES 崩溃。同步后把
-    # 源码归 1000:1000（对齐 Dockerfile USER node 与 fix-dev-perms initContainer）；
-    # 排除量大且已属 node 的 node_modules/.next。macOS 自带 rsync 太老，没有
+    # 运行。同步后把源码归 1000:1000（对齐 Dockerfile USER node 与 fix-dev-perms）；
+    # 排除量大且已属 node 的 node_modules。macOS 自带 rsync 太老，没有
     # --chown，故在此显式 chown 而非交给 rsync。
     local chown_cmd
     printf -v chown_cmd 'find %q \( -name node_modules -o -name .next \) -prune -o -print0 | xargs -0 chown 1000:1000' "${DEST_DIR}"
@@ -413,7 +426,7 @@ sync_once() {
     # the running pod so new cordis plugins resolve without rebuilding the image.
     if [[ -n "${KUBE_NS-}" ]]; then
       local lock_hash want_hash
-      want_hash="$(shasum -a 256 "${PACKAGES_SRC}/package-lock.json" 2>/dev/null | awk '{print $1}')"
+      want_hash="$(shasum -a 256 "${APP_ROOT}/package-lock.json" 2>/dev/null | awk '{print $1}')"
       lock_hash="$(_remote_sh "cat $(printf '%q' "${DEST_DIR}/.dina-lock-sha") 2>/dev/null || true" | tr -d '[:space:]')"
       if [[ -n "${want_hash}" && "${want_hash}" != "${lock_hash}" ]]; then
         log "package-lock 变更 → 容器内 npm install"

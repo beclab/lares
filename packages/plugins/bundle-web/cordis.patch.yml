@@ -1,0 +1,105 @@
+# Dina overlay on dsh-base + dsh-web-app.
+# Applied after those bundles; id patches replace whole config (restate kept keys).
+
+- id: system-prompt
+  config:
+    persona: !!js process.env.DSH_SYSTEM_PROMPT ?? 'You are Dina, a helpful assistant running on Olares. Prefer olares-cli for Olares platform tasks when skills apply.'
+
+# CLI rejects --host 0.0.0.0; Olares probes/mesh need all-interfaces bind.
+# Keep inject from dsh-web-app; this patch only replaces config.
+- id: webserver
+  config:
+    host: '0.0.0.0'
+    port: !!js Number(process.env.PORT ?? 8080)
+
+- id: fs-sandbox
+  config:
+    cwd: !!js process.env.DSH_CWD ?? process.env.DINA_WORKSPACE ?? process.cwd()
+
+# The Router route is an llm-pi-ai profile boot seeds into the user's settings
+# document (see server/olares/bootstrap-settings.ts), which is also where the
+# Models page edits it. The DeepSeek adapter would only put a provider Dina
+# cannot reach in the picker; users who want it add it through "Add provider".
+- id: llm-deepseek
+  disabled: true
+
+# Read-only Loader dump: not actionable on Olares, and the Web host already
+# parks most tool rows as disabled until a session preset mounts them.
+- id: plugin-inventory
+  disabled: true
+
+- id: ui-settings-plugin-inventory
+  disabled: true
+
+# Conversation view-ring tabs (trajectory / waterfall): product surface is chat only.
+- id: ui-trajectory
+  disabled: true
+
+# Agent-preset switcher (hero chip, session header, Settings). Sessions still
+# mount the deployment default from `agent-presets` (standard); re-enable when
+# mode switching is a product surface again.
+- id: ui-agent-preset
+  disabled: true
+
+# Session Header「Session log」download capsule + `/export`: not a Dina surface.
+- id: session-log-download
+  disabled: true
+
+# Community right sidebar (dsh-better-sidebar). Kept installed on the profile;
+# flip disabled off when we want the workbench again.
+- id: better-sidebar
+  disabled: true
+
+- id: agent-default-model
+  config:
+    provider: olares-router
+    model: !!js process.env.DSH_MODEL ?? process.env.DINA_DEFAULT_MODEL ?? 'default'
+
+- id: sandbox-policy
+  config:
+    mode: !!js process.env.DSH_PERMISSION_MODE ?? process.env.DINA_PERMISSION_MODE ?? 'workspace-write'
+    workspaceRoot: !!js process.env.DSH_CWD ?? process.env.DINA_WORKSPACE ?? process.cwd()
+
+- id: approval
+  config:
+    policy: !!js "(process.env.DSH_PERMISSION_MODE ?? process.env.DINA_PERMISSION_MODE ?? 'workspace-write') === 'danger-full-access' ? 'never' : 'ask'"
+
+- id: permission
+  config:
+    defaultPreset: !!js process.env.DSH_PERMISSION_MODE ?? process.env.DINA_PERMISSION_MODE ?? 'workspace-write'
+    presets:
+      read-only:
+        sandbox: read-only
+        approval: ask
+        name: 只读
+        description: 只能读文件；写操作与危险命令需审批
+      workspace-write:
+        sandbox: workspace-write
+        approval: ask
+        name: 工作区可写
+        description: 可改工作区内文件；越权操作需审批
+      danger-full-access:
+        sandbox: danger-full-access
+        approval: never
+        name: 完全访问
+        description: 不限制文件沙箱，也不再弹出审批
+
+- insert:
+    - id: dina-llm-routes
+      name: '@dina/bundle-web/host/llm-routes.js'
+      inject: [webServer]
+
+    - id: dina-brand
+      name: '@dina/bundle-web/host/brand/index.js'
+      inject: [webServer]
+
+    - id: dina-olares-identity
+      name: '@dina/bundle-web/host/olares/olares-identity.js'
+      inject: [webServer]
+
+    - id: dina-voice-input
+      name: '@dina/voice-input'
+      inject: [webServer]
+
+    - id: dina-client-brand
+      name: '@dina/client-dina'

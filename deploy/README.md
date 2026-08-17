@@ -6,6 +6,7 @@ Chart 只含部署结构与热更新机制；应用代码在镜像 / `devsrc` �
 - 开发包：`scripts/package-chart.sh --dev`
 - 源码同步：`scripts/dev-sync/sync.sh <machine> [all|packages]`
 - 社区右侧栏：`scripts/install-better-sidebar.sh`（在已有 `dina-web` profile 上）
+- 语音输入：自研 `@dina/voice-input`（`packages/plugins/voice-input`，随镜像内建），STT 走 Router `/audio/transcriptions`，与 Ashia 同路径
 
 开发安装必须具备这四项：
 

@@ -19,13 +19,18 @@ alwaysApply: true
 ## 仓库结构
 
 ```text
-packages/           应用核心（bundle-web、host-dina、client-dina、server boot）
+packages/
+  service/          业务（dsh web boot、Olares 集成）
+  plugins/          自研 dsh 插件（bundle-web、client-dina、voice-input）
+  skills/           bundled agent skills
+tests/              单元测试
 deploy/dina/        Olares chart
 scripts/            镜像、chart 打包、dev-sync
 _参考/              外部参考（默认忽略；勿当本仓业务）
 ```
 
-- 应用代码落在 `packages/`；禁止另起平行应用目录。
+- `packages/` 只含 `service` / `plugins` / `skills`；npm 根在仓库根，`node_modules/` 与 `dist/` 不进源码树（gitignore）。
+- 业务只在 `packages/service/`；自研 dsh 插件只在 `packages/plugins/`；禁止平行旁路目录。
 - 单文件职责过多时，按**功能**拆成文件夹/子模块；依赖单向，禁止循环依赖。
 - 同一能力只有一处权威实现；先复用已有模块，禁止平行旁路与过度设计。
 - 本仓库是**全新项目**：禁止兼容旧版/迁移过渡分支；删除无关代码与死路径。

@@ -11,7 +11,7 @@ alwaysApply: true
 
 **只要环境（chart / 镜像底座）已在目标机装好，且本次改动不要求重装环境，一律走热更新。**
 
-- 改 `packages/` 下前后端代码、样式、配置（不改 chart 结构、不换镜像底座）→  
+- 改 `packages/` 下代码或配置（不改 chart 结构、不换镜像底座）→  
   `scripts/dev-sync/sync.sh <机器号>`（默认先本地 `npm run build` 再同步产物）。
 - **禁止**为日常迭代执行：`market uninstall` / `market install` / `market upgrade`、重新打 chart 上传、重建并推送镜像。
 - 只有下列情况才允许重装 / 换镜像底座（仍优先装 **dev 包**，见下节）：
@@ -75,7 +75,7 @@ initContainers  fix-dev-perms、seed-dev-src
 
 ```bash
 olares-cli market delete dina          # 不带 --version，清掉所有版本
-olares-cli market upload dist/dina-<v>.tgz
+olares-cli market upload artifacts/dina-<v>.tgz
 ```
 
 `market upgrade` 对这类应用会报 `opID not found in response data`，

@@ -6,6 +6,7 @@
 _参考
 dist
 **/dist
+artifacts
 scripts
 deploy
 *.md
