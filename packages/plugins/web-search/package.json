@@ -1,0 +1,23 @@
+{
+  "name": "@dina/web-search",
+  "version": "0.15.0",
+  "private": true,
+  "type": "module",
+  "description": "Dina multi-provider web search for dsh ctx.web (Tavily + custom URL)",
+  "exports": {
+    ".": "./host/index.js",
+    "./client": "../../../dist/plugins/web-search/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-slots"
+      ]
+    }
+  },
+  "files": [
+    "host"
+  ]
+}

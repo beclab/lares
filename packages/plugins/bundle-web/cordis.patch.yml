@@ -23,6 +23,14 @@
 - id: llm-deepseek
   disabled: true
 
+# Replace DeepSeek-native search with Dina's multi-provider facade (`dina`).
+- id: web-search-deepseek
+  disabled: true
+
+- id: web
+  config:
+    searchProvider: dina
+
 # Read-only Loader dump: not actionable on Olares, and the Web host already
 # parks most tool rows as disabled until a session preset mounts them.
 - id: plugin-inventory
@@ -100,6 +108,10 @@
     - id: dina-voice-input
       name: '@dina/voice-input'
       inject: [webServer]
+
+    - id: dina-web-search
+      name: '@dina/web-search'
+      inject: [web, webServer]
 
     - id: dina-client-brand
       name: '@dina/client-dina'

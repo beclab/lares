@@ -5,14 +5,46 @@ metadata:
   name: dina
   appid: dina
   title: Dina
-  description: WorkBuddy-style chat shell wired to Olares Router (dsh core next)
-  icon: https://example.com/dina-icon.png
-  version: 0.15.0
+  description: Chat shell on DeepSeek Harness, wired to Olares Router
+  icon: https://raw.githubusercontent.com/ffkijjkokok/dina-assets/main/icon.png
+  version: 0.16.0
   categories:
-    - Utilities
+    - Utilities_v112
+    - AI
 spec:
-  versionName: "0.15.0"
+  versionName: "0.16.0"
   runAsUser: true
+  fullDescription: |
+    ## Overview
+    Dina is a chat app on Olares built on DeepSeek Harness (dsh web).
+    It uses the official dsh UI shell and talks to Olares Router for LLM access.
+
+    ## Highlights
+    - Official dsh web UI (three-column layout) with Dina product profile
+    - Zero-config Router auth via in-cluster app identity (`x-caller-appid`)
+    - Optional API key and default model overrides at install time
+    - Bundled client plugins (voice input, web search) when enabled in the build
+
+    ## Requirements
+    - Olares >= 1.12.7
+    - Router app installed and running (`router` dependency)
+    - Arch: amd64
+
+    ## Getting started
+    1. Install Dina from Market (test source: `market.test`).
+    2. Ensure Router is installed; leave `LLM_GATEWAY_URL` at the default unless you use a custom gateway.
+    3. Open the Dina entrance and start a chat.
+  upgradeDescription: |
+    ## Dina 0.16.0
+
+    - Initial Chat test-market listing.
+    - dsh web shell + Olares Router LLM shim.
+    - Optional Router API key / default model envs.
+  developer: luolong
+  submitter: luolong
+  locale:
+    - en-US
+    - zh-CN
   requiredCpu: 200m
   limitedCpu: "2"
   requiredMemory: 512Mi
@@ -28,7 +60,7 @@ entrances:
     host: dina-svc
     port: 8080
     title: Dina
-    icon: https://example.com/dina-icon.png
+    icon: https://raw.githubusercontent.com/ffkijjkokok/dina-assets/main/icon.png
     authLevel: private
     openMethod: window
 envs:
@@ -55,6 +87,13 @@ envs:
     applyOnChange: true
 options:
   apiTimeout: 0
+  # Brand mark + PWA manifest public so the browser-tab favicon loads before the
+  # private-entrance auth redirect (same pattern Ashia uses for its icon assets).
+  policies:
+    - entranceName: dina
+      description: Brand mark and PWA manifest
+      uriRegex: ^/dina/(mark\.svg|manifest\.webmanifest)$
+      level: public
   dependencies:
     - name: olares
       version: '>=1.12.7-0'

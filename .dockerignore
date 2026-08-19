@@ -8,6 +8,7 @@ dist
 **/dist
 artifacts
 scripts
+!scripts/build-client.mjs
 deploy
 *.md
 !**/.env.example

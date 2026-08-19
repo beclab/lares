@@ -14,6 +14,7 @@ const APP_ROOT = join(HERE, "../../..");
 const BUNDLE_WEB = join(APP_ROOT, "packages", "plugins", "bundle-web");
 const CLIENT_DINA = join(APP_ROOT, "packages", "plugins", "client-dina");
 const VOICE_INPUT = join(APP_ROOT, "packages", "plugins", "voice-input");
+const WEB_SEARCH = join(APP_ROOT, "packages", "plugins", "web-search");
 
 const SHELL_BUNDLES = ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app"] as const;
 
@@ -68,6 +69,7 @@ export function ensureDinaWebProfile(dataDir: string): { dshHome: string; profil
       "@dina/bundle-web": `file:${BUNDLE_WEB}`,
       "@dina/client-dina": `file:${CLIENT_DINA}`,
       "@dina/voice-input": `file:${VOICE_INPUT}`,
+      "@dina/web-search": `file:${WEB_SEARCH}`,
     },
     ...(previous.pnpm ? { pnpm: previous.pnpm } : {}),
     dsh: {

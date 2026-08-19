@@ -6,7 +6,7 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
 RUN npm ci
-COPY tsconfig.base.json tsconfig.json tsconfig.server.json ./
+COPY tsconfig.base.json tsconfig.server.json ./
 COPY scripts/build-client.mjs ./scripts/
 COPY packages/ ./packages/
 RUN npm run build \
