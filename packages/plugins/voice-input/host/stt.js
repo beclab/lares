@@ -3,7 +3,14 @@
  */
 import { randomBytes } from "node:crypto";
 
-const STT_HINTS = /whisper|stt|speech|transcri|asr/i;
+const STT_HINTS = /whisper|\bstt\b|\basr\b|transcri/i;
+
+/** @param {{ id: string, mode: string | null }[]} models */
+export function sttModelIds(models) {
+  return models
+    .filter((model) => model.mode === "audio" && STT_HINTS.test(model.id))
+    .map((model) => model.id);
+}
 
 // Cold STT engine / stopped app resume; matches Ashia's audio hop budget.
 const REQUEST_TIMEOUT_MS = 180_000;
@@ -42,13 +49,15 @@ export function shimBaseUrl() {
 }
 
 /**
- * Prefer a listed id; otherwise first whisper/stt-like row.
- * @param {string[]} ids @param {string} [preferred]
+ * Prefer a listed STT id; otherwise use the first audio row whose id identifies
+ * a transcription model.
+ * @param {{ id: string, mode: string | null }[]} models @param {string} [preferred]
  */
-export function pickSttModelId(ids, preferred) {
+export function pickSttModelId(models, preferred) {
+  const stt = sttModelIds(models);
   const want = (preferred ?? "").trim();
-  if (want && ids.includes(want)) return want;
-  return ids.find((id) => STT_HINTS.test(id)) ?? null;
+  if (want && stt.includes(want)) return want;
+  return stt[0] ?? null;
 }
 
 /** @param {number} status @param {string} body */
@@ -65,8 +74,8 @@ export function retryable(status) {
   return RETRYABLE_STATUS.has(status);
 }
 
-/** @returns {Promise<string[]>} */
-export async function listModelIds() {
+/** @returns {Promise<{ id: string, mode: string | null }[]>} */
+export async function listModels() {
   const res = await fetch(`${shimBaseUrl()}/models`, {
     headers: { accept: "application/json" },
     signal: AbortSignal.timeout(CATALOG_TIMEOUT_MS),
@@ -74,7 +83,17 @@ export async function listModelIds() {
   if (!res.ok) throw new VoiceError("voice_model_unavailable", 503, `Router /models returned ${res.status}`);
   const payload = await res.json();
   const data = Array.isArray(payload?.data) ? payload.data : [];
-  return data.map((item) => String(item?.id ?? "").trim()).filter(Boolean);
+  return data
+    .map((item) => ({
+      id: String(item?.id ?? "").trim(),
+      mode: String(item?.mode ?? "").trim().toLowerCase() || null,
+    }))
+    .filter((item) => item.id);
+}
+
+/** @returns {Promise<string[]>} */
+export async function listModelIds() {
+  return (await listModels()).map((model) => model.id);
 }
 
 /** @type {{ expires: number, id: string } | null} */
@@ -83,7 +102,7 @@ let resolved = null;
 /** Cached STT model id (short TTL). @param {string} [preferred] */
 export async function resolveSttModel(preferred, options) {
   if (!options?.refresh && resolved && resolved.expires > Date.now()) return resolved.id;
-  const id = pickSttModelId(await listModelIds(), preferred);
+  const id = pickSttModelId(await listModels(), preferred);
   resolved = id ? { expires: Date.now() + RESOLVED_TTL_MS, id } : null;
   return id;
 }

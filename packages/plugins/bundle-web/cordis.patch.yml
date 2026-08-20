@@ -105,6 +105,10 @@
       name: '@dina/bundle-web/host/olares/olares-identity.js'
       inject: [webServer]
 
+    - id: dina-default-workspace
+      name: '@dina/bundle-web/host/default-workspace.js'
+      inject: [workspaceRegistry]
+
     - id: dina-voice-input
       name: '@dina/voice-input'
       inject: [webServer]

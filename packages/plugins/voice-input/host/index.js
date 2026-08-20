@@ -2,8 +2,7 @@
  * Voice-input Host routes under /api/dina/voice (STT via /llm/v1 shim; see stt.js).
  */
 import { readConfig, writeConfig } from "./config.js";
-import { findSttApp, installSttApp } from "./model-app.js";
-import { VoiceError, listModelIds, pickSttModelId, resolveSttModel, transcribe } from "./stt.js";
+import { VoiceError, listModels, pickSttModelId, resolveSttModel, sttModelIds, transcribe } from "./stt.js";
 
 export const name = "dina-voice-input";
 export const inject = ["webServer"];
@@ -67,8 +66,8 @@ async function handleStatus(_req, res) {
   let modelAvailable = false;
   let resolvedModel = config.model;
   try {
-    const ids = await listModelIds();
-    resolvedModel = pickSttModelId(ids, config.model) ?? "";
+    const models = await listModels();
+    resolvedModel = pickSttModelId(models, config.model) ?? "";
     modelAvailable = Boolean(resolvedModel);
   } catch {
     modelAvailable = false;
@@ -82,9 +81,10 @@ async function handleStatus(_req, res) {
 }
 
 async function handleModels(_req, res) {
-  const ids = await listModelIds();
-  const stt = ids.filter((id) => /whisper|stt|speech|transcri|asr/i.test(id));
-  sendJson(res, 200, { models: ids, stt });
+  const models = await listModels();
+  const ids = models.map((model) => model.id);
+  const stt = sttModelIds(models);
+  sendJson(res, 200, { models: ids, stt, selected: stt[0] ?? null });
 }
 
 async function handleGetConfig(_req, res) {
@@ -105,23 +105,6 @@ async function handleSetConfig(req, res) {
   sendJson(res, 200, writeConfig(patch));
 }
 
-async function handleInstall(_req, res) {
-  const config = readConfig();
-  // Skip install when the catalog already serves a resolvable STT model.
-  const serving = await resolveSttModel(config.model, { refresh: true }).catch(() => null);
-  if (serving) {
-    sendJson(res, 200, { ready: true, model: serving });
-    return;
-  }
-  const candidate = await findSttApp();
-  if (!candidate) {
-    sendJson(res, 400, { error: { code: "no_stt_app", message: "Router 模型目录中没有可安装的语音识别应用" } });
-    return;
-  }
-  await installSttApp(candidate.app);
-  sendJson(res, 200, { started: true, app: candidate.app, title: candidate.title });
-}
-
 async function handleTranscribe(req, res) {
   const config = readConfig();
   const model = await resolveSttModel(config.model);
@@ -129,7 +112,7 @@ async function handleTranscribe(req, res) {
     throw new VoiceError(
       "voice_model_unavailable",
       503,
-      "Router 目录暂无可用的语音模型；请在设置里安装语音应用",
+      "Router 目录暂无可用的语音模型",
     );
   }
   const url = new URL(req.url ?? "/", "http://x");
@@ -154,7 +137,6 @@ const ROUTES = {
   "/status": { GET: handleStatus },
   "/models": { GET: handleModels },
   "/config": { GET: handleGetConfig, POST: handleSetConfig },
-  "/install": { POST: handleInstall },
   "/transcribe": { POST: handleTranscribe },
 };
 

@@ -9,6 +9,7 @@
     "./host/brand/index.js": "./host/brand/index.js",
     "./host/llm-routes.js": "./host/llm-routes.js",
     "./host/olares/olares-identity.js": "./host/olares/olares-identity.js",
+    "./host/default-workspace.js": "./host/default-workspace.js",
     "./package.json": "./package.json"
   },
   "dsh": {

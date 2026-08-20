@@ -32,8 +32,7 @@ scripts/install-better-sidebar.sh 1   # 右侧工作台
 
 语音输入是自研插件 `@dina/voice-input`（随镜像内建，无需单独安装）：输入框旁的
 麦克风录音，录完经 `/api/dina/voice/transcribe` 走 Router STT 回填文本；在
-**设置 → 语音输入** 里选模型 / 语言、一键安装语音市场应用（默认
-`audiofwwhisperx3v3`）。
+**设置 → 语音输入** 里选模型 / 语言。语音模型需在 Olares 模型控制台另行安装。
 
 ## Cluster（机器 1）
 

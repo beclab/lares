@@ -1,4 +1,5 @@
 import { WebError } from "@deepseek-ai/dsh-web";
+import { assertBearerKey } from "../credential.js";
 import { mapTavilyPayload } from "./tavily.js";
 
 const DEFAULT_TIMEOUT_MS = 20_000;
@@ -48,7 +49,7 @@ export async function customSearch(opts) {
   if (!endpoint || !URL.canParse(endpoint)) {
     throw new WebError("Custom search URL is invalid", "WEB_PROVIDER_ERROR");
   }
-  if (!key) throw new WebError("Custom search API key is required", "WEB_PROVIDER_CREDENTIAL_MISSING");
+  assertBearerKey(key, "Custom search");
   if (!q) throw new WebError("query is required", "WEB_PROVIDER_ERROR");
 
   const limit = Math.max(1, Math.min(Number(opts.maxResults ?? 5) || 5, 10));

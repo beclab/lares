@@ -192,6 +192,49 @@ test("tavilySearch maps success and auth errors", async () => {
   }
 });
 
+test("a key with non-header characters fails fast instead of throwing inside fetch", async () => {
+  const { tavilySearch, probeTavily } = await import(
+    `../../packages/plugins/web-search/host/providers/tavily.js?bytestring=${Date.now()}`
+  );
+  const { customSearch } = await import(
+    `../../packages/plugins/web-search/host/providers/custom.js?bytestring=${Date.now()}`
+  );
+  const { WebError } = await import("@deepseek-ai/dsh-web");
+
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    throw new Error("fetch must not be reached");
+  };
+  try {
+    const pasted = "tvly-dev-abc123 没有效的密钥";
+    await assert.rejects(() => tavilySearch(pasted, "hello"), (err) => {
+      assert.ok(err instanceof WebError);
+      assert.equal(err.code, "WEB_PROVIDER_CREDENTIAL_MISSING");
+      assert.match(err.message, /cannot be sent in an HTTP header/);
+      return true;
+    });
+    await assert.rejects(
+      () =>
+        customSearch({
+          url: "https://example.com/search",
+          apiKey: pasted,
+          protocol: "dina",
+          query: "hello",
+        }),
+      (err) => err.code === "WEB_PROVIDER_CREDENTIAL_MISSING",
+    );
+
+    const probe = await probeTavily(pasted);
+    assert.equal(probe.ok, false);
+    assert.match(probe.error, /cannot be sent in an HTTP header/);
+    assert.equal(calls, 0);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
 test("customSearch supports dina and tavily-compat protocols", async () => {
   const { customSearch } = await import(
     `../../packages/plugins/web-search/host/providers/custom.js?http=${Date.now()}`

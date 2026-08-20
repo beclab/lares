@@ -11,9 +11,20 @@ const ENTRY = path.join(HERE, "index.js");
 const RELOAD_FILE = process.env.DINA_RELOAD_FILE || path.resolve(HERE, "../..", ".dina-reload");
 const POLL_MS = Number(process.env.DINA_RELOAD_POLL_MS || "1000");
 
+/** mtime of the sentinel, or -1 while it does not exist. */
+function readMtime(): number {
+  try {
+    return statSync(RELOAD_FILE).mtimeMs;
+  } catch {
+    return -1;
+  }
+}
+
 let child: ReturnType<typeof spawn> | null = null;
 let stopping = false;
-let lastMtime = -1;
+// Seeded before the first poll: a fresh install starts without the sentinel, so
+// the first sync creates it — that creation is a reload signal, not a baseline.
+let lastMtime = readMtime();
 
 function start() {
   child = spawn(process.execPath, [ENTRY], { stdio: "inherit", env: process.env });
@@ -44,17 +55,12 @@ async function restart() {
 }
 
 function poll() {
-  let mtime = -1;
-  try {
-    mtime = statSync(RELOAD_FILE).mtimeMs;
-  } catch {
-    return;
-  }
-  if (lastMtime >= 0 && mtime !== lastMtime) {
-    console.log("[dina] reload signal → restarting dsh web");
-    void restart();
-  }
+  const mtime = readMtime();
+  if (mtime === lastMtime) return;
   lastMtime = mtime;
+  if (mtime < 0) return;
+  console.log("[dina] reload signal → restarting dsh web");
+  void restart();
 }
 
 start();

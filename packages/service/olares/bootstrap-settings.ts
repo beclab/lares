@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { type Document, parseDocument } from "yaml";
-import { isChatModelId, isPlaceholderModelId, type RouterModelEntry } from "./router-models.js";
+import { type Document, isSeq, parseDocument } from "yaml";
+import { isChatModel, isPlaceholderModelId, type RouterModelEntry } from "./router-models.js";
 
 /** The provider route Dina owns: a pi-ai profile key, and what agent-default-model names. */
 const PROVIDER = "olares-router";
@@ -42,6 +42,8 @@ export interface DinaSettingsResult {
   model: string | null;
   /** Whether this boot created the Router route (absent profile). */
   routeSeeded: boolean;
+  /** How many models the route declares to the picker after this boot. */
+  routeModels: number;
   /** Whether the document was rewritten. */
   changed: boolean;
 }
@@ -63,14 +65,16 @@ export function bootstrapDinaSettings(dshHome: string, seed: DinaSettingsSeed): 
   const doc = parseDocument(raw);
 
   const routeSeeded = seedRouterRoute(doc, seed);
+  if (!routeSeeded) refreshRouterModels(doc, seed);
   const model = pinDefaultModel(doc, seed);
+  const routeModels = declaredModelCount(doc);
 
   const next = doc.toString();
-  if (next === raw) return { model, routeSeeded: false, changed: false };
+  if (next === raw) return { model, routeSeeded: false, routeModels, changed: false };
   const tmp = `${settingsPath}.${process.pid}.tmp`;
   writeFileSync(tmp, next, { mode: 0o600 });
   renameSync(tmp, settingsPath);
-  return { model, routeSeeded, changed: true };
+  return { model, routeSeeded, routeModels, changed: true };
 }
 
 function readSettings(settingsPath: string): string {
@@ -83,22 +87,18 @@ function readSettings(settingsPath: string): string {
 }
 
 /**
- * Create the Router profile when the document has none. An existing profile is
- * the user's — the Models page edits models, endpoint, and display name there,
- * and a boot-time refresh would undo those edits.
+ * Create the Router profile when the document has none. Endpoint, display name,
+ * and every other field on an existing profile stay the user's — the Models
+ * page edits them and a boot-time refresh would undo those edits.
  * @returns whether the profile was created.
  */
 function seedRouterRoute(doc: Document, seed: DinaSettingsSeed): boolean {
   const path = [SETTINGS_NS, "providers", PROVIDER];
   if (doc.getIn(path) !== undefined) return false;
 
-  // Embedding, transcription, and OCR rows share the Router catalog but cannot
-  // serve a chat turn; seeding them would only put dead entries in the picker.
-  const chat = seed.catalog.filter((entry) => isChatModelId(entry.id));
+  const chat = declarableModels(seed);
   const fallbackId = desiredModel(seed) ?? "default";
-  const models = chat.length > 0
-    ? chat.map((entry) => ({ id: entry.id, name: entry.name }))
-    : [{ id: fallbackId, name: fallbackId }];
+  const models = chat.length > 0 ? chat : [{ id: fallbackId, name: fallbackId }];
 
   doc.setIn(path, {
     displayName: DISPLAY_NAME,
@@ -114,6 +114,35 @@ function seedRouterRoute(doc: Document, seed: DinaSettingsSeed): boolean {
 }
 
 /**
+ * Mirror the Router catalog into the route's model list. The list is derived
+ * state, not a user preference: Router alone decides which models exist, and a
+ * list written once at seed time strands the picker on whatever that boot saw —
+ * a lone `default` placeholder when the catalog was still unreachable.
+ * An empty catalog means this boot could not read Router, so the list stands.
+ */
+function refreshRouterModels(doc: Document, seed: DinaSettingsSeed): void {
+  const chat = declarableModels(seed);
+  if (chat.length === 0) return;
+  doc.setIn([SETTINGS_NS, "providers", PROVIDER, "models"], chat);
+}
+
+/**
+ * Embedding, transcription, and OCR rows share the Router catalog but cannot
+ * serve a chat turn; declaring them would only put dead entries in the picker.
+ */
+function declarableModels(seed: DinaSettingsSeed): { id: string; name: string }[] {
+  return seed.catalog.filter(isChatModel).map((entry) => ({ id: entry.id, name: entry.name }));
+}
+
+function declaredModelCount(doc: Document): number {
+  // A list this boot wrote is still the plain array setIn stored; a parsed one
+  // is a node.
+  const models: unknown = doc.getIn([SETTINGS_NS, "providers", PROVIDER, "models"]);
+  if (isSeq(models)) return models.items.length;
+  return Array.isArray(models) ? models.length : 0;
+}
+
+/**
  * Point agent-default-model at this provider and a model the Router still
  * offers. A saved model the catalog still lists is the user's choice; the
  * provider route is ours, so a stale one is corrected under whichever model
@@ -123,7 +152,7 @@ function seedRouterRoute(doc: Document, seed: DinaSettingsSeed): boolean {
 function pinDefaultModel(doc: Document, seed: DinaSettingsSeed): string | null {
   const current = readString(doc, ["agent-default-model", "model"]);
   const desired = desiredModel(seed);
-  const catalogIds = new Set(seed.catalog.map((entry) => entry.id));
+  const catalogIds = new Set(seed.catalog.filter(isChatModel).map((entry) => entry.id));
   const stale = isPlaceholderModelId(current)
     || (catalogIds.size > 0 && current !== null && !catalogIds.has(current));
   const envForces = Boolean(seed.envDefaultModel && seed.envDefaultModel !== current);

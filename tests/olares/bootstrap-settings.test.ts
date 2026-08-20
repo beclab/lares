@@ -7,9 +7,9 @@ import { parse } from "yaml";
 import { bootstrapDinaSettings, type DinaSettingsSeed } from "../../packages/service/olares/bootstrap-settings.js";
 
 const CATALOG = [
-  { id: "Qwen/chat", name: "Qwen/chat" },
-  { id: "Qwen/other", name: "Qwen/other" },
-  { id: "EmbeddingGemma/embed", name: "EmbeddingGemma/embed" },
+  { id: "Qwen/chat", name: "Qwen/chat", mode: "chat" },
+  { id: "Qwen/other", name: "Qwen/other", mode: "chat" },
+  { id: "EmbeddingGemma/embed", name: "EmbeddingGemma/embed", mode: "embedding" },
 ];
 
 function seed(overrides: Partial<DinaSettingsSeed> = {}): DinaSettingsSeed {
@@ -61,29 +61,52 @@ test("seeds the Router route and the default model, then leaves the document alo
   });
 });
 
-test("an existing route profile is the user's: models and endpoint survive a boot", () => {
+function writeRoute(dir: string, models: string[]): void {
+  writeFileSync(
+    join(dir, "settings.yaml"),
+    [
+      "llm-pi-ai:",
+      "  providers:",
+      "    olares-router:",
+      "      displayName: My Router",
+      "      api: openai-completions",
+      "      baseURL: http://127.0.0.1:9999/llm/v1",
+      "      models:",
+      ...models.map((id) => `        - id: ${id}`),
+      "agent-default-model:",
+      "  provider: olares-router",
+      `  model: ${models[0]}`,
+      "",
+    ].join("\n"),
+  );
+}
+
+test("an existing route keeps the user's endpoint but follows the Router catalog", () => {
   withHome((dir) => {
-    writeFileSync(
-      join(dir, "settings.yaml"),
-      [
-        "llm-pi-ai:",
-        "  providers:",
-        "    olares-router:",
-        "      displayName: My Router",
-        "      api: openai-completions",
-        "      baseURL: http://127.0.0.1:9999/llm/v1",
-        "      models:",
-        "        - id: Qwen/chat",
-        "",
-      ].join("\n"),
-    );
+    writeRoute(dir, ["default"]);
     const result = bootstrapDinaSettings(dir, seed());
     assert.equal(result.routeSeeded, false);
+    assert.equal(result.routeModels, 2);
+    assert.equal(result.model, "Qwen/chat");
 
     const profile = readSettings(dir)["llm-pi-ai"].providers["olares-router"];
     assert.equal(profile.displayName, "My Router");
     assert.equal(profile.baseURL, "http://127.0.0.1:9999/llm/v1");
-    assert.deepEqual(profile.models, [{ id: "Qwen/chat" }]);
+    assert.deepEqual(profile.models, [
+      { id: "Qwen/chat", name: "Qwen/chat" },
+      { id: "Qwen/other", name: "Qwen/other" },
+    ]);
+  });
+});
+
+test("an unreachable catalog leaves the declared models standing", () => {
+  withHome((dir) => {
+    writeRoute(dir, ["Qwen/chat"]);
+    const result = bootstrapDinaSettings(dir, seed({ catalog: [], chatFallback: null }));
+    assert.equal(result.changed, false);
+    assert.deepEqual(readSettings(dir)["llm-pi-ai"].providers["olares-router"].models, [
+      { id: "Qwen/chat" },
+    ]);
   });
 });
 
@@ -122,6 +145,17 @@ test("a model the Router no longer offers is replaced by the catalog pick", () =
     );
     const result = bootstrapDinaSettings(dir, seed({ chatFallback: "Qwen/other" }));
     assert.equal(result.model, "Qwen/other");
+  });
+});
+
+test("a saved non-chat Router model is replaced even while the catalog still lists it", () => {
+  withHome((dir) => {
+    writeFileSync(
+      join(dir, "settings.yaml"),
+      'agent-default-model:\n  provider: olares-router\n  model: "EmbeddingGemma/embed"\n',
+    );
+    const result = bootstrapDinaSettings(dir, seed());
+    assert.equal(result.model, "Qwen/chat");
   });
 });
 

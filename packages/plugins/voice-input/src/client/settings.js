@@ -6,8 +6,7 @@ import {
   IconChevronDownOutline14,
 } from "@deepseek-ai/dsh-client-ui-primitives";
 import { API, getJson } from "./api.js";
-import { Spinner } from "./icons.js";
-import { messageFor, useT } from "./locale.js";
+import { useT } from "./locale.js";
 import settingsCss from "./styles/settings.css";
 
 const { useCallback, useEffect, useState } = React;
@@ -27,12 +26,6 @@ function languageItems(t) {
     { id: "ja", label: "日本語" },
     { id: "ko", label: "한국어" },
   ];
-}
-
-/** Host returns when Market accepts the task, not when weights finish. */
-function installNotice(t, payload) {
-  if (!payload?.started) return t("install.ready", { model: payload?.model || t("status.auto") });
-  return t("install.started", { app: payload.title || payload.app });
 }
 
 function Row(title, hint, control) {
@@ -83,7 +76,6 @@ export function VoiceSettings() {
   const [sttModels, setSttModels] = useState([]);
   const [status, setStatus] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [installing, setInstalling] = useState(false);
   const [notice, setNotice] = useState(null);
 
   const refresh = useCallback(async () => {
@@ -107,14 +99,6 @@ export function VoiceSettings() {
       alive = false;
     };
   }, [refresh]);
-
-  // Install is async; poll until the STT model shows up in the catalog.
-  const pending = status !== null && !status.modelAvailable;
-  useEffect(() => {
-    if (!pending) return undefined;
-    const timer = setInterval(refresh, 8_000);
-    return () => clearInterval(timer);
-  }, [pending, refresh]);
 
   const patch = useCallback((key, value) => {
     setConfig((prev) => ({ ...prev, [key]: value }));
@@ -141,23 +125,6 @@ export function VoiceSettings() {
       setSaving(false);
     }
   }, [config, refresh, t]);
-
-  const install = useCallback(async () => {
-    setInstalling(true);
-    setNotice({ kind: "ok", text: t("settings.preparing") });
-    try {
-      const res = await fetch(`${API}/install`, { method: "POST" });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(payload?.error?.code ?? String(res.status));
-      setNotice({ kind: "ok", text: installNotice(t, payload) });
-      await refresh();
-    } catch (err) {
-      const code = err instanceof Error ? err.message : String(err);
-      setNotice({ kind: "error", text: t("settings.installFailed", { msg: messageFor(t, code) }) });
-    } finally {
-      setInstalling(false);
-    }
-  }, [refresh, t]);
 
   if (!config) {
     return h("div", { className: "dina-voice" }, h("div", { className: "dina-voice-hint" }, t("loading")));
@@ -212,16 +179,6 @@ export function VoiceSettings() {
         Button,
         { variant: "primary", disabled: saving, onClick: save },
         saving ? t("settings.saving") : t("save"),
-      ),
-      h(
-        Button,
-        {
-          variant: "outline",
-          disabled: installing,
-          onClick: install,
-          icon: installing ? Spinner() : undefined,
-        },
-        installing ? t("settings.installing") : t("settings.install"),
       ),
     ),
     notice

@@ -4,18 +4,18 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { classifyFailure, pickSttModelId, retryable } from "../../packages/plugins/voice-input/host/stt.js";
-import { pickSttApp } from "../../packages/plugins/voice-input/host/model-app.js";
 
 test("pickSttModelId honors a listed preference, else the first whisper/stt row", () => {
   const catalog = [
-    "Qwen3.6-27B (llama.cpp)/x",
-    "Whisper Large V3 (FW) X3/openai/whisper-large-v3",
-    "EmbeddingGemma/embeddinggemma-300m",
+    { id: "Qwen3.6-27B (llama.cpp)/x", mode: "chat" },
+    { id: "Olares/mispeech/Dasheng-AudioGen", mode: "audio" },
+    { id: "Whisper Large V3 (FW) X3/openai/whisper-large-v3", mode: "audio" },
+    { id: "EmbeddingGemma/embeddinggemma-300m", mode: "embedding" },
   ];
-  assert.equal(pickSttModelId(catalog), catalog[1]);
-  assert.equal(pickSttModelId(catalog, "Qwen3.6-27B (llama.cpp)/x"), "Qwen3.6-27B (llama.cpp)/x");
-  assert.equal(pickSttModelId(catalog, "missing"), catalog[1]);
-  assert.equal(pickSttModelId(["Qwen/chat"]), null);
+  assert.equal(pickSttModelId(catalog), catalog[2].id);
+  assert.equal(pickSttModelId(catalog, catalog[2].id), catalog[2].id);
+  assert.equal(pickSttModelId(catalog, catalog[0].id), catalog[2].id);
+  assert.equal(pickSttModelId([{ id: "Qwen/chat", mode: "chat" }]), null);
 });
 
 test("classifyFailure separates undecodable audio from transient upstream", () => {
@@ -28,18 +28,6 @@ test("classifyFailure separates undecodable audio from transient upstream", () =
 test("retryable covers cold-start / restart statuses only", () => {
   for (const status of [429, 500, 502, 503, 504]) assert.equal(retryable(status), true);
   for (const status of [400, 401, 404, 422]) assert.equal(retryable(status), false);
-});
-
-test("pickSttApp takes a transcribing catalog row and skips the audio siblings", () => {
-  const items = [
-    { app_name: "audioqwen3ttsv3", title: "Qwen3-TTS 1.7B", description: "preset-voice text to speech." },
-    { app_name: "audiosilerovadv3", title: "Silero VAD V5", description: "Silero VAD v5 for voice activity detection." },
-    { app_name: "audiofwwhisperx3v3", title: "Whisper Large V3 (FW) X3", description: "whisper-large-v3 for offline STT." },
-  ];
-  assert.deepEqual(pickSttApp(items), { app: "audiofwwhisperx3v3", title: "Whisper Large V3 (FW) X3" });
-  assert.equal(pickSttApp([items[0], items[1]]), null);
-  assert.equal(pickSttApp([]), null);
-  assert.equal(pickSttApp(undefined as never), null);
 });
 
 test("readConfig / writeConfig round-trip through DSH_HOME", async () => {

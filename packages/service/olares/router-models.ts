@@ -3,6 +3,7 @@ import type { DinaEnv } from "../config/env.js";
 export interface RouterModelEntry {
   id: string;
   name: string;
+  mode: string | null;
 }
 
 const NON_CHAT_HINTS = /embed|whisper|tts|speech|ocr|clip|stt|asr|transcri/i;
@@ -10,6 +11,10 @@ const NON_CHAT_HINTS = /embed|whisper|tts|speech|ocr|clip|stt|asr|transcri/i;
 /** Skip embedding / audio / OCR models when picking a chat default. */
 export function isChatModelId(id: string): boolean {
   return !NON_CHAT_HINTS.test(id);
+}
+
+export function isChatModel(model: RouterModelEntry): boolean {
+  return model.mode ? model.mode === "chat" : isChatModelId(model.id);
 }
 
 export function modelsFromRouterCatalog(payload: unknown): RouterModelEntry[] {
@@ -23,7 +28,8 @@ export function modelsFromRouterCatalog(payload: unknown): RouterModelEntry[] {
     const id = String((item as { id?: unknown }).id ?? "").trim();
     if (!id || seen.has(id)) continue;
     seen.add(id);
-    out.push({ id, name: id });
+    const mode = String((item as { mode?: unknown }).mode ?? "").trim().toLowerCase() || null;
+    out.push({ id, name: id, mode });
   }
   return out;
 }
@@ -37,8 +43,8 @@ function isMtpModelId(id: string): boolean {
 }
 
 export function pickChatModelId(catalog: RouterModelEntry[]): string | null {
-  const chat = catalog.filter((m) => isChatModelId(m.id));
-  return chat.find((m) => isMtpModelId(m.id))?.id ?? chat[0]?.id ?? catalog[0]?.id ?? null;
+  const chat = catalog.filter(isChatModel);
+  return chat.find((m) => isMtpModelId(m.id))?.id ?? chat[0]?.id ?? null;
 }
 
 function routerAuthHeaders(apiKey: string | null, olaresAppId: string): Record<string, string> {

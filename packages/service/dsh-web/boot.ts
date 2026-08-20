@@ -8,13 +8,14 @@ import {
   fetchRouterModels,
   isPlaceholderModelId,
   pickChatModelId,
+  type RouterModelEntry,
 } from "../olares/router-models.js";
 import { seedOlaresSkills } from "../olares/skills-seed.js";
 import { seedWorkspaceAgents } from "../dsh/agents-seed.js";
 import {
   ensureDinaWebProfile,
   installProfileDeps,
-  patchClientLoopbackFence,
+  patchConnectionTrustFences,
   resolveDshBin,
 } from "./profile.js";
 
@@ -36,9 +37,9 @@ export async function bootDinaWeb(): Promise<void> {
   const { dshHome, profileDir } = ensureDinaWebProfile(env.dataDir);
 
   await installProfileDeps(profileDir);
-  patchClientLoopbackFence();
+  patchConnectionTrustFences();
 
-  let catalogModels: { id: string; name: string }[] = [];
+  let catalogModels: RouterModelEntry[] = [];
   try {
     catalogModels = await fetchRouterModels(env);
     console.log(`[dina] Router catalog: ${catalogModels.length} model(s)`);
@@ -54,10 +55,9 @@ export async function bootDinaWeb(): Promise<void> {
     envDefaultModel: env.defaultModel,
     chatFallback,
   });
-  if (bootstrapped.routeSeeded) {
-    console.log(`[dina] seeded llm-pi-ai provider olares-router (${catalogModels.length} model(s))`);
-  }
   if (bootstrapped.changed) {
+    const route = bootstrapped.routeSeeded ? "seeded" : "updated";
+    console.log(`[dina] ${route} llm-pi-ai provider olares-router (${bootstrapped.routeModels} model(s))`);
     console.log(`[dina] agent-default-model → ${bootstrapped.model}`);
   }
   const resolvedModel =

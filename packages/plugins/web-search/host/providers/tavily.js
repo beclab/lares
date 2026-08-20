@@ -1,4 +1,5 @@
 import { WebError } from "@deepseek-ai/dsh-web";
+import { assertBearerKey } from "../credential.js";
 
 export const TAVILY_SEARCH_URL = "https://api.tavily.com/search";
 const DEFAULT_TIMEOUT_MS = 20_000;
@@ -38,7 +39,7 @@ export function mapTavilyPayload(payload) {
 export async function tavilySearch(apiKey, query, opts = {}) {
   const key = apiKey.trim();
   const q = query.trim();
-  if (!key) throw new WebError("Tavily API key is required", "WEB_PROVIDER_CREDENTIAL_MISSING");
+  assertBearerKey(key, "Tavily");
   if (!q) throw new WebError("query is required", "WEB_PROVIDER_ERROR");
 
   const limit = Math.max(1, Math.min(Number(opts.maxResults ?? 5) || 5, 10));

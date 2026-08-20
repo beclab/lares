@@ -133,6 +133,34 @@ const CLIENT_LOOPBACK_ANCHOR = "isLoopback: pageLocation === void 0 || isLoopbac
 
 const CLIENT_LOOPBACK_REPLACEMENT = "isLoopback: true,";
 
+const HOST_INTERCEPTOR_ANCHOR =
+  'if (interceptor.options.authority === "loopback" && !isTrustedApiRequest(request, []))';
+
+const HOST_INTERCEPTOR_REPLACEMENT =
+  'if (interceptor.options.authority === "loopback" && !isTrustedApiRequest(request, this.trustedHosts))';
+
+const HOST_PRIVILEGED_ANCHOR =
+  "if (method !== void 0 && PRIVILEGED_METHODS.has(method) && !isTrustedApiRequest(request, []))";
+
+const HOST_PRIVILEGED_REPLACEMENT =
+  "if (method !== void 0 && PRIVILEGED_METHODS.has(method) && !isTrustedApiRequest(request, trustedHosts))";
+
+function replaceRequired(source: string, anchor: string, replacement: string): string {
+  if (source.includes(replacement)) return source;
+  if (!source.includes(anchor)) {
+    throw new Error(`dsh-client-connection trust patch anchor not found: ${anchor}`);
+  }
+  return source.replace(anchor, replacement);
+}
+
+export function trustOlaresConnectionHost(source: string): string {
+  return replaceRequired(
+    replaceRequired(source, HOST_INTERCEPTOR_ANCHOR, HOST_INTERCEPTOR_REPLACEMENT),
+    HOST_PRIVILEGED_ANCHOR,
+    HOST_PRIVILEGED_REPLACEMENT,
+  );
+}
+
 /**
  * dsh pins the browser's whole configuration plane to loopback-same-origin
  * "until a real authentication layer exists": off loopback every settings scope
@@ -149,21 +177,30 @@ const CLIENT_LOOPBACK_REPLACEMENT = "isLoopback: true,";
  * loses whenever a consumer's bundle is already cached, so the deployment
  * stance belongs in the served bundle instead.
  *
- * Remove once the client can be told its origin is trusted.
+ * The Host has the same restriction twice: strict interceptors (including the
+ * API remotes used by model selection) and privileged settings methods both
+ * pass an empty trust list. Olares' private entrance is the authentication
+ * boundary, so the declared DSH_TRUSTED_HOSTS authorities must reach those
+ * channels while the normal Host/Origin/cross-site checks remain intact.
+ *
+ * Remove once dsh can be configured with an authenticated remote origin.
  */
-export function patchClientLoopbackFence(): void {
-  const lib = require.resolve("@deepseek-ai/dsh-client-connection/client");
-  const source = readFileSync(lib, "utf8");
-  if (source.includes(CLIENT_LOOPBACK_REPLACEMENT)) return;
-  if (!source.includes(CLIENT_LOOPBACK_ANCHOR)) {
-    console.warn(
-      "[dina] dsh-client-connection loopback-fence patch skipped: anchor not found." +
-        " If Settings pages render empty behind the entrance, re-check the upstream fence.",
-    );
-    return;
+export function patchConnectionTrustFences(): void {
+  const clientLib = require.resolve("@deepseek-ai/dsh-client-connection/client");
+  const clientSource = readFileSync(clientLib, "utf8");
+  if (!clientSource.includes(CLIENT_LOOPBACK_REPLACEMENT)) {
+    if (!clientSource.includes(CLIENT_LOOPBACK_ANCHOR)) {
+      throw new Error("dsh-client-connection client trust patch anchor not found");
+    }
+    writeFileSync(clientLib, clientSource.replace(CLIENT_LOOPBACK_ANCHOR, CLIENT_LOOPBACK_REPLACEMENT));
   }
-  writeFileSync(lib, source.replace(CLIENT_LOOPBACK_ANCHOR, CLIENT_LOOPBACK_REPLACEMENT));
-  console.log("[dina] dsh-client-connection loopback fence → trusted (Olares entrance)");
+
+  const hostLib = require.resolve("@deepseek-ai/dsh-client-connection");
+  const hostSource = readFileSync(hostLib, "utf8");
+  const trustedHostSource = trustOlaresConnectionHost(hostSource);
+  if (trustedHostSource !== hostSource) writeFileSync(hostLib, trustedHostSource);
+
+  console.log("[dina] dsh-client-connection trust fences → Olares trusted hosts");
 }
 
 const SIDEBAR_FENCE_ANCHOR =
