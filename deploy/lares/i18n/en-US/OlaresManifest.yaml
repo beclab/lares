@@ -23,6 +23,6 @@ spec:
     2. Ensure Router is installed.
     3. Open the Lares entrance and start a chat.
   upgradeDescription: |
-    ## Lares 0.21.0
+    ## Lares 0.21.1
 
-    - Bump DeepSeek Harness (dsh web) to 0.1.1-rc.2.
+    - Parse `contextWindow` and `maxTokens` from the Router model catalog.

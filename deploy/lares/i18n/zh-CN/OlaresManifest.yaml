@@ -23,6 +23,6 @@ spec:
     2. 确认 Router 已安装。
     3. 打开 Lares 入口开始对话。
   upgradeDescription: |
-    ## Lares 0.21.0
+    ## Lares 0.21.1
 
-    - 将 DeepSeek Harness（dsh web）升级到 0.1.1-rc.2。
+    - 从 Router 模型目录解析 `contextWindow` 和 `maxTokens`。
