@@ -53,7 +53,7 @@ build_one() {
 cd "$ROOT"
 
 if [[ "$DO_BASE" -eq 0 ]] && ! docker image inspect "$BASE_IMAGE" >/dev/null 2>&1; then
-  echo "本地没有底座 $BASE_IMAGE，先构建底座"
+  echo "本地没有底座 ${BASE_IMAGE}，先构建底座"
   DO_BASE=1
 fi
 
