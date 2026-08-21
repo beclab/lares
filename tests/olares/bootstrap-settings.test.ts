@@ -21,7 +21,6 @@ function seed(overrides: Partial<DinaSettingsSeed> = {}): DinaSettingsSeed {
   return {
     catalog: CATALOG,
     baseURL: "http://127.0.0.1:8080/llm/v1",
-    envDefaultModel: null,
     chatFallback: "Qwen/chat",
     ...overrides,
   };
@@ -188,16 +187,5 @@ test("a route seeded before Router reported efforts picks them up on the next bo
     const profile = readSettings(dir)["llm-pi-ai"].providers["olares-router"];
     assert.deepEqual(profile.compat, { supportsReasoningEffort: true });
     assert.deepEqual(profile.models, DECLARED);
-  });
-});
-
-test("DINA_DEFAULT_MODEL wins over a saved model", () => {
-  withHome((dir) => {
-    writeFileSync(
-      join(dir, "settings.yaml"),
-      'agent-default-model:\n  provider: olares-router\n  model: "Qwen/chat"\n',
-    );
-    const result = bootstrapDinaSettings(dir, seed({ envDefaultModel: "Qwen/other" }));
-    assert.equal(result.model, "Qwen/other");
   });
 });

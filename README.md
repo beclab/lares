@@ -22,7 +22,7 @@ npm run build
 npm run start          # http://127.0.0.1:8080  （dsh web）
 ```
 
-本地无 Router 时，把 `LLM_GATEWAY_URL` 指到任意 OpenAI 兼容 `/v1`，或设置 `DINA_ROUTER_API_KEY`。
+本地无 Router 时，把 `LLM_GATEWAY_URL` 指到任意 OpenAI 兼容 `/v1`。
 
 社区插件（装进运行中的 `dina-web` profile）：
 
@@ -52,10 +52,9 @@ scripts/dev-sync/sync.sh 1
 | `HOSTNAME` | `0.0.0.0` | Bind |
 | `DINA_DATA_DIR` | `/data/dina` | 数据 + `dsh-home` profile |
 | `DINA_WORKSPACE` | `/data/workspace` | 工作区 |
-| `LLM_GATEWAY_URL` | `http://router-svc.router-shared/v1` | Router |
+| `LLM_GATEWAY_URL` | `http://router-svc.router-shared/v1` | Router（本地可改；集群安装使用 mesh-in allowlist 入口） |
 | `OLARES_APP_ID` | `dina` | `x-caller-appid` |
-| `DINA_ROUTER_API_KEY` | empty | 可选 sk- |
-| `DINA_DEFAULT_MODEL` | empty | 默认 chat 模型 id |
+| `DINA_ROUTER_API_KEY` | empty | 仅本地可选 sk-；集群走应用身份 |
 | `DSH_HOME` | `$DINA_DATA_DIR/dsh-home` | dsh profiles |
 
 语音输入的模型 / 语言 / 市场应用改在 **设置 → 语音输入** 面板配置，持久化到

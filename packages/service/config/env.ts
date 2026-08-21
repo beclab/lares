@@ -4,7 +4,6 @@ export interface DinaEnv {
   routerUrl: string;
   routerApiKey: string | null;
   olaresAppId: string;
-  defaultModel: string | null;
   workspace: string;
   dataDir: string;
   cliRoot: string;
@@ -28,7 +27,6 @@ export function loadEnv(): DinaEnv {
     routerUrl: (readString("LLM_GATEWAY_URL") ?? "http://router-svc.router-shared/v1").replace(/\/+$/, ""),
     routerApiKey: readString("DINA_ROUTER_API_KEY"),
     olaresAppId: readString("OLARES_APP_ID") ?? "dina",
-    defaultModel: readString("DINA_DEFAULT_MODEL"),
     workspace: readString("DINA_WORKSPACE") ?? "/data/workspace",
     dataDir: readString("DINA_DATA_DIR") ?? "/data/dina",
     cliRoot: readString("DINA_CLI_ROOT") ?? "/data/cli",

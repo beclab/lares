@@ -21,6 +21,7 @@ scripts/dev-sync/machines.json
 
 # Local reference sources（外部参考源码，非本仓业务；默认全部忽略，需显式指定才纳入）
 _参考/
+__tools/
 
 # Node / Next
 node_modules/
@@ -46,3 +47,4 @@ deploy/files/
 
 # Chart packages（与运行时 dist/ 分离）
 artifacts/
+

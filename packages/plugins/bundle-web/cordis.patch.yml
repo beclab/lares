@@ -78,7 +78,7 @@
 - id: agent-default-model
   config:
     provider: olares-router
-    model: !!js process.env.DSH_MODEL ?? process.env.DINA_DEFAULT_MODEL ?? 'default'
+    model: !!js process.env.DSH_MODEL ?? 'default'
 
 - id: sandbox-policy
   config:

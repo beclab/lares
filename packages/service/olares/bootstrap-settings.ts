@@ -37,8 +37,6 @@ export interface DinaSettingsSeed {
   catalog: RouterModelEntry[];
   /** The local shim endpoint pi-ai calls (chat completions and /models). */
   baseURL: string;
-  /** DINA_DEFAULT_MODEL, when the deployment pins one. */
-  envDefaultModel: string | null;
   /** Catalog chat pick used when nothing is saved or the saved id is stale. */
   chatFallback: string | null;
 }
@@ -172,8 +170,7 @@ function pinDefaultModel(doc: Document, seed: DinaSettingsSeed): string | null {
   const catalogIds = new Set(seed.catalog.filter(isChatModel).map((entry) => entry.id));
   const stale = isPlaceholderModelId(current)
     || (catalogIds.size > 0 && current !== null && !catalogIds.has(current));
-  const envForces = Boolean(seed.envDefaultModel && seed.envDefaultModel !== current);
-  const model = current && !stale && !envForces ? current : desired;
+  const model = current && !stale ? current : desired;
   if (model === null) return current;
 
   doc.setIn(["agent-default-model", "provider"], PROVIDER);
@@ -186,10 +183,7 @@ function pinDefaultModel(doc: Document, seed: DinaSettingsSeed): string | null {
 }
 
 function desiredModel(seed: DinaSettingsSeed): string | null {
-  const pinned = seed.envDefaultModel && !isPlaceholderModelId(seed.envDefaultModel)
-    ? seed.envDefaultModel
-    : null;
-  return pinned ?? seed.chatFallback;
+  return seed.chatFallback;
 }
 
 function readString(doc: Document, path: string[]): string | null {

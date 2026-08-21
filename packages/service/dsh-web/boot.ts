@@ -6,7 +6,6 @@ import { loadEnv } from "../config/env.js";
 import { bootstrapDinaSettings, ROUTER_CREDENTIAL_REF } from "../olares/bootstrap-settings.js";
 import {
   fetchRouterModels,
-  isPlaceholderModelId,
   pickChatModelId,
   type RouterModelEntry,
 } from "../olares/router-models.js";
@@ -58,7 +57,6 @@ export async function bootDinaWeb(): Promise<void> {
   const bootstrapped = bootstrapDinaSettings(dshHome, {
     catalog: catalogModels,
     baseURL: llmBase,
-    envDefaultModel: env.defaultModel,
     chatFallback,
   });
   if (bootstrapped.changed) {
@@ -67,8 +65,7 @@ export async function bootDinaWeb(): Promise<void> {
     console.log(`[dina] agent-default-model → ${bootstrapped.model}`);
   }
   const resolvedModel =
-    (env.defaultModel && !isPlaceholderModelId(env.defaultModel) ? env.defaultModel : null)
-    ?? bootstrapped.model
+    bootstrapped.model
     ?? chatFallback
     ?? process.env.DSH_MODEL?.trim()
     ?? null;
@@ -108,7 +105,6 @@ export async function bootDinaWeb(): Promise<void> {
     // The shim strips Authorization and attaches Router auth, so this only has
     // to satisfy pi-ai's non-empty credential gate on the Router route.
     [ROUTER_CREDENTIAL_REF]: SHIM_BEARER,
-    DINA_DEFAULT_MODEL: resolvedModel ?? "",
     DSH_MODEL: resolvedModel ?? "default",
     DSH_PERMISSION_MODE: process.env.DSH_PERMISSION_MODE ?? process.env.DINA_PERMISSION_MODE ?? "workspace-write",
     DINA_PERMISSION_MODE: process.env.DINA_PERMISSION_MODE ?? process.env.DSH_PERMISSION_MODE ?? "workspace-write",
