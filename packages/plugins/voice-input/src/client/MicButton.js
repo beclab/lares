@@ -199,7 +199,7 @@ export function MicButton(props) {
       "button",
       {
         type: "button",
-        className: "dina-voice-mic",
+        className: "lares-voice-mic",
         "data-phase": phase,
         "aria-label": title,
         disabled,
@@ -223,8 +223,8 @@ export function MicButton(props) {
         : recording
           ? h(
               "span",
-              { className: "dina-voice-live" },
-              h("span", { className: "dina-voice-dot" }),
+              { className: "lares-voice-live" },
+              h("span", { className: "lares-voice-dot" }),
               formatElapsed(elapsed),
             )
           : MicGlyph(),

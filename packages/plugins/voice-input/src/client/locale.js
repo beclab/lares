@@ -72,7 +72,7 @@ export const EN = {
   "settings.saveFailed": "Failed to save",
 };
 
-const binding = createLocaleBinding("dina.voice");
+const binding = createLocaleBinding("lares.voice");
 
 export const attachLocale = binding.attach;
 export const bindTranslate = binding.bind;

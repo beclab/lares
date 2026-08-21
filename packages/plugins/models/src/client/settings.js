@@ -45,23 +45,23 @@ function ModelRow({ model, selected, busy, disabled, onSelect, t }) {
       type: "button",
       role: "radio",
       "aria-checked": selected,
-      className: `dina-models-item${selected ? " is-default" : ""}`,
+      className: `lares-models-item${selected ? " is-default" : ""}`,
       disabled,
       onClick: onSelect,
       title: selected ? t("settings.default") : t("settings.setDefault"),
     },
     h(
       "span",
-      { className: "dina-models-item-copy" },
-      h("span", { className: "dina-models-item-name" }, model.name),
-      model.description ? h("span", { className: "dina-models-item-desc" }, model.description) : null,
+      { className: "lares-models-item-copy" },
+      h("span", { className: "lares-models-item-name" }, model.name),
+      model.description ? h("span", { className: "lares-models-item-desc" }, model.description) : null,
     ),
     busy
-      ? h(IconLoadingOutline16, { className: "dina-models-spinner" })
+      ? h(IconLoadingOutline16, { className: "lares-models-spinner" })
       : selected
         ? h(
             "span",
-            { className: "dina-models-badge" },
+            { className: "lares-models-badge" },
             h(IconCheckOutline16, null),
             h("span", null, t("settings.default")),
           )
@@ -138,7 +138,7 @@ export function ModelsSettings() {
 
   return h(
     "div",
-    { className: "dina-models" },
+    { className: "lares-models" },
     h(SettingsHeader, {
       title: t("settings.title"),
       refreshing,
@@ -147,7 +147,7 @@ export function ModelsSettings() {
       routerRoute: "llm",
       t,
     }),
-    h("p", { className: "dina-settings-intro" }, t("settings.intro")),
+    h("p", { className: "lares-settings-intro" }, t("settings.intro")),
     state === null
       ? null
       : h(
@@ -159,7 +159,7 @@ export function ModelsSettings() {
         ),
 
     state === null && error === ""
-      ? h("p", { className: "dina-settings-notice" }, t("settings.loading"))
+      ? h("p", { className: "lares-settings-notice" }, t("settings.loading"))
       : null,
 
     h(
@@ -168,10 +168,10 @@ export function ModelsSettings() {
       groups.map((group) =>
         h(
           "section",
-          { key: group.provider, className: "dina-models-group" },
+          { key: group.provider, className: "lares-models-group" },
           h(
             "div",
-            { className: "dina-models-list" },
+            { className: "lares-models-list" },
             group.models.map((model) => {
               const key = keyOf({ provider: model.provider, model: model.id });
               return h(ModelRow, {
@@ -192,17 +192,17 @@ export function ModelsSettings() {
     ),
 
     state !== null && groups.length === 0
-      ? h("p", { className: "dina-settings-notice" }, t("settings.empty"))
+      ? h("p", { className: "lares-settings-notice" }, t("settings.empty"))
       : null,
 
     (state?.failures ?? []).map((entry) =>
       h(
         "p",
-        { key: entry.provider, className: "dina-settings-notice is-error" },
+        { key: entry.provider, className: "lares-settings-notice is-error" },
         t("settings.providerFailed", { name: entry.name || entry.provider, msg: entry.message }),
       ),
     ),
 
-    error ? h("p", { className: "dina-settings-notice is-error" }, error) : null,
+    error ? h("p", { className: "lares-settings-notice is-error" }, error) : null,
   );
 }

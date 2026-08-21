@@ -14,7 +14,7 @@ export default async function (page) {
   const phase = await page.evaluate(
     () => document.querySelector("[data-phase]")?.getAttribute("data-phase") ?? null,
   );
-  const out = `/tmp/dina-browser-example.png`;
+  const out = `/tmp/lares-browser-example.png`;
   await page.screenshot(out);
   return { title, phase, screenshot: out };
 }

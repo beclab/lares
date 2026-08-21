@@ -7,7 +7,7 @@
  *   import { withBrowser } from "./chrome-cdp.mjs";
  *   await withBrowser({ url: "http://127.0.0.1:8080/" }, async (page) => {
  *     await page.waitFor(() => document.querySelector("[data-phase]"), { timeout: 15_000 });
- *     await page.screenshot("/tmp/dina.png");
+ *     await page.screenshot("/tmp/lares.png");
  *     console.log(await page.evaluate(() => document.title));
  *   });
  */
@@ -473,7 +473,7 @@ export async function launchBrowser(opts = {}) {
   const port = opts.port && opts.port > 0 ? opts.port : await pickFreePort();
   const ownedProfile = !opts.userDataDir;
   const userDataDir =
-    opts.userDataDir || mkdtempSync(join(tmpdir(), "dina-chrome-"));
+    opts.userDataDir || mkdtempSync(join(tmpdir(), "lares-chrome-"));
 
   const isHeadlessShell = /chrome-headless-shell/i.test(bin);
   if (headed && isHeadlessShell) {

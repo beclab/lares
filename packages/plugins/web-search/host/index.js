@@ -1,13 +1,13 @@
-/** Dina web-search Host: Router-backed ctx.web provider and settings routes. */
+/** Lares web-search Host: Router-backed ctx.web provider and settings routes. */
 import { createRouteHandler, readJsonObject, sendJson } from "../../shared/host/http.js";
 import { readConfig, setDefaultSearchModel } from "./config.js";
-import { createDinaSearchProvider } from "./provider.js";
+import { createLaresSearchProvider } from "./provider.js";
 import { fetchRouterSearchModels } from "./router.js";
 
-export const name = "dina-web-search";
+export const name = "lares-web-search";
 export const inject = ["web", "webServer"];
 
-const ROUTE_PREFIX = "/api/dina/web-search";
+const ROUTE_PREFIX = "/api/lares/web-search";
 
 export async function currentConfig() {
   const searchModels = await fetchRouterSearchModels();
@@ -63,9 +63,9 @@ const handler = createRouteHandler({
  * @param {import('@deepseek-ai/cordis').Context} ctx
  */
 export function apply(ctx) {
-  ctx.effect(() => ctx.web.registerSearchProvider(createDinaSearchProvider()), "dina-web-search-provider");
+  ctx.effect(() => ctx.web.registerSearchProvider(createLaresSearchProvider()), "lares-web-search-provider");
   ctx.effect(
     () => ctx.webServer.register({ kind: "prefix", path: ROUTE_PREFIX, handler }),
-    "dina-web-search-routes",
+    "lares-web-search-routes",
   );
 }

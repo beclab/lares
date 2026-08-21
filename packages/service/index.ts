@@ -1,6 +1,6 @@
-import { bootDinaWeb } from "./dsh-web/boot.js";
+import { bootLaresWeb } from "./dsh-web/boot.js";
 
-bootDinaWeb().catch((err) => {
+bootLaresWeb().catch((err) => {
   console.error(err);
   process.exit(1);
 });

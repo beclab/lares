@@ -10,18 +10,18 @@ const pluginPath = resolve(HERE, "../../packages/plugins/bundle-web/host/default
 
 const { DEFAULT_WORKSPACE_TITLE, seedDefaultWorkspace, workspaceRootFromEnv } = await import(pluginPath);
 
-test("workspaceRootFromEnv prefers DSH_CWD then DINA_WORKSPACE", () => {
+test("workspaceRootFromEnv prefers DSH_CWD then LARES_WORKSPACE", () => {
   assert.equal(workspaceRootFromEnv({}), null);
-  assert.equal(workspaceRootFromEnv({ DINA_WORKSPACE: "  " }), null);
-  assert.equal(workspaceRootFromEnv({ DINA_WORKSPACE: "/data/workspace" }), "/data/workspace");
+  assert.equal(workspaceRootFromEnv({ LARES_WORKSPACE: "  " }), null);
+  assert.equal(workspaceRootFromEnv({ LARES_WORKSPACE: "/data/workspace" }), "/data/workspace");
   assert.equal(
-    workspaceRootFromEnv({ DSH_CWD: "/app/work", DINA_WORKSPACE: "/data/workspace" }),
+    workspaceRootFromEnv({ DSH_CWD: "/app/work", LARES_WORKSPACE: "/data/workspace" }),
     "/app/work",
   );
 });
 
 test("seedDefaultWorkspace creates the directory and registers it once", async () => {
-  const root = mkdtempSync(join(tmpdir(), "dina-ws-"));
+  const root = mkdtempSync(join(tmpdir(), "lares-ws-"));
   const workspacePath = join(root, "nested", "work");
   const calls: { path: string; title?: string }[] = [];
   const created = { id: "ws-1", path: workspacePath, title: DEFAULT_WORKSPACE_TITLE };

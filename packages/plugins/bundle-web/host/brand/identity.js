@@ -3,7 +3,7 @@
  * prompt all read from here — change this file, not the call sites.
  */
 
-export const PRODUCT_NAME = "Dina";
+export const PRODUCT_NAME = "Lares";
 export const PLATFORM_NAME = "Olares";
 
 export const THEME_COLOR = "#6366F1";
@@ -50,11 +50,12 @@ You are helping inside an ${PLATFORM_NAME} workspace via ${PRODUCT_NAME}.
 /** Previous seeded AGENTS.md; rewrite in place so old workspaces pick up the brand. */
 export const LEGACY_AGENTS_MARKDOWN = `# AGENTS.md
 
-You are helping inside an Olares workspace via Dina (DeepSeek Harness).
+You are helping inside an Olares workspace via Dina.
 
 - Prefer olares-cli skills for platform tasks (market, cluster, files, router, …).
 - Stay inside the workspace for file edits unless the user explicitly asks otherwise.
 - Prefer structured fs tools (read / write / edit) over shell for file work.
 - Long-running shell work can use background jobs; check results with job_output.
 - \`@path\` in a user message is workspace-relative, not absolute; \`/id\` names a skill.
+- If asked who you are, you are Dina on Olares, not DeepSeek Harness.
 `;

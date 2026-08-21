@@ -1,7 +1,7 @@
 /**
  * Olares 入口域推导（client 侧共享源码，由各插件 client 构建时内联）。
  *
- * Olares 给每个应用入口分配 `<前缀>.<用户>.<zone>`：Dina 的前缀随安装随机，
+ * Olares 给每个应用入口分配 `<前缀>.<用户>.<zone>`：Lares 的前缀随安装随机，
  * Router chart 固定申领第三级域名 `router`，两者共用同一 zone
  * （公网 olares.com 与局域网 olares.local 各一套）。因此把当前页面域名的
  * 首段换成 `router` 即 Router 控制台。

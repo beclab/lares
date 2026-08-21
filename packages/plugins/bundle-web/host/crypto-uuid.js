@@ -8,7 +8,7 @@
  * Injected into <head> ahead of the shell bundle so every client module, ours or
  * a community one, sees the same identity source.
  */
-export const name = "dina-crypto-uuid";
+export const name = "lares-crypto-uuid";
 export const inject = ["webServer"];
 
 export const UUID_SHIM = `(function () {
@@ -32,8 +32,8 @@ const HEAD_OPEN = /<head[^>]*>/i;
  * @returns {string} html whose first script is the shim
  */
 export function injectUuidShim(html) {
-  if (html.includes("data-dina-uuid-shim")) return html;
-  const tag = `<script data-dina-uuid-shim>${UUID_SHIM}</script>`;
+  if (html.includes("data-lares-uuid-shim")) return html;
+  const tag = `<script data-lares-uuid-shim>${UUID_SHIM}</script>`;
   const head = HEAD_OPEN.exec(html);
   return head === null ? `${tag}${html}` : html.replace(HEAD_OPEN, `${head[0]}${tag}`);
 }
@@ -42,5 +42,5 @@ export function injectUuidShim(html) {
  * @param {import('@deepseek-ai/cordis').Context} ctx
  */
 export function apply(ctx) {
-  ctx.effect(() => ctx.webServer.tapIndex(injectUuidShim), "dina-crypto-uuid");
+  ctx.effect(() => ctx.webServer.tapIndex(injectUuidShim), "lares-crypto-uuid");
 }

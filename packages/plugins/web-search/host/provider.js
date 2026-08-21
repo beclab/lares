@@ -3,15 +3,15 @@ import { readConfig } from "./config.js";
 import { routerSearch } from "./router.js";
 
 /** Stable id registered with ctx.web; routes to the selected Router service. */
-export const DINA_PROVIDER_ID = "dina";
+export const LARES_PROVIDER_ID = "lares";
 
 /**
  * Facade SearchProvider: one dsh seam backed by the selected Router search model.
  * @returns {import('@deepseek-ai/dsh-web').WebSearchProvider}
  */
-export function createDinaSearchProvider() {
+export function createLaresSearchProvider() {
   return {
-    id: DINA_PROVIDER_ID,
+    id: LARES_PROVIDER_ID,
     available() {
       return Boolean(readConfig().defaultSearchModel);
     },

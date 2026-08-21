@@ -8,7 +8,7 @@ export { spinCss };
 
 /** IconLoadingOutline16 is a static glyph; the rotation is ours (spin.css). */
 export function Spinner(size) {
-  return h(IconLoadingOutline16, { size, className: "dina-voice-spin" });
+  return h(IconLoadingOutline16, { size, className: "lares-voice-spin" });
 }
 
 /** Sized on the ic_ds_* 16-grid so it carries the same visual weight in a row of them. */

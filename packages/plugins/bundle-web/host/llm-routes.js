@@ -6,7 +6,7 @@ import { request as httpsRequest } from "node:https";
 import { URL } from "node:url";
 import { readBody, sendError } from "../../shared/host/http.js";
 
-export const name = "dina-llm-routes";
+export const name = "lares-llm-routes";
 export const inject = ["webServer"];
 
 const DROPPED_REQ = new Set([
@@ -30,8 +30,8 @@ function routerAuthHeaders(apiKey, olaresAppId) {
 
 function proxyToRouter(req, res) {
   const routerUrl = (process.env.LLM_GATEWAY_URL ?? "http://router-svc.router-shared/v1").replace(/\/+$/, "");
-  const apiKey = process.env.DINA_ROUTER_API_KEY?.trim() || null;
-  const olaresAppId = process.env.OLARES_APP_ID?.trim() || "dina";
+  const apiKey = process.env.LARES_ROUTER_API_KEY?.trim() || null;
+  const olaresAppId = process.env.OLARES_APP_ID?.trim() || "lares";
 
   const rawUrl = req.url ?? "/";
   const u = new URL(rawUrl, "http://x");
@@ -118,16 +118,16 @@ export function apply(ctx) {
           res.end(
             JSON.stringify({
               ok: true,
-              app: "dina",
+              app: "lares",
               kernel: "dsh-web",
               routerUrl,
-              olaresAppId: process.env.OLARES_APP_ID ?? "dina",
-              hasRouterKey: Boolean(process.env.DINA_ROUTER_API_KEY?.trim()),
+              olaresAppId: process.env.OLARES_APP_ID ?? "lares",
+              hasRouterKey: Boolean(process.env.LARES_ROUTER_API_KEY?.trim()),
             }),
           );
         },
       }),
-    "dina-health",
+    "lares-health",
   );
 
   ctx.effect(
@@ -137,6 +137,6 @@ export function apply(ctx) {
         path: "/llm/v1",
         handler: proxyToRouter,
       }),
-    "dina-llm-proxy",
+    "lares-llm-proxy",
   );
 }

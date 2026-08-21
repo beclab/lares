@@ -1,0 +1,81 @@
+apiVersion: v3
+olaresManifest.version: '0.15.0'
+olaresManifest.type: app
+metadata:
+  name: lares
+  appid: lares
+  title: Lares
+  description: Chat shell on DeepSeek Harness, wired to Olares Router
+  icon: https://raw.githubusercontent.com/ffkijjkokok/dina-assets/main/icon.png
+  version: 0.20.0
+  categories:
+    - Utilities_v112
+    - AI
+spec:
+  versionName: "0.20.0"
+  runAsUser: true
+  fullDescription: |
+    ## Overview
+    Lares is a chat app on Olares built on DeepSeek Harness (dsh web).
+    It uses the official dsh UI shell and talks to Olares Router for LLM access.
+
+    ## Highlights
+    - Official dsh web UI (three-column layout) with Lares product profile
+    - Zero-config Router auth via in-cluster app identity (`x-caller-appid`)
+    - Bundled client plugins (voice input, web search) when enabled in the build
+
+    ## Requirements
+    - Olares >= 1.12.7
+    - Router app installed and running (`router` dependency)
+    - Arch: amd64
+
+    ## Getting started
+    1. Install Lares from Market (test source: `market.test`).
+    2. Ensure Router is installed.
+    3. Open the Lares entrance and start a chat.
+  upgradeDescription: |
+    ## Lares 0.20.0
+
+    - Remove obsolete Router API key, endpoint, and default-model install fields.
+    - Reach Router through its allowlisted entrance so mesh-in injects caller JWT.
+  developer: luolong
+  submitter: luolong
+  locale:
+    - en-US
+    - zh-CN
+  requiredCpu: 200m
+  limitedCpu: "2"
+  requiredMemory: 512Mi
+  limitedMemory: 4Gi
+  requiredDisk: 2Gi
+  limitedDisk: 20Gi
+  supportArch:
+    - amd64
+permission:
+  appData: true
+entrances:
+  - name: lares
+    host: lares-svc
+    port: 8080
+    title: Lares
+    icon: https://raw.githubusercontent.com/ffkijjkokok/dina-assets/main/icon.png
+    authLevel: private
+    openMethod: window
+options:
+  apiTimeout: 0
+  # Brand mark + PWA manifest public so the browser-tab favicon loads before the
+  # private-entrance auth redirect (same pattern Ashia uses for its icon assets).
+  policies:
+    - entranceName: lares
+      description: Brand mark and PWA manifest
+      uriRegex: ^/lares/(mark\.svg|manifest\.webmanifest)$
+      level: public
+  dependencies:
+    - name: olares
+      version: '>=1.12.7-0'
+      type: system
+    - name: router
+      version: '>=1.0.0'
+      type: application
+workloadReplicas:
+  lares: 1

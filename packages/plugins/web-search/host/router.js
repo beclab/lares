@@ -8,11 +8,11 @@ function routerUrl() {
 }
 
 function routerHeaders() {
-  const apiKey = process.env.DINA_ROUTER_API_KEY?.trim();
+  const apiKey = process.env.LARES_ROUTER_API_KEY?.trim();
   return {
     ...(apiKey
       ? { authorization: `Bearer ${apiKey}` }
-      : { "x-caller-appid": process.env.OLARES_APP_ID?.trim() || "dina" }),
+      : { "x-caller-appid": process.env.OLARES_APP_ID?.trim() || "lares" }),
     accept: "application/json",
   };
 }
@@ -27,7 +27,7 @@ export function searchModelsFromRouterCatalog(payload) {
     .map(({ id, name }) => ({ id, name }));
 }
 
-/** List the search services Router currently offers to Dina. */
+/** List the search services Router currently offers to Lares. */
 export async function fetchRouterSearchModels() {
   const response = await fetch(`${routerUrl()}/models`, {
     method: "GET",
@@ -124,7 +124,7 @@ export async function routerSearch(model, query, opts = {}) {
       signal: controller.signal,
     });
     if (response.status === 401 || response.status === 403) {
-      throw new WebError("Router rejected Dina search access", "WEB_PROVIDER_CREDENTIAL_MISSING");
+      throw new WebError("Router rejected Lares search access", "WEB_PROVIDER_CREDENTIAL_MISSING");
     }
     if (!response.ok) {
       throw new WebError(`Router search returned ${response.status}`, "WEB_PROVIDER_ERROR");

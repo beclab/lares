@@ -35,7 +35,7 @@ test("surface prompt is product-branded", () => {
 });
 
 test("seedWorkspaceAgents writes and rewrites the legacy DeepSeek seed", () => {
-  const root = mkdtempSync(join(tmpdir(), "dina-agents-"));
+  const root = mkdtempSync(join(tmpdir(), "lares-agents-"));
   try {
     seedWorkspaceAgents(root);
     assert.equal(readFileSync(join(root, "AGENTS.md"), "utf8"), agentsMarkdown());

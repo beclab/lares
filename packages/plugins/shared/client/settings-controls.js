@@ -19,17 +19,17 @@ export function SettingsHeader({ title, refreshing, disabled, onRefresh, routerR
   const routerUrl = routerConsoleUrl(routerRoute);
   return h(
     "div",
-    { className: "dina-settings-header" },
-    h("h2", { className: "dina-settings-title" }, title),
+    { className: "lares-settings-header" },
+    h("h2", { className: "lares-settings-title" }, title),
     h(
       "div",
-      { className: "dina-settings-actions" },
+      { className: "lares-settings-actions" },
       h(
         Button,
         {
           variant: "outline",
           size: "sm",
-          className: "dina-settings-action",
+          className: "lares-settings-action",
           icon: h(IconRefreshOutline14),
           disabled,
           onClick: onRefresh,
@@ -42,7 +42,7 @@ export function SettingsHeader({ title, refreshing, disabled, onRefresh, routerR
             {
               variant: "outline",
               size: "sm",
-              className: "dina-settings-action",
+              className: "lares-settings-action",
               // 该图标满幅且笔画更重，取 10 才与 14 的刷新图标墨量相当。
               icon: h(IconRightUpOutline16, { size: 10 }),
               onClick: () => openRouterConsole(routerRoute),
@@ -57,7 +57,7 @@ export function SettingsHeader({ title, refreshing, disabled, onRefresh, routerR
 export function SettingsStatus({ ready, children }) {
   return h(
     "div",
-    { className: `dina-settings-status${ready ? "" : " is-warn"}` },
+    { className: `lares-settings-status${ready ? "" : " is-warn"}` },
     h(StateDot, { state: ready ? "done" : "warning", size: 8 }),
     children,
   );
@@ -80,7 +80,7 @@ export function SettingsSelector({ value, items, disabled, onSelect }) {
     anchor: h(
       Button,
       {
-        className: "dina-settings-selector",
+        className: "lares-settings-selector",
         "aria-haspopup": "menu",
         "aria-expanded": open,
         disabled,
@@ -88,8 +88,8 @@ export function SettingsSelector({ value, items, disabled, onSelect }) {
           if (!disabled) setOpen((value) => !value);
         },
       },
-      h("span", { className: "dina-settings-selector-label" }, selected?.label ?? value),
-      h(IconChevronDownOutline14, { className: "dina-settings-selector-chevron" }),
+      h("span", { className: "lares-settings-selector-label" }, selected?.label ?? value),
+      h(IconChevronDownOutline14, { className: "lares-settings-selector-chevron" }),
     ),
   });
 }

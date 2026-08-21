@@ -1,5 +1,5 @@
 /* Rows follow official Language row; selector is a ghost Button with three overrides. */
-.dina-voice {
+.lares-voice {
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -7,12 +7,12 @@
   color: var(--dsw-alias-label-primary);
 }
 
-.dina-voice-rows {
+.lares-voice-rows {
   display: flex;
   flex-direction: column;
 }
 
-.dina-voice-row {
+.lares-voice-row {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -20,11 +20,11 @@
   border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
-.dina-voice-row:last-child {
+.lares-voice-row:last-child {
   border-bottom: none;
 }
 
-.dina-voice-row-text {
+.lares-voice-row-text {
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -33,12 +33,12 @@
   padding-right: 48px;
 }
 
-.dina-voice-row-title {
+.lares-voice-row-title {
   font-size: 14px;
   line-height: 22px;
 }
 
-.dina-voice-hint {
+.lares-voice-hint {
   color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
   line-height: 18px;

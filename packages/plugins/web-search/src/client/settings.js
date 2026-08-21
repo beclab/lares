@@ -88,7 +88,7 @@ export function WebSearchSettings() {
 
   return h(
     "div",
-    { className: "dina-websearch" },
+    { className: "lares-websearch" },
     h(SettingsHeader, {
       title: t("settings.title"),
       refreshing,
@@ -97,9 +97,9 @@ export function WebSearchSettings() {
       routerRoute: "tools",
       t,
     }),
-    h("p", { className: "dina-settings-intro" }, t("settings.intro")),
+    h("p", { className: "lares-settings-intro" }, t("settings.intro")),
     config === null && error === ""
-      ? h("p", { className: "dina-settings-notice" }, t("settings.loading"))
+      ? h("p", { className: "lares-settings-notice" }, t("settings.loading"))
       : null,
     config === null
       ? null
@@ -112,11 +112,11 @@ export function WebSearchSettings() {
         ),
     h(
       "div",
-      { className: "dina-websearch-row" },
+      { className: "lares-websearch-row" },
       h(
         "div",
-        { className: "dina-websearch-row-text" },
-        h("div", { className: "dina-websearch-row-title" }, t("settings.default")),
+        { className: "lares-websearch-row-text" },
+        h("div", { className: "lares-websearch-row-title" }, t("settings.default")),
       ),
       h(SettingsSelector, {
         value,
@@ -125,7 +125,7 @@ export function WebSearchSettings() {
         onSelect: setDefault,
       }),
     ),
-    error ? h("p", { className: "dina-settings-notice is-error" }, error) : null,
+    error ? h("p", { className: "lares-settings-notice is-error" }, error) : null,
   );
 }
 

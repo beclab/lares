@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 const APP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const BUNDLED = path.join(APP_ROOT, "packages", "skills");
 
-/** Copy vendored olares-* skills into the runtime skills dir for dsh skill-filesystem. */
+/** Copy vendored skill bundles (olares-*, ha-*) into the runtime skills dir for dsh skill-filesystem. */
 export function seedOlaresSkills(targetDir: string): string {
   mkdirSync(targetDir, { recursive: true });
   if (!existsSync(BUNDLED)) return targetDir;

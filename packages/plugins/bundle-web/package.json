@@ -1,9 +1,9 @@
 {
-  "name": "@dina/bundle-web",
+  "name": "@lares/bundle-web",
   "version": "0.15.0",
   "private": true,
   "type": "module",
-  "description": "Dina overlay on dsh-base + dsh-web-app: Olares LLM shim routes, workspace, persona",
+  "description": "Lares overlay on dsh-base + dsh-web-app: Olares LLM shim routes, workspace, persona",
   "exports": {
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./host/brand/index.js": "./host/brand/index.js",

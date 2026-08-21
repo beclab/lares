@@ -1,58 +1,19 @@
 # syntax=docker/dockerfile:1.7
-FROM node:22-bookworm-slim AS build
+# App image: compile and ship Lares code on top of the environment image.
+# Default `scripts/build-image.sh` rebuilds only this file.
+ARG BASE_IMAGE=docker.io/luolong01/lares-base:1
+FROM ${BASE_IMAGE}
+
+USER root
 WORKDIR /app
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates g++ make python3 \
-  && rm -rf /var/lib/apt/lists/*
-COPY package.json package-lock.json ./
-RUN npm ci
+
 COPY tsconfig.base.json tsconfig.server.json ./
 COPY scripts/build-client.mjs ./scripts/
 COPY packages/ ./packages/
+
 RUN npm run build \
-  && npm prune --omit=dev \
-  && date -u +%Y%m%d%H%M%S > .dina-image-id
-
-FROM node:22-bookworm-slim
-# build-essential + python3: community dsh plugins (e.g. dsh-better-sidebar →
-# node-pty) have no linux prebuilds and compile via node-gyp at profile install
-# time. The cluster forbids root pods, so the toolchain must live in the image
-# and the boot-time `npm install` runs as uid 1000 with build scripts enabled.
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl fd-find git jq ripgrep tini build-essential python3 \
-  && ln -sf "$(command -v fdfind)" /usr/local/bin/fd \
-  && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
-ENV NODE_ENV=production \
-  PORT=8080 \
-  HOSTNAME=0.0.0.0 \
-  HOME=/data/home \
-  DINA_WORKSPACE=/data/workspace \
-  DINA_DATA_DIR=/data/dina \
-  LLM_GATEWAY_URL=http://router-svc.router-shared/v1 \
-  OLARES_APP_ID=dina \
-  DINA_CLI_ROOT=/data/cli
-
-USER root
-RUN npm install -g @olares/cli@1.12.7-cli.0 \
-  && ln -sf "$(npm root -g)/@olares/cli/bin/olares-cli.js" /usr/local/bin/olares-cli \
-  && olares-cli -v
-
-# Ship pre-built server + packages/plugins + packages/skills + production deps.
-COPY --from=build --chown=node:node /app/.dina-image-id ./
-COPY --from=build --chown=node:node /app/package.json /app/package-lock.json ./
-COPY --from=build --chown=node:node /app/node_modules ./node_modules
-COPY --from=build --chown=node:node /app/dist ./dist
-COPY --from=build --chown=node:node /app/packages/plugins ./packages/plugins
-COPY --from=build --chown=node:node /app/packages/skills ./packages/skills
-
-RUN mkdir -p /data/home /data/dina /data/workspace /data/cli \
-  && chown -R node:node /data
+  && rm -rf packages/service \
+  && date -u +%Y%m%d%H%M%S > .lares-image-id \
+  && chown -R node:node /app
 
 USER node
-VOLUME ["/data"]
-EXPOSE 8080
-
-ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["npm", "run", "start"]

@@ -27,7 +27,7 @@ test("Router catalog exposes only search models", async () => {
 });
 
 test("default search model must come from the live Router catalog", async () => {
-  const home = mkdtempSync(join(tmpdir(), "dina-websearch-"));
+  const home = mkdtempSync(join(tmpdir(), "lares-websearch-"));
   const previous = process.env.DSH_HOME;
   process.env.DSH_HOME = home;
   try {
@@ -56,7 +56,7 @@ test("default search model must come from the live Router catalog", async () => 
 });
 
 test("reading a temporarily incomplete Router catalog does not erase the saved default", async () => {
-  const home = mkdtempSync(join(tmpdir(), "dina-websearch-read-"));
+  const home = mkdtempSync(join(tmpdir(), "lares-websearch-read-"));
   const previousHome = process.env.DSH_HOME;
   const originalFetch = globalThis.fetch;
   process.env.DSH_HOME = home;
@@ -90,11 +90,11 @@ test("Router list and search use the same gateway identity as LLM calls", async 
   const previous = {
     url: process.env.LLM_GATEWAY_URL,
     appId: process.env.OLARES_APP_ID,
-    key: process.env.DINA_ROUTER_API_KEY,
+    key: process.env.LARES_ROUTER_API_KEY,
   };
   process.env.LLM_GATEWAY_URL = "http://router.test/v1/";
-  process.env.OLARES_APP_ID = "dina";
-  delete process.env.DINA_ROUTER_API_KEY;
+  process.env.OLARES_APP_ID = "lares";
+  delete process.env.LARES_ROUTER_API_KEY;
 
   const originalFetch = globalThis.fetch;
   const calls: { url: string; init: RequestInit }[] = [];
@@ -141,7 +141,7 @@ test("Router list and search use the same gateway identity as LLM calls", async 
     });
 
     assert.equal(calls[0].url, "http://router.test/v1/models");
-    assert.equal((calls[0].init.headers as Record<string, string>)["x-caller-appid"], "dina");
+    assert.equal((calls[0].init.headers as Record<string, string>)["x-caller-appid"], "lares");
     assert.equal(calls[1].url, "http://router.test/v1/search");
     assert.deepEqual(JSON.parse(String(calls[1].init.body)), {
       model: "tavily/search",
@@ -152,7 +152,7 @@ test("Router list and search use the same gateway identity as LLM calls", async 
     globalThis.fetch = originalFetch;
     restoreEnv("LLM_GATEWAY_URL", previous.url);
     restoreEnv("OLARES_APP_ID", previous.appId);
-    restoreEnv("DINA_ROUTER_API_KEY", previous.key);
+    restoreEnv("LARES_ROUTER_API_KEY", previous.key);
   }
 });
 
@@ -188,7 +188,7 @@ test("Router search distinguishes its timeout from caller cancellation", async (
 });
 
 test("dsh search facade follows the selected Router model", async () => {
-  const home = mkdtempSync(join(tmpdir(), "dina-websearch-facade-"));
+  const home = mkdtempSync(join(tmpdir(), "lares-websearch-facade-"));
   const previousHome = process.env.DSH_HOME;
   process.env.DSH_HOME = home;
   const originalFetch = globalThis.fetch;
@@ -196,10 +196,10 @@ test("dsh search facade follows the selected Router model", async () => {
     const { setDefaultSearchModel } = await import(
       `../../packages/plugins/web-search/host/config.js?facade=${Date.now()}`
     );
-    const { createDinaSearchProvider } = await import(
+    const { createLaresSearchProvider } = await import(
       `../../packages/plugins/web-search/host/provider.js?facade=${Date.now()}`
     );
-    const provider = createDinaSearchProvider();
+    const provider = createLaresSearchProvider();
     assert.equal(provider.available(), false);
 
     setDefaultSearchModel("tavily/search", [{ id: "tavily/search" }]);

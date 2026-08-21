@@ -4,14 +4,14 @@
  */
 import { mkdirSync } from "node:fs";
 
-export const name = "dina-default-workspace";
+export const name = "lares-default-workspace";
 export const inject = ["workspaceRegistry"];
 
 export const DEFAULT_WORKSPACE_TITLE = "Default";
 
 /** @param {NodeJS.ProcessEnv} [env] */
 export function workspaceRootFromEnv(env = process.env) {
-  const value = env.DSH_CWD ?? env.DINA_WORKSPACE;
+  const value = env.DSH_CWD ?? env.LARES_WORKSPACE;
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
@@ -31,14 +31,14 @@ export async function seedDefaultWorkspace(registry, workspacePath, title = DEFA
 export async function apply(ctx) {
   const root = workspaceRootFromEnv();
   if (root === null) {
-    console.warn("[dina] default workspace skipped: DSH_CWD / DINA_WORKSPACE unset");
+    console.warn("[lares] default workspace skipped: DSH_CWD / LARES_WORKSPACE unset");
     return;
   }
   try {
     const workspace = await seedDefaultWorkspace(ctx.workspaceRegistry, root);
-    console.log(`[dina] default workspace id=${workspace.id} path=${workspace.path} title=${workspace.title}`);
+    console.log(`[lares] default workspace id=${workspace.id} path=${workspace.path} title=${workspace.title}`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error(`[dina] default workspace seed failed: ${message}`);
+    console.error(`[lares] default workspace seed failed: ${message}`);
   }
 }

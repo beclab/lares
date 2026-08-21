@@ -1,4 +1,4 @@
-export const API = "/api/dina/voice";
+export const API = "/api/lares/voice";
 
 export function mergeTranscript(draft, transcript) {
   const base = String(draft ?? "").replace(/\s+$/, "");

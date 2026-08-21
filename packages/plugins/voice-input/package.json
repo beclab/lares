@@ -1,9 +1,9 @@
 {
-  "name": "@dina/voice-input",
+  "name": "@lares/voice-input",
   "version": "0.15.0",
   "private": true,
   "type": "module",
-  "description": "Dina voice input: a composer microphone in dsh web, transcribed by an Olares Router STT model",
+  "description": "Lares voice input: a composer microphone in dsh web, transcribed by an Olares Router STT model",
   "exports": {
     ".": "./host/index.js",
     "./client": "../../../dist/plugins/voice-input/client.js",

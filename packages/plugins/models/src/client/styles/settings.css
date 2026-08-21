@@ -1,5 +1,5 @@
 /* Settings section for the Router model catalog. Tokens only: --dsw-*. */
-.dina-models {
+.lares-models {
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -7,7 +7,7 @@
   color: var(--dsw-alias-label-primary);
 }
 
-.dina-models-group {
+.lares-models-group {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -15,12 +15,12 @@
   border-top: 1px solid var(--dsw-alias-border-l2);
 }
 
-.dina-models-list {
+.lares-models-list {
   display: flex;
   flex-direction: column;
 }
 
-.dina-models-item {
+.lares-models-item {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -35,19 +35,19 @@
   cursor: pointer;
 }
 
-.dina-models-item:hover:not(:disabled) {
+.lares-models-item:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover-solid);
 }
 
-.dina-models-item:disabled {
+.lares-models-item:disabled {
   cursor: default;
 }
 
-.dina-models-item.is-default {
+.lares-models-item.is-default {
   background: var(--dsw-specific-selector);
 }
 
-.dina-models-item-copy {
+.lares-models-item-copy {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -55,7 +55,7 @@
   min-width: 0;
 }
 
-.dina-models-item-name {
+.lares-models-item-name {
   overflow: hidden;
   font-size: 14px;
   line-height: 22px;
@@ -63,13 +63,13 @@
   white-space: nowrap;
 }
 
-.dina-models-item-desc {
+.lares-models-item-desc {
   color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
   line-height: 18px;
 }
 
-.dina-models-badge {
+.lares-models-badge {
   display: flex;
   flex: none;
   align-items: center;
@@ -79,7 +79,7 @@
   line-height: 18px;
 }
 
-.dina-models-spinner {
+.lares-models-spinner {
   flex: none;
   color: var(--dsw-alias-label-tertiary);
 }

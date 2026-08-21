@@ -24,9 +24,9 @@ test("identityFromHeaders reads edge cookie and user", () => {
 });
 
 test("ensureCliProfile writes config and keychain blob", () => {
-  const root = mkdtempSync(join(tmpdir(), "dina-cli-"));
-  const previous = process.env.DINA_CLI_ROOT;
-  process.env.DINA_CLI_ROOT = root;
+  const root = mkdtempSync(join(tmpdir(), "lares-cli-"));
+  const previous = process.env.LARES_CLI_ROOT;
+  process.env.LARES_CLI_ROOT = root;
   try {
     const profile = ensureCliProfile({
       user: "luolong01@olares.com",
@@ -41,17 +41,17 @@ test("ensureCliProfile writes config and keychain blob", () => {
     assert.equal(existsSync(join(dataDir, "olares-cli", "master.key")), true);
     assert.equal(existsSync(join(dataDir, "olares-cli", "luolong01_olares.com.enc")), true);
   } finally {
-    if (previous === undefined) delete process.env.DINA_CLI_ROOT;
-    else process.env.DINA_CLI_ROOT = previous;
+    if (previous === undefined) delete process.env.LARES_CLI_ROOT;
+    else process.env.LARES_CLI_ROOT = previous;
     rmSync(root, { recursive: true, force: true });
   }
 });
 
 test("rememberSessionIdentity materializes profile env", () => {
-  const root = mkdtempSync(join(tmpdir(), "dina-cli-sess-"));
-  const previousRoot = process.env.DINA_CLI_ROOT;
+  const root = mkdtempSync(join(tmpdir(), "lares-cli-sess-"));
+  const previousRoot = process.env.LARES_CLI_ROOT;
   const previousHome = process.env.OLARES_CLI_HOME;
-  process.env.DINA_CLI_ROOT = root;
+  process.env.LARES_CLI_ROOT = root;
   try {
     const identity = {
       user: "luolong01@olares.com",
@@ -63,8 +63,8 @@ test("rememberSessionIdentity materializes profile env", () => {
     assert.ok(process.env.OLARES_CLI_HOME?.includes(root));
     assert.equal(process.env.OLARES_CLI_REMOTE_ONLY, "1");
   } finally {
-    if (previousRoot === undefined) delete process.env.DINA_CLI_ROOT;
-    else process.env.DINA_CLI_ROOT = previousRoot;
+    if (previousRoot === undefined) delete process.env.LARES_CLI_ROOT;
+    else process.env.LARES_CLI_ROOT = previousRoot;
     if (previousHome === undefined) delete process.env.OLARES_CLI_HOME;
     else process.env.OLARES_CLI_HOME = previousHome;
     delete process.env.OLARES_CLI_DATA_DIR;

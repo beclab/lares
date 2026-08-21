@@ -8,8 +8,8 @@ import { fileURLToPath } from "node:url";
 // hostPath mount. We poll a sentinel's mtime instead and re-exec the server.
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ENTRY = path.join(HERE, "index.js");
-const RELOAD_FILE = process.env.DINA_RELOAD_FILE || path.resolve(HERE, "../..", ".dina-reload");
-const POLL_MS = Number(process.env.DINA_RELOAD_POLL_MS || "1000");
+const RELOAD_FILE = process.env.LARES_RELOAD_FILE || path.resolve(HERE, "../..", ".lares-reload");
+const POLL_MS = Number(process.env.LARES_RELOAD_POLL_MS || "1000");
 
 /** mtime of the sentinel, or -1 while it does not exist. */
 function readMtime(): number {
@@ -83,7 +83,7 @@ function poll() {
   if (mtime === lastMtime) return;
   lastMtime = mtime;
   if (mtime < 0) return;
-  console.log("[dina] reload signal → restarting dsh web");
+  console.log("[lares] reload signal → restarting dsh web");
   void requestRestart();
 }
 

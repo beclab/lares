@@ -14,10 +14,11 @@ alwaysApply: true
 - 改 `packages/` 下代码或配置（不改 chart 结构、不换镜像底座）→  
   `scripts/dev-sync/sync.sh <机器号>`（默认先本地 `npm run build` 再同步产物）。
 - **禁止**为日常迭代执行：`market uninstall` / `market install` / `market upgrade`、重新打 chart 上传、重建并推送镜像。
-- 只有下列情况才允许重装 / 换镜像底座（仍优先装 **dev 包**，见下节）：
+- 只有下列情况才允许重装 / 换镜像（仍优先装 **dev 包**，见下节）：
   - 首次装机或环境已卸干净
-  - 改了 `deploy/dina/`（Deployment、init、volume、env 契约等）
-  - 改了 Dockerfile / 生产依赖集合，热更新卷里的 `node_modules` 无法再对齐
+  - 改了 `deploy/lares/`（Deployment、init、volume、env 契约等）
+  - 改了 `Dockerfile.base` / `package-lock.json` / 全局 CLI（`scripts/build-image.sh --base`）
+  - 要把代码打进镜像、不走热更新（`scripts/build-image.sh`，不要加 `--base`）
   - 用户**明确要求**重装或换镜像
 
 ## 机器1（luolong01）
@@ -50,9 +51,9 @@ initContainers  fix-dev-perms、seed-dev-src
 
 ## 镜像分发：save + SSH，默认不 push
 
-测试期换镜像底座时：
+测试期换镜像时：
 
-1. `scripts/build-image.sh`（默认 `--load`，**不要**加 `--push`）
+1. 换底座（OS / CLI / npm deps）：`scripts/build-image.sh --base`；只换代码进镜像：`scripts/build-image.sh`（默认 `--load`，**不要**加 `--push`）
 2. `scripts/deploy-image.sh <机器号>`：`docker save` → SSH 传到目标机 → `ctr -n k8s.io images import`
 3. 再按需装 / 重装 **dev chart**（或仅重启 pod 拉本地已有 tag）
 
@@ -65,7 +66,7 @@ initContainers  fix-dev-perms、seed-dev-src
 
 - **不得带预发布后缀。** app-service 用空版本查 Helm index，semver 视作 `*` 约束，
   而 `*` 不匹配预发布版本。带 `-dev.x` 的包安装时报
-  `no chart version found for dina-`，与 index 内容无关。
+  `no chart version found for lares-`，与 index 内容无关。
 - **总长 ≤ 16 字符。** market 的版本列是 `varchar(16)`，超长在上传时报 HTTP 400。
 
 ## 安装失败后的脏记录
@@ -74,8 +75,8 @@ initContainers  fix-dev-perms、seed-dev-src
 之后所有安装都拿到空版本。清理方式是删掉整个应用的所有版本再重新上传：
 
 ```bash
-olares-cli market delete dina          # 不带 --version，清掉所有版本
-olares-cli market upload artifacts/dina-<v>.tgz
+olares-cli market delete lares          # 不带 --version，清掉所有版本
+olares-cli market upload artifacts/lares-<v>.tgz
 ```
 
 `market upgrade` 对这类应用会报 `opID not found in response data`，

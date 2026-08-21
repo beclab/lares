@@ -3,7 +3,7 @@ import { PRODUCT_NAME, THEME_COLOR, identityPrompt, surfacePrompt } from "./iden
 import { BRAND_CSS } from "./stylesheet.js";
 import { MANIFEST, MANIFEST_PATH, MARK_PATH, MARK_SVG } from "./mark.js";
 
-export const name = "dina-brand";
+export const name = "lares-brand";
 export const inject = ["webServer"];
 
 const LOOPBACK_HOST = "127.0.0.1";
@@ -22,7 +22,7 @@ function serve(body, contentType) {
 /** @param {import("@deepseek-ai/cordis").Context} ctx */
 function localWebUrl(ctx) {
   const port = ctx.get("webServer")?.port;
-  if (port === undefined) throw new Error("dina-brand: webServer missing while resolving surface URL");
+  if (port === undefined) throw new Error("lares-brand: webServer missing while resolving surface URL");
   return `http://${LOOPBACK_HOST}:${String(port)}`;
 }
 
@@ -32,7 +32,7 @@ function localWebUrl(ctx) {
 export function apply(ctx) {
   ctx.effect(
     () => ctx.webServer.register({ kind: "exact", path: MARK_PATH, handler: serve(MARK_SVG, "image/svg+xml") }),
-    "dina-brand-mark",
+    "lares-brand-mark",
   );
   ctx.effect(
     () =>
@@ -41,7 +41,7 @@ export function apply(ctx) {
         path: MANIFEST_PATH,
         handler: serve(JSON.stringify(MANIFEST), "application/manifest+json"),
       }),
-    "dina-brand-manifest",
+    "lares-brand-manifest",
   );
 
   ctx.webServer.tapIndex((html) =>
@@ -51,7 +51,7 @@ export function apply(ctx) {
       .replace(/<link rel="manifest"[^>]*>/i, `<link rel="manifest" href="${MANIFEST_PATH}" />`)
       .replace(
         /<\/head>/i,
-        `<meta name="theme-color" content="${THEME_COLOR}" /><style data-dina-brand>${BRAND_CSS}</style></head>`,
+        `<meta name="theme-color" content="${THEME_COLOR}" /><style data-lares-brand>${BRAND_CSS}</style></head>`,
       ),
   );
 

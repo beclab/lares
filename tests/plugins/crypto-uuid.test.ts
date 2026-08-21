@@ -45,6 +45,6 @@ test("shim leaves a secure origin's own randomUUID in place", () => {
 test("shim runs before the shell bundle and stays idempotent", () => {
   const html = readFileSync(require.resolve("@deepseek-ai/dsh-web-frontend/dist/index.html"), "utf8");
   const tapped = injectUuidShim(html);
-  assert.ok(tapped.indexOf("data-dina-uuid-shim") < tapped.indexOf('<script type="module"'));
+  assert.ok(tapped.indexOf("data-lares-uuid-shim") < tapped.indexOf('<script type="module"'));
   assert.equal(injectUuidShim(tapped), tapped);
 });

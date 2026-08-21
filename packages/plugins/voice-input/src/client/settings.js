@@ -33,12 +33,12 @@ function languageItems(t) {
 function Row(title, hint, control) {
   return h(
     "div",
-    { className: "dina-voice-row" },
+    { className: "lares-voice-row" },
     h(
       "div",
-      { className: "dina-voice-row-text" },
-      h("div", { className: "dina-voice-row-title" }, title),
-      hint ? h("div", { className: "dina-voice-hint" }, hint) : null,
+      { className: "lares-voice-row-text" },
+      h("div", { className: "lares-voice-row-title" }, title),
+      hint ? h("div", { className: "lares-voice-hint" }, hint) : null,
     ),
     control,
   );
@@ -132,8 +132,8 @@ export function VoiceSettings() {
   if (!config) {
     return h(
       "div",
-      { className: "dina-voice" },
-      h("div", { className: "dina-settings-notice" }, t("settings.loading")),
+      { className: "lares-voice" },
+      h("div", { className: "lares-settings-notice" }, t("settings.loading")),
     );
   }
 
@@ -144,7 +144,7 @@ export function VoiceSettings() {
 
   return h(
     "div",
-    { className: "dina-voice" },
+    { className: "lares-voice" },
     h(SettingsHeader, {
       title: t("settings.title"),
       refreshing,
@@ -153,7 +153,7 @@ export function VoiceSettings() {
       routerRoute: "audio",
       t,
     }),
-    h("p", { className: "dina-settings-intro" }, t("settings.intro")),
+    h("p", { className: "lares-settings-intro" }, t("settings.intro")),
     h(
       SettingsStatus,
       { ready },
@@ -164,7 +164,7 @@ export function VoiceSettings() {
 
     h(
       "div",
-      { className: "dina-voice-rows" },
+      { className: "lares-voice-rows" },
       Row(
         t("settings.model.title"),
         t("settings.model.hint"),
@@ -188,7 +188,7 @@ export function VoiceSettings() {
     ),
 
     notice
-      ? h("p", { className: `dina-settings-notice ${notice.kind === "error" ? "is-error" : ""}` }, notice.text)
+      ? h("p", { className: `lares-settings-notice ${notice.kind === "error" ? "is-error" : ""}` }, notice.text)
       : null,
   );
 }

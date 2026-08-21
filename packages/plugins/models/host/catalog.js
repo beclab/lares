@@ -1,4 +1,4 @@
-/** The model facts Dina's settings panel reads and writes. */
+/** The model facts Lares's settings panel reads and writes. */
 import { routerCatalogRows } from "../../shared/host/router-catalog.js";
 
 const PROVIDER = "olares-router";
@@ -17,7 +17,7 @@ function failure(code, status, message) {
 }
 
 function shimBaseUrl() {
-  const configured = process.env.DINA_LLM_BASE_URL?.trim();
+  const configured = process.env.LARES_LLM_BASE_URL?.trim();
   if (configured) return configured.replace(/\/+$/, "");
   return `http://127.0.0.1:${process.env.PORT ?? 8080}/llm/v1`;
 }

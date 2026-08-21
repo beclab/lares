@@ -1,9 +1,9 @@
 {
-  "name": "@dina/web-search",
+  "name": "@lares/web-search",
   "version": "0.15.0",
   "private": true,
   "type": "module",
-  "description": "Dina web search through Olares Router",
+  "description": "Lares web search through Olares Router",
   "exports": {
     ".": "./host/index.js",
     "./client": "../../../dist/plugins/web-search/client.js",

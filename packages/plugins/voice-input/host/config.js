@@ -34,7 +34,7 @@ export function validateConfigPatch(raw) {
 }
 
 function configPath() {
-  const home = process.env.DSH_HOME?.trim() || "/data/dina/dsh-home";
+  const home = process.env.DSH_HOME?.trim() || "/data/lares/dsh-home";
   return join(home, "voice-input", "config.json");
 }
 

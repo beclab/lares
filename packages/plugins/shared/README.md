@@ -1,6 +1,6 @@
 # Shared plugin foundations
 
-Only infrastructure used by multiple Dina plugins belongs here.
+Only infrastructure used by multiple Lares plugins belongs here.
 
 - `client/`: dsh primitive compositions, locale/lifecycle helpers, and shared settings CSS.
 - `host/`: bounded HTTP handling, atomic JSON files, and normalized Router catalog rows.

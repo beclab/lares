@@ -1,9 +1,9 @@
 {
-  "name": "@dina/models",
+  "name": "@lares/models",
   "version": "0.15.0",
   "private": true,
   "type": "module",
-  "description": "Dina model settings: the Router catalog the Host can route, and the default model for new sessions",
+  "description": "Lares model settings: the Router catalog the Host can route, and the default model for new sessions",
   "exports": {
     ".": "./host/index.js",
     "./client": "../../../dist/plugins/models/client.js",

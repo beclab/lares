@@ -55,7 +55,7 @@ test("resolved STT cache is keyed by the configured preference", async () => {
 });
 
 test("readConfig / writeConfig round-trip through DSH_HOME", async () => {
-  const home = mkdtempSync(join(tmpdir(), "dina-voice-"));
+  const home = mkdtempSync(join(tmpdir(), "lares-voice-"));
   const prev = process.env.DSH_HOME;
   process.env.DSH_HOME = home;
   try {

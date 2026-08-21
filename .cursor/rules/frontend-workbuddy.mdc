@@ -13,5 +13,5 @@ alwaysApply: false
 - 保留 `ui-layout` 三栏（`sidebar` / `conversation` / `details`）；定制用 `ctx.slots.inject` 或替换 **inner** slot occupant，禁止注册 `root` 影子掉 AppFrame。
 - 侧栏策略：默认保留 `ui-sidebar`；靠拢 WorkBuddy 时优先 inject `sidebar.workspaces` / `sidebar.settings` / `sidebar.footer.action`。
 - 视觉遵循 dsh `--dsw-*` / `docs/web-styling.md`；禁止另起 `--wb-*` 平行 token 体系作为主主题。
-- 社区 UI 插件（如 `dsh-better-sidebar`）只经 profile 安装脚本 / `dsh plugin add` 接入，禁止把其源码拷进仓；自研插件（如 `@dina/voice-input`）落 `packages/plugins/` 并随镜像内建。
+- 社区 UI 插件（如 `dsh-better-sidebar`）只经 profile 安装脚本 / `dsh plugin add` 接入，禁止把其源码拷进仓；自研插件（如 `@lares/voice-input`）落 `packages/plugins/` 并随镜像内建。
 - WorkBuddy 截图基准仍在 `_参考/workbuddy-ui/`（交互参考，非实现蓝本）。

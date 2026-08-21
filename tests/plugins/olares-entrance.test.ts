@@ -32,8 +32,8 @@ test("router console is unavailable outside an Olares entrance", () => {
     "olares.com",
     "",
     "192.168.50.166",
-    "dina.user.example.com",
-    "dina.extra.user.olares.com",
+    "lares.user.example.com",
+    "lares.extra.user.olares.com",
     "-invalid.user.olares.com",
   ]) {
     assert.equal(routerConsoleUrl("llm", host), "");

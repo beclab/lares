@@ -1,4 +1,4 @@
-export interface DinaEnv {
+export interface LaresEnv {
   port: number;
   host: string;
   routerUrl: string;
@@ -14,7 +14,7 @@ function readString(name: string): string | null {
   return value ? value : null;
 }
 
-export function loadEnv(): DinaEnv {
+export function loadEnv(): LaresEnv {
   const portRaw = readString("PORT") ?? "8080";
   const port = Number(portRaw);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -25,10 +25,10 @@ export function loadEnv(): DinaEnv {
     port,
     host: readString("HOSTNAME") ?? "0.0.0.0",
     routerUrl: (readString("LLM_GATEWAY_URL") ?? "http://router-svc.router-shared/v1").replace(/\/+$/, ""),
-    routerApiKey: readString("DINA_ROUTER_API_KEY"),
-    olaresAppId: readString("OLARES_APP_ID") ?? "dina",
-    workspace: readString("DINA_WORKSPACE") ?? "/data/workspace",
-    dataDir: readString("DINA_DATA_DIR") ?? "/data/dina",
-    cliRoot: readString("DINA_CLI_ROOT") ?? "/data/cli",
+    routerApiKey: readString("LARES_ROUTER_API_KEY"),
+    olaresAppId: readString("OLARES_APP_ID") ?? "lares",
+    workspace: readString("LARES_WORKSPACE") ?? "/data/workspace",
+    dataDir: readString("LARES_DATA_DIR") ?? "/data/lares",
+    cliRoot: readString("LARES_CLI_ROOT") ?? "/data/cli",
   };
 }

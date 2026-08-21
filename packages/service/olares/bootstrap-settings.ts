@@ -3,11 +3,11 @@ import { join } from "node:path";
 import { type Document, isSeq, parseDocument } from "yaml";
 import { isChatModel, isPlaceholderModelId, type RouterModelEntry } from "./router-models.js";
 
-/** The provider route Dina owns: a pi-ai profile key, and what agent-default-model names. */
+/** The provider route Lares owns: a pi-ai profile key, and what agent-default-model names. */
 const PROVIDER = "olares-router";
 const DISPLAY_NAME = "Olares Router";
 /**
- * Router is reached through pi-ai rather than a Dina-owned adapter because the
+ * Router is reached through pi-ai rather than a Lares-owned adapter because the
  * web Models page only offers its model-list editor and endpoint interrogation
  * to the `llm-pi-ai` and `llm-deepseek` namespaces; any other namespace renders
  * a "edit the configuration file" hint. The route lives in the user's settings
@@ -24,15 +24,15 @@ const PROTOCOL = "openai-completions";
  */
 const ROUTE_COMPAT = { supportsReasoningEffort: true };
 /**
- * The shim bearer's credential reference — never DINA_ROUTER_API_KEY. The
+ * The shim bearer's credential reference — never LARES_ROUTER_API_KEY. The
  * /llm/v1 shim strips whatever Authorization the adapter sends and attaches
  * Router's own app identity, while pi-ai still requires the route's named
  * credential to resolve; keeping the two apart means a user's real Router key
  * stays the shim's business.
  */
-const CREDENTIAL_REF = "DINA_ROUTER_SHIM_KEY";
+const CREDENTIAL_REF = "LARES_ROUTER_SHIM_KEY";
 
-export interface DinaSettingsSeed {
+export interface LaresSettingsSeed {
   /** Router catalog, empty when the catalog could not be read this boot. */
   catalog: RouterModelEntry[];
   /** The local shim endpoint pi-ai calls (chat completions and /models). */
@@ -41,7 +41,7 @@ export interface DinaSettingsSeed {
   chatFallback: string | null;
 }
 
-export interface DinaSettingsResult {
+export interface LaresSettingsResult {
   /** The model agent-default-model now names, or null when nothing could be chosen. */
   model: string | null;
   /** Whether this boot created the Router route (absent profile). */
@@ -62,7 +62,7 @@ export interface DinaSettingsResult {
  * @param seed - Router facts for this boot.
  * @returns what the document names now, and whether it was written.
  */
-export function bootstrapDinaSettings(dshHome: string, seed: DinaSettingsSeed): DinaSettingsResult {
+export function bootstrapLaresSettings(dshHome: string, seed: LaresSettingsSeed): LaresSettingsResult {
   mkdirSync(dshHome, { recursive: true });
   const settingsPath = join(dshHome, "settings.yaml");
   const raw = readSettings(settingsPath);
@@ -96,7 +96,7 @@ function readSettings(settingsPath: string): string {
  * page edits them and a boot-time refresh would undo those edits.
  * @returns whether the profile was created.
  */
-function seedRouterRoute(doc: Document, seed: DinaSettingsSeed): boolean {
+function seedRouterRoute(doc: Document, seed: LaresSettingsSeed): boolean {
   const path = [SETTINGS_NS, "providers", PROVIDER];
   if (doc.getIn(path) !== undefined) return false;
 
@@ -123,7 +123,7 @@ function seedRouterRoute(doc: Document, seed: DinaSettingsSeed): boolean {
  * placeholder when the catalog was still unreachable. An empty catalog means
  * this boot could not read Router, so the list stands.
  */
-function refreshRouterRoute(doc: Document, seed: DinaSettingsSeed): void {
+function refreshRouterRoute(doc: Document, seed: LaresSettingsSeed): void {
   const path = [SETTINGS_NS, "providers", PROVIDER];
   doc.setIn([...path, "compat"], ROUTE_COMPAT);
   const chat = declarableModels(seed);
@@ -141,7 +141,7 @@ interface RouteModel {
  * Embedding, transcription, and OCR rows share the Router catalog but cannot
  * serve a chat turn; declaring them would only put dead entries in the picker.
  */
-function declarableModels(seed: DinaSettingsSeed): RouteModel[] {
+function declarableModels(seed: LaresSettingsSeed): RouteModel[] {
   return seed.catalog.filter(isChatModel).map((entry) => ({
     id: entry.id,
     name: entry.name,
@@ -164,7 +164,7 @@ function declaredModelCount(doc: Document): number {
  * stands.
  * @returns the model the document names now.
  */
-function pinDefaultModel(doc: Document, seed: DinaSettingsSeed): string | null {
+function pinDefaultModel(doc: Document, seed: LaresSettingsSeed): string | null {
   const current = readString(doc, ["agent-default-model", "model"]);
   const desired = desiredModel(seed);
   const catalogIds = new Set(seed.catalog.filter(isChatModel).map((entry) => entry.id));
@@ -182,7 +182,7 @@ function pinDefaultModel(doc: Document, seed: DinaSettingsSeed): string | null {
   return model;
 }
 
-function desiredModel(seed: DinaSettingsSeed): string | null {
+function desiredModel(seed: LaresSettingsSeed): string | null {
   return seed.chatFallback;
 }
 

@@ -5,7 +5,7 @@
 import { identityFromHeaders } from "./identity.js";
 import { rememberRequestIdentity } from "./session-identity.js";
 
-export const name = "dina-olares-identity";
+export const name = "lares-olares-identity";
 export const inject = ["webServer"];
 
 function trustedEntranceHosts() {
@@ -59,7 +59,7 @@ export function apply(ctx) {
       if (req.headers.origin !== undefined) req.headers.origin = `http://${loopback}`;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      console.warn(`[dina] olares identity skipped: ${message}`);
+      console.warn(`[lares] olares identity skipped: ${message}`);
     }
   };
 
@@ -79,7 +79,7 @@ export function apply(ctx) {
   };
 
   if (attach()) {
-    ctx.effect(() => detach, "dina-olares-identity");
+    ctx.effect(() => detach, "lares-olares-identity");
     return;
   }
 
@@ -91,6 +91,6 @@ export function apply(ctx) {
       clearInterval(timer);
       detach();
     },
-    "dina-olares-identity",
+    "lares-olares-identity",
   );
 }

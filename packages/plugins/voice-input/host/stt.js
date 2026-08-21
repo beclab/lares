@@ -1,5 +1,5 @@
 /**
- * STT via Dina /llm/v1 → Router POST /audio/transcriptions (one-shot multipart).
+ * STT via Lares /llm/v1 → Router POST /audio/transcriptions (one-shot multipart).
  */
 import { randomBytes } from "node:crypto";
 import { routerCatalogRows } from "../../shared/host/router-catalog.js";
@@ -44,7 +44,7 @@ export class VoiceError extends Error {
 }
 
 export function shimBaseUrl() {
-  const configured = process.env.DINA_LLM_BASE_URL?.trim();
+  const configured = process.env.LARES_LLM_BASE_URL?.trim();
   if (configured) return configured.replace(/\/+$/, "");
   return `http://127.0.0.1:${process.env.PORT ?? 8080}/llm/v1`;
 }
@@ -115,7 +115,7 @@ export function forgetSttModel() {
 
 /** @param {Record<string, string>} fields @param {{ filename: string, contentType: string, bytes: Buffer }} file */
 function multipartBody(fields, file) {
-  const boundary = `----dina-voice-${randomBytes(12).toString("hex")}`;
+  const boundary = `----lares-voice-${randomBytes(12).toString("hex")}`;
   const parts = [];
   for (const [name, value] of Object.entries(fields)) {
     parts.push(

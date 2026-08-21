@@ -1,4 +1,4 @@
-export const API = "/api/dina/models";
+export const API = "/api/lares/models";
 
 async function readPayload(res, path) {
   const payload = await res.json().catch(() => ({}));

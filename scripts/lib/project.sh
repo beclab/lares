@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # Load project identity from repo-root project.json.
-# Exports: APP_NAME APP_TITLE IMAGE_REPO NPM_SCOPE CHART_DIR PROJECT_ROOT
+# Exports: APP_NAME APP_TITLE IMAGE_REPO IMAGE_BASE_REPO IMAGE_BASE_TAG NPM_SCOPE CHART_DIR PROJECT_ROOT
 #
 # Usage (from any bash script under scripts/):
 #   # shellcheck source=scripts/lib/project.sh
@@ -37,11 +37,19 @@ name = data.get("name") or ""
 title = data.get("title") or ""
 image_repo = data.get("image_repo") or ""
 npm_scope = data.get("npm_scope") or ""
-if not name or not title or not image_repo:
+image_base_tag = str(data.get("image_base_tag") or "1")
+if not name or not title or image_repo == "":
     sys.exit("project.json must set name, title, image_repo")
+if "/" in image_repo:
+    prefix, leaf = image_repo.rsplit("/", 1)
+    image_base_repo = data.get("image_base_repo") or f"{prefix}/{leaf}-base"
+else:
+    image_base_repo = data.get("image_base_repo") or f"{image_repo}-base"
 print(f"APP_NAME={shlex.quote(name)}")
 print(f"APP_TITLE={shlex.quote(title)}")
 print(f"IMAGE_REPO={shlex.quote(image_repo)}")
+print(f"IMAGE_BASE_REPO={shlex.quote(image_base_repo)}")
+print(f"IMAGE_BASE_TAG={shlex.quote(image_base_tag)}")
 print(f"NPM_SCOPE={shlex.quote(npm_scope)}")
 PY
 )"

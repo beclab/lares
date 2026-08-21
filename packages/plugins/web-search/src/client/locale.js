@@ -2,7 +2,7 @@ import { createLocaleBinding } from "../../../shared/client/locale-binding.js";
 
 export const ZH = {
   "settings.title": "网络搜索",
-  "settings.intro": "使用 Router 中已配置的搜索服务，无需在 Dina 中重复填写密钥。",
+  "settings.intro": "使用 Router 中已配置的搜索服务，无需在 Lares 中重复填写密钥。",
   "settings.refresh": "刷新",
   "settings.refreshing": "刷新中…",
   "settings.router": "Router 控制台",
@@ -34,7 +34,7 @@ export const EN = {
   "settings.saveFailed": "Failed to set the default search service: {msg}",
 };
 
-const binding = createLocaleBinding("dina.webSearch");
+const binding = createLocaleBinding("lares.webSearch");
 
 export const attachLocale = binding.attach;
 export const bindTranslate = binding.bind;

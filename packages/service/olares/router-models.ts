@@ -1,4 +1,4 @@
-import type { DinaEnv } from "../config/env.js";
+import type { LaresEnv } from "../config/env.js";
 import {
   routerCatalogRows,
   type RouterCatalogRow,
@@ -40,7 +40,7 @@ function routerAuthHeaders(apiKey: string | null, olaresAppId: string): Record<s
 }
 
 /** GET ${LLM_GATEWAY_URL}/models with in-cluster app identity. */
-export async function fetchRouterModels(env: Pick<DinaEnv, "routerUrl" | "routerApiKey" | "olaresAppId">): Promise<RouterModelEntry[]> {
+export async function fetchRouterModels(env: Pick<LaresEnv, "routerUrl" | "routerApiKey" | "olaresAppId">): Promise<RouterModelEntry[]> {
   const headers = {
     ...routerAuthHeaders(env.routerApiKey, env.olaresAppId),
     accept: "application/json",

@@ -1,4 +1,4 @@
-export const API = "/api/dina/web-search";
+export const API = "/api/lares/web-search";
 
 export async function getJson(path) {
   const res = await fetch(`${API}${path}`);

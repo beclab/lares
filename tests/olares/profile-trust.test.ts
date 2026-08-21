@@ -53,15 +53,15 @@ test("nav icon patch fails loudly when the settings shell drifts", () => {
   assert.throws(() => sectionComponentNavIcon("unrelated upstream source"), /anchor not found/);
 });
 
-test("Dina profile packages link to authoritative source directories", () => {
-  const root = mkdtempSync(join(tmpdir(), "dina-profile-"));
+test("Lares profile packages link to authoritative source directories", () => {
+  const root = mkdtempSync(join(tmpdir(), "lares-profile-"));
   const profileDir = join(root, "profile");
   const source = join(root, "bundle-web");
   mkdirSync(source);
 
   try {
-    linkOwnedProfileDeps(profileDir, [["@dina/bundle-web", source]]);
-    const target = join(profileDir, "node_modules", "@dina", "bundle-web");
+    linkOwnedProfileDeps(profileDir, [["@lares/bundle-web", source]]);
+    const target = join(profileDir, "node_modules", "@lares", "bundle-web");
     assert.equal(lstatSync(target).isSymbolicLink(), true);
     assert.equal(readlinkSync(target), source);
   } finally {

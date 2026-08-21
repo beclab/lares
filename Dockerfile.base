@@ -1,0 +1,47 @@
+# syntax=docker/dockerfile:1.7
+# Environment image: OS toolchain, global CLIs, npm deps.
+# Rebuild with `scripts/build-image.sh --base` when this file, package-lock, or CLI pins change.
+FROM node:22-bookworm-slim
+
+# build-essential + python3: community dsh plugins (e.g. dsh-better-sidebar →
+# node-pty) have no linux prebuilds and compile via node-gyp at profile install
+# time. The cluster forbids root pods, so the toolchain must live in the image
+# and the boot-time `npm install` runs as uid 1000 with build scripts enabled.
+# ffmpeg/ffprobe: on PATH for agent skills that process video (Debian package).
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates curl fd-find ffmpeg git jq ripgrep tini build-essential python3 \
+  && ln -sf "$(command -v fdfind)" /usr/local/bin/fd \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+ENV PORT=8080 \
+  HOSTNAME=0.0.0.0 \
+  HOME=/data/home \
+  LARES_WORKSPACE=/data/workspace \
+  LARES_DATA_DIR=/data/lares \
+  LLM_GATEWAY_URL=http://router-svc.router-shared/v1 \
+  OLARES_APP_ID=lares \
+  LARES_CLI_ROOT=/data/cli
+
+USER root
+RUN npm install -g @olares/cli@1.12.7-cli.2 @olares/hass-cli@0.0.1 \
+  && ln -sf "$(npm root -g)/@olares/cli/bin/olares-cli.js" /usr/local/bin/olares-cli \
+  && ln -sf "$(npm root -g)/@olares/hass-cli/bin/hass-cli.js" /usr/local/bin/hass-cli \
+  && olares-cli -v \
+  && hass-cli -v
+
+COPY package.json package-lock.json ./
+# Keep devDependencies (tsc / esbuild) so the app image can compile without a second npm ci.
+RUN npm ci --include=dev
+
+ENV NODE_ENV=production
+
+RUN mkdir -p /data/home /data/lares /data/workspace /data/cli \
+  && chown -R node:node /data /app
+
+USER node
+VOLUME ["/data"]
+EXPOSE 8080
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["npm", "run", "start"]

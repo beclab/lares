@@ -1,5 +1,5 @@
 /* Mirror official composer add button (dsh-client-ui-conversation): 28px circle. */
-.dina-voice-mic {
+.lares-voice-mic {
   display: grid;
   place-items: center;
   flex: none;
@@ -16,16 +16,16 @@
   cursor: pointer;
 }
 
-.dina-voice-mic:hover:not(:disabled) {
+.lares-voice-mic:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover-solid);
 }
 
-.dina-voice-mic:disabled {
+.lares-voice-mic:disabled {
   opacity: 0.5;
   cursor: default;
 }
 
-.dina-voice-mic[data-phase="recording"] {
+.lares-voice-mic[data-phase="recording"] {
   display: inline-flex;
   align-items: center;
   width: auto;
@@ -34,26 +34,26 @@
   background: var(--dsw-alias-interactive-bg-hover-danger);
 }
 
-.dina-voice-mic[data-phase="error"] {
+.lares-voice-mic[data-phase="error"] {
   color: var(--dsw-alias-state-error-primary);
 }
 
-.dina-voice-live {
+.lares-voice-live {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   font-variant-numeric: tabular-nums;
 }
 
-.dina-voice-dot {
+.lares-voice-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: currentColor;
-  animation: dina-voice-pulse 1s ease-in-out infinite;
+  animation: lares-voice-pulse 1s ease-in-out infinite;
 }
 
-@keyframes dina-voice-pulse {
+@keyframes lares-voice-pulse {
   0%,
   100% {
     opacity: 1;

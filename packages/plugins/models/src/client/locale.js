@@ -41,7 +41,7 @@ export const EN = {
   "settings.providerFailed": "Failed to list models for {name}: {msg}",
 };
 
-const binding = createLocaleBinding("dina.models");
+const binding = createLocaleBinding("lares.models");
 
 export const attachLocale = binding.attach;
 export const bindTranslate = binding.bind;

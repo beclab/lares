@@ -112,7 +112,7 @@ function encryptAesGcm(plaintext, key) {
 /** @param {OlaresIdentity} identity */
 function ownerHome(identity) {
   const root = (
-    process.env.DINA_CLI_ROOT
+    process.env.LARES_CLI_ROOT
     ?? process.env.OLARES_CLI_ROOT
     ?? "/data/cli"
   ).replace(/\/+$/, "");

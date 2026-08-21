@@ -6,7 +6,7 @@ import { MARK_DATA_URI } from "./mark.js";
  * so hashed CSS-module suffixes survive dsh frontend rebuilds.
  */
 export const BRAND_CSS = `
-:root { --dina-mark: ${MARK_DATA_URI}; }
+:root { --lares-mark: ${MARK_DATA_URI}; }
 
 /* Boot splash */
 [class*="_boot_"] [class*="_wordmark_"] { font-size: 0; letter-spacing: 0; }
@@ -23,7 +23,7 @@ button:has(> svg[viewBox="0 0 182 24"]) > svg[viewBox="0 0 182 24"] { display: n
 button:has(> svg[viewBox="0 0 182 24"])::after {
   content: "${PRODUCT_NAME}";
   padding-left: 26px;
-  background: var(--dina-mark) left center / 20px 20px no-repeat;
+  background: var(--lares-mark) left center / 20px 20px no-repeat;
   font-size: 17px;
   line-height: 24px;
   font-weight: 600;
@@ -33,7 +33,7 @@ button:has(> svg[viewBox="0 0 182 24"])::after {
 /* Collapsed rail + hero mark */
 svg[viewBox="0 0 23.16 17.04"] > path { display: none; }
 svg[viewBox="0 0 23.16 17.04"] {
-  background: var(--dina-mark) center / contain no-repeat;
+  background: var(--lares-mark) center / contain no-repeat;
   animation: none;
 }
 

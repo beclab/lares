@@ -1,0 +1,23 @@
+{
+  "name": "@lares/client-lares",
+  "version": "0.15.0",
+  "private": true,
+  "type": "module",
+  "description": "Lares client inject for dsh web: sidebar toggle offset, moves the model switch to the composer's top-right, drops the composer stats line",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "../../../dist/plugins/client-lares/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-slots"
+      ]
+    }
+  },
+  "files": [
+    "lib"
+  ]
+}

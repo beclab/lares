@@ -1,5 +1,5 @@
 ---
-description: Dina 项目核心约束（绿场、dsh 内核、dsh UI 主壳）
+description: Lares 项目核心约束（绿场、dsh 内核、dsh UI 主壳）
 alwaysApply: true
 ---
 
@@ -21,10 +21,10 @@ alwaysApply: true
 ```text
 packages/
   service/          业务（dsh web boot、Olares 集成）
-  plugins/          自研 dsh 插件（bundle-web、client-dina、voice-input）
+  plugins/          自研 dsh 插件（bundle-web、client-lares、voice-input）
   skills/           bundled agent skills
 tests/              单元测试
-deploy/dina/        Olares chart
+deploy/lares/        Olares chart
 scripts/            镜像、chart 打包、dev-sync
 _参考/              外部参考（默认忽略；勿当本仓业务）
 ```

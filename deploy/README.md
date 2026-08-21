@@ -5,8 +5,8 @@ Chart 只含部署结构与热更新机制；应用代码在镜像 / `devsrc` �
 - 正式包：`scripts/package-chart.sh`
 - 开发包：`scripts/package-chart.sh --dev`
 - 源码同步：`scripts/dev-sync/sync.sh <machine> [all|packages]`
-- 社区右侧栏：`scripts/install-better-sidebar.sh`（在已有 `dina-web` profile 上）
-- 语音输入：自研 `@dina/voice-input`（`packages/plugins/voice-input`，随镜像内建），STT 走 Router `/audio/transcriptions`，与 Ashia 同路径
+- 社区右侧栏：`scripts/install-better-sidebar.sh`（在已有 `lares-web` profile 上）
+- 语音输入：自研 `@lares/voice-input`（`packages/plugins/voice-input`，随镜像内建），STT 走 Router `/audio/transcriptions`，与 Ashia 同路径
 
 开发安装必须具备这四项：
 
@@ -21,5 +21,5 @@ initContainers  fix-dev-perms, seed-dev-src
 
 ```text
 GET /api/health     kernel=dsh-web
-合成 profile        dina-web（dsh-base + dsh-web-app + @dina/bundle-web）
+合成 profile        lares-web（dsh-base + dsh-web-app + @lares/bundle-web）
 ```

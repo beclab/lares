@@ -1,6 +1,7 @@
 {
-  "name": "dina",
-  "title": "Dina",
-  "image_repo": "docker.io/luolong01/dina",
-  "npm_scope": "@dina"
+  "name": "lares",
+  "title": "Lares",
+  "image_repo": "docker.io/luolong01/lares",
+  "image_base_tag": "1",
+  "npm_scope": "@lares"
 }

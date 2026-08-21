@@ -1,5 +1,5 @@
 /**
- * Ensure $DSH_HOME/profiles/dina-web exists with Dina bundles.
+ * Ensure $DSH_HOME/profiles/lares-web exists with Lares bundles.
  */
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
@@ -12,43 +12,43 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 /** Repo root / container `/app` (sibling of `packages/` or `dist/`). */
 const APP_ROOT = join(HERE, "../../..");
 const BUNDLE_WEB = join(APP_ROOT, "packages", "plugins", "bundle-web");
-const CLIENT_DINA = join(APP_ROOT, "packages", "plugins", "client-dina");
+const CLIENT_LARES = join(APP_ROOT, "packages", "plugins", "client-lares");
 const VOICE_INPUT = join(APP_ROOT, "packages", "plugins", "voice-input");
 const WEB_SEARCH = join(APP_ROOT, "packages", "plugins", "web-search");
 const MODELS = join(APP_ROOT, "packages", "plugins", "models");
 const LOCAL_PROFILE_PACKAGES = [
-  ["@dina/bundle-web", BUNDLE_WEB],
-  ["@dina/client-dina", CLIENT_DINA],
-  ["@dina/voice-input", VOICE_INPUT],
-  ["@dina/web-search", WEB_SEARCH],
-  ["@dina/models", MODELS],
+  ["@lares/bundle-web", BUNDLE_WEB],
+  ["@lares/client-lares", CLIENT_LARES],
+  ["@lares/voice-input", VOICE_INPUT],
+  ["@lares/web-search", WEB_SEARCH],
+  ["@lares/models", MODELS],
 ] as const;
 
 const SHELL_BUNDLES = ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app"] as const;
 
 /**
- * Dina's overlay is the LAST bundle layer, after any community bundle installed
+ * Lares's overlay is the LAST bundle layer, after any community bundle installed
  * into this profile. dsh composes a profile as patch layers concatenated in
  * `dsh.profile.bundles` order, and a patch may only target a row an earlier
  * layer already inserted — a row addressed before its insert warns and is
  * skipped. A community bundle mounts itself by inserting its own row, so
  * `cordis.patch.yml` can configure or disable one only from behind it.
  */
-const DINA_BUNDLE = "@dina/bundle-web";
+const LARES_BUNDLE = "@lares/bundle-web";
 
-const OWNED_BUNDLES: readonly string[] = [...SHELL_BUNDLES, DINA_BUNDLE];
+const OWNED_BUNDLES: readonly string[] = [...SHELL_BUNDLES, LARES_BUNDLE];
 
 function resolveDshHome(dataDir: string): string {
   return process.env.DSH_HOME?.trim() || join(dataDir, "dsh-home");
 }
 
 /**
- * @param dataDir - Dina data directory (sessions, skills, dsh-home)
- * @returns dsh home and dina-web profile directory
+ * @param dataDir - Lares data directory (sessions, skills, dsh-home)
+ * @returns dsh home and lares-web profile directory
  */
-export function ensureDinaWebProfile(dataDir: string): { dshHome: string; profileDir: string } {
+export function ensureLaresWebProfile(dataDir: string): { dshHome: string; profileDir: string } {
   const dshHome = resolveDshHome(dataDir);
-  const profileDir = join(dshHome, "profiles", "dina-web");
+  const profileDir = join(dshHome, "profiles", "lares-web");
   mkdirSync(profileDir, { recursive: true });
 
   const manifestPath = join(profileDir, "package.json");
@@ -66,19 +66,19 @@ export function ensureDinaWebProfile(dataDir: string): { dshHome: string; profil
   }
 
   const extraBundles = (previous.dsh?.profile?.bundles ?? []).filter((name) => !OWNED_BUNDLES.includes(name));
-  const bundles = [...SHELL_BUNDLES, ...extraBundles, DINA_BUNDLE];
+  const bundles = [...SHELL_BUNDLES, ...extraBundles, LARES_BUNDLE];
 
   const manifest = {
-    name: "dina-web-profile",
+    name: "lares-web-profile",
     private: true,
     type: "module",
     dependencies: {
       ...(previous.dependencies ?? {}),
-      "@dina/bundle-web": `file:${BUNDLE_WEB}`,
-      "@dina/client-dina": `file:${CLIENT_DINA}`,
-      "@dina/voice-input": `file:${VOICE_INPUT}`,
-      "@dina/web-search": `file:${WEB_SEARCH}`,
-      "@dina/models": `file:${MODELS}`,
+      "@lares/bundle-web": `file:${BUNDLE_WEB}`,
+      "@lares/client-lares": `file:${CLIENT_LARES}`,
+      "@lares/voice-input": `file:${VOICE_INPUT}`,
+      "@lares/web-search": `file:${WEB_SEARCH}`,
+      "@lares/models": `file:${MODELS}`,
     },
     ...(previous.pnpm ? { pnpm: previous.pnpm } : {}),
     dsh: {
@@ -93,7 +93,7 @@ export function ensureDinaWebProfile(dataDir: string): { dshHome: string; profil
   if (!existsSync(patchPath)) {
     writeFileSync(
       patchPath,
-      `# dina-web user layer (hot-reloaded). Keep as a YAML list.
+      `# lares-web user layer (hot-reloaded). Keep as a YAML list.
 # Add user overrides here.
 []
 `,
@@ -117,7 +117,7 @@ export function ensureDinaWebProfile(dataDir: string): { dshHome: string; profil
  * unscoped context".
  *
  * Scripts stay enabled: native bundles (node-pty) compile here as uid 1000.
- * @param profileDir - the dina-web profile directory.
+ * @param profileDir - the lares-web profile directory.
  */
 export function installProfileDeps(profileDir: string): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -145,7 +145,7 @@ export function installProfileDeps(profileDir: string): Promise<void> {
 
 /**
  * npm reuses copied `file:` packages when their version is unchanged, leaving
- * profile patches stale after a dev sync. Keep Dina-owned packages linked to
+ * profile patches stale after a dev sync. Keep Lares-owned packages linked to
  * their authoritative source; community dependencies remain npm-managed.
  */
 export function linkOwnedProfileDeps(
@@ -200,7 +200,7 @@ export function trustOlaresConnectionHost(source: string): string {
  * agent-preset chip, and theme/locale persistence all disappear behind the
  * Olares entrance. That entrance IS the authentication layer (authLevel
  * private, Authelia-terminated, one pod per user), the same judgement the host
- * makes in dina-olares-identity for the privileged /api fence.
+ * makes in lares-olares-identity for the privileged /api fence.
  *
  * The flag lives on the connection handle that `@deepseek-ai/dsh-client-connection`
  * builds in its own apply, and each consumer reads it once, at its own
@@ -231,7 +231,7 @@ export function patchConnectionTrustFences(): void {
   const trustedHostSource = trustOlaresConnectionHost(hostSource);
   if (trustedHostSource !== hostSource) writeFileSync(hostLib, trustedHostSource);
 
-  console.log("[dina] dsh-client-connection trust fences → Olares trusted hosts");
+  console.log("[lares] dsh-client-connection trust fences → Olares trusted hosts");
 }
 
 const NAV_ICON_ROW_ANCHOR = 'resolveSlotLabel)(e.options.label) ?? ""';
@@ -265,7 +265,7 @@ export function sectionComponentNavIcon(source: string): string {
 /**
  * The settings shell picks each nav glyph from a closed `navIcon(id)` switch
  * over the ids it ships (models, agent-presets, plugins); every other section
- * — i.e. every Dina one — falls back to the same settings gear, so the nav
+ * — i.e. every Lares one — falls back to the same settings gear, so the nav
  * column reads as identical rows. Slot options are no channel for a glyph:
  * SlotCore.register keeps a fixed field set (key/id/order/label/priority) and
  * drops anything else before the shell ever sees it.
@@ -286,7 +286,7 @@ export function patchSettingsNavIcon(): void {
   if (patched === source) return;
 
   writeFileSync(lib, patched);
-  console.log("[dina] settings nav icons → section component navIcon");
+  console.log("[lares] settings nav icons → section component navIcon");
 }
 
 const SIDEBAR_FENCE_ANCHOR =
@@ -310,7 +310,7 @@ const SIDEBAR_FENCE_REPLACEMENT =
  * app through the entrance domain, and loopback still passes.
  *
  * Remove once upstream reads the resolved list.
- * @param profileDir - the dina-web profile directory.
+ * @param profileDir - the lares-web profile directory.
  */
 function patchSidebarTrustFence(profileDir: string): void {
   const lib = join(profileDir, "node_modules", "dsh-better-sidebar", "lib", "index.js");
@@ -319,13 +319,13 @@ function patchSidebarTrustFence(profileDir: string): void {
   if (source.includes(SIDEBAR_FENCE_REPLACEMENT)) return;
   if (!source.includes(SIDEBAR_FENCE_ANCHOR)) {
     console.warn(
-      "[dina] dsh-better-sidebar trust-fence patch skipped: anchor not found." +
+      "[lares] dsh-better-sidebar trust-fence patch skipped: anchor not found." +
         " If /sidebar routes answer 403, re-check the upstream fence.",
     );
     return;
   }
   writeFileSync(lib, source.replace(SIDEBAR_FENCE_ANCHOR, SIDEBAR_FENCE_REPLACEMENT));
-  console.log("[dina] dsh-better-sidebar trust fence → DSH_TRUSTED_HOSTS");
+  console.log("[lares] dsh-better-sidebar trust fence → DSH_TRUSTED_HOSTS");
 }
 
 /** Absolute path to the published dsh CLI entry. */

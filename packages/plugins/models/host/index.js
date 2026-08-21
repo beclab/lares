@@ -1,11 +1,11 @@
-/** Dina model settings Host routes under /api/dina/models. */
+/** Lares model settings Host routes under /api/lares/models. */
 import { createRouteHandler, readJsonObject, sendJson } from "../../shared/host/http.js";
 import { currentDefault, listCatalog, refreshCatalog, saveDefault } from "./catalog.js";
 
-export const name = "dina-models";
+export const name = "lares-models";
 export const inject = ["webServer", "llm", "agentDefaultModel", "settings"];
 
-const ROUTE_PREFIX = "/api/dina/models";
+const ROUTE_PREFIX = "/api/lares/models";
 
 /** @param {import('@deepseek-ai/cordis').Context} ctx */
 async function state(ctx) {
@@ -48,6 +48,6 @@ function handler(ctx) {
 export function apply(ctx) {
   ctx.effect(
     () => ctx.webServer.register({ kind: "prefix", path: ROUTE_PREFIX, handler: handler(ctx) }),
-    "dina-models-routes",
+    "lares-models-routes",
   );
 }

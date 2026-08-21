@@ -1,4 +1,4 @@
-# Dina overlay on dsh-base + dsh-web-app.
+# Lares overlay on dsh-base + dsh-web-app.
 # Applied after those bundles; id patches replace whole config (restate kept keys).
 
 - id: system-prompt
@@ -6,7 +6,7 @@
     includeHarnessIdentity: false
     persona: !!js process.env.DSH_SYSTEM_PROMPT ?? ''
 
-# Drop dsh-web-app's DeepSeek Harness GUI / checkout prompt; dina-brand owns the surface.
+# Drop dsh-web-app's DeepSeek Harness GUI / checkout prompt; lares-brand owns the surface.
 - id: web-runtime
   config:
     printUrl: true
@@ -22,31 +22,31 @@
 
 - id: fs-sandbox
   config:
-    cwd: !!js process.env.DSH_CWD ?? process.env.DINA_WORKSPACE ?? process.cwd()
+    cwd: !!js process.env.DSH_CWD ?? process.env.LARES_WORKSPACE ?? process.cwd()
 
 # The Router route is an llm-pi-ai profile boot seeds into the user's settings
 # document (see server/olares/bootstrap-settings.ts), which is also where the
-# Models page edits it. The DeepSeek adapter would only put a provider Dina
+# Models page edits it. The DeepSeek adapter would only put a provider Lares
 # cannot reach in the picker; users who want it add it through "Add provider".
 - id: llm-deepseek
   disabled: true
 
 # Official Models page: provider routes, endpoints, and API keys are Router's
 # business on Olares, so the only choice it leaves a user is which model new
-# sessions start from — that is what @dina/models renders instead. Disabled
+# sessions start from — that is what @lares/models renders instead. Disabled
 # rather than shadowed: the Settings nav is built from the raw slot ledger, so a
 # same-id entry would only duplicate the nav row. Its `settings.onboarding`
 # steps (DeepSeek internal-testing notice, official-provider dialog) go with it.
 - id: ui-settings-models
   disabled: true
 
-# Replace DeepSeek-native search with Dina's multi-provider facade (`dina`).
+# Replace DeepSeek-native search with Lares's multi-provider facade (`lares`).
 - id: web-search-deepseek
   disabled: true
 
 - id: web
   config:
-    searchProvider: dina
+    searchProvider: lares
 
 # Read-only Loader dump: not actionable on Olares, and the Web host already
 # parks most tool rows as disabled until a session preset mounts them.
@@ -66,7 +66,7 @@
 - id: ui-agent-preset
   disabled: true
 
-# Session Header「Session log」download capsule + `/export`: not a Dina surface.
+# Session Header「Session log」download capsule + `/export`: not a Lares surface.
 - id: session-log-download
   disabled: true
 
@@ -82,16 +82,16 @@
 
 - id: sandbox-policy
   config:
-    mode: !!js process.env.DSH_PERMISSION_MODE ?? process.env.DINA_PERMISSION_MODE ?? 'workspace-write'
-    workspaceRoot: !!js process.env.DSH_CWD ?? process.env.DINA_WORKSPACE ?? process.cwd()
+    mode: !!js process.env.DSH_PERMISSION_MODE ?? process.env.LARES_PERMISSION_MODE ?? 'workspace-write'
+    workspaceRoot: !!js process.env.DSH_CWD ?? process.env.LARES_WORKSPACE ?? process.cwd()
 
 - id: approval
   config:
-    policy: !!js "(process.env.DSH_PERMISSION_MODE ?? process.env.DINA_PERMISSION_MODE ?? 'workspace-write') === 'danger-full-access' ? 'never' : 'ask'"
+    policy: !!js "(process.env.DSH_PERMISSION_MODE ?? process.env.LARES_PERMISSION_MODE ?? 'workspace-write') === 'danger-full-access' ? 'never' : 'ask'"
 
 - id: permission
   config:
-    defaultPreset: !!js process.env.DSH_PERMISSION_MODE ?? process.env.DINA_PERMISSION_MODE ?? 'workspace-write'
+    defaultPreset: !!js process.env.DSH_PERMISSION_MODE ?? process.env.LARES_PERMISSION_MODE ?? 'workspace-write'
     presets:
       read-only:
         sandbox: read-only
@@ -110,37 +110,37 @@
         description: 不限制文件沙箱，也不再弹出审批
 
 - insert:
-    - id: dina-llm-routes
-      name: '@dina/bundle-web/host/llm-routes.js'
+    - id: lares-llm-routes
+      name: '@lares/bundle-web/host/llm-routes.js'
       inject: [webServer]
 
-    - id: dina-brand
-      name: '@dina/bundle-web/host/brand/index.js'
+    - id: lares-brand
+      name: '@lares/bundle-web/host/brand/index.js'
       inject: [webServer]
 
-    - id: dina-crypto-uuid
-      name: '@dina/bundle-web/host/crypto-uuid.js'
+    - id: lares-crypto-uuid
+      name: '@lares/bundle-web/host/crypto-uuid.js'
       inject: [webServer]
 
-    - id: dina-olares-identity
-      name: '@dina/bundle-web/host/olares/olares-identity.js'
+    - id: lares-olares-identity
+      name: '@lares/bundle-web/host/olares/olares-identity.js'
       inject: [webServer]
 
-    - id: dina-default-workspace
-      name: '@dina/bundle-web/host/default-workspace.js'
+    - id: lares-default-workspace
+      name: '@lares/bundle-web/host/default-workspace.js'
       inject: [workspaceRegistry]
 
-    - id: dina-voice-input
-      name: '@dina/voice-input'
+    - id: lares-voice-input
+      name: '@lares/voice-input'
       inject: [webServer]
 
-    - id: dina-web-search
-      name: '@dina/web-search'
+    - id: lares-web-search
+      name: '@lares/web-search'
       inject: [web, webServer]
 
-    - id: dina-models
-      name: '@dina/models'
+    - id: lares-models
+      name: '@lares/models'
       inject: [webServer, llm, agentDefaultModel, settings]
 
-    - id: dina-client-brand
-      name: '@dina/client-dina'
+    - id: lares-client-brand
+      name: '@lares/client-lares'

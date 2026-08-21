@@ -355,14 +355,15 @@ RSYNC_EXCLUDES=(
   --exclude '.env.*'
   --exclude '*.md'
   --exclude '*.log'
-  --exclude '.dina-reload'
-  --exclude '.dina-lock-sha'
+  --exclude '.lares-reload'
+  --exclude '.lares-lock-sha'
   # Image identity stamped by seed-dev-src; deleting it makes the next pod
   # re-seed devsrc from the image and discard everything synced here.
-  --exclude '.dina-image-id'
+  --exclude '.lares-image-id'
   --exclude 'artifacts/'
   --exclude '*.tgz'
   --exclude 'Dockerfile'
+  --exclude 'Dockerfile.base'
   --exclude 'project.json'
   --exclude '.dockerignore'
   --exclude '.gitignore'
@@ -427,12 +428,12 @@ sync_once() {
     if [[ -n "${KUBE_NS-}" ]]; then
       local lock_hash want_hash
       want_hash="$(shasum -a 256 "${APP_ROOT}/package-lock.json" 2>/dev/null | awk '{print $1}')"
-      lock_hash="$(_remote_sh "cat $(printf '%q' "${DEST_DIR}/.dina-lock-sha") 2>/dev/null || true" | tr -d '[:space:]')"
+      lock_hash="$(_remote_sh "cat $(printf '%q' "${DEST_DIR}/.lares-lock-sha") 2>/dev/null || true" | tr -d '[:space:]')"
       if [[ -n "${want_hash}" && "${want_hash}" != "${lock_hash}" ]]; then
         log "package-lock 变更 → 容器内 npm install"
         if _kube exec "deploy/${APP_NAME}" -c "${APP_NAME}" -- \
           sh -c 'cd /app && npm install --omit=dev'; then
-          _remote_sh "printf '%s' $(printf '%q' "${want_hash}") > $(printf '%q' "${DEST_DIR}/.dina-lock-sha") && chown 1000:1000 $(printf '%q' "${DEST_DIR}/.dina-lock-sha")"
+          _remote_sh "printf '%s' $(printf '%q' "${want_hash}") > $(printf '%q' "${DEST_DIR}/.lares-lock-sha") && chown 1000:1000 $(printf '%q' "${DEST_DIR}/.lares-lock-sha")"
         else
           echo "错误：容器内 npm install 失败；未触发热重载，避免用不完整依赖启动" >&2
           return 1
@@ -442,7 +443,7 @@ sync_once() {
 
     # Bump the reload sentinel; the in-container dev supervisor polls its mtime
     # (inotify does not fire for hostPath writes) and re-execs the server.
-    _remote_sh "touch $(printf '%q' "${DEST_DIR}/.dina-reload")"
+    _remote_sh "touch $(printf '%q' "${DEST_DIR}/.lares-reload")"
   fi
 
   if [[ "${DO_RESTART}" -eq 1 ]]; then

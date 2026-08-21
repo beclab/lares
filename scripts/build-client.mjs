@@ -54,7 +54,7 @@ function platformExternalsPlugin() {
 
 function cssTextPlugin() {
   return {
-    name: "dina-css-text",
+    name: "lares-css-text",
     setup(build) {
       build.onLoad({ filter: /\.css$/ }, async (args) => {
         const raw = await readFile(args.path, "utf8");

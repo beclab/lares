@@ -8,8 +8,8 @@
       "desktop_url": "https://desktop.luolong01.olares.com",
       "lan_ip": "192.168.50.184",
       "ssh": "192.168.50.184",
-      "dest_dir": "/olares/rootfs/userspace/pvc-userspace-luolong01-8u4lbybsd3shpm2v/Data/dina/devsrc",
-      "kube_ns": "dina-luolong01",
+      "dest_dir": "/olares/rootfs/userspace/pvc-userspace-luolong01-8u4lbybsd3shpm2v/Data/lares/devsrc",
+      "kube_ns": "lares-luolong01",
       "login": {
         "olares_password": "",
         "ssh_user": "olares",
@@ -26,7 +26,7 @@
       "lan_ip": "192.168.50.x",
       "ssh": "192.168.50.x",
       "dest_dir": "",
-      "kube_ns": "dina-<user>",
+      "kube_ns": "lares-<user>",
       "login": {
         "olares_password": "",
         "ssh_user": "olares",

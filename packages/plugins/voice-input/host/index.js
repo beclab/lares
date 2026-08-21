@@ -1,14 +1,14 @@
 /**
- * Voice-input Host routes under /api/dina/voice (STT via /llm/v1 shim; see stt.js).
+ * Voice-input Host routes under /api/lares/voice (STT via /llm/v1 shim; see stt.js).
  */
 import { createRouteHandler, readBody, readJsonObject, sendJson } from "../../shared/host/http.js";
 import { readConfig, validateConfigPatch, writeConfig } from "./config.js";
 import { VoiceError, listModels, pickSttModelId, resolveSttModel, sttModelIds, transcribe } from "./stt.js";
 
-export const name = "dina-voice-input";
+export const name = "lares-voice-input";
 export const inject = ["webServer"];
 
-const ROUTE_PREFIX = "/api/dina/voice";
+const ROUTE_PREFIX = "/api/lares/voice";
 
 /** MIME → filename extension for the STT decoder. */
 const EXTENSIONS = {
@@ -125,6 +125,6 @@ const handler = createRouteHandler({
 export function apply(ctx) {
   ctx.effect(
     () => ctx.webServer.register({ kind: "prefix", path: ROUTE_PREFIX, handler }),
-    "dina-voice-input-routes",
+    "lares-voice-input-routes",
   );
 }
