@@ -19,6 +19,16 @@ function reasoningEfforts(item) {
   return Object.keys(efforts).some((level) => level !== "off") ? efforts : null;
 }
 
+/**
+ * A token count Router states, or null when it states none. Router omits the
+ * key rather than sending a zero, so anything non-positive here is a payload
+ * that disagrees with its own contract and is treated as silence — a window of
+ * zero would fail pi-ai's own validation on the way in.
+ */
+function tokenCount(value) {
+  return Number.isInteger(value) && value > 0 ? value : null;
+}
+
 export function routerCatalogRows(payload) {
   if (!payload || typeof payload !== "object" || !Array.isArray(payload.data)) return [];
   const rows = [];
@@ -33,6 +43,8 @@ export function routerCatalogRows(payload) {
       name: id,
       mode: String(item.mode ?? "").trim().toLowerCase() || null,
       reasoningEfforts: reasoningEfforts(item),
+      contextWindow: tokenCount(item.context_size),
+      maxTokens: tokenCount(item.max_output_tokens),
     });
   }
   return rows;

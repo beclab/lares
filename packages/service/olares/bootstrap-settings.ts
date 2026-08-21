@@ -135,17 +135,25 @@ interface RouteModel {
   id: string;
   name: string;
   reasoningEfforts?: Record<string, string>;
+  contextWindow?: number;
+  maxTokens?: number;
 }
 
 /**
  * Embedding, transcription, and OCR rows share the Router catalog but cannot
  * serve a chat turn; declaring them would only put dead entries in the picker.
+ *
+ * The sizes are declared for the same reason the model list is: pi-ai has no
+ * catalog entry for a Router id, so a model that omits them is sized by the
+ * route default of 262144 tokens rather than by the engine actually serving it.
  */
 function declarableModels(seed: LaresSettingsSeed): RouteModel[] {
   return seed.catalog.filter(isChatModel).map((entry) => ({
     id: entry.id,
     name: entry.name,
     ...(entry.reasoningEfforts ? { reasoningEfforts: entry.reasoningEfforts } : {}),
+    ...(entry.contextWindow === null ? {} : { contextWindow: entry.contextWindow }),
+    ...(entry.maxTokens === null ? {} : { maxTokens: entry.maxTokens }),
   }));
 }
 

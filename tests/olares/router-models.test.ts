@@ -10,7 +10,7 @@ test("modelsFromRouterCatalog and isChatModelId", () => {
   assert.deepEqual(
     modelsFromRouterCatalog({
       data: [
-        { id: "Qwen/chat", mode: "chat" },
+        { id: "Qwen/chat", mode: "chat", context_size: 104448, max_output_tokens: 8192 },
         { id: "EmbeddingGemma/embed", mode: "embedding" },
         { id: "Qwen/chat", mode: "chat" },
         { id: "" },
@@ -18,12 +18,21 @@ test("modelsFromRouterCatalog and isChatModelId", () => {
       ],
     }),
     [
-      { id: "Qwen/chat", name: "Qwen/chat", mode: "chat", reasoningEfforts: null },
+      {
+        id: "Qwen/chat",
+        name: "Qwen/chat",
+        mode: "chat",
+        reasoningEfforts: null,
+        contextWindow: 104448,
+        maxTokens: 8192,
+      },
       {
         id: "EmbeddingGemma/embed",
         name: "EmbeddingGemma/embed",
         mode: "embedding",
         reasoningEfforts: null,
+        contextWindow: null,
+        maxTokens: null,
       },
     ],
   );

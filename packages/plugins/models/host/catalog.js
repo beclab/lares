@@ -22,14 +22,30 @@ function shimBaseUrl() {
   return `http://127.0.0.1:${process.env.PORT ?? 8080}/llm/v1`;
 }
 
-/** @param {unknown} payload */
+/**
+ * Router's chat models as pi-ai model profiles.
+ *
+ * The sizes travel because these are hand-declared models: pi-ai ships no
+ * catalog entry for an `Olares/...` id, so a profile that omits them falls back
+ * to the route default of 262144 tokens, and a locally deployed engine serves a
+ * fraction of that. Overrunning a window is not refused — the engine truncates
+ * the reply mid-message — so the assumption has to come from the deployment
+ * rather than from a constant.
+ *
+ * Declaring `maxTokens` also makes it this model's per-request default, which
+ * is intended: the ceiling the engine was launched with is a better default
+ * than the route's own guess.
+ * @param {unknown} payload
+ */
 export function chatModelsFromRouterCatalog(payload) {
   return routerCatalogRows(payload)
     .filter((model) => model.mode ? model.mode === "chat" : !NON_CHAT_HINTS.test(model.id))
-    .map(({ id, name, reasoningEfforts }) => ({
+    .map(({ id, name, reasoningEfforts, contextWindow, maxTokens }) => ({
       id,
       name,
       ...(reasoningEfforts === null ? {} : { reasoningEfforts }),
+      ...(contextWindow === null ? {} : { contextWindow }),
+      ...(maxTokens === null ? {} : { maxTokens }),
     }));
 }
 
