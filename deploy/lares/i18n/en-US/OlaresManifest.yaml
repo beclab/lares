@@ -23,7 +23,6 @@ spec:
     2. Ensure Router is installed.
     3. Open the Lares entrance and start a chat.
   upgradeDescription: |
-    ## Lares 0.20.0
+    ## Lares 0.21.0
 
-    - Remove obsolete Router API key, endpoint, and default-model install fields.
-    - Reach Router through its allowlisted entrance so mesh-in injects caller JWT.
+    - Bump DeepSeek Harness (dsh web) to 0.1.1-rc.2.

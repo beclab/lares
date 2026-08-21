@@ -23,7 +23,6 @@ spec:
     2. 确认 Router 已安装。
     3. 打开 Lares 入口开始对话。
   upgradeDescription: |
-    ## Lares 0.20.0
+    ## Lares 0.21.0
 
-    - 移除已废弃的 Router API Key、地址和默认模型安装项。
-    - 通过 allowlist 中的 Router 入口访问，由 mesh-in 自动注入调用方 JWT。
+    - 将 DeepSeek Harness（dsh web）升级到 0.1.1-rc.2。
