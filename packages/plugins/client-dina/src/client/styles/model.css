@@ -8,16 +8,23 @@
   padding: 0 var(--dsh-composer-side-clearance);
 }
 
+.dina-model-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.dina-model-row.is-hero {
+  order: 1;
+  margin-left: auto;
+  margin-right: var(--dsh-composer-side-clearance);
+}
+
 .dina-model-anchor {
   position: relative;
   display: inline-flex;
   min-width: 0;
-}
-
-.dina-model-anchor.is-hero {
-  order: 1;
-  margin-left: auto;
-  margin-right: var(--dsh-composer-side-clearance);
 }
 
 .dina-model-trigger {
@@ -29,7 +36,9 @@
   padding: 0 6px 0 10px;
   border: none;
   border-radius: 24px;
-  background: transparent;
+  /* Opaque: the conversation scrolls underneath the chips. */
+  background: var(--dsw-alias-bg-base);
+  box-shadow: 0 1px 6px rgb(0 0 0 / 12%);
   cursor: pointer;
   color: var(--dsw-alias-label-secondary, #6b7280);
   font-size: 13px;
@@ -37,18 +46,16 @@
   line-height: 20px;
 }
 
-.dina-model-anchor.is-hero .dina-model-trigger {
+.dina-model-row.is-hero .dina-model-trigger {
   padding: 0 8px;
   border-radius: 16px;
   color: var(--dsw-alias-label-primary, #111);
 }
 
-.dina-model-trigger:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.06));
-}
-
+/* Solid hover: a translucent one would let the conversation show through. */
+.dina-model-trigger:hover:not(:disabled),
 .dina-model-trigger[aria-expanded="true"] {
-  background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.06));
+  background: var(--dsw-alias-interactive-bg-hover-solid);
 }
 
 .dina-model-trigger:disabled {
@@ -63,9 +70,8 @@
   white-space: nowrap;
 }
 
-.dina-model-effort {
-  flex: none;
-  color: var(--dsw-alias-label-caption, #9ca3af);
+.dina-model-trigger.is-effort {
+  max-width: 140px;
 }
 
 .dina-model-chevron {
@@ -93,7 +99,13 @@
   border-radius: 12px;
   background: var(--dsw-specific-menu, #fff);
   color: var(--dsw-alias-label-primary, #111);
-  box-shadow: var(--dsw-shadow-lv3, 0 8px 24px rgba(0, 0, 0, 0.16));
+  box-shadow: 0 8px 24px rgb(0 0 0 / 16%);
+}
+
+.dina-model-menu.is-effort {
+  right: auto;
+  left: 0;
+  width: min(200px, 100vw - 32px);
 }
 
 .dina-model-note {
@@ -186,10 +198,4 @@
   flex: 0 0 16px;
   display: grid;
   place-items: center;
-}
-
-.dina-model-divider {
-  height: 1px;
-  margin: 4px 8px;
-  background: var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.08));
 }

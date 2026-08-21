@@ -3,7 +3,7 @@
   "version": "0.15.0",
   "private": true,
   "type": "module",
-  "description": "Dina client inject for dsh web: sidebar toggle offset, retires the shell's first-run notice, moves the model switch to the composer's top-right, drops the composer stats line",
+  "description": "Dina client inject for dsh web: sidebar toggle offset, moves the model switch to the composer's top-right, drops the composer stats line",
   "exports": {
     ".": "./lib/index.js",
     "./client": "../../../dist/plugins/client-dina/client.js",

@@ -2,6 +2,7 @@
  * STT via Dina /llm/v1 → Router POST /audio/transcriptions (one-shot multipart).
  */
 import { randomBytes } from "node:crypto";
+import { routerCatalogRows } from "../../shared/host/router-catalog.js";
 
 const STT_HINTS = /whisper|\bstt\b|\basr\b|transcri/i;
 
@@ -81,14 +82,7 @@ export async function listModels() {
     signal: AbortSignal.timeout(CATALOG_TIMEOUT_MS),
   });
   if (!res.ok) throw new VoiceError("voice_model_unavailable", 503, `Router /models returned ${res.status}`);
-  const payload = await res.json();
-  const data = Array.isArray(payload?.data) ? payload.data : [];
-  return data
-    .map((item) => ({
-      id: String(item?.id ?? "").trim(),
-      mode: String(item?.mode ?? "").trim().toLowerCase() || null,
-    }))
-    .filter((item) => item.id);
+  return routerCatalogRows(await res.json()).map(({ id, mode }) => ({ id, mode }));
 }
 
 /** @returns {Promise<string[]>} */
@@ -96,14 +90,22 @@ export async function listModelIds() {
   return (await listModels()).map((model) => model.id);
 }
 
-/** @type {{ expires: number, id: string } | null} */
+/** @type {{ expires: number, id: string, preferred: string } | null} */
 let resolved = null;
 
 /** Cached STT model id (short TTL). @param {string} [preferred] */
 export async function resolveSttModel(preferred, options) {
-  if (!options?.refresh && resolved && resolved.expires > Date.now()) return resolved.id;
-  const id = pickSttModelId(await listModels(), preferred);
-  resolved = id ? { expires: Date.now() + RESOLVED_TTL_MS, id } : null;
+  const want = (preferred ?? "").trim();
+  if (
+    !options?.refresh
+    && resolved
+    && resolved.expires > Date.now()
+    && resolved.preferred === want
+  ) {
+    return resolved.id;
+  }
+  const id = pickSttModelId(await listModels(), want);
+  resolved = id ? { expires: Date.now() + RESOLVED_TTL_MS, id, preferred: want } : null;
   return id;
 }
 

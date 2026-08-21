@@ -1,0 +1,49 @@
+import { createLocaleBinding } from "../../../shared/client/locale-binding.js";
+
+export const ZH = {
+  "settings.nav": "模型配置",
+  "settings.title": "模型",
+  "settings.intro": "模型来自 Olares Router。选中的模型是新会话的默认模型；会话内可随时在输入框上方切换。",
+  "settings.loading": "正在读取模型列表…",
+  "settings.refresh": "刷新",
+  "settings.refreshing": "刷新中…",
+  "settings.router": "Router 控制台",
+  "settings.status.ready": "对话可用 · 默认模型 {model}",
+  "settings.status.notReady": "对话模型尚不可用，请先在 Olares 模型控制台配置对话模型",
+  "settings.empty": "Router 暂时没有可用的对话模型。",
+  "settings.default": "默认",
+  "settings.setDefault": "设为默认",
+  "settings.listAria": "可用模型",
+  "settings.loadFailed": "读取模型列表失败：{msg}",
+  "settings.refreshFailed": "刷新模型列表失败：{msg}",
+  "settings.saveFailed": "设置默认模型失败：{msg}",
+  "settings.providerFailed": "{name} 的模型列表读取失败：{msg}",
+};
+
+export const EN = {
+  "settings.nav": "Model configuration",
+  "settings.title": "Models",
+  "settings.intro":
+    "Models come from Olares Router. The selected one starts every new session; a session can switch above the composer at any time.",
+  "settings.loading": "Loading models…",
+  "settings.refresh": "Refresh",
+  "settings.refreshing": "Refreshing…",
+  "settings.router": "Router console",
+  "settings.status.ready": "Chat ready · default model {model}",
+  "settings.status.notReady": "Chat unavailable; configure a chat model in the Olares Model Console first",
+  "settings.empty": "Router serves no chat model right now.",
+  "settings.default": "Default",
+  "settings.setDefault": "Set as default",
+  "settings.listAria": "Available models",
+  "settings.loadFailed": "Failed to load models: {msg}",
+  "settings.refreshFailed": "Failed to refresh models: {msg}",
+  "settings.saveFailed": "Failed to set the default model: {msg}",
+  "settings.providerFailed": "Failed to list models for {name}: {msg}",
+};
+
+const binding = createLocaleBinding("dina.models");
+
+export const attachLocale = binding.attach;
+export const bindTranslate = binding.bind;
+export const getTranslate = binding.getTranslate;
+export const useT = binding.useT;

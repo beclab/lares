@@ -22,6 +22,8 @@ function readMtime(): number {
 
 let child: ReturnType<typeof spawn> | null = null;
 let stopping = false;
+let restarting = false;
+let restartPending = false;
 // Seeded before the first poll: a fresh install starts without the sentinel, so
 // the first sync creates it — that creation is a reload signal, not a baseline.
 let lastMtime = readMtime();
@@ -37,21 +39,43 @@ function start() {
 async function restart() {
   stopping = true;
   const current = child;
-  if (current) {
+  if (current && current.exitCode === null && current.signalCode === null) {
     await new Promise<void>((resolve) => {
-      current.once("exit", () => resolve());
-      current.kill("SIGTERM");
-      setTimeout(() => {
+      const killTimer = setTimeout(() => {
         try {
           current.kill("SIGKILL");
         } catch {
           /* already gone */
         }
       }, 800);
+      current.once("exit", () => {
+        clearTimeout(killTimer);
+        resolve();
+      });
+      if (!current.kill("SIGTERM")) {
+        clearTimeout(killTimer);
+        resolve();
+      }
     });
   }
   stopping = false;
   start();
+}
+
+async function requestRestart() {
+  if (restarting) {
+    restartPending = true;
+    return;
+  }
+  restarting = true;
+  try {
+    do {
+      restartPending = false;
+      await restart();
+    } while (restartPending);
+  } finally {
+    restarting = false;
+  }
 }
 
 function poll() {
@@ -60,7 +84,7 @@ function poll() {
   lastMtime = mtime;
   if (mtime < 0) return;
   console.log("[dina] reload signal → restarting dsh web");
-  void restart();
+  void requestRestart();
 }
 
 start();

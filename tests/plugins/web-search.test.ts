@@ -4,355 +4,225 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-test("publicConfig redacts apiKey and writeProvider keeps the stored secret on blank", async () => {
-  const home = mkdtempSync(join(tmpdir(), "dina-websearch-"));
-  const prev = process.env.DSH_HOME;
-  process.env.DSH_HOME = home;
-  try {
-    const { publicConfig, readConfig, writeProvider } = await import(
-      `../../packages/plugins/web-search/host/config.js?cfg=${Date.now()}`
-    );
-
-    assert.equal(readConfig().providers.tavily.apiKey, "");
-    writeProvider("tavily", { apiKey: " tvly-secret " });
-    writeProvider("custom", { url: " https://example.com/search ", apiKey: "custom-key" });
-
-    const stored = readConfig();
-    assert.equal(stored.defaultProvider, null);
-    assert.equal(stored.providers.tavily.apiKey, "tvly-secret");
-    assert.equal(stored.providers.custom.url, "https://example.com/search");
-
-    const view = publicConfig();
-    assert.equal(view.providers.tavily.hasApiKey, true);
-    assert.equal(view.providers.tavily.saved, true);
-    assert.equal(Object.hasOwn(view.providers.tavily, "apiKey"), false);
-    assert.equal(view.providers.custom.saved, true);
-    assert.equal(view.providers.custom.url, "https://example.com/search");
-
-    writeProvider("tavily", { apiKey: "   " });
-    assert.equal(readConfig().providers.tavily.apiKey, "tvly-secret");
-  } finally {
-    if (prev === undefined) delete process.env.DSH_HOME;
-    else process.env.DSH_HOME = prev;
-    rmSync(home, { recursive: true, force: true });
-  }
-});
-
-test("providerReady follows the saved credentials of the default provider", async () => {
-  const { providerReady, providerConfigured } = await import(
-    `../../packages/plugins/web-search/host/config.js?ready=${Date.now()}`
-  );
-  const config = (defaultProvider, providers) => ({ defaultProvider, providers });
-
-  assert.equal(
-    providerConfigured(
-      config(null, { tavily: { apiKey: "k" }, custom: { url: "", apiKey: "" } }),
-      "tavily",
-    ),
-    true,
-  );
-  assert.equal(
-    providerReady(config(null, { tavily: { apiKey: "k" }, custom: { url: "", apiKey: "" } })),
-    false,
-  );
-  assert.equal(
-    providerReady(config("tavily", { tavily: { apiKey: "k" }, custom: { url: "", apiKey: "" } })),
-    true,
-  );
-  assert.equal(
-    providerReady(config("tavily", { tavily: { apiKey: "" }, custom: { url: "", apiKey: "" } })),
-    false,
-  );
-  assert.equal(
-    providerReady(
-      config("custom", {
-        tavily: { apiKey: "" },
-        custom: { url: "https://example.com/s", apiKey: "k" },
-      }),
-    ),
-    true,
-  );
-  assert.equal(
-    providerReady(
-      config("custom", { tavily: { apiKey: "" }, custom: { url: "not-a-url", apiKey: "k" } }),
-    ),
-    false,
-  );
-});
-
-test("setDefaultProvider only accepts saved backends", async () => {
-  const home = mkdtempSync(join(tmpdir(), "dina-websearch-default-"));
-  const prev = process.env.DSH_HOME;
-  process.env.DSH_HOME = home;
-  try {
-    const { readConfig, setDefaultProvider, writeProvider } = await import(
-      `../../packages/plugins/web-search/host/config.js?default=${Date.now()}`
-    );
-    assert.throws(() => setDefaultProvider("tavily"), (err) => err.code === "not_saved");
-    assert.throws(() => setDefaultProvider("custom"), (err) => err.code === "not_saved");
-
-    writeProvider("tavily", { apiKey: "tvly" });
-    setDefaultProvider("tavily");
-    assert.equal(readConfig().defaultProvider, "tavily");
-
-    setDefaultProvider(null);
-    assert.equal(readConfig().defaultProvider, null);
-  } finally {
-    if (prev === undefined) delete process.env.DSH_HOME;
-    else process.env.DSH_HOME = prev;
-    rmSync(home, { recursive: true, force: true });
-  }
-});
-
-test("mapTavilyPayload and mapDinaPayload normalize sources", async () => {
-  const { mapTavilyPayload } = await import(
-    `../../packages/plugins/web-search/host/providers/tavily.js?map=${Date.now()}`
-  );
-  const { mapDinaPayload } = await import(
-    `../../packages/plugins/web-search/host/providers/custom.js?map=${Date.now()}`
+test("Router catalog exposes only search models", async () => {
+  const { searchModelsFromRouterCatalog } = await import(
+    `../../packages/plugins/web-search/host/router.js?catalog=${Date.now()}`
   );
   assert.deepEqual(
-    mapTavilyPayload({
-      results: [
-        { title: "Hello", url: "https://example.com", content: "world", score: 0.9 },
-        { url: "" },
-        "skip",
-      ],
-    }),
-    [{ url: "https://example.com", title: "Hello", snippet: "world" }],
-  );
-  assert.deepEqual(
-    mapDinaPayload({
-      sources: [
-        { url: "https://a.test", title: "A", snippet: "s", publishedAt: "2026-01-01" },
-        { url: "https://b.test" },
+    searchModelsFromRouterCatalog({
+      data: [
+        { id: "openai/gpt", mode: "chat" },
+        { id: "tavily/search", mode: "search" },
+        { id: "tavily/search-advanced", mode: "SEARCH" },
+        { id: "tavily/search", mode: "search" },
+        { id: "", mode: "search" },
+        { id: "unsafe\r\nmodel", mode: "search" },
       ],
     }),
     [
-      { url: "https://a.test", title: "A", snippet: "s", publishedAt: "2026-01-01" },
-      { url: "https://b.test" },
+      { id: "tavily/search", name: "tavily/search" },
+      { id: "tavily/search-advanced", name: "tavily/search-advanced" },
     ],
   );
 });
 
-test("tavilySearch maps success and auth errors", async () => {
-  const { tavilySearch, TAVILY_SEARCH_URL } = await import(
-    `../../packages/plugins/web-search/host/providers/tavily.js?http=${Date.now()}`
-  );
-  const { WebError } = await import("@deepseek-ai/dsh-web");
-
-  const original = globalThis.fetch;
-  globalThis.fetch = async (url, init) => {
-    assert.equal(url, TAVILY_SEARCH_URL);
-    assert.equal(init.headers.Authorization, "Bearer tvly-ok");
-    const body = JSON.parse(init.body);
-    assert.equal(body.query, "hello");
-    return {
-      ok: true,
-      status: 200,
-      statusText: "OK",
-      async json() {
-        return {
-          results: [{ title: "Doc", url: "https://example.com/doc", content: "snippet" }],
-        };
-      },
-      async text() {
-        return "";
-      },
-    };
-  };
-  try {
-    const result = await tavilySearch("tvly-ok", "hello", { maxResults: 3 });
-    assert.equal(result.sources[0].url, "https://example.com/doc");
-    assert.equal(result.sources[0].snippet, "snippet");
-    assert.equal(result.truncated, false);
-  } finally {
-    globalThis.fetch = original;
-  }
-
-  globalThis.fetch = async () => ({
-    ok: false,
-    status: 401,
-    statusText: "Unauthorized",
-    async json() {
-      return { detail: "unauthorized" };
-    },
-    async text() {
-      return "";
-    },
-  });
-  try {
-    await assert.rejects(() => tavilySearch("bad", "hello"), (err) => {
-      assert.ok(err instanceof WebError);
-      assert.equal(err.code, "WEB_PROVIDER_CREDENTIAL_MISSING");
-      return true;
-    });
-  } finally {
-    globalThis.fetch = original;
-  }
-});
-
-test("a key with non-header characters fails fast instead of throwing inside fetch", async () => {
-  const { tavilySearch, probeTavily } = await import(
-    `../../packages/plugins/web-search/host/providers/tavily.js?bytestring=${Date.now()}`
-  );
-  const { customSearch } = await import(
-    `../../packages/plugins/web-search/host/providers/custom.js?bytestring=${Date.now()}`
-  );
-  const { WebError } = await import("@deepseek-ai/dsh-web");
-
-  const original = globalThis.fetch;
-  let calls = 0;
-  globalThis.fetch = async () => {
-    calls += 1;
-    throw new Error("fetch must not be reached");
-  };
-  try {
-    const pasted = "tvly-dev-abc123 没有效的密钥";
-    await assert.rejects(() => tavilySearch(pasted, "hello"), (err) => {
-      assert.ok(err instanceof WebError);
-      assert.equal(err.code, "WEB_PROVIDER_CREDENTIAL_MISSING");
-      assert.match(err.message, /cannot be sent in an HTTP header/);
-      return true;
-    });
-    await assert.rejects(
-      () =>
-        customSearch({
-          url: "https://example.com/search",
-          apiKey: pasted,
-          protocol: "dina",
-          query: "hello",
-        }),
-      (err) => err.code === "WEB_PROVIDER_CREDENTIAL_MISSING",
-    );
-
-    const probe = await probeTavily(pasted);
-    assert.equal(probe.ok, false);
-    assert.match(probe.error, /cannot be sent in an HTTP header/);
-    assert.equal(calls, 0);
-  } finally {
-    globalThis.fetch = original;
-  }
-});
-
-test("customSearch supports dina and tavily-compat protocols", async () => {
-  const { customSearch } = await import(
-    `../../packages/plugins/web-search/host/providers/custom.js?http=${Date.now()}`
-  );
-  const original = globalThis.fetch;
-
-  globalThis.fetch = async (_url, init) => {
-    const body = JSON.parse(init.body);
-    assert.deepEqual(body, { query: "q", maxResults: 2 });
-    return {
-      ok: true,
-      status: 200,
-      statusText: "OK",
-      async json() {
-        return { sources: [{ url: "https://dina.test", title: "D", snippet: "s" }] };
-      },
-      async text() {
-        return "";
-      },
-    };
-  };
-  try {
-    const result = await customSearch({
-      url: "https://example.com/search",
-      apiKey: "k",
-      protocol: "dina",
-      query: "q",
-      maxResults: 2,
-    });
-    assert.equal(result.sources[0].url, "https://dina.test");
-  } finally {
-    globalThis.fetch = original;
-  }
-
-  globalThis.fetch = async (_url, init) => {
-    const body = JSON.parse(init.body);
-    assert.equal(body.max_results, 3);
-    assert.equal(body.search_depth, "basic");
-    return {
-      ok: true,
-      status: 200,
-      statusText: "OK",
-      async json() {
-        return { results: [{ url: "https://tvly.test", title: "T", content: "c" }] };
-      },
-      async text() {
-        return "";
-      },
-    };
-  };
-  try {
-    const result = await customSearch({
-      url: "https://example.com/tavily",
-      apiKey: "k",
-      protocol: "tavily-compat",
-      query: "q",
-      maxResults: 3,
-    });
-    assert.equal(result.sources[0].snippet, "c");
-  } finally {
-    globalThis.fetch = original;
-  }
-});
-
-test("facade available/search follows the default provider", async () => {
-  const home = mkdtempSync(join(tmpdir(), "dina-websearch-facade-"));
-  const prev = process.env.DSH_HOME;
+test("default search model must come from the live Router catalog", async () => {
+  const home = mkdtempSync(join(tmpdir(), "dina-websearch-"));
+  const previous = process.env.DSH_HOME;
   process.env.DSH_HOME = home;
-  const original = globalThis.fetch;
   try {
-    const { setDefaultProvider, writeProvider } = await import(
-      `../../packages/plugins/web-search/host/config.js?facade=${Date.now()}`
+    const { readConfig, setDefaultSearchModel } = await import(
+      `../../packages/plugins/web-search/host/config.js?config=${Date.now()}`
     );
-    const { createDinaSearchProvider, DINA_PROVIDER_ID } = await import(
-      `../../packages/plugins/web-search/host/provider.js?facade=${Date.now()}`
+    const available = [{ id: "tavily/search" }];
+
+    assert.equal(readConfig().defaultSearchModel, null);
+    assert.throws(
+      () => setDefaultSearchModel("missing/search", available),
+      (err: { code?: string }) => err.code === "not_available",
     );
-    const provider = createDinaSearchProvider();
-    assert.equal(provider.id, DINA_PROVIDER_ID);
-    assert.equal(provider.available(), false);
 
-    writeProvider("tavily", { apiKey: "tvly" });
-    assert.equal(provider.available(), false);
-    setDefaultProvider("tavily");
-    assert.equal(provider.available(), true);
+    const saved = setDefaultSearchModel("  tavily/search  ", available);
+    assert.equal(saved.defaultSearchModel, "tavily/search");
+    assert.equal(readConfig().defaultSearchModel, "tavily/search");
 
-    let called = false;
-    globalThis.fetch = async () => {
-      called = true;
-      return {
-        ok: true,
-        status: 200,
-        statusText: "OK",
-        async json() {
-          return { results: [{ url: "https://ok.test", title: "OK", content: "x" }] };
-        },
-        async text() {
-          return "";
-        },
-      };
-    };
-    const result = await provider.search({ query: "news", maxResults: 4 });
-    assert.equal(called, true);
-    assert.equal(result.sources[0].url, "https://ok.test");
-
-    writeProvider("custom", { url: "https://x.test", apiKey: "k" });
-    setDefaultProvider("custom");
-    assert.equal(provider.available(), true);
-
-    setDefaultProvider(null);
-    assert.equal(provider.available(), false);
-    await assert.rejects(() => provider.search({ query: "news" }), (err) => {
-      assert.equal(err.code, "WEB_PROVIDER_CONFIGURED_UNAVAILABLE");
-      return true;
-    });
+    setDefaultSearchModel(null, available);
+    assert.equal(readConfig().defaultSearchModel, null);
   } finally {
-    globalThis.fetch = original;
-    if (prev === undefined) delete process.env.DSH_HOME;
-    else process.env.DSH_HOME = prev;
+    if (previous === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = previous;
     rmSync(home, { recursive: true, force: true });
   }
 });
+
+test("reading a temporarily incomplete Router catalog does not erase the saved default", async () => {
+  const home = mkdtempSync(join(tmpdir(), "dina-websearch-read-"));
+  const previousHome = process.env.DSH_HOME;
+  const originalFetch = globalThis.fetch;
+  process.env.DSH_HOME = home;
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ data: [] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  try {
+    const { setDefaultSearchModel, readConfig } = await import(
+      `../../packages/plugins/web-search/host/config.js?read=${Date.now()}`
+    );
+    setDefaultSearchModel("tavily/search", [{ id: "tavily/search" }]);
+    const { currentConfig } = await import(
+      `../../packages/plugins/web-search/host/index.js?read=${Date.now()}`
+    );
+    assert.deepEqual(await currentConfig(), {
+      defaultSearchModel: "tavily/search",
+      searchModels: [],
+    });
+    assert.equal(readConfig().defaultSearchModel, "tavily/search");
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (previousHome === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = previousHome;
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("Router list and search use the same gateway identity as LLM calls", async () => {
+  const previous = {
+    url: process.env.LLM_GATEWAY_URL,
+    appId: process.env.OLARES_APP_ID,
+    key: process.env.DINA_ROUTER_API_KEY,
+  };
+  process.env.LLM_GATEWAY_URL = "http://router.test/v1/";
+  process.env.OLARES_APP_ID = "dina";
+  delete process.env.DINA_ROUTER_API_KEY;
+
+  const originalFetch = globalThis.fetch;
+  const calls: { url: string; init: RequestInit }[] = [];
+  globalThis.fetch = async (input, init = {}) => {
+    calls.push({ url: String(input), init });
+    if (String(input).endsWith("/models")) {
+      return new Response(
+        JSON.stringify({
+          data: [
+            { id: "chat/model", mode: "chat" },
+            { id: "tavily/search", mode: "search" },
+          ],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+    return new Response(
+      JSON.stringify({
+        object: "search",
+        results: [
+          { title: "Olares", url: "https://olares.com", snippet: "Personal cloud" },
+          { title: "unsafe", url: "javascript:alert(1)", snippet: "must not escape" },
+          { title: "skip" },
+        ],
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  };
+
+  try {
+    const { fetchRouterSearchModels, routerSearch } = await import(
+      `../../packages/plugins/web-search/host/router.js?http=${Date.now()}`
+    );
+    assert.deepEqual(await fetchRouterSearchModels(), [
+      { id: "tavily/search", name: "tavily/search" },
+    ]);
+
+    const result = await routerSearch("tavily/search", "Olares", { maxResults: 2 });
+    assert.deepEqual(result, {
+      sources: [
+        { title: "Olares", url: "https://olares.com", snippet: "Personal cloud" },
+      ],
+      truncated: false,
+    });
+
+    assert.equal(calls[0].url, "http://router.test/v1/models");
+    assert.equal((calls[0].init.headers as Record<string, string>)["x-caller-appid"], "dina");
+    assert.equal(calls[1].url, "http://router.test/v1/search");
+    assert.deepEqual(JSON.parse(String(calls[1].init.body)), {
+      model: "tavily/search",
+      query: "Olares",
+      max_results: 2,
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+    restoreEnv("LLM_GATEWAY_URL", previous.url);
+    restoreEnv("OLARES_APP_ID", previous.appId);
+    restoreEnv("DINA_ROUTER_API_KEY", previous.key);
+  }
+});
+
+test("Router search distinguishes its timeout from caller cancellation", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (_input, init) =>
+    new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+    });
+  try {
+    const { routerSearch } = await import(
+      `../../packages/plugins/web-search/host/router.js?timeout=${Date.now()}`
+    );
+    await assert.rejects(
+      () => routerSearch("tavily/search", "news", { timeoutMs: 1 }),
+      (err: { code?: string; message?: string }) =>
+        err.code === "WEB_PROVIDER_ERROR" && /timed out/i.test(err.message ?? ""),
+    );
+
+    const controller = new AbortController();
+    const request = routerSearch("tavily/search", "news", {
+      signal: controller.signal,
+      timeoutMs: 1_000,
+    });
+    controller.abort(new Error("cancelled by caller"));
+    await assert.rejects(
+      () => request,
+      (err: { code?: string }) => err.code === "WEB_ABORTED",
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("dsh search facade follows the selected Router model", async () => {
+  const home = mkdtempSync(join(tmpdir(), "dina-websearch-facade-"));
+  const previousHome = process.env.DSH_HOME;
+  process.env.DSH_HOME = home;
+  const originalFetch = globalThis.fetch;
+  try {
+    const { setDefaultSearchModel } = await import(
+      `../../packages/plugins/web-search/host/config.js?facade=${Date.now()}`
+    );
+    const { createDinaSearchProvider } = await import(
+      `../../packages/plugins/web-search/host/provider.js?facade=${Date.now()}`
+    );
+    const provider = createDinaSearchProvider();
+    assert.equal(provider.available(), false);
+
+    setDefaultSearchModel("tavily/search", [{ id: "tavily/search" }]);
+    assert.equal(provider.available(), true);
+
+    globalThis.fetch = async (_input, init) => {
+      assert.equal(JSON.parse(String(init?.body)).model, "tavily/search");
+      return new Response(
+        JSON.stringify({ results: [{ url: "https://ok.test", title: "OK" }] }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    };
+    const result = await provider.search({ query: "news", maxResults: 4 });
+    assert.equal(result.sources[0].url, "https://ok.test");
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (previousHome === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = previousHome;
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+function restoreEnv(name: string, value: string | undefined) {
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
+}

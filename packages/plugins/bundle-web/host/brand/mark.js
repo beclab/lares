@@ -1,5 +1,7 @@
-/** The Dina mark: favicon, PWA icon, and the in-app logo the stylesheet paints. */
-export const MARK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Dina">
+import { PRODUCT_NAME, THEME_COLOR } from "./identity.js";
+
+/** The product mark: favicon, PWA icon, and the in-app logo the stylesheet paints. */
+export const MARK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="${PRODUCT_NAME}">
   <defs>
     <linearGradient id="dina-mark" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#6366F1"/>
@@ -18,11 +20,11 @@ export const MANIFEST_PATH = "/dina/manifest.webmanifest";
 
 export const MANIFEST = {
   id: "/",
-  name: "Dina",
-  short_name: "Dina",
+  name: PRODUCT_NAME,
+  short_name: PRODUCT_NAME,
   start_url: "/",
   scope: "/",
   display: "fullscreen",
-  theme_color: "#6366F1",
+  theme_color: THEME_COLOR,
   icons: [{ src: MARK_PATH, sizes: "any", type: "image/svg+xml", purpose: "any" }],
 };

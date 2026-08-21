@@ -434,7 +434,8 @@ sync_once() {
           sh -c 'cd /app && npm install --omit=dev'; then
           _remote_sh "printf '%s' $(printf '%q' "${want_hash}") > $(printf '%q' "${DEST_DIR}/.dina-lock-sha") && chown 1000:1000 $(printf '%q' "${DEST_DIR}/.dina-lock-sha")"
         else
-          log "!! 容器内 npm install 失败：新依赖可能尚未生效"
+          echo "错误：容器内 npm install 失败；未触发热重载，避免用不完整依赖启动" >&2
+          return 1
         fi
       fi
     fi

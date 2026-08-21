@@ -3,7 +3,15 @@
 
 - id: system-prompt
   config:
-    persona: !!js process.env.DSH_SYSTEM_PROMPT ?? 'You are Dina, a helpful assistant running on Olares. Prefer olares-cli for Olares platform tasks when skills apply.'
+    includeHarnessIdentity: false
+    persona: !!js process.env.DSH_SYSTEM_PROMPT ?? ''
+
+# Drop dsh-web-app's DeepSeek Harness GUI / checkout prompt; dina-brand owns the surface.
+- id: web-runtime
+  config:
+    printUrl: true
+    surfaceContext: false
+    trustedHosts: !!js ctx.webStartup.trustedHosts
 
 # CLI rejects --host 0.0.0.0; Olares probes/mesh need all-interfaces bind.
 # Keep inject from dsh-web-app; this patch only replaces config.
@@ -21,6 +29,15 @@
 # Models page edits it. The DeepSeek adapter would only put a provider Dina
 # cannot reach in the picker; users who want it add it through "Add provider".
 - id: llm-deepseek
+  disabled: true
+
+# Official Models page: provider routes, endpoints, and API keys are Router's
+# business on Olares, so the only choice it leaves a user is which model new
+# sessions start from — that is what @dina/models renders instead. Disabled
+# rather than shadowed: the Settings nav is built from the raw slot ledger, so a
+# same-id entry would only duplicate the nav row. Its `settings.onboarding`
+# steps (DeepSeek internal-testing notice, official-provider dialog) go with it.
+- id: ui-settings-models
   disabled: true
 
 # Replace DeepSeek-native search with Dina's multi-provider facade (`dina`).
@@ -101,6 +118,10 @@
       name: '@dina/bundle-web/host/brand/index.js'
       inject: [webServer]
 
+    - id: dina-crypto-uuid
+      name: '@dina/bundle-web/host/crypto-uuid.js'
+      inject: [webServer]
+
     - id: dina-olares-identity
       name: '@dina/bundle-web/host/olares/olares-identity.js'
       inject: [webServer]
@@ -116,6 +137,10 @@
     - id: dina-web-search
       name: '@dina/web-search'
       inject: [web, webServer]
+
+    - id: dina-models
+      name: '@dina/models'
+      inject: [webServer, llm, agentDefaultModel, settings]
 
     - id: dina-client-brand
       name: '@dina/client-dina'

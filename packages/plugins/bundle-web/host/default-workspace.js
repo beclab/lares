@@ -7,7 +7,7 @@ import { mkdirSync } from "node:fs";
 export const name = "dina-default-workspace";
 export const inject = ["workspaceRegistry"];
 
-export const DEFAULT_WORKSPACE_TITLE = "默认工作区";
+export const DEFAULT_WORKSPACE_TITLE = "Default";
 
 /** @param {NodeJS.ProcessEnv} [env] */
 export function workspaceRootFromEnv(env = process.env) {

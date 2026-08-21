@@ -1,7 +1,8 @@
 /**
  * Voice-input Host routes under /api/dina/voice (STT via /llm/v1 shim; see stt.js).
  */
-import { readConfig, writeConfig } from "./config.js";
+import { createRouteHandler, readBody, readJsonObject, sendJson } from "../../shared/host/http.js";
+import { readConfig, validateConfigPatch, writeConfig } from "./config.js";
 import { VoiceError, listModels, pickSttModelId, resolveSttModel, sttModelIds, transcribe } from "./stt.js";
 
 export const name = "dina-voice-input";
@@ -27,40 +28,6 @@ function filenameFor(contentType) {
   return `voice.${EXTENSIONS[base] ?? "webm"}`;
 }
 
-/** @param {import('node:http').IncomingMessage} req */
-function readBody(req) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    let total = 0;
-    req.on("data", (chunk) => {
-      total += chunk.length;
-      // OpenAI-compatible upload ceiling.
-      if (total > 25 * 1024 * 1024) {
-        reject(new VoiceError("voice_audio_too_large", 413, "audio exceeds 25MB"));
-        req.destroy();
-        return;
-      }
-      chunks.push(chunk);
-    });
-    req.on("end", () => resolve(Buffer.concat(chunks)));
-    req.on("error", reject);
-  });
-}
-
-function sendJson(res, status, payload) {
-  res.writeHead(status, { "content-type": "application/json" });
-  res.end(JSON.stringify(payload));
-}
-
-function sendVoiceError(res, err) {
-  if (err instanceof VoiceError) {
-    sendJson(res, err.status >= 400 ? err.status : 502, { error: { code: err.code, message: err.message } });
-    return;
-  }
-  const message = err instanceof Error ? err.message : String(err);
-  sendJson(res, 500, { error: { code: "voice_failed", message } });
-}
-
 async function handleStatus(_req, res) {
   const config = readConfig();
   let modelAvailable = false;
@@ -84,7 +51,8 @@ async function handleModels(_req, res) {
   const models = await listModels();
   const ids = models.map((model) => model.id);
   const stt = sttModelIds(models);
-  sendJson(res, 200, { models: ids, stt, selected: stt[0] ?? null });
+  const selected = pickSttModelId(models, readConfig().model);
+  sendJson(res, 200, { models: ids, stt, selected });
 }
 
 async function handleGetConfig(_req, res) {
@@ -92,14 +60,12 @@ async function handleGetConfig(_req, res) {
 }
 
 async function handleSetConfig(req, res) {
-  const raw = await readBody(req);
-  let patch = {};
-  if (raw.length > 0) {
-    try {
-      patch = JSON.parse(raw.toString("utf8"));
-    } catch {
-      sendJson(res, 400, { error: { code: "bad_request", message: "invalid JSON body" } });
-      return;
+  const body = await readJsonObject(req);
+  const patch = validateConfigPatch(body);
+  if (patch.model) {
+    const available = sttModelIds(await listModels());
+    if (!available.includes(patch.model)) {
+      throw new VoiceError("voice_model_unavailable", 400, "selected voice model is not available");
     }
   }
   sendJson(res, 200, writeConfig(patch));
@@ -116,9 +82,16 @@ async function handleTranscribe(req, res) {
     );
   }
   const url = new URL(req.url ?? "/", "http://x");
-  const language = url.searchParams.get("language")?.trim() || config.language || undefined;
+  const requestedLanguage = url.searchParams.get("language");
+  const language = requestedLanguage === null
+    ? config.language || undefined
+    : validateConfigPatch({ language: requestedLanguage }).language || undefined;
   const contentType = req.headers["content-type"] || "audio/webm";
-  const bytes = await readBody(req);
+  const bytes = await readBody(req, {
+    maxBytes: 25 * 1024 * 1024,
+    code: "voice_audio_too_large",
+    message: "audio exceeds 25MB",
+  });
   if (bytes.length === 0) throw new VoiceError("voice_audio_unreadable", 400, "audio content is empty");
 
   const text = await transcribe({
@@ -140,34 +113,18 @@ const ROUTES = {
   "/transcribe": { POST: handleTranscribe },
 };
 
-function route(req, res) {
-  const method = (req.method ?? "GET").toUpperCase();
-  const path = new URL(req.url ?? "/", "http://x").pathname.slice(ROUTE_PREFIX.length) || "/";
-  const handlers = ROUTES[path.replace(/\/+$/, "") || "/"];
-  if (!handlers) {
-    sendJson(res, 404, { error: { code: "not_found", message: `no voice route ${path}` } });
-    return;
-  }
-  const handler = handlers[method];
-  if (!handler) {
-    sendJson(res, 405, { error: { code: "method_not_allowed", message: `${method} not allowed` } });
-    return;
-  }
-  Promise.resolve(handler(req, res)).catch((err) => {
-    if (res.headersSent) {
-      res.destroy();
-      return;
-    }
-    sendVoiceError(res, err);
-  });
-}
+const handler = createRouteHandler({
+  prefix: ROUTE_PREFIX,
+  routes: ROUTES,
+  fallbackCode: "voice_failed",
+});
 
 /**
  * @param {import('@deepseek-ai/cordis').Context} ctx
  */
 export function apply(ctx) {
   ctx.effect(
-    () => ctx.webServer.register({ kind: "prefix", path: ROUTE_PREFIX, handler: route }),
+    () => ctx.webServer.register({ kind: "prefix", path: ROUTE_PREFIX, handler }),
     "dina-voice-input-routes",
   );
 }

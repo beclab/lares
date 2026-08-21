@@ -1,18 +1,20 @@
 import React from "react";
 import {
-  Button,
-  Menu,
-  StateDot,
-  IconChevronDownOutline14,
-} from "@deepseek-ai/dsh-client-ui-primitives";
+  controlsCss,
+  SettingsHeader,
+  SettingsSelector,
+  SettingsStatus,
+} from "../../../shared/client/settings-controls.js";
+import { useLatest, useMountedRef } from "../../../shared/client/react-lifecycle.js";
 import { API, getJson } from "./api.js";
+import { MicGlyph } from "./icons.js";
 import { useT } from "./locale.js";
-import settingsCss from "./styles/settings.css";
+import localSettingsCss from "./styles/settings.css";
 
-const { useCallback, useEffect, useState } = React;
+const { useCallback, useEffect, useRef, useState } = React;
 const h = React.createElement;
 
-export { settingsCss };
+export const settingsCss = `${controlsCss}${localSettingsCss}`;
 
 /** Menu selectedId cannot be empty. */
 const AUTO = "auto";
@@ -42,92 +44,97 @@ function Row(title, hint, control) {
   );
 }
 
-function Selector(props) {
-  const [open, setOpen] = useState(false);
-  const selected = props.items.find((item) => item.id === props.value);
-  return h(Menu, {
-    open,
-    items: props.items,
-    selectedId: props.value,
-    onSelect: (id) => {
-      setOpen(false);
-      props.onSelect(id);
-    },
-    onClose: () => setOpen(false),
-    align: "end",
-    portal: true, // settings body scrolls; in-place menu would clip
-    anchor: h(
-      Button,
-      {
-        className: "dina-voice-selector",
-        "aria-haspopup": "menu",
-        "aria-expanded": open,
-        onClick: () => setOpen((value) => !value),
-      },
-      h("span", { className: "dina-voice-selector-label" }, selected?.label ?? props.value),
-      h(IconChevronDownOutline14, { className: "dina-voice-chevron" }),
-    ),
-  });
-}
-
 export function VoiceSettings() {
   const t = useT();
   const [config, setConfig] = useState(null);
   const [sttModels, setSttModels] = useState([]);
   const [status, setStatus] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [notice, setNotice] = useState(null);
+  const mounted = useMountedRef();
+  const refreshSequence = useRef(0);
+  const translate = useLatest(t);
+
+  useEffect(() => {
+    return () => {
+      refreshSequence.current += 1;
+    };
+  }, [mounted]);
 
   const refresh = useCallback(async () => {
-    const [next, models] = await Promise.all([
-      getJson("/status").catch(() => null),
-      getJson("/models").catch(() => null),
-    ]);
-    setStatus(next);
-    if (models) setSttModels(models.stt ?? []);
+    const sequence = ++refreshSequence.current;
+    setRefreshing(true);
+    setNotice(null);
+    try {
+      const [next, models] = await Promise.all([getJson("/status"), getJson("/models")]);
+      if (!mounted.current || sequence !== refreshSequence.current) return;
+      setStatus(next);
+      setSttModels(models.stt ?? []);
+    } catch {
+      if (mounted.current && sequence === refreshSequence.current) {
+        setNotice({ kind: "error", text: translate.current("settings.refreshFailed") });
+      }
+    } finally {
+      if (mounted.current && sequence === refreshSequence.current) setRefreshing(false);
+    }
   }, []);
 
   useEffect(() => {
     let alive = true;
     (async () => {
-      const cfg = await getJson("/config").catch(() => ({ model: "", language: "" }));
+      let cfg;
+      try {
+        cfg = await getJson("/config");
+      } catch {
+        if (alive && mounted.current) {
+          setConfig({ model: "", language: "" });
+          setNotice({ kind: "error", text: translate.current("settings.loadFailed") });
+        }
+        return;
+      }
       if (!alive) return;
       setConfig(cfg);
-      await refresh();
+      if (mounted.current) await refresh();
     })();
     return () => {
       alive = false;
     };
   }, [refresh]);
 
-  const patch = useCallback((key, value) => {
-    setConfig((prev) => ({ ...prev, [key]: value }));
-    setNotice(null);
-  }, []);
-
-  const save = useCallback(async () => {
+  const patch = useCallback(async (key, value) => {
     if (!config) return;
+    const previous = config;
+    setConfig({ ...config, [key]: value });
     setSaving(true);
     setNotice(null);
     try {
       const res = await fetch(`${API}/config`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(config),
+        body: JSON.stringify({ [key]: value }),
       });
       if (!res.ok) throw new Error(String(res.status));
-      setConfig(await res.json());
-      setNotice({ kind: "ok", text: t("settings.saved") });
+      const next = await res.json();
+      if (!mounted.current) return;
+      setConfig(next);
       await refresh();
     } catch {
-      setNotice({ kind: "error", text: t("settings.saveFailed") });
+      if (mounted.current) {
+        setConfig(previous);
+        setNotice({ kind: "error", text: translate.current("settings.saveFailed") });
+      }
     } finally {
-      setSaving(false);
+      if (mounted.current) setSaving(false);
     }
-  }, [config, refresh, t]);
+  }, [config, refresh]);
 
   if (!config) {
-    return h("div", { className: "dina-voice" }, h("div", { className: "dina-voice-hint" }, t("loading")));
+    return h(
+      "div",
+      { className: "dina-voice" },
+      h("div", { className: "dina-settings-notice" }, t("settings.loading")),
+    );
   }
 
   const modelItems = [{ id: AUTO, label: t("settings.model.auto") }].concat(
@@ -138,12 +145,18 @@ export function VoiceSettings() {
   return h(
     "div",
     { className: "dina-voice" },
-    h("h2", { className: "dina-voice-title" }, t("settings.title")),
-    h("p", { className: "dina-voice-intro" }, t("settings.intro")),
+    h(SettingsHeader, {
+      title: t("settings.title"),
+      refreshing,
+      disabled: refreshing || saving,
+      onRefresh: refresh,
+      routerRoute: "audio",
+      t,
+    }),
+    h("p", { className: "dina-settings-intro" }, t("settings.intro")),
     h(
-      "div",
-      { className: `dina-voice-status ${ready ? "" : "is-warn"}` },
-      h(StateDot, { state: ready ? "done" : "warning", size: 8 }),
+      SettingsStatus,
+      { ready },
       ready
         ? t("settings.status.ready", { model: status?.model || t("status.auto") })
         : t("settings.status.notReady"),
@@ -155,34 +168,30 @@ export function VoiceSettings() {
       Row(
         t("settings.model.title"),
         t("settings.model.hint"),
-        h(Selector, {
+        h(SettingsSelector, {
           value: config.model || AUTO,
           items: modelItems,
+          disabled: saving || refreshing,
           onSelect: (id) => patch("model", id === AUTO ? "" : id),
         }),
       ),
       Row(
         t("settings.language.title"),
         t("settings.language.hint"),
-        h(Selector, {
+        h(SettingsSelector, {
           value: config.language || AUTO,
           items: languageItems(t),
+          disabled: saving || refreshing,
           onSelect: (id) => patch("language", id === AUTO ? "" : id),
         }),
       ),
     ),
 
-    h(
-      "div",
-      { className: "dina-voice-actions" },
-      h(
-        Button,
-        { variant: "primary", disabled: saving, onClick: save },
-        saving ? t("settings.saving") : t("save"),
-      ),
-    ),
     notice
-      ? h("p", { className: `dina-voice-notice ${notice.kind === "error" ? "is-error" : "is-ok"}` }, notice.text)
+      ? h("p", { className: `dina-settings-notice ${notice.kind === "error" ? "is-error" : ""}` }, notice.text)
       : null,
   );
 }
+
+/** Settings nav glyph, read off the component by the shell's row projection. */
+VoiceSettings.navIcon = MicGlyph;

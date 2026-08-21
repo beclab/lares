@@ -16,7 +16,13 @@ const DISPLAY_NAME = "Olares Router";
 const SETTINGS_NS = "llm-pi-ai";
 /** Router relays OpenAI-compatible chat completions; thinking arrives as `reasoning_content`. */
 const PROTOCOL = "openai-completions";
-const THINKING_FORMAT = "deepseek";
+/**
+ * Reasoning dispatch the Router accepts: a plain `reasoning_effort`, and no
+ * `thinkingFormat` — naming one would wrap the level in a vendor envelope the
+ * gateway never asked for. Which models offer a level is the catalog's word,
+ * carried per model in `reasoningEfforts`.
+ */
+const ROUTE_COMPAT = { supportsReasoningEffort: true };
 /**
  * The shim bearer's credential reference — never DINA_ROUTER_API_KEY. The
  * /llm/v1 shim strips whatever Authorization the adapter sends and attaches
@@ -65,7 +71,7 @@ export function bootstrapDinaSettings(dshHome: string, seed: DinaSettingsSeed): 
   const doc = parseDocument(raw);
 
   const routeSeeded = seedRouterRoute(doc, seed);
-  if (!routeSeeded) refreshRouterModels(doc, seed);
+  if (!routeSeeded) refreshRouterRoute(doc, seed);
   const model = pinDefaultModel(doc, seed);
   const routeModels = declaredModelCount(doc);
 
@@ -105,33 +111,44 @@ function seedRouterRoute(doc: Document, seed: DinaSettingsSeed): boolean {
     api: PROTOCOL,
     baseURL: seed.baseURL,
     apiKeyEnv: CREDENTIAL_REF,
-    // Router decides whether a model thinks; a hand-declared model offers no
-    // effort levels, so dispatch must not name one (see pinDefaultModel).
-    compat: { thinkingFormat: THINKING_FORMAT, supportsReasoningEffort: false },
+    compat: ROUTE_COMPAT,
     models,
   });
   return true;
 }
 
 /**
- * Mirror the Router catalog into the route's model list. The list is derived
- * state, not a user preference: Router alone decides which models exist, and a
- * list written once at seed time strands the picker on whatever that boot saw —
- * a lone `default` placeholder when the catalog was still unreachable.
- * An empty catalog means this boot could not read Router, so the list stands.
+ * Mirror the Router catalog into the route. Model list and reasoning switches
+ * are derived state, not user preferences: Router alone decides which models
+ * exist and which of them take an effort level, and a list written once at seed
+ * time strands the picker on whatever that boot saw — a lone `default`
+ * placeholder when the catalog was still unreachable. An empty catalog means
+ * this boot could not read Router, so the list stands.
  */
-function refreshRouterModels(doc: Document, seed: DinaSettingsSeed): void {
+function refreshRouterRoute(doc: Document, seed: DinaSettingsSeed): void {
+  const path = [SETTINGS_NS, "providers", PROVIDER];
+  doc.setIn([...path, "compat"], ROUTE_COMPAT);
   const chat = declarableModels(seed);
   if (chat.length === 0) return;
-  doc.setIn([SETTINGS_NS, "providers", PROVIDER, "models"], chat);
+  doc.setIn([...path, "models"], chat);
+}
+
+interface RouteModel {
+  id: string;
+  name: string;
+  reasoningEfforts?: Record<string, string>;
 }
 
 /**
  * Embedding, transcription, and OCR rows share the Router catalog but cannot
  * serve a chat turn; declaring them would only put dead entries in the picker.
  */
-function declarableModels(seed: DinaSettingsSeed): { id: string; name: string }[] {
-  return seed.catalog.filter(isChatModel).map((entry) => ({ id: entry.id, name: entry.name }));
+function declarableModels(seed: DinaSettingsSeed): RouteModel[] {
+  return seed.catalog.filter(isChatModel).map((entry) => ({
+    id: entry.id,
+    name: entry.name,
+    ...(entry.reasoningEfforts ? { reasoningEfforts: entry.reasoningEfforts } : {}),
+  }));
 }
 
 function declaredModelCount(doc: Document): number {
@@ -161,9 +178,9 @@ function pinDefaultModel(doc: Document, seed: DinaSettingsSeed): string | null {
 
   doc.setIn(["agent-default-model", "provider"], PROVIDER);
   doc.setIn(["agent-default-model", "model"], model);
-  // A hand-declared pi-ai model reports `off` as its only reasoning effort, so
-  // an explicit level (what the DeepSeek-adapter era wrote here) fails every
-  // request with UNSUPPORTED_REASONING_EFFORT.
+  // Effort is the composer's per-session choice, and the levels differ per
+  // model: a level named here outlives the model it was picked for and fails
+  // the next request with UNSUPPORTED_REASONING_EFFORT.
   doc.deleteIn(["agent-default-model", "reasoningEffort"]);
   return model;
 }

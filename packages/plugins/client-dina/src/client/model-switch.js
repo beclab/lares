@@ -1,14 +1,16 @@
 import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
+import { createLocaleBinding } from "../../../shared/client/locale-binding.js";
 
 const h = React.createElement;
 
 const ZH = {
   "reasoning.default": "默认",
   "reasoning.title": "推理等级",
+  "reasoning.switchAria": "切换推理等级，当前 {label}",
   "model.select": "选择模型",
   "model.switchAria": "切换模型，当前 {label}",
-  "model.menuAria": "模型与推理等级",
+  "model.menuAria": "模型",
   "model.refreshing": "正在刷新模型列表…",
   "model.opFailed": "模型操作失败：{msg}",
   "model.loadFailed": "{name} 加载失败：{msg}",
@@ -19,9 +21,10 @@ const ZH = {
 const EN = {
   "reasoning.default": "Default",
   "reasoning.title": "Reasoning effort",
+  "reasoning.switchAria": "Switch reasoning effort, current {label}",
   "model.select": "Select model",
   "model.switchAria": "Switch model, current {label}",
-  "model.menuAria": "Model and reasoning effort",
+  "model.menuAria": "Model",
   "model.refreshing": "Refreshing models…",
   "model.opFailed": "Model action failed: {msg}",
   "model.loadFailed": "{name} failed to load: {msg}",
@@ -29,13 +32,11 @@ const EN = {
   "slot.model": "Model",
 };
 
-// Bound in apply once the locale service is injected; identity fallback before then.
-let localeApi = null;
-let translate = (key) => key;
+const localeBinding = createLocaleBinding("dina.client");
 
 export function bindLocale(locale) {
-  localeApi = locale;
-  translate = locale.bind("dina.client");
+  localeBinding.attach(locale);
+  localeBinding.bind(locale);
 }
 
 export function registerLocale(locale) {
@@ -43,15 +44,10 @@ export function registerLocale(locale) {
 }
 
 export function t(key, params) {
-  return translate(key, params);
+  return localeBinding.getTranslate()(key, params);
 }
 
-function useT() {
-  const subscribe = useCallback((fn) => (localeApi ? localeApi.subscribe(fn) : () => {}), []);
-  const getRevision = useCallback(() => (localeApi ? localeApi.getSnapshot().revision : 0), []);
-  useSyncExternalStore(subscribe, getRevision);
-  return translate;
-}
+const useT = localeBinding.useT;
 
 function ChevronGlyph(open) {
   return h(
@@ -153,7 +149,7 @@ export function ModelSwitch({ available, directory, load, select, locked }) {
   const subscribe = useCallback((fn) => directory.subscribe(fn), [directory]);
   const snapshot = useCallback(() => directory.getSnapshot(), [directory]);
   const state = useSyncExternalStore(subscribe, snapshot);
-  const [open, setOpen] = useState(false);
+  const [openMenu, setOpenMenu] = useState(null);
   const rootRef = useRef(null);
 
   useEffect(() => {
@@ -161,13 +157,13 @@ export function ModelSwitch({ available, directory, load, select, locked }) {
   }, [available, load]);
 
   useEffect(() => {
-    if (!open) return;
+    if (openMenu === null) return;
     const closeOutside = (event) => {
-      if (!rootRef.current?.contains(event.target)) setOpen(false);
+      if (!rootRef.current?.contains(event.target)) setOpenMenu(null);
     };
     document.addEventListener("mousedown", closeOutside);
     return () => document.removeEventListener("mousedown", closeOutside);
-  }, [open]);
+  }, [openMenu]);
 
   if (!available) return null;
 
@@ -191,13 +187,13 @@ export function ModelSwitch({ available, directory, load, select, locked }) {
 
   const submit = (selection) => {
     select(selection).then((accepted) => {
-      if (accepted) setOpen(false);
+      if (accepted) setOpenMenu(null);
     });
   };
 
   const chooseModel = (group, model) => {
     if (current?.provider === group.id && current.model === model.id) {
-      setOpen(false);
+      setOpenMenu(null);
       return;
     }
     submit({
@@ -211,7 +207,7 @@ export function ModelSwitch({ available, directory, load, select, locked }) {
 
   const chooseEffort = (level) => {
     if (!current || effort === level) {
-      setOpen(false);
+      setOpenMenu(null);
       return;
     }
     submit({
@@ -231,31 +227,31 @@ export function ModelSwitch({ available, directory, load, select, locked }) {
           ...reasoning.efforts,
         ];
 
+  const toggle = (menu) => setOpenMenu((current) => (current === menu ? null : menu));
+
+  const modelOpen = openMenu === "model";
+  const effortOpen = openMenu === "effort";
+
   const trigger = h(
     "button",
     {
       type: "button",
       className: "dina-model-trigger",
       "aria-haspopup": "menu",
-      "aria-expanded": open,
+      "aria-expanded": modelOpen,
       "aria-label": current ? t("model.switchAria", { label }) : t("model.select"),
-      title: effortLabel === undefined ? label : `${label} · ${effortLabel}`,
+      title: label,
       disabled: locked,
       onClick: () => {
-        if (open) {
-          setOpen(false);
-          return;
-        }
-        setOpen(true);
-        load();
+        toggle("model");
+        if (!modelOpen) load();
       },
     },
     h("span", { className: "dina-model-label" }, label),
-    effortLabel === undefined ? null : h("span", { className: "dina-model-effort" }, effortLabel),
-    ChevronGlyph(open),
+    ChevronGlyph(modelOpen),
   );
 
-  const menu = open
+  const menu = modelOpen
     ? h(
         "div",
         {
@@ -300,33 +296,60 @@ export function ModelSwitch({ available, directory, load, select, locked }) {
         state.status === "ready" && state.groups.length === 0
           ? h("div", { className: "dina-model-note" }, t("model.empty"))
           : null,
-        efforts.length === 0
-          ? null
-          : h(
-              "section",
-              { className: "dina-model-group", role: "group" },
-              h("div", { className: "dina-model-divider" }),
-              h("div", { className: "dina-model-group-title" }, t("reasoning.title")),
-              efforts.map((level) =>
-                Option(
-                  level.key ?? `effort:${level.id}`,
-                  level.name,
-                  level.description,
-                  effort === level.id,
-                  busy,
-                  () => chooseEffort(level.id),
-                ),
-              ),
-            ),
       )
     : null;
 
-  const anchor = h(
+  const effortTrigger =
+    efforts.length === 0
+      ? null
+      : h(
+          "button",
+          {
+            type: "button",
+            className: "dina-model-trigger is-effort",
+            "aria-haspopup": "menu",
+            "aria-expanded": effortOpen,
+            "aria-label": t("reasoning.switchAria", { label: effortLabel }),
+            title: `${t("reasoning.title")} · ${effortLabel}`,
+            disabled: locked,
+            onClick: () => toggle("effort"),
+          },
+          h("span", { className: "dina-model-label" }, effortLabel),
+          ChevronGlyph(effortOpen),
+        );
+
+  const effortMenu =
+    effortOpen && efforts.length > 0
+      ? h(
+          "div",
+          {
+            className: "dina-model-menu is-effort",
+            role: "menu",
+            "aria-label": t("reasoning.title"),
+            "aria-busy": busy,
+          },
+          h("div", { className: "dina-model-group-title" }, t("reasoning.title")),
+          efforts.map((level) =>
+            Option(
+              level.key ?? `effort:${level.id}`,
+              level.name,
+              level.description,
+              effort === level.id,
+              busy,
+              () => chooseEffort(level.id),
+            ),
+          ),
+        )
+      : null;
+
+  const row = h(
     "div",
-    { ref: rootRef, className: heroRow === null ? "dina-model-anchor" : "dina-model-anchor is-hero" },
-    trigger,
-    menu,
+    { ref: rootRef, className: heroRow === null ? "dina-model-row" : "dina-model-row is-hero" },
+    effortTrigger === null
+      ? null
+      : h("div", { className: "dina-model-anchor" }, effortTrigger, effortMenu),
+    h("div", { className: "dina-model-anchor" }, trigger, menu),
   );
 
-  return heroRow === null ? h("div", { className: "dina-model" }, anchor) : createPortal(anchor, heroRow);
+  return heroRow === null ? h("div", { className: "dina-model" }, row) : createPortal(row, heroRow);
 }

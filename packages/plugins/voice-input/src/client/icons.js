@@ -11,15 +11,16 @@ export function Spinner(size) {
   return h(IconLoadingOutline16, { size, className: "dina-voice-spin" });
 }
 
-export function MicGlyph() {
+/** Sized on the ic_ds_* 16-grid so it carries the same visual weight in a row of them. */
+export function MicGlyph({ size = 16, className } = {}) {
   return h(
     "svg",
-    { width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", "aria-hidden": "true" },
-    h("rect", { x: 9, y: 3, width: 6, height: 11, rx: 3, fill: "currentColor" }),
+    { width: size, height: size, className, viewBox: "0 0 16 16", fill: "none", "aria-hidden": "true" },
+    h("rect", { x: 5.75, y: 1.25, width: 4.5, height: 8, rx: 2.25, fill: "currentColor" }),
     h("path", {
-      d: "M6 11a6 6 0 0 0 12 0M12 17v3",
+      d: "M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12.25v2.25",
       stroke: "currentColor",
-      strokeWidth: 1.6,
+      strokeWidth: 1.4,
       strokeLinecap: "round",
       fill: "none",
     }),

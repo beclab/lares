@@ -1,6 +1,4 @@
-import React from "react";
-
-const { useCallback, useSyncExternalStore } = React;
+import { createLocaleBinding } from "../../../shared/client/locale-binding.js";
 
 // dsh locale namespace; error keys mirror the Host error codes.
 export const ZH = {
@@ -21,6 +19,12 @@ export const ZH = {
   "status.auto": "自动",
   "settings.title": "语音输入",
   "settings.intro": "在输入框旁点击麦克风录音，录完自动转写并填入文本。转写由 Olares Router 的语音模型提供。",
+  "settings.refresh": "刷新",
+  "settings.refreshing": "刷新中…",
+  "settings.router": "Router 控制台",
+  "settings.loading": "正在读取语音输入配置…",
+  "settings.loadFailed": "读取语音输入配置失败",
+  "settings.refreshFailed": "刷新语音模型列表失败",
   "settings.status.ready": "语音就绪 · 模型 {model}",
   "settings.status.notReady": "语音模型尚不可用，请先在 Olares 模型控制台安装语音识别应用",
   "settings.model.title": "语音模型",
@@ -28,8 +32,6 @@ export const ZH = {
   "settings.model.auto": "自动选择",
   "settings.language.title": "识别语言",
   "settings.language.hint": "指定语言可提升准确度与速度",
-  "settings.saving": "保存中…",
-  "settings.saved": "已保存",
   "settings.saveFailed": "保存失败",
 };
 
@@ -53,6 +55,12 @@ export const EN = {
   "settings.title": "Voice input",
   "settings.intro":
     "Click the microphone beside the composer to record; the take is transcribed and inserted automatically. Transcription is served by an Olares Router voice model.",
+  "settings.refresh": "Refresh",
+  "settings.refreshing": "Refreshing…",
+  "settings.router": "Router console",
+  "settings.loading": "Loading voice input settings…",
+  "settings.loadFailed": "Failed to load voice input settings",
+  "settings.refreshFailed": "Failed to refresh voice models",
   "settings.status.ready": "Voice ready · model {model}",
   "settings.status.notReady":
     "Voice model not available yet; install a speech-recognition app in the Olares Model Console first",
@@ -61,34 +69,15 @@ export const EN = {
   "settings.model.auto": "Auto",
   "settings.language.title": "Recognition language",
   "settings.language.hint": "Specifying a language improves accuracy and speed",
-  "settings.saving": "Saving…",
-  "settings.saved": "Saved",
   "settings.saveFailed": "Failed to save",
 };
 
-// Bound in apply once the locale service is injected; identity fallback before then.
-let localeApi = null;
-let translate = (key) => key;
+const binding = createLocaleBinding("dina.voice");
 
-/** Wire subscribe/snapshot before register; call bindTranslate after. */
-export function attachLocale(api) {
-  localeApi = api;
-}
-
-export function bindTranslate(api = localeApi) {
-  translate = api.bind("dina.voice");
-}
-
-export function getTranslate() {
-  return translate;
-}
-
-export function useT() {
-  const subscribe = useCallback((fn) => (localeApi ? localeApi.subscribe(fn) : () => {}), []);
-  const getRevision = useCallback(() => (localeApi ? localeApi.getSnapshot().revision : 0), []);
-  useSyncExternalStore(subscribe, getRevision);
-  return translate;
-}
+export const attachLocale = binding.attach;
+export const bindTranslate = binding.bind;
+export const getTranslate = binding.getTranslate;
+export const useT = binding.useT;
 
 export function messageFor(t, code) {
   const key = `error.${code}`;

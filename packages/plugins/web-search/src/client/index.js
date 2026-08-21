@@ -1,17 +1,11 @@
 import { ZH, EN, attachLocale, bindTranslate, getTranslate } from "./locale.js";
 import { HideOfficialWebSearchCard, WebSearchSettings, settingsCss } from "./settings.js";
+import { installPluginStyle } from "../../../shared/client/plugin-style.js";
 
 export const inject = [];
 
 export function apply(ctx) {
-  ctx.effect(() => {
-    const tag = document.createElement("style");
-    tag.dataset.plugin = "@dina/web-search";
-    tag.dataset.pluginCss = "@dina/web-search";
-    tag.textContent = settingsCss;
-    document.head.append(tag);
-    return () => tag.remove();
-  }, "dina-web-search-css");
+  installPluginStyle(ctx, "@dina/web-search", settingsCss, "dina-web-search-css");
 
   ctx.inject(["slots", "locale"], (scope) => {
     attachLocale(scope.locale);
@@ -25,7 +19,7 @@ export function apply(ctx) {
         {
           name: "settings.section",
           id: "dina-web-search",
-          order: 35,
+          order: 11,
           label: () => translate("settings.title"),
         },
         WebSearchSettings,

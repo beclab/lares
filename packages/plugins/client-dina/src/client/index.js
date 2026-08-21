@@ -1,23 +1,13 @@
 import shellCss from "./styles/shell.css";
 import modelCss from "./styles/model.css";
 import { ModelSwitch, bindLocale, registerLocale, t } from "./model-switch.js";
-import {
-  RetireWelcomeNotice,
-  HideOpenDocument,
-  RetireStatsLine,
-  HideModelSeat,
-} from "./shell-overrides.js";
+import { HideOpenDocument, RetireStatsLine, HideModelSeat } from "./shell-overrides.js";
+import { installPluginStyle } from "../../../shared/client/plugin-style.js";
 
 export const inject = [];
 
 export function apply(ctx) {
-  ctx.effect(() => {
-    const tag = document.createElement("style");
-    tag.dataset.pluginCss = "@dina/client-dina";
-    tag.textContent = `${shellCss}\n${modelCss}`;
-    document.head.append(tag);
-    return () => tag.remove();
-  }, "dina-client-css");
+  installPluginStyle(ctx, "@dina/client-dina", `${shellCss}\n${modelCss}`, "dina-client-css");
 
   ctx.inject(["locale"], (scope) => {
     bindLocale(scope.locale);
@@ -27,16 +17,6 @@ export function apply(ctx) {
   });
 
   ctx.inject(["slots"], (scope) => {
-    scope.slots.inject("settings.onboarding", () =>
-      scope.slots.register(
-        {
-          name: "settings.onboarding",
-          id: "welcome-notice",
-          priority: -1,
-        },
-        RetireWelcomeNotice,
-      ),
-    );
     scope.slots.inject("settings.action", () =>
       scope.slots.register(
         {

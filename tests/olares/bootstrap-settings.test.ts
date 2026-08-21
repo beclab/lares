@@ -7,9 +7,14 @@ import { parse } from "yaml";
 import { bootstrapDinaSettings, type DinaSettingsSeed } from "../../packages/service/olares/bootstrap-settings.js";
 
 const CATALOG = [
-  { id: "Qwen/chat", name: "Qwen/chat", mode: "chat" },
-  { id: "Qwen/other", name: "Qwen/other", mode: "chat" },
-  { id: "EmbeddingGemma/embed", name: "EmbeddingGemma/embed", mode: "embedding" },
+  { id: "Qwen/chat", name: "Qwen/chat", mode: "chat", reasoningEfforts: { low: "low", xhigh: "xhigh" } },
+  { id: "Qwen/other", name: "Qwen/other", mode: "chat", reasoningEfforts: null },
+  { id: "EmbeddingGemma/embed", name: "EmbeddingGemma/embed", mode: "embedding", reasoningEfforts: null },
+];
+
+const DECLARED = [
+  { id: "Qwen/chat", name: "Qwen/chat", reasoningEfforts: { low: "low", xhigh: "xhigh" } },
+  { id: "Qwen/other", name: "Qwen/other" },
 ];
 
 function seed(overrides: Partial<DinaSettingsSeed> = {}): DinaSettingsSeed {
@@ -47,11 +52,8 @@ test("seeds the Router route and the default model, then leaves the document alo
     assert.equal(profile.api, "openai-completions");
     assert.equal(profile.baseURL, "http://127.0.0.1:8080/llm/v1");
     assert.equal(profile.apiKeyEnv, "DINA_ROUTER_SHIM_KEY");
-    assert.equal(profile.compat.supportsReasoningEffort, false);
-    assert.deepEqual(profile.models, [
-      { id: "Qwen/chat", name: "Qwen/chat" },
-      { id: "Qwen/other", name: "Qwen/other" },
-    ]);
+    assert.deepEqual(profile.compat, { supportsReasoningEffort: true });
+    assert.deepEqual(profile.models, DECLARED);
     assert.equal(doc["agent-default-model"].provider, "olares-router");
     assert.equal(doc["agent-default-model"].model, "Qwen/chat");
 
@@ -92,18 +94,15 @@ test("an existing route keeps the user's endpoint but follows the Router catalog
     const profile = readSettings(dir)["llm-pi-ai"].providers["olares-router"];
     assert.equal(profile.displayName, "My Router");
     assert.equal(profile.baseURL, "http://127.0.0.1:9999/llm/v1");
-    assert.deepEqual(profile.models, [
-      { id: "Qwen/chat", name: "Qwen/chat" },
-      { id: "Qwen/other", name: "Qwen/other" },
-    ]);
+    assert.deepEqual(profile.compat, { supportsReasoningEffort: true });
+    assert.deepEqual(profile.models, DECLARED);
   });
 });
 
 test("an unreachable catalog leaves the declared models standing", () => {
   withHome((dir) => {
     writeRoute(dir, ["Qwen/chat"]);
-    const result = bootstrapDinaSettings(dir, seed({ catalog: [], chatFallback: null }));
-    assert.equal(result.changed, false);
+    bootstrapDinaSettings(dir, seed({ catalog: [], chatFallback: null }));
     assert.deepEqual(readSettings(dir)["llm-pi-ai"].providers["olares-router"].models, [
       { id: "Qwen/chat" },
     ]);
@@ -165,6 +164,30 @@ test("an unreachable catalog still seeds a route naming the resolved model", () 
     assert.equal(result.routeSeeded, true);
     const profile = readSettings(dir)["llm-pi-ai"].providers["olares-router"];
     assert.deepEqual(profile.models, [{ id: "Qwen/chat", name: "Qwen/chat" }]);
+  });
+});
+
+test("a route seeded before Router reported efforts picks them up on the next boot", () => {
+  withHome((dir) => {
+    writeFileSync(
+      join(dir, "settings.yaml"),
+      [
+        "llm-pi-ai:",
+        "  providers:",
+        "    olares-router:",
+        "      api: openai-completions",
+        "      compat:",
+        "        thinkingFormat: deepseek",
+        "        supportsReasoningEffort: false",
+        "      models:",
+        "        - id: Qwen/chat",
+        "",
+      ].join("\n"),
+    );
+    bootstrapDinaSettings(dir, seed());
+    const profile = readSettings(dir)["llm-pi-ai"].providers["olares-router"];
+    assert.deepEqual(profile.compat, { supportsReasoningEffort: true });
+    assert.deepEqual(profile.models, DECLARED);
   });
 });
 

@@ -1,10 +1,10 @@
 import type { DinaEnv } from "../config/env.js";
+import {
+  routerCatalogRows,
+  type RouterCatalogRow,
+} from "../../../packages/plugins/shared/host/router-catalog.js";
 
-export interface RouterModelEntry {
-  id: string;
-  name: string;
-  mode: string | null;
-}
+export type RouterModelEntry = RouterCatalogRow;
 
 const NON_CHAT_HINTS = /embed|whisper|tts|speech|ocr|clip|stt|asr|transcri/i;
 
@@ -18,20 +18,7 @@ export function isChatModel(model: RouterModelEntry): boolean {
 }
 
 export function modelsFromRouterCatalog(payload: unknown): RouterModelEntry[] {
-  if (!payload || typeof payload !== "object") return [];
-  const data = (payload as { data?: unknown }).data;
-  if (!Array.isArray(data)) return [];
-  const out: RouterModelEntry[] = [];
-  const seen = new Set<string>();
-  for (const item of data) {
-    if (!item || typeof item !== "object") continue;
-    const id = String((item as { id?: unknown }).id ?? "").trim();
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    const mode = String((item as { mode?: unknown }).mode ?? "").trim().toLowerCase() || null;
-    out.push({ id, name: id, mode });
-  }
-  return out;
+  return routerCatalogRows(payload);
 }
 
 /**

@@ -7,6 +7,7 @@
   "exports": {
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./host/brand/index.js": "./host/brand/index.js",
+    "./host/crypto-uuid.js": "./host/crypto-uuid.js",
     "./host/llm-routes.js": "./host/llm-routes.js",
     "./host/olares/olares-identity.js": "./host/olares/olares-identity.js",
     "./host/default-workspace.js": "./host/default-workspace.js",

@@ -35,6 +35,9 @@ export function MicButton(props) {
   const startedRef = useRef(0);
   const timerRef = useRef(0);
   const cancelRef = useRef(false);
+  const mountedRef = useRef(true);
+  const errorTimerRef = useRef(0);
+  const transcribeRef = useRef(null);
 
   const stopTimer = useCallback(() => {
     if (timerRef.current) {
@@ -50,17 +53,27 @@ export function MicButton(props) {
     recorderRef.current = null;
   }, []);
 
-  useEffect(() => () => {
-    stopTimer();
-    releaseStream();
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      stopTimer();
+      releaseStream();
+      if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
+      transcribeRef.current?.abort();
+    };
   }, [stopTimer, releaseStream]);
 
   const failWith = useCallback((code) => {
+    if (!mountedRef.current) return;
+    if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
     setError(messageFor(t, code));
     setPhase("error");
-    setTimeout(() => {
+    errorTimerRef.current = setTimeout(() => {
+      if (!mountedRef.current) return;
       setPhase((current) => (current === "error" ? "idle" : current));
       setError(null);
+      errorTimerRef.current = 0;
     }, 3200);
   }, [t]);
 
@@ -71,6 +84,7 @@ export function MicButton(props) {
     chunksRef.current = [];
     const type = recorderRef.current?.mimeType || "audio/webm";
     releaseStream();
+    if (!mountedRef.current) return;
     if (cancelRef.current) {
       setPhase("idle");
       return;
@@ -81,8 +95,11 @@ export function MicButton(props) {
       return;
     }
     setPhase("transcribing");
+    const controller = new AbortController();
+    transcribeRef.current = controller;
     try {
-      const text = await postTranscribe(blob, props.language);
+      const text = await postTranscribe(blob, props.language, controller.signal);
+      if (!mountedRef.current) return;
       setPhase("idle");
       if (!text) return;
       if (composerReadyRef.current) {
@@ -91,7 +108,10 @@ export function MicButton(props) {
         pendingRef.current = text;
       }
     } catch (err) {
+      if (!mountedRef.current || controller.signal.aborted) return;
       failWith(err instanceof Error ? err.message : "voice_failed");
+    } finally {
+      if (transcribeRef.current === controller) transcribeRef.current = null;
     }
   }, [failWith, inputActions, props.language, releaseStream, stopTimer]);
 
@@ -118,6 +138,10 @@ export function MicButton(props) {
       });
     } catch {
       failWith("voice_permission_denied");
+      return;
+    }
+    if (!mountedRef.current) {
+      stream.getTracks().forEach((track) => track.stop());
       return;
     }
     streamRef.current = stream;
@@ -180,6 +204,13 @@ export function MicButton(props) {
         "aria-label": title,
         disabled,
         onClick,
+        onKeyDown: recording
+          ? (event) => {
+              if (event.key !== "Escape") return;
+              event.preventDefault();
+              stop(true);
+            }
+          : undefined,
         onContextMenu: recording
           ? (event) => {
               event.preventDefault();

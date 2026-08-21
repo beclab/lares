@@ -1,7 +1,7 @@
 /**
  * Ensure $DSH_HOME/profiles/dina-web exists with Dina bundles.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
@@ -15,6 +15,14 @@ const BUNDLE_WEB = join(APP_ROOT, "packages", "plugins", "bundle-web");
 const CLIENT_DINA = join(APP_ROOT, "packages", "plugins", "client-dina");
 const VOICE_INPUT = join(APP_ROOT, "packages", "plugins", "voice-input");
 const WEB_SEARCH = join(APP_ROOT, "packages", "plugins", "web-search");
+const MODELS = join(APP_ROOT, "packages", "plugins", "models");
+const LOCAL_PROFILE_PACKAGES = [
+  ["@dina/bundle-web", BUNDLE_WEB],
+  ["@dina/client-dina", CLIENT_DINA],
+  ["@dina/voice-input", VOICE_INPUT],
+  ["@dina/web-search", WEB_SEARCH],
+  ["@dina/models", MODELS],
+] as const;
 
 const SHELL_BUNDLES = ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app"] as const;
 
@@ -70,6 +78,7 @@ export function ensureDinaWebProfile(dataDir: string): { dshHome: string; profil
       "@dina/client-dina": `file:${CLIENT_DINA}`,
       "@dina/voice-input": `file:${VOICE_INPUT}`,
       "@dina/web-search": `file:${WEB_SEARCH}`,
+      "@dina/models": `file:${MODELS}`,
     },
     ...(previous.pnpm ? { pnpm: previous.pnpm } : {}),
     dsh: {
@@ -123,10 +132,32 @@ export function installProfileDeps(profileDir: string): Promise<void> {
         reject(new Error(`npm install in profile failed: ${code}`));
         return;
       }
-      patchSidebarTrustFence(profileDir);
-      resolve();
+      try {
+        linkOwnedProfileDeps(profileDir);
+        patchSidebarTrustFence(profileDir);
+        resolve();
+      } catch (err) {
+        reject(err);
+      }
     });
   });
+}
+
+/**
+ * npm reuses copied `file:` packages when their version is unchanged, leaving
+ * profile patches stale after a dev sync. Keep Dina-owned packages linked to
+ * their authoritative source; community dependencies remain npm-managed.
+ */
+export function linkOwnedProfileDeps(
+  profileDir: string,
+  packages: ReadonlyArray<readonly [name: string, source: string]> = LOCAL_PROFILE_PACKAGES,
+): void {
+  for (const [name, source] of packages) {
+    const target = join(profileDir, "node_modules", ...name.split("/"));
+    mkdirSync(dirname(target), { recursive: true });
+    rmSync(target, { recursive: true, force: true });
+    symlinkSync(source, target, "dir");
+  }
 }
 
 const CLIENT_LOOPBACK_ANCHOR = "isLoopback: pageLocation === void 0 || isLoopbackHostname(pageLocation.hostname),";
@@ -201,6 +232,61 @@ export function patchConnectionTrustFences(): void {
   if (trustedHostSource !== hostSource) writeFileSync(hostLib, trustedHostSource);
 
   console.log("[dina] dsh-client-connection trust fences → Olares trusted hosts");
+}
+
+const NAV_ICON_ROW_ANCHOR = 'resolveSlotLabel)(e.options.label) ?? ""';
+
+const NAV_ICON_ROW_REPLACEMENT = `${NAV_ICON_ROW_ANCHOR}, icon: e.component?.navIcon`;
+
+const NAV_ICON_FN_ANCHOR = "function navIcon(id) {";
+
+const NAV_ICON_FN_REPLACEMENT =
+  "function navIcon(id, custom) {\n" +
+  "\t\t\tif (custom !== void 0) return (0, react_jsx_runtime.jsx)(custom, " +
+  "{ className: SettingsRoot_module_css_default.navIcon, size: 16 });";
+
+const NAV_ICON_CALL_ANCHOR = "children: [navIcon(row.id),";
+
+const NAV_ICON_CALL_REPLACEMENT = "children: [navIcon(row.id, row.icon),";
+
+export function sectionComponentNavIcon(source: string): string {
+  if (source.includes(NAV_ICON_FN_REPLACEMENT)) return source;
+  return replaceRequired(
+    replaceRequired(
+      replaceRequired(source, NAV_ICON_ROW_ANCHOR, NAV_ICON_ROW_REPLACEMENT),
+      NAV_ICON_FN_ANCHOR,
+      NAV_ICON_FN_REPLACEMENT,
+    ),
+    NAV_ICON_CALL_ANCHOR,
+    NAV_ICON_CALL_REPLACEMENT,
+  );
+}
+
+/**
+ * The settings shell picks each nav glyph from a closed `navIcon(id)` switch
+ * over the ids it ships (models, agent-presets, plugins); every other section
+ * — i.e. every Dina one — falls back to the same settings gear, so the nav
+ * column reads as identical rows. Slot options are no channel for a glyph:
+ * SlotCore.register keeps a fixed field set (key/id/order/label/priority) and
+ * drops anything else before the shell ever sees it.
+ *
+ * The registered component does survive, so a section carries its glyph as a
+ * `navIcon` static and the nav-row projection reads it there. Each glyph stays
+ * owned by the feature that owns the section (web-search's globe,
+ * voice-input's mic) rather than being centralised in a patch, and sections
+ * without the static keep upstream's switch.
+ *
+ * Remove once the settings.section contract accepts an icon.
+ */
+export function patchSettingsNavIcon(): void {
+  const webAppDir = dirname(require.resolve("@deepseek-ai/dsh-web-app/package.json"));
+  const lib = require.resolve("@deepseek-ai/dsh-client-ui-settings-general/client", { paths: [webAppDir] });
+  const source = readFileSync(lib, "utf8");
+  const patched = sectionComponentNavIcon(source);
+  if (patched === source) return;
+
+  writeFileSync(lib, patched);
+  console.log("[dina] settings nav icons → section component navIcon");
 }
 
 const SIDEBAR_FENCE_ANCHOR =

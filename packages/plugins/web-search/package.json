@@ -3,7 +3,7 @@
   "version": "0.15.0",
   "private": true,
   "type": "module",
-  "description": "Dina multi-provider web search for dsh ctx.web (Tavily + custom URL)",
+  "description": "Dina web search through Olares Router",
   "exports": {
     ".": "./host/index.js",
     "./client": "../../../dist/plugins/web-search/client.js",

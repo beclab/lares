@@ -1,0 +1,70 @@
+.dina-settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.dina-settings-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 24px;
+}
+
+.dina-settings-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dina-settings-action {
+  font-size: 14px;
+}
+
+.dina-settings-intro {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.dina-settings-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.dina-settings-status.is-warn {
+  color: var(--dsw-alias-state-warn-label);
+}
+
+.dina-settings-selector {
+  gap: 12px;
+  max-width: 260px;
+  background: var(--dsw-alias-bg-module-platform);
+}
+
+.dina-settings-selector-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dina-settings-selector-chevron {
+  flex: none;
+}
+
+.dina-settings-notice {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.dina-settings-notice.is-error {
+  color: var(--dsw-alias-state-error-primary);
+}

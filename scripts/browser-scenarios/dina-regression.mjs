@@ -26,6 +26,32 @@ async function markByText(page, marker, pattern) {
   );
 }
 
+async function assertRouterRoute(page, root, route) {
+  const link = await page.evaluate(
+    (rootSelector, expectedRoute) => {
+      const button = [...document.querySelectorAll(`${rootSelector} .dina-settings-actions button`)].find((el) =>
+        /Router/i.test(el.textContent || ""),
+      );
+      if (!button) return null;
+      const original = window.open;
+      let opened = null;
+      window.open = (url) => {
+        opened = url;
+        return null;
+      };
+      button.click();
+      window.open = original;
+      const zone = location.hostname.split(".").slice(1).join(".");
+      return { opened, expected: `https://router.${zone}/${expectedRoute}` };
+    },
+    [root, route],
+  );
+  assert(
+    link && link.opened === link.expected,
+    `unexpected Router console target for ${root}: ${JSON.stringify(link)}`,
+  );
+}
+
 export default async function (page, session) {
   const errors = [];
   await session.cdp.send("Runtime.enable");
@@ -139,19 +165,79 @@ export default async function (page, session) {
     await page.click('[data-regression-target="settings"]');
     await page.sleep(500);
 
+    const settingsOrder = await page.evaluate(() => {
+      const classify = (text) => {
+        if (/^(通用设置|general)$/i.test(text)) return "general";
+        if (/^(模型配置|model configuration)$/i.test(text)) return "models";
+        if (/^(网络搜索|web search)$/i.test(text)) return "web-search";
+        if (/^(语音输入|voice input)$/i.test(text)) return "voice";
+        if (/^(插件|plugins)$/i.test(text)) return "plugins";
+        return null;
+      };
+      return [...document.querySelectorAll("button")]
+        .map((button) => classify(button.textContent?.trim() || ""))
+        .filter(Boolean);
+    });
+    assert(
+      JSON.stringify(settingsOrder) === JSON.stringify(["general", "models", "web-search", "voice", "plugins"]),
+      `unexpected settings order: ${JSON.stringify(settingsOrder)}`,
+    );
+
+    const modelsNav = await markByText(page, "models-settings", /^模型配置$|^model configuration$/);
+    assert(modelsNav, "models settings navigation item was not found");
+    await page.click('[data-regression-target="models-settings"]');
+    await page.waitFor(() => Boolean(document.querySelector(".dina-models .dina-settings-status")), { timeout: 10_000 });
+    const modelSettings = await page.evaluate(() => ({
+      status: document.querySelector(".dina-models .dina-settings-status")?.textContent?.trim(),
+      actions: [...document.querySelectorAll(".dina-models .dina-settings-actions button")].map((button) =>
+        button.textContent?.trim(),
+      ),
+    }));
+    assert(modelSettings.status, "models availability status is missing");
+    assert(
+      modelSettings.actions.length === 2 && /Router/i.test(modelSettings.actions[1] ?? ""),
+      `unexpected models header actions: ${JSON.stringify(modelSettings.actions)}`,
+    );
+
+    await assertRouterRoute(page, ".dina-models", "llm");
+    const modelsShot = "/tmp/dina-models-settings.png";
+    await page.screenshot(modelsShot);
+
+    const searchNav = await markByText(page, "search-settings", /^网络搜索$|^web search$/);
+    assert(searchNav, "web search settings navigation item was not found");
+    await page.click('[data-regression-target="search-settings"]');
+    await page.waitFor(() => Boolean(document.querySelector(".dina-websearch .dina-settings-status")), { timeout: 10_000 });
+    const searchSettings = await page.evaluate(() => ({
+      status: document.querySelector(".dina-websearch .dina-settings-status")?.textContent?.trim(),
+      actions: [...document.querySelectorAll(".dina-websearch .dina-settings-actions button")].map((button) =>
+        button.textContent?.trim(),
+      ),
+    }));
+    assert(searchSettings.status, "web search availability status is missing");
+    assert(
+      searchSettings.actions.length === 2 && /Router/i.test(searchSettings.actions[1] ?? ""),
+      `unexpected web search header actions: ${JSON.stringify(searchSettings.actions)}`,
+    );
+    await assertRouterRoute(page, ".dina-websearch", "tools");
+
     const voiceNav = await markByText(page, "voice-settings", /语音输入|voice input/);
     assert(voiceNav, "voice settings navigation item was not found");
     await page.click('[data-regression-target="voice-settings"]');
-    await page.waitFor(() => Boolean(document.querySelector(".dina-voice-title")), { timeout: 10_000 });
+    await page.waitFor(() => Boolean(document.querySelector(".dina-voice .dina-settings-title")), { timeout: 10_000 });
 
     const settings = await page.evaluate(() => {
       const root = document.querySelector(".dina-voice");
-      const selector = root?.querySelector(".dina-voice-selector");
+      const selector = root?.querySelector(".dina-settings-selector");
       return {
-        title: root?.querySelector(".dina-voice-title")?.textContent,
-        status: root?.querySelector(".dina-voice-status")?.textContent?.trim(),
-        selectors: root?.querySelectorAll(".dina-voice-selector").length || 0,
-        actions: root?.querySelectorAll(".dina-voice-actions button").length || 0,
+        title: root?.querySelector(".dina-settings-title")?.textContent,
+        status: root?.querySelector(".dina-settings-status")?.textContent?.trim(),
+        selectors: root?.querySelectorAll(".dina-settings-selector").length || 0,
+        actions: [...(root?.querySelectorAll(".dina-settings-actions button") ?? [])].map((button) =>
+          button.textContent?.trim(),
+        ),
+        saveButtons: [...(root?.querySelectorAll("button") ?? [])].filter((button) =>
+          /^(保存|save)$/i.test(button.textContent?.trim() || ""),
+        ).length,
         selectorHeight: selector ? getComputedStyle(selector).height : null,
         color: root ? getComputedStyle(root).color : null,
       };
@@ -159,8 +245,13 @@ export default async function (page, session) {
     assert(settings.title, "voice settings title is missing");
     assert(settings.status, "voice status is missing");
     assert(settings.selectors === 2, `expected 2 voice selectors, got ${settings.selectors}`);
-    assert(settings.actions === 2, `expected 2 voice actions, got ${settings.actions}`);
+    assert(
+      settings.actions.length === 2 && /Router/i.test(settings.actions[1] ?? ""),
+      `unexpected voice header actions: ${JSON.stringify(settings.actions)}`,
+    );
+    assert(settings.saveButtons === 0, `expected no voice save button, got ${settings.saveButtons}`);
     assert(settings.selectorHeight === "36px", `unexpected selector height ${settings.selectorHeight}`);
+    await assertRouterRoute(page, ".dina-voice", "audio");
 
     const lightShot = "/tmp/dina-machine1-light.png";
     const darkShot = "/tmp/dina-machine1-dark.png";
@@ -176,7 +267,11 @@ export default async function (page, session) {
       delete document.body.dataset.regressionHadDark;
     });
 
-    await page.click(".dina-voice-selector");
+    // Selectors stay disabled while the panel refreshes its Router catalog.
+    await page.waitFor(() => document.querySelector(".dina-voice .dina-settings-selector")?.disabled === false, {
+      timeout: 20_000,
+    });
+    await page.click(".dina-voice .dina-settings-selector");
     await page.waitFor(() => Boolean(document.querySelector('[role="menu"]')), { timeout: 5_000 });
     const menuItems = await page.evaluate(() => document.querySelectorAll('[role="menu"] [role^="menuitem"]').length);
     assert(menuItems > 0, "voice selector menu has no options");
@@ -185,7 +280,17 @@ export default async function (page, session) {
     const actionableErrors = errors.filter((message) => !ignoredErrors.some((pattern) => pattern.test(message)));
     assert(actionableErrors.length === 0, `browser errors: ${actionableErrors.join(" | ")}`);
 
-    return { shell, modelMenu, settings, lightShot, darkShot, browserErrors: actionableErrors };
+    return {
+      shell,
+      modelMenu,
+      modelSettings,
+      searchSettings,
+      settings,
+      modelsShot,
+      lightShot,
+      darkShot,
+      browserErrors: actionableErrors,
+    };
   } finally {
     offException();
     offLog();

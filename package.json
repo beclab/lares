@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "npm run build:client",
     "dev": "tsx watch packages/service/index.ts",
     "build": "npm run build:client && npm run build:server",
     "build:client": "node scripts/build-client.mjs",

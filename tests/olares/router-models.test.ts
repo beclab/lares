@@ -14,11 +14,17 @@ test("modelsFromRouterCatalog and isChatModelId", () => {
         { id: "EmbeddingGemma/embed", mode: "embedding" },
         { id: "Qwen/chat", mode: "chat" },
         { id: "" },
+        { id: "unsafe\r\nmodel", mode: "chat" },
       ],
     }),
     [
-      { id: "Qwen/chat", name: "Qwen/chat", mode: "chat" },
-      { id: "EmbeddingGemma/embed", name: "EmbeddingGemma/embed", mode: "embedding" },
+      { id: "Qwen/chat", name: "Qwen/chat", mode: "chat", reasoningEfforts: null },
+      {
+        id: "EmbeddingGemma/embed",
+        name: "EmbeddingGemma/embed",
+        mode: "embedding",
+        reasoningEfforts: null,
+      },
     ],
   );
   assert.equal(isChatModelId("Qwen/chat"), true);
@@ -32,6 +38,33 @@ test("modelsFromRouterCatalog and isChatModelId", () => {
     "opaque-chat-id",
   );
   assert.equal(pickChatModelId([{ id: "opaque-image-id", name: "x", mode: "image_generation" }]), null);
+});
+
+test("effort levels travel with the model, and only the ones Router will take", () => {
+  assert.deepEqual(
+    modelsFromRouterCatalog({
+      data: [
+        {
+          id: "thinks",
+          mode: "chat",
+          supports: ["reasoning", "reasoning_effort"],
+          reasoning_effort: { options: ["low", "medium", "xhigh", "turbo"], default: "xhigh" },
+        },
+        {
+          id: "options-without-support",
+          mode: "chat",
+          supports: ["reasoning"],
+          reasoning_effort: { options: ["low"] },
+        },
+        { id: "off-only", mode: "chat", supports: ["reasoning_effort"], reasoning_effort: { options: ["off"] } },
+      ],
+    }).map(({ id, reasoningEfforts }) => ({ id, reasoningEfforts })),
+    [
+      { id: "thinks", reasoningEfforts: { low: "low", medium: "medium", xhigh: "xhigh" } },
+      { id: "options-without-support", reasoningEfforts: null },
+      { id: "off-only", reasoningEfforts: null },
+    ],
+  );
 });
 
 test("pickChatModelId prefers the MTP sibling over the plain build", () => {

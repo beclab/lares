@@ -1,4 +1,4 @@
-/* Settings section for multi-provider web search. Tokens only: --dsw-alias-*. */
+/* Settings section for Router-backed web search. Tokens only: --dsw-alias-*. */
 .dina-websearch {
   display: flex;
   flex-direction: column;
@@ -7,67 +7,12 @@
   color: var(--dsw-alias-label-primary);
 }
 
-.dina-websearch-title {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 500;
-  line-height: 24px;
-}
-
-.dina-websearch-intro {
-  margin: 0;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 14px;
-  line-height: 22px;
-}
-
-.dina-websearch-card {
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 12px;
-  background: var(--dsw-alias-bg-layer-3);
-  padding: 0 16px 12px;
-}
-
-.dina-websearch-card-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding-top: 14px;
-}
-
-.dina-websearch-card-title {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 22px;
-}
-
-.dina-websearch-card-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 12px;
-  line-height: 18px;
-}
-
 .dina-websearch-row {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 14px 0;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
-}
-
-.dina-websearch-row:last-of-type {
-  border-bottom: none;
-}
-
-.dina-websearch-row.is-stack {
-  align-items: flex-start;
-  flex-direction: column;
-  gap: 8px;
 }
 
 .dina-websearch-row-text {
@@ -82,49 +27,4 @@
 .dina-websearch-row-title {
   font-size: 14px;
   line-height: 22px;
-}
-
-.dina-websearch-selector {
-  gap: 12px;
-  max-width: 260px;
-  background: var(--dsw-alias-bg-module-platform);
-}
-
-.dina-websearch-selector-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.dina-websearch-chevron {
-  flex: none;
-}
-
-.dina-websearch-field {
-  width: 100%;
-  max-width: 360px;
-}
-
-.dina-websearch-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  padding-top: 4px;
-}
-
-.dina-websearch-notice {
-  margin: 0;
-  flex: 1;
-  min-width: 120px;
-  font-size: 12px;
-  line-height: 18px;
-}
-
-.dina-websearch-notice.is-ok {
-  color: var(--dsw-alias-state-success-primary);
-}
-
-.dina-websearch-notice.is-error {
-  color: var(--dsw-alias-state-error-primary);
 }

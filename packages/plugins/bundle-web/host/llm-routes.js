@@ -4,6 +4,7 @@
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { URL } from "node:url";
+import { readBody, sendError } from "../../shared/host/http.js";
 
 export const name = "dina-llm-routes";
 export const inject = ["webServer"];
@@ -25,15 +26,6 @@ const DROPPED_RES = new Set(["connection", "content-encoding", "content-length",
 function routerAuthHeaders(apiKey, olaresAppId) {
   if (apiKey) return { authorization: `Bearer ${apiKey}` };
   return { "x-caller-appid": olaresAppId };
-}
-
-function readBody(req) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    req.on("data", (c) => chunks.push(c));
-    req.on("end", () => resolve(Buffer.concat(chunks)));
-    req.on("error", reject);
-  });
 }
 
 function proxyToRouter(req, res) {
@@ -62,7 +54,10 @@ function proxyToRouter(req, res) {
   const run = async () => {
     let body;
     if (method !== "GET" && method !== "HEAD") {
-      body = await readBody(req);
+      body = await readBody(req, {
+        maxBytes: isAudio ? 25 * 1024 * 1024 : 16 * 1024 * 1024,
+        message: isAudio ? "audio exceeds 25MB" : "LLM request exceeds 16MB",
+      });
       headers["content-length"] = String(body.length);
     }
 
@@ -103,8 +98,7 @@ function proxyToRouter(req, res) {
       res.destroy();
       return;
     }
-    res.writeHead(500, { "content-type": "application/json" });
-    res.end(JSON.stringify({ error: { message: String(err) } }));
+    sendError(res, err, "llm_proxy_failed");
   });
 }
 

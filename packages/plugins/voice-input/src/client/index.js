@@ -2,21 +2,14 @@ import { MicButton, micCss } from "./MicButton.js";
 import { spinCss } from "./icons.js";
 import { ZH, EN, attachLocale, bindTranslate, getTranslate } from "./locale.js";
 import { VoiceSettings, settingsCss } from "./settings.js";
+import { installPluginStyle } from "../../../shared/client/plugin-style.js";
 
 const PLUGIN_CSS = [spinCss, micCss, settingsCss].join("");
 
 export const inject = [];
 
 export function apply(ctx) {
-  ctx.effect(() => {
-    const tag = document.createElement("style");
-    tag.dataset.plugin = "@dina/voice-input";
-    tag.dataset.pluginCss = "@dina/voice-input";
-    // Appended after the shell stylesheet, so equal-specificity overrides on primitives win.
-    tag.textContent = PLUGIN_CSS;
-    document.head.append(tag);
-    return () => tag.remove();
-  }, "dina-voice-input-css");
+  installPluginStyle(ctx, "@dina/voice-input", PLUGIN_CSS, "dina-voice-input-css");
 
   ctx.inject(["slots", "locale"], (scope) => {
     attachLocale(scope.locale);
@@ -33,7 +26,7 @@ export function apply(ctx) {
     );
     scope.slots.inject("settings.section", () =>
       scope.slots.register(
-        { name: "settings.section", id: "dina-voice-input", order: 40, label: () => translate("settings.title") },
+        { name: "settings.section", id: "dina-voice-input", order: 12, label: () => translate("settings.title") },
         VoiceSettings,
       ),
     );

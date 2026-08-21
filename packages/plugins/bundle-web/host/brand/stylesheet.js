@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from "./identity.js";
 import { MARK_DATA_URI } from "./mark.js";
 
 /**
@@ -10,7 +11,7 @@ export const BRAND_CSS = `
 /* Boot splash */
 [class*="_boot_"] [class*="_wordmark_"] { font-size: 0; letter-spacing: 0; }
 [class*="_boot_"] [class*="_wordmark_"]::after {
-  content: "Dina";
+  content: "${PRODUCT_NAME}";
   font-size: 16px;
   line-height: 24px;
   font-weight: 600;
@@ -20,7 +21,7 @@ export const BRAND_CSS = `
 /* Sidebar wordmark (expanded) */
 button:has(> svg[viewBox="0 0 182 24"]) > svg[viewBox="0 0 182 24"] { display: none; }
 button:has(> svg[viewBox="0 0 182 24"])::after {
-  content: "Dina";
+  content: "${PRODUCT_NAME}";
   padding-left: 26px;
   background: var(--dina-mark) left center / 20px 20px no-repeat;
   font-size: 17px;
@@ -38,10 +39,10 @@ svg[viewBox="0 0 23.16 17.04"] {
 
 /* Hero headline: flex so ::after wordmark baselines correctly; drop preview badge */
 [class*="_headlineText"] { display: flex; align-items: center; font-size: 0; }
-[class*="_headlineText"]::after { content: "Dina"; font-size: 26px; line-height: 32px; }
+[class*="_headlineText"]::after { content: "${PRODUCT_NAME}"; font-size: 26px; line-height: 32px; }
 [class*="_previewBadge"] { display: none; }
 
-/* Grow fish column to 40px; -1px optical align with "Dina" (no descenders) */
+/* Grow fish column to 40px; -1px optical align with the wordmark (no descenders) */
 div:has(> [class*="_fishHitbox"]) { grid-template-columns: 40px auto auto; }
 [class*="_fishHitbox"] > svg[viewBox="0 0 23.16 17.04"] {
   width: 40px;

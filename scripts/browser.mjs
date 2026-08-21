@@ -52,6 +52,7 @@ Options:
   --full            full-page screenshot (shot only)
   --clip <json>     screenshot clip {x,y,width,height}
   --json            pretty-print eval/probe result
+  --insecure        accept self-signed certs (Olares *.olares.local entrances)
   --profile <dir>   reuse a Chrome user-data-dir
   --keep-profile    do not delete temp profile on exit
   -o, --out <path>  screenshot path (shot) or dump path (eval/probe)
@@ -92,6 +93,10 @@ function parseArgs(argv) {
     }
     if (a === "--keep-profile") {
       args.flags.keepProfile = true;
+      continue;
+    }
+    if (a === "--insecure") {
+      args.flags.insecure = true;
       continue;
     }
     const take = (name) => {
@@ -150,6 +155,7 @@ function commonLaunch(flags) {
     deviceScaleFactor: flags.scale,
     userDataDir: flags.profile,
     keepProfile: Boolean(flags.keepProfile),
+    chromeArgs: flags.insecure ? ["--ignore-certificate-errors"] : undefined,
     attach: Boolean(flags.attach),
     attachPort: flags.port || Number(process.env.CDP_PORT || 0) || undefined,
   };

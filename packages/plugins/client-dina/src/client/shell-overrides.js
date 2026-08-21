@@ -1,14 +1,6 @@
-import React, { useEffect } from "react";
+import React from "react";
 
 const h = React.createElement;
-
-/** Shadow welcome-notice (priority -1) — hide DeepSeek Harness internal-testing step. */
-export function RetireWelcomeNotice({ complete }) {
-  useEffect(() => {
-    complete();
-  }, [complete]);
-  return null;
-}
 
 /** Olares has no Host settings.yaml surface. */
 export function HideOpenDocument() {

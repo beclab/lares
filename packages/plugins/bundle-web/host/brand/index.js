@@ -1,9 +1,13 @@
-/** Brand via index.html tap (splash before client plugins) + mark/manifest routes. */
+/** Brand: index.html tap (splash before client plugins), mark/manifest, LLM identity. */
+import { PRODUCT_NAME, THEME_COLOR, identityPrompt, surfacePrompt } from "./identity.js";
 import { BRAND_CSS } from "./stylesheet.js";
 import { MANIFEST, MANIFEST_PATH, MARK_PATH, MARK_SVG } from "./mark.js";
 
 export const name = "dina-brand";
 export const inject = ["webServer"];
+
+const LOOPBACK_HOST = "127.0.0.1";
+const DSH_WEB_URL = "DSH_WEB_URL";
 
 function serve(body, contentType) {
   return (_req, res) => {
@@ -13,6 +17,13 @@ function serve(body, contentType) {
     });
     res.end(body);
   };
+}
+
+/** @param {import("@deepseek-ai/cordis").Context} ctx */
+function localWebUrl(ctx) {
+  const port = ctx.get("webServer")?.port;
+  if (port === undefined) throw new Error("dina-brand: webServer missing while resolving surface URL");
+  return `http://${LOOPBACK_HOST}:${String(port)}`;
 }
 
 /**
@@ -35,12 +46,35 @@ export function apply(ctx) {
 
   ctx.webServer.tapIndex((html) =>
     html
-      .replace(/<title>[^<]*<\/title>/i, "<title>Dina</title>")
+      .replace(/<title>[^<]*<\/title>/i, `<title>${PRODUCT_NAME}</title>`)
       .replace(/<link rel="icon"[^>]*>/i, `<link rel="icon" type="image/svg+xml" href="${MARK_PATH}" />`)
       .replace(/<link rel="manifest"[^>]*>/i, `<link rel="manifest" href="${MANIFEST_PATH}" />`)
       .replace(
         /<\/head>/i,
-        `<meta name="theme-color" content="${MANIFEST.theme_color}" /><style data-dina-brand>${BRAND_CSS}</style></head>`,
+        `<meta name="theme-color" content="${THEME_COLOR}" /><style data-dina-brand>${BRAND_CSS}</style></head>`,
       ),
   );
+
+  ctx.inject(["systemPrompt"], (promptCtx) => {
+    promptCtx.systemPrompt.section({
+      name: "harness:identity",
+      order: -100,
+      text: identityPrompt(),
+    });
+    promptCtx.systemPrompt.section({
+      name: "app:web-surface",
+      order: -98,
+      text: () => surfacePrompt(localWebUrl(promptCtx)),
+    });
+  });
+
+  ctx.inject(["shellEnv"], (runtimeCtx) => {
+    runtimeCtx.shellEnv.register({
+      name: "web-runtime",
+      variables: {
+        [DSH_WEB_URL]: { description: `Canonical local URL of ${PRODUCT_NAME} serving this session.` },
+      },
+      resolve: () => ({ [DSH_WEB_URL]: localWebUrl(runtimeCtx) }),
+    });
+  });
 }

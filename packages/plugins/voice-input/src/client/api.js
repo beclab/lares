@@ -9,12 +9,13 @@ export function mergeTranscript(draft, transcript) {
   return `${base} ${text}`;
 }
 
-export async function postTranscribe(blob, language) {
+export async function postTranscribe(blob, language, signal) {
   const query = language ? `?language=${encodeURIComponent(language)}` : "";
   const res = await fetch(`${API}/transcribe${query}`, {
     method: "POST",
     headers: { "content-type": blob.type || "audio/webm" },
     body: blob,
+    signal,
   });
   if (!res.ok) {
     let code = "voice_failed";

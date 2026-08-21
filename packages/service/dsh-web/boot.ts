@@ -12,10 +12,15 @@ import {
 } from "../olares/router-models.js";
 import { seedOlaresSkills } from "../olares/skills-seed.js";
 import { seedWorkspaceAgents } from "../dsh/agents-seed.js";
+// Plugin Host halves ship as source under packages/ and are never compiled into
+// dist/, so the specifier must climb out of the emit tree (dist/ and packages/
+// sit at the same depth under the app root).
+import { identityPrompt } from "../../../packages/plugins/bundle-web/host/brand/identity.js";
 import {
   ensureDinaWebProfile,
   installProfileDeps,
   patchConnectionTrustFences,
+  patchSettingsNavIcon,
   resolveDshBin,
 } from "./profile.js";
 
@@ -38,6 +43,7 @@ export async function bootDinaWeb(): Promise<void> {
 
   await installProfileDeps(profileDir);
   patchConnectionTrustFences();
+  patchSettingsNavIcon();
 
   let catalogModels: RouterModelEntry[] = [];
   try {
@@ -106,14 +112,7 @@ export async function bootDinaWeb(): Promise<void> {
     DSH_MODEL: resolvedModel ?? "default",
     DSH_PERMISSION_MODE: process.env.DSH_PERMISSION_MODE ?? process.env.DINA_PERMISSION_MODE ?? "workspace-write",
     DINA_PERMISSION_MODE: process.env.DINA_PERMISSION_MODE ?? process.env.DSH_PERMISSION_MODE ?? "workspace-write",
-    DSH_SYSTEM_PROMPT:
-      process.env.DSH_SYSTEM_PROMPT?.trim() ||
-      [
-        "You are Dina, a helpful assistant running on Olares.",
-        "Prefer olares-cli for Olares platform tasks when skills apply.",
-        "olares-cli is on PATH; edge login materializes HOME / OLARES_CLI_* for bash when the user opens Dina via the Olares entrance.",
-        "Use read/write/edit for files; use background jobs for long shell work.",
-      ].join(" "),
+    DSH_SYSTEM_PROMPT: process.env.DSH_SYSTEM_PROMPT?.trim() || identityPrompt(),
   };
 
   console.log(`[dina] starting dsh web profile=dina-web bind=http://${bindHost}:${env.port} (cli --host ${cliHost})`);
