@@ -45,6 +45,19 @@ scripts/dev-sync/sync.sh 1
 
 机器 1 默认热更新：`start:watch`，`HOT_RELOAD=true`，挂载 `devsrc`。
 
+## Release
+
+`docker.io/beclab/lares` 是多架构镜像（amd64 + arm64），由
+[`.github/workflows/image.yml`](.github/workflows/image.yml) 在双原生 runner 上构建后合成
+manifest list。触发只有推 `v<Chart.yaml 版本>` 标签或手动 dispatch 两种；本地
+`scripts/build-image.sh` 仍然只打单架构、只 `--load`，测试分发走
+`scripts/deploy-image.sh`。
+
+版本的权威是 `deploy/lares/Chart.yaml`，CI 会断言 `values.yaml` 的镜像 tag 与
+`OlaresManifest.yaml` 的 version 跟它一致。底座（`beclab/lares-base`）只在
+`project.json` 的 `image_base_tag` 在 registry 里还不存在时才构建——改了
+`Dockerfile.base` 记得抬那个 tag。
+
 ## Agent skills
 
 `packages/skills/ha-*` 是本仓源码；`packages/skills/olares-*` 不入仓，由应用镜像

@@ -60,6 +60,24 @@ initContainers  fix-dev-perms、seed-dev-src
 - **禁止**测试迭代默认 `docker push` / 走 registry 喂集群。
 - `--push` 与公共市场发版一样：**仅用户明确要求发版时**使用。
 
+## 发布镜像只走 CI
+
+`docker.io/beclab/lares` 与 `beclab/lares-base` 由 [`.github/workflows/image.yml`](../../.github/workflows/image.yml)
+推送，双原生 runner 分别构建 amd64 / arm64，再用 `imagetools create` 合成 manifest list。
+
+触发只有两种：推 `v<Chart.yaml 版本>` 标签，或手动 dispatch。PR 会在两个架构上跑
+`scripts/build-image.sh --base` 但不推任何东西。
+
+- 版本来源是 `deploy/lares/Chart.yaml`，不是 git 标签。`resolve` job 断言
+ `values.yaml` 的镜像 tag、`OlaresManifest.yaml` 的 version 和它三者一致，标签事件再
+ 断言标签名就是 `v<版本>`——标签只是触发器，对不上就红。
+- 底座只在它自己的 tag（`project.json` 的 `image_base_tag`）在 registry 里不存在时才
+ 构建。改了 `Dockerfile.base` 就要同时抬这个 tag，否则新底座根本不会被构建。
+- 上一条的例外是 dispatch 时勾 `base=true`，用于强制重建。
+- 预发布版本（版本号带连字符）只发 `:<版本>` 与 `:sha-<short>`，**不动** `:latest`。
+- **本节不放宽上一节**：本地 `docker push` 仍然禁止，测试分发照旧 save + SSH。发版时机
+ 由用户决定，agent 不主动推标签、不主动 dispatch。
+
 ## dev chart 版本号
 
 `scripts/package-chart.sh --dev` 生成的版本受两条外部限制，脚本已内建校验：
