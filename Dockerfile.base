@@ -8,10 +8,36 @@ FROM node:22-bookworm-slim
 # time. The cluster forbids root pods, so the toolchain must live in the image
 # and the boot-time `npm install` runs as uid 1000 with build scripts enabled.
 # ffmpeg/ffprobe: on PATH for agent skills that process video (Debian package).
+#
+# The rest is what a coding agent reaches for and node:22-bookworm-slim does not
+# have: inspection, archives, transfer, and in-cluster network diagnosis (the
+# olares-doctor skill asks whether a service answers, from inside the pod).
+# Debian's `yq` is the jq wrapper, not mikefarah's Go tool -- the filter syntax
+# is jq's and YAML output needs -y.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl fd-find ffmpeg git jq ripgrep tini build-essential python3 \
+  && apt-get install -y --no-install-recommends \
+    ca-certificates curl fd-find ffmpeg git jq ripgrep tini \
+    build-essential python3 \
+    file less procps tree \
+    unzip zip xz-utils zstd \
+    openssh-client patch rsync \
+    dnsutils iproute2 iputils-ping netcat-openbsd socat \
+    shellcheck yq \
   && ln -sf "$(command -v fdfind)" /usr/local/bin/fd \
   && rm -rf /var/lib/apt/lists/*
+
+# gh has no Debian package; upstream's apt repo is the only maintained route.
+# The arch in the sources line comes from dpkg so both build legs resolve.
+RUN install -m 0755 -d /etc/apt/keyrings \
+  && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+       -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+  && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+       > /etc/apt/sources.list.d/github-cli.list \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends gh \
+  && rm -rf /var/lib/apt/lists/* \
+  && gh --version
 
 WORKDIR /app
 ENV PORT=8080 \
