@@ -1,0 +1,313 @@
+# Build the Lares images and publish a multi-arch manifest to Docker Hub.
+#
+# Two layers, not one: Dockerfile.base carries the OS toolchain, the global CLIs
+# and node_modules; Dockerfile compiles this repo's code on top. The base moves
+# only when its own tag moves, so most releases build the app layer alone.
+#
+# Each architecture is built on a runner of that architecture and pushed by
+# digest; a merge step joins the two into one manifest list. The alternative --
+# one job building both platforms under QEMU -- is what this repository used
+# before, and emulating `npm ci` plus a full tsc build is where that time went.
+#
+# Publishing happens on a v* tag push or a manual dispatch, never on an ordinary
+# push. A pull request builds both architectures and pushes nothing.
+#
+# Required repository secrets:
+#   DOCKERHUB_USERNAME  login identity with push rights to the beclab org
+#   DOCKERHUB_PASS      Docker Hub access token, not the account password
+#                       (2FA accounts cannot log in with a password)
+
+name: image
+
+on:
+  workflow_dispatch:
+    inputs:
+      base:
+        description: Rebuild the base image even if its tag already exists
+        type: boolean
+        default: false
+  push:
+    # A tag publishes whatever sits at the tagged commit; no paths filter
+    # applies to tag pushes, which is the point of tagging.
+    tags: ['v*']
+  pull_request:
+    paths:
+      - 'packages/**'
+      - 'scripts/**'
+      - 'Dockerfile'
+      - 'Dockerfile.base'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.*.json'
+      - 'project.json'
+      - '.github/workflows/image.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: image-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # Matches the base image, so a type error that only the image's Node
+          # would raise cannot pass here.
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  resolve:
+    name: resolve
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.id.outputs.version }}
+      app_image: ${{ steps.id.outputs.app_image }}
+      base_image: ${{ steps.id.outputs.base_image }}
+      base_tag: ${{ steps.id.outputs.base_tag }}
+      build_base: ${{ steps.id.outputs.build_base }}
+      stable: ${{ steps.id.outputs.stable }}
+    steps:
+      - uses: actions/checkout@v4
+      # scripts/lib/project.sh is where the base repo name is derived from
+      # image_repo. Sourcing it keeps that rule in one place instead of
+      # restating it in YAML.
+      - name: read project identity and assert the version invariant
+        id: id
+        run: |
+          set -euo pipefail
+          # shellcheck source=scripts/lib/project.sh
+          source scripts/lib/project.sh
+
+          version="$(awk '/^version:/{print $2; exit}' "$CHART_DIR/Chart.yaml")"
+          values_image="$(awk '/^image:/{print $2; exit}' "$CHART_DIR/values.yaml")"
+          manifest_version="$(awk '/^  version:/{print $2; exit}' "$CHART_DIR/OlaresManifest.yaml")"
+
+          # Olares resolves the image before rendering templates, so the literal
+          # in values.yaml is what actually gets pulled. package-chart.sh guards
+          # the same three facts; a release that skipped it must not get past.
+          if [[ "${values_image%:*}" != "$IMAGE_REPO" ]]; then
+            echo "::error::values.yaml points at ${values_image%:*}, project.json says $IMAGE_REPO"
+            exit 1
+          fi
+          if [[ "${values_image##*:}" != "$version" ]]; then
+            echo "::error::Chart.yaml is $version, values.yaml image tag is ${values_image##*:}"
+            exit 1
+          fi
+          if [[ "$manifest_version" != "$version" ]]; then
+            echo "::error::Chart.yaml is $version, OlaresManifest.yaml is $manifest_version"
+            exit 1
+          fi
+          if [[ "$GITHUB_REF_TYPE" == tag && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "::error::tag $GITHUB_REF_NAME does not name chart version $version"
+            exit 1
+          fi
+
+          if [[ "${{ inputs.base || false }}" == true ]]; then
+            build_base=1
+          elif docker buildx imagetools inspect "$IMAGE_BASE_REPO:$IMAGE_BASE_TAG" >/dev/null 2>&1; then
+            build_base=0
+          else
+            build_base=1
+          fi
+
+          # A prerelease version must not move :latest.
+          if [[ "$version" == *-* ]]; then stable=0; else stable=1; fi
+
+          {
+            echo "version=$version"
+            echo "app_image=$IMAGE_REPO"
+            echo "base_image=$IMAGE_BASE_REPO"
+            echo "base_tag=$IMAGE_BASE_TAG"
+            echo "build_base=$build_base"
+            echo "stable=$stable"
+          } | tee -a "$GITHUB_OUTPUT"
+
+  # A pull request has nowhere to push and no reason to: it builds both layers
+  # on both architectures through the same script a developer runs, which is
+  # also what keeps that script from rotting.
+  build:
+    name: build (${{ matrix.arch }})
+    if: github.event_name == 'pull_request'
+    needs: [check, resolve]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - run: PLATFORM=linux/${{ matrix.arch }} scripts/build-image.sh --base
+
+  base:
+    name: base (${{ matrix.arch }})
+    if: github.event_name != 'pull_request' && needs.resolve.outputs.build_base == '1'
+    needs: [check, resolve]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASS }}
+      - name: build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.base
+          platforms: linux/${{ matrix.arch }}
+          # Attestations would make each leg an index rather than a single
+          # manifest, which the merge step below would then have to unwrap.
+          provenance: false
+          outputs: type=image,name=${{ needs.resolve.outputs.base_image }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=base-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=base-${{ matrix.arch }}
+      - name: record the digest
+        run: |
+          set -euo pipefail
+          digest='${{ steps.build.outputs.digest }}'
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${digest#sha256:}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digest-base-${{ matrix.arch }}
+          path: /tmp/digests/*
+          retention-days: 1
+
+  base_merge:
+    name: base manifest
+    if: github.event_name != 'pull_request' && needs.resolve.outputs.build_base == '1'
+    needs: [resolve, base]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASS }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digest-base-*
+          merge-multiple: true
+          path: /tmp/digests
+      - name: create the manifest list
+        run: |
+          set -euo pipefail
+          image='${{ needs.resolve.outputs.base_image }}'
+          refs=()
+          for f in /tmp/digests/*; do
+            refs+=("$image@sha256:$(basename "$f")")
+          done
+          docker buildx imagetools create \
+            -t "$image:${{ needs.resolve.outputs.base_tag }}" "${refs[@]}"
+          docker buildx imagetools inspect "$image:${{ needs.resolve.outputs.base_tag }}"
+
+  app:
+    name: app (${{ matrix.arch }})
+    # base_merge is skipped whenever the base tag already exists, which is the
+    # common case; a skipped dependency would otherwise skip this job too.
+    if: >-
+      !cancelled()
+      && github.event_name != 'pull_request'
+      && needs.resolve.result == 'success'
+      && needs.check.result == 'success'
+      && (needs.base_merge.result == 'success' || needs.base_merge.result == 'skipped')
+    needs: [check, resolve, base_merge]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASS }}
+      - name: build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          # The base is a manifest list, so each leg resolves its own arch.
+          build-args: |
+            BASE_IMAGE=${{ needs.resolve.outputs.base_image }}:${{ needs.resolve.outputs.base_tag }}
+          provenance: false
+          outputs: type=image,name=${{ needs.resolve.outputs.app_image }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=app-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=app-${{ matrix.arch }}
+      - name: record the digest
+        run: |
+          set -euo pipefail
+          digest='${{ steps.build.outputs.digest }}'
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${digest#sha256:}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digest-app-${{ matrix.arch }}
+          path: /tmp/digests/*
+          retention-days: 1
+
+  app_merge:
+    name: app manifest
+    needs: [resolve, app]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASS }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digest-app-*
+          merge-multiple: true
+          path: /tmp/digests
+      - name: create the manifest list
+        run: |
+          set -euo pipefail
+          image='${{ needs.resolve.outputs.app_image }}'
+          version='${{ needs.resolve.outputs.version }}'
+
+          tags=(-t "$image:$version" -t "$image:sha-${GITHUB_SHA::7}")
+          if [[ '${{ needs.resolve.outputs.stable }}' == 1 ]]; then
+            tags+=(-t "$image:latest")
+          fi
+
+          refs=()
+          for f in /tmp/digests/*; do
+            refs+=("$image@sha256:$(basename "$f")")
+          done
+
+          docker buildx imagetools create "${tags[@]}" "${refs[@]}"
+          docker buildx imagetools inspect "$image:$version"
