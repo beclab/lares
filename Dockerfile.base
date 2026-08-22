@@ -96,15 +96,26 @@ RUN npm install -g @olares/cli@1.12.7-cli.4 @olares/hass-cli@0.0.1 \
   && hass-cli -v
 
 COPY package.json package-lock.json ./
-# Keep devDependencies (tsc / esbuild) so the app image can compile without a second npm ci.
-RUN npm ci --include=dev
 
-ENV NODE_ENV=production
-
+# Ownership is settled here, while /app holds two json files, rather than after
+# npm ci. A recursive chown over a finished node_modules makes overlayfs copy up
+# every file in it to change one metadata field, and that cost 450 MB.
 RUN mkdir -p /data/home /data/lares /data/workspace /data/cli \
   && chown -R node:node /data /app
 
 USER node
+# Keep devDependencies (tsc / esbuild) so the app image can compile without a
+# second npm ci. Installing as node is also what actually happens at boot, when
+# a community dsh plugin compiles against this same tree as uid 1000.
+#
+# The cache has to go in the same layer it was made in: npm puts it under $HOME,
+# which is /data, and VOLUME below does not retroactively discard what a build
+# wrote there -- it was 74 MB of the image.
+RUN npm ci --include=dev \
+  && npm cache clean --force \
+  && rm -rf "$HOME/.cache"
+
+ENV NODE_ENV=production
 VOLUME ["/data"]
 EXPOSE 8080
 
