@@ -106,7 +106,7 @@ PACKAGE="$DIST/$APP_NAME-$PKG_VERSION.tgz"
 COPYFILE_DISABLE=1 tar -czf "$PACKAGE" -C "$TMP" "$APP_NAME"
 
 echo "Packaged: $PACKAGE"
-echo "Push ${IMAGE_REPO}:$VERSION (linux/amd64) before installing."
+echo "Push ${IMAGE_REPO}:$VERSION (linux/amd64, linux/arm64) before installing."
 if [[ "$DEV" -eq 1 ]]; then
   echo "Install: olares-cli market upload $PACKAGE && olares-cli market install $APP_NAME -s upload --version $PKG_VERSION --watch"
 fi

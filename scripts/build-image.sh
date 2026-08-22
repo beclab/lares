@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the Lares images for linux/amd64.
+# Build the Lares images locally for one architecture (multi-arch is CI's job).
 # 默认只打应用层（代码）；底座（OS / CLI / node_modules）用 --base。
 # 测试期默认 --load（本机）；禁止默认 --push。发版才加 --push。
 #
@@ -17,8 +17,10 @@ source "$ROOT/scripts/lib/project.sh"
 VERSION="$(awk '/^version:/{print $2; exit}' "$CHART_DIR/Chart.yaml")"
 IMAGE="${IMAGE:-${IMAGE_REPO}:${VERSION}}"
 BASE_IMAGE="${BASE_IMAGE:-${IMAGE_BASE_REPO}:${IMAGE_BASE_TAG}}"
-# Olares nodes are amd64; building on an Apple Silicon Mac would otherwise
-# produce an arm64 image that silently fails to start on the cluster.
+# The released image is multi-arch, but that is CI's job: `--load` cannot take a
+# multi-platform result. One arch it is, and amd64 is what the machines in
+# machines.json run, so building on an Apple Silicon Mac still produces
+# something deploy-image.sh can import there.
 PLATFORM="${PLATFORM:-linux/amd64}"
 DO_PUSH=0
 DO_BASE=0

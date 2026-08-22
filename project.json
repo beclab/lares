@@ -1,7 +1,7 @@
 {
   "name": "lares",
   "title": "Lares",
-  "image_repo": "docker.io/luolong01/lares",
+  "image_repo": "docker.io/beclab/lares",
   "image_base_tag": "2",
   "npm_scope": "@lares"
 }
