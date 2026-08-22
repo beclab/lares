@@ -79,6 +79,11 @@ ENV PORT=8080 \
   OLARES_APP_ID=lares \
   LARES_CLI_ROOT=/data/cli
 
+# Debian's /etc/profile assigns PATH outright rather than appending to it, so a
+# login shell throws away the entry above -- and whether an agent's shell is a
+# login shell is not ours to decide. profile.d runs after that assignment.
+RUN printf 'PATH=/data/home/.local/bin:$PATH\n' > /etc/profile.d/10-lares-user-bin.sh
+
 USER root
 # The olares-* agent skills come out of this binary (app image runs
 # `olares-cli skills export`), so a pin without the suite has to fail here
