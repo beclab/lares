@@ -22,7 +22,7 @@ alwaysApply: true
 packages/
   service/          业务（dsh web boot、Olares 集成）
   plugins/          自研 dsh 插件（bundle-web、client-lares、voice-input）
-  skills/           bundled agent skills
+  skills/           ha-* agent skills（olares-* 由构建期导出，不入仓）
 tests/              单元测试
 deploy/lares/        Olares chart
 scripts/            镜像、chart 打包、dev-sync
@@ -30,6 +30,7 @@ _参考/              外部参考（默认忽略；勿当本仓业务）
 ```
 
 - `packages/` 只含 `service` / `plugins` / `skills`；npm 根在仓库根，`node_modules/` 与 `dist/` 不进源码树（gitignore）。
+- `packages/skills/` 里只有 `ha-*` 是源码。`olares-*` 由应用镜像构建时 `olares-cli skills export` 从底座二进制导出，**禁止**手抄回仓库：技能与二进制必须同一 release。升级 olares 技能 = 改 `Dockerfile.base` 的 `@olares/cli` 版本。`scripts/dev-sync/sync.sh` 必须继续排除 `packages/skills/olares-*`，否则 `rsync --delete` 会把镜像里的技能抹掉。
 - 业务只在 `packages/service/`；自研 dsh 插件只在 `packages/plugins/`；禁止平行旁路目录。
 - 单文件职责过多时，按**功能**拆成文件夹/子模块；依赖单向，禁止循环依赖。
 - 同一能力只有一处权威实现；先复用已有模块，禁止平行旁路与过度设计。

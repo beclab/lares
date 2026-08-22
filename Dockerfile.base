@@ -24,10 +24,14 @@ ENV PORT=8080 \
   LARES_CLI_ROOT=/data/cli
 
 USER root
-RUN npm install -g @olares/cli@1.12.7-cli.2 @olares/hass-cli@0.0.1 \
+# The olares-* agent skills come out of this binary (app image runs
+# `olares-cli skills export`), so a pin without the suite has to fail here
+# rather than one layer later.
+RUN npm install -g @olares/cli@1.12.7-cli.4 @olares/hass-cli@0.0.1 \
   && ln -sf "$(npm root -g)/@olares/cli/bin/olares-cli.js" /usr/local/bin/olares-cli \
   && ln -sf "$(npm root -g)/@olares/hass-cli/bin/hass-cli.js" /usr/local/bin/hass-cli \
   && olares-cli -v \
+  && olares-cli skills list -q \
   && hass-cli -v
 
 COPY package.json package-lock.json ./

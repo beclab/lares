@@ -360,6 +360,10 @@ RSYNC_EXCLUDES=(
   # Image identity stamped by seed-dev-src; deleting it makes the next pod
   # re-seed devsrc from the image and discard everything synced here.
   --exclude '.lares-image-id'
+  # olares-* 技能只存在于镜像里（构建期 olares-cli skills export 写入），本地树
+  # 没有；不排除的话 --delete 会在每次热同步时把它们从 /app 删掉。
+  --exclude 'packages/skills/olares-*'
+  --exclude 'packages/skills/.olares-cli-suite'
   --exclude 'artifacts/'
   --exclude '*.tgz'
   --exclude 'Dockerfile'
