@@ -77,7 +77,9 @@ export async function resolveWorkspaceFile(workspacePath, requestedPath) {
   const info = await stat(absolutePath).catch(() => {
     throw new HttpError("file_not_found", 404, "file was not found");
   });
-  if (!info.isFile()) throw new HttpError("file_not_found", 404, "path is not a file");
+  // Distinct from a missing file: a directory is a legitimate open target that
+  // this route simply does not serve, and the caller decides what to do with it.
+  if (!info.isFile()) throw new HttpError("path_not_file", 415, "path is not a regular file");
   return {
     absolutePath,
     path: relative(root, absolutePath),
@@ -86,6 +88,21 @@ export async function resolveWorkspaceFile(workspacePath, requestedPath) {
     modifiedAt: info.mtimeMs,
     ...previewTypeForName(absolutePath),
   };
+}
+
+/**
+ * The truncation cut is a byte offset, so it can land inside a multi-byte
+ * character. Dropping that partial tail keeps a truncated preview from being
+ * reported as a non-text file.
+ */
+function trimPartialUtf8(body) {
+  for (let back = 1; back <= 3 && back <= body.length; back += 1) {
+    const byte = body[body.length - back];
+    if ((byte & 0xc0) === 0x80) continue;
+    const width = byte >= 0xf0 ? 4 : byte >= 0xe0 ? 3 : byte >= 0xc0 ? 2 : 1;
+    return width > back ? body.subarray(0, body.length - back) : body;
+  }
+  return body;
 }
 
 export async function buildPreview(file) {
@@ -103,7 +120,9 @@ export async function buildPreview(file) {
     const length = Math.min(file.size, MAX_PREVIEW_TEXT_BYTES + 1);
     const buffer = Buffer.alloc(length);
     const { bytesRead } = await handle.read(buffer, 0, length, 0);
-    const body = buffer.subarray(0, Math.min(bytesRead, MAX_PREVIEW_TEXT_BYTES));
+    const truncated = bytesRead > MAX_PREVIEW_TEXT_BYTES;
+    const read = buffer.subarray(0, Math.min(bytesRead, MAX_PREVIEW_TEXT_BYTES));
+    const body = truncated ? trimPartialUtf8(read) : read;
     const text = new TextDecoder("utf-8", { fatal: true }).decode(body);
     return {
       path: file.path,

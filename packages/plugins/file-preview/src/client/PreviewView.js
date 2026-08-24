@@ -1,16 +1,17 @@
 import React from "react";
-import { Button, IconLoadingOutline16 } from "@deepseek-ai/dsh-client-ui-primitives";
+import { Button, IconLoadingOutline16, MarkdownText } from "@deepseek-ai/dsh-client-ui-primitives";
 import { errorMessage } from "./locale.js";
-import { rawFileUrl } from "./workspace.js";
+import { rewriteWorkspaceTargets } from "./markdown.js";
+import { rawFileHref, rawFileUrl, rawUrlPath } from "./workspace.js";
 
 const h = React.createElement;
-const { useSyncExternalStore } = React;
+const { useCallback, useLayoutEffect, useRef, useSyncExternalStore } = React;
 
-function PreviewBody({ data, sessionId, t }) {
+function PreviewBody({ data, sessionId, openPath, scroll, t }) {
   if (data.kind === "image") {
     return h(
       "div",
-      { className: "lares-preview-media" },
+      { className: "lares-preview-media", ...scroll },
       h("img", {
         className: "lares-preview-image",
         src: rawFileUrl(sessionId, data.path),
@@ -50,11 +51,37 @@ function PreviewBody({ data, sessionId, t }) {
     });
   }
   if (data.kind === "text" || data.kind === "markdown") {
+    const body = data.kind === "markdown"
+      ? h(
+        "div",
+        {
+          className: "lares-preview-markdown",
+          ...scroll,
+          onClick: (event) => {
+            if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+            const anchor = event.target.closest?.("a[href]");
+            const path = anchor === null || anchor === undefined
+              ? null
+              : rawUrlPath(sessionId, anchor.getAttribute("href"));
+            if (path === null) return;
+            event.preventDefault();
+            openPath(path);
+          },
+        },
+        h(MarkdownText, {
+          text: rewriteWorkspaceTargets(
+            data.text ?? "",
+            data.path,
+            (path) => rawFileHref(sessionId, path),
+          ),
+        }),
+      )
+      : h("pre", { className: "lares-preview-text", ...scroll }, data.text ?? "");
     return h(
       React.Fragment,
       null,
       data.truncated && h("div", { className: "lares-preview-banner" }, t("truncated")),
-      h("pre", { className: `lares-preview-text is-${data.kind}` }, data.text ?? ""),
+      body,
     );
   }
   return h(
@@ -73,6 +100,19 @@ export function createPreviewView(workspace, t) {
     );
     const path = snapshot.activePath;
     const content = snapshot.content;
+    const scrollRef = useRef(null);
+    const ready = content.status === "ready";
+
+    // Before paint, so reopening a tab shows no jump from the top.
+    useLayoutEffect(() => {
+      const node = scrollRef.current;
+      if (node !== null && path) node.scrollTop = workspace.scrollOffset(sessionId, path);
+    }, [sessionId, path, ready]);
+
+    const onScroll = useCallback(
+      (event) => workspace.rememberScroll(sessionId, path, event.currentTarget.scrollTop),
+      [sessionId, path],
+    );
 
     if (!path) {
       return h("div", { className: "lares-preview-empty" }, t("empty"));
@@ -105,7 +145,13 @@ export function createPreviewView(workspace, t) {
             t("retry"),
           ),
         ),
-        content.status === "ready" && h(PreviewBody, { data: content.data, sessionId, t }),
+        content.status === "ready" && h(PreviewBody, {
+          data: content.data,
+          sessionId,
+          openPath: (target) => workspace.open(sessionId, target),
+          scroll: { ref: scrollRef, onScroll },
+          t,
+        }),
       ),
     );
   };

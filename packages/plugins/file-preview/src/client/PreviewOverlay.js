@@ -4,8 +4,8 @@ import { createPortal } from "react-dom";
 const h = React.createElement;
 const { useEffect, useState, useSyncExternalStore } = React;
 
-export function createPreviewDock(workspace, PreviewView) {
-  return function FilePreviewDock({ sessionId }) {
+export function createPreviewOverlay(workspace, PreviewView) {
+  return function FilePreviewOverlay({ sessionId }) {
     const [target, setTarget] = useState(null);
     const snapshot = useSyncExternalStore(
       (listener) => workspace.subscribe(sessionId, listener),
@@ -20,7 +20,13 @@ export function createPreviewDock(workspace, PreviewView) {
     return createPortal(
       h(
         "div",
-        { className: "lares-preview-overlay", "data-file-preview-overlay": "" },
+        {
+          className: "lares-preview-overlay",
+          "data-file-preview-overlay": "",
+          // dsh contract: a view owning the scrollport pins the composer seat
+          // and clips the chat flow, so this surface is the only scroller.
+          "data-conversation-composer-overlay": "",
+        },
         h(PreviewView, { sessionId }),
       ),
       target,
