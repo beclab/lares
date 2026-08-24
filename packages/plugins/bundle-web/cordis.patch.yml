@@ -56,18 +56,10 @@
 - id: ui-settings-plugin-inventory
   disabled: true
 
-# Conversation view-ring tabs (trajectory / waterfall): product surface is chat only.
-- id: ui-trajectory
-  disabled: true
-
 # Agent-preset switcher (hero chip, session header, Settings). Sessions still
 # mount the deployment default from `agent-presets` (standard); re-enable when
 # mode switching is a product surface again.
 - id: ui-agent-preset
-  disabled: true
-
-# Session Header「Session log」download capsule + `/export`: not a Lares surface.
-- id: session-log-download
   disabled: true
 
 # Community right sidebar (dsh-better-sidebar). Kept installed on the profile;
