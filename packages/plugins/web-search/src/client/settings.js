@@ -131,8 +131,3 @@ export function WebSearchSettings() {
 
 /** Settings nav glyph, read off the component by the shell's row projection. */
 WebSearchSettings.navIcon = IconGlobeOutline14;
-
-/** Shadow the official DeepSeek web-search plugin card. */
-export function HideOfficialWebSearchCard() {
-  return null;
-}
