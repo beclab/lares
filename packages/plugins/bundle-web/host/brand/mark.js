@@ -1,6 +1,10 @@
 import { PRODUCT_NAME, THEME_COLOR } from "./identity.js";
 
-/** The product mark: favicon, PWA icon, and the in-app logo the stylesheet paints. */
+/**
+ * The product mark: favicon, PWA icon, and the brand-slot occupants in
+ * @lares/client-lares. An eave over a resident orb — two strokes only, which is
+ * what keeps it readable down to the 20px collapsed rail.
+ */
 export const MARK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="${PRODUCT_NAME}">
   <defs>
     <linearGradient id="lares-mark" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
@@ -9,7 +13,8 @@ export const MARK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32
     </linearGradient>
   </defs>
   <rect width="32" height="32" rx="8" fill="url(#lares-mark)"/>
-  <path fill="#fff" fill-rule="evenodd" d="M10 8h5.4a8 8 0 0 1 0 16H10V8Zm3.6 3.4v9.2h1.8a4.6 4.6 0 0 0 0-9.2h-1.8Z"/>
+  <path fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" d="M6.8 17.4 16 9.2l9.2 8.2"/>
+  <circle cx="16" cy="22" r="3.2" fill="#fff"/>
 </svg>`;
 
 /** Inline form for CSS `background-image`, which cannot reference a route that may 404 mid-boot. */

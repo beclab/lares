@@ -1,6 +1,7 @@
 import shellCss from "./styles/shell.css";
 import modelCss from "./styles/model.css";
 import { ModelSwitch, bindLocale, registerLocale, t } from "./model-switch.js";
+import { BrandMark, BrandName, keepProductTitle } from "./brand.js";
 import { HideOpenDocument, RetireStatsLine, HideModelSeat } from "./shell-overrides.js";
 import { installPluginStyle } from "../../../shared/client/plugin-style.js";
 
@@ -8,6 +9,8 @@ export const inject = [];
 
 export function apply(ctx) {
   installPluginStyle(ctx, "@lares/client-lares", `${shellCss}\n${modelCss}`, "lares-client-css");
+
+  ctx.effect(() => keepProductTitle(), "lares-document-title");
 
   ctx.inject(["locale"], (scope) => {
     bindLocale(scope.locale);
@@ -17,6 +20,19 @@ export function apply(ctx) {
   });
 
   ctx.inject(["slots"], (scope) => {
+    // Single seats: a dynamic entry shadows the shipped occupant.
+    scope.slots.inject("sidebar.brand.mark", () =>
+      scope.slots.register({ name: "sidebar.brand.mark", id: "lares-mark", priority: -1 }, BrandMark),
+    );
+    scope.slots.inject("sidebar.brand.name", () =>
+      scope.slots.register({ name: "sidebar.brand.name", id: "lares-name", priority: -1 }, BrandName),
+    );
+    scope.slots.inject("conversation.hero.brand.mark", () =>
+      scope.slots.register(
+        { name: "conversation.hero.brand.mark", id: "lares-mark", priority: -1 },
+        BrandMark,
+      ),
+    );
     scope.slots.inject("settings.action", () =>
       scope.slots.register(
         {

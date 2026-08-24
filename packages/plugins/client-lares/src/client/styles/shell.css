@@ -8,3 +8,14 @@
   flex: none;
   height: 24px;
 }
+
+.lares-brand-mark {
+  display: block;
+  flex: none;
+}
+
+/* Type scale comes from the shell's brandName span; only the color is ours. */
+.lares-brand-name {
+  color: var(--dsw-alias-label-primary);
+  white-space: nowrap;
+}

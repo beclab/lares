@@ -6,7 +6,7 @@ metadata:
   appid: lares
   title: Lares
   description: Chat shell on DeepSeek Harness, wired to Olares Router
-  icon: https://raw.githubusercontent.com/ffkijjkokok/dina-assets/main/icon.png
+  icon: https://raw.githubusercontent.com/ffkijjkokok/lares/main/icon.png
   version: 0.22.0
   categories:
     - Utilities_v112
@@ -63,7 +63,7 @@ entrances:
     host: lares-svc
     port: 8080
     title: Lares
-    icon: https://raw.githubusercontent.com/ffkijjkokok/dina-assets/main/icon.png
+    icon: https://raw.githubusercontent.com/ffkijjkokok/lares/main/icon.png
     authLevel: private
     openMethod: window
 options:
