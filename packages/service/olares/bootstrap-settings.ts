@@ -134,6 +134,7 @@ function refreshRouterRoute(doc: Document, seed: LaresSettingsSeed): void {
 interface RouteModel {
   id: string;
   name: string;
+  input?: ["text", "image"];
   reasoningEfforts?: Record<string, string>;
   contextWindow?: number;
   maxTokens?: number;
@@ -151,6 +152,7 @@ function declarableModels(seed: LaresSettingsSeed): RouteModel[] {
   return seed.catalog.filter(isChatModel).map((entry) => ({
     id: entry.id,
     name: entry.name,
+    ...(entry.supportsVision ? { input: ["text", "image"] as ["text", "image"] } : {}),
     ...(entry.reasoningEfforts ? { reasoningEfforts: entry.reasoningEfforts } : {}),
     ...(entry.contextWindow === null ? {} : { contextWindow: entry.contextWindow }),
     ...(entry.maxTokens === null ? {} : { maxTokens: entry.maxTokens }),

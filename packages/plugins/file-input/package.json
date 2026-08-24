@@ -1,0 +1,24 @@
+{
+  "name": "@lares/file-input",
+  "version": "0.15.0",
+  "private": true,
+  "type": "module",
+  "description": "Lares composer attachment picker and workspace upload bridge",
+  "exports": {
+    ".": "./host/index.js",
+    "./client": "../../../dist/plugins/file-input/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-slots"
+      ]
+    }
+  },
+  "files": [
+    "host"
+  ]
+}

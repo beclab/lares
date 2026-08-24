@@ -7,13 +7,13 @@ import { parse } from "yaml";
 import { bootstrapLaresSettings, type LaresSettingsSeed } from "../../packages/service/olares/bootstrap-settings.js";
 
 const CATALOG = [
-  { id: "Qwen/chat", name: "Qwen/chat", mode: "chat", reasoningEfforts: { low: "low", xhigh: "xhigh" }, contextWindow: 104448, maxTokens: 8192 },
-  { id: "Qwen/other", name: "Qwen/other", mode: "chat", reasoningEfforts: null, contextWindow: null, maxTokens: null },
-  { id: "EmbeddingGemma/embed", name: "EmbeddingGemma/embed", mode: "embedding", reasoningEfforts: null, contextWindow: null, maxTokens: null },
+  { id: "Qwen/chat", name: "Qwen/chat", mode: "chat", supportsVision: true, reasoningEfforts: { low: "low", xhigh: "xhigh" }, contextWindow: 104448, maxTokens: 8192 },
+  { id: "Qwen/other", name: "Qwen/other", mode: "chat", supportsVision: false, reasoningEfforts: null, contextWindow: null, maxTokens: null },
+  { id: "EmbeddingGemma/embed", name: "EmbeddingGemma/embed", mode: "embedding", supportsVision: false, reasoningEfforts: null, contextWindow: null, maxTokens: null },
 ];
 
 const DECLARED = [
-  { id: "Qwen/chat", name: "Qwen/chat", reasoningEfforts: { low: "low", xhigh: "xhigh" }, contextWindow: 104448, maxTokens: 8192 },
+  { id: "Qwen/chat", name: "Qwen/chat", input: ["text", "image"], reasoningEfforts: { low: "low", xhigh: "xhigh" }, contextWindow: 104448, maxTokens: 8192 },
   { id: "Qwen/other", name: "Qwen/other" },
 ];
 

@@ -47,7 +47,7 @@ test("Router refresh keeps only unique chat models", async () => {
   assert.deepEqual(
     chatModelsFromRouterCatalog({
       data: [
-        { id: "Qwen/chat", mode: "chat" },
+        { id: "Qwen/chat", mode: "chat", supports: ["vision"] },
         { id: "Qwen/chat", mode: "chat" },
         { id: "whisper", mode: "audio" },
         { id: "legacy-chat" },
@@ -62,7 +62,7 @@ test("Router refresh keeps only unique chat models", async () => {
       ],
     }),
     [
-      { id: "Qwen/chat", name: "Qwen/chat" },
+      { id: "Qwen/chat", name: "Qwen/chat", input: ["text", "image"] },
       { id: "legacy-chat", name: "legacy-chat" },
       { id: "Qwen/thinks", name: "Qwen/thinks", reasoningEfforts: { low: "low", xhigh: "xhigh" } },
     ],

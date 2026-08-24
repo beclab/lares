@@ -12,6 +12,7 @@ spec:
     - 官方 dsh web UI（三栏布局）+ Lares 产品 profile
     - 通过集群内应用身份（`x-caller-appid`）零配置对接 Router
     - 构建启用时内置客户端插件（语音输入、网页搜索）
+    - 可选 Docker-in-Docker sidecar（`ENABLE_DIND`，默认开启），Agent 可在 Pod 内使用 `docker`
 
     ## 运行要求
     - Olares >= 1.12.7

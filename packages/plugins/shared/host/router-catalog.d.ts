@@ -2,6 +2,8 @@ export interface RouterCatalogRow {
   id: string;
   name: string;
   mode: string | null;
+  /** Whether Router declares native image input for this chat model. */
+  supportsVision: boolean;
   /** pi-ai level → Router wire spelling, or null when the model takes no effort. */
   reasoningEfforts: Record<string, string> | null;
   /** Tokens one request may span, or null when Router states none. */

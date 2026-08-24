@@ -14,12 +14,14 @@ const APP_ROOT = join(HERE, "../../..");
 const BUNDLE_WEB = join(APP_ROOT, "packages", "plugins", "bundle-web");
 const CLIENT_LARES = join(APP_ROOT, "packages", "plugins", "client-lares");
 const VOICE_INPUT = join(APP_ROOT, "packages", "plugins", "voice-input");
+const FILE_INPUT = join(APP_ROOT, "packages", "plugins", "file-input");
 const WEB_SEARCH = join(APP_ROOT, "packages", "plugins", "web-search");
 const MODELS = join(APP_ROOT, "packages", "plugins", "models");
 const LOCAL_PROFILE_PACKAGES = [
   ["@lares/bundle-web", BUNDLE_WEB],
   ["@lares/client-lares", CLIENT_LARES],
   ["@lares/voice-input", VOICE_INPUT],
+  ["@lares/file-input", FILE_INPUT],
   ["@lares/web-search", WEB_SEARCH],
   ["@lares/models", MODELS],
 ] as const;
@@ -77,6 +79,7 @@ export function ensureLaresWebProfile(dataDir: string): { dshHome: string; profi
       "@lares/bundle-web": `file:${BUNDLE_WEB}`,
       "@lares/client-lares": `file:${CLIENT_LARES}`,
       "@lares/voice-input": `file:${VOICE_INPUT}`,
+      "@lares/file-input": `file:${FILE_INPUT}`,
       "@lares/web-search": `file:${WEB_SEARCH}`,
       "@lares/models": `file:${MODELS}`,
     },

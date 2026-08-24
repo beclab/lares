@@ -10,7 +10,13 @@ test("modelsFromRouterCatalog and isChatModelId", () => {
   assert.deepEqual(
     modelsFromRouterCatalog({
       data: [
-        { id: "Qwen/chat", mode: "chat", context_size: 104448, max_output_tokens: 8192 },
+        {
+          id: "Qwen/chat",
+          mode: "chat",
+          supports: ["supports_vision"],
+          context_size: 104448,
+          max_output_tokens: 8192,
+        },
         { id: "EmbeddingGemma/embed", mode: "embedding" },
         { id: "Qwen/chat", mode: "chat" },
         { id: "" },
@@ -22,6 +28,7 @@ test("modelsFromRouterCatalog and isChatModelId", () => {
         id: "Qwen/chat",
         name: "Qwen/chat",
         mode: "chat",
+        supportsVision: true,
         reasoningEfforts: null,
         contextWindow: 104448,
         maxTokens: 8192,
@@ -30,6 +37,7 @@ test("modelsFromRouterCatalog and isChatModelId", () => {
         id: "EmbeddingGemma/embed",
         name: "EmbeddingGemma/embed",
         mode: "embedding",
+        supportsVision: false,
         reasoningEfforts: null,
         contextWindow: null,
         maxTokens: null,
@@ -47,6 +55,32 @@ test("modelsFromRouterCatalog and isChatModelId", () => {
     "opaque-chat-id",
   );
   assert.equal(pickChatModelId([{ id: "opaque-image-id", name: "x", mode: "image_generation" }]), null);
+});
+
+test("a capability counts however Router spelled it", () => {
+  assert.deepEqual(
+    modelsFromRouterCatalog({
+      data: [
+        // The gateway catalog: bare tokens, the spelling a live /models serves.
+        {
+          id: "gateway",
+          mode: "chat",
+          supports: ["vision", "reasoning_effort"],
+          reasoning_effort: { options: ["low"] },
+        },
+        // The admin API: a supports_*-keyed dict, false flags included.
+        { id: "admin-dict", mode: "chat", supports: { supports_vision: true, supports_reasoning: false } },
+        { id: "admin-flag", mode: "chat", supports_vision: true },
+        { id: "text-only", mode: "chat", supports: ["function_calling"] },
+      ],
+    }).map(({ id, supportsVision, reasoningEfforts }) => ({ id, supportsVision, reasoningEfforts })),
+    [
+      { id: "gateway", supportsVision: true, reasoningEfforts: { low: "low" } },
+      { id: "admin-dict", supportsVision: true, reasoningEfforts: null },
+      { id: "admin-flag", supportsVision: true, reasoningEfforts: null },
+      { id: "text-only", supportsVision: false, reasoningEfforts: null },
+    ],
+  );
 });
 
 test("effort levels travel with the model, and only the ones Router will take", () => {

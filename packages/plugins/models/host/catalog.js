@@ -40,9 +40,10 @@ function shimBaseUrl() {
 export function chatModelsFromRouterCatalog(payload) {
   return routerCatalogRows(payload)
     .filter((model) => model.mode ? model.mode === "chat" : !NON_CHAT_HINTS.test(model.id))
-    .map(({ id, name, reasoningEfforts, contextWindow, maxTokens }) => ({
+    .map(({ id, name, supportsVision, reasoningEfforts, contextWindow, maxTokens }) => ({
       id,
       name,
+      ...(supportsVision ? { input: ["text", "image"] } : {}),
       ...(reasoningEfforts === null ? {} : { reasoningEfforts }),
       ...(contextWindow === null ? {} : { contextWindow }),
       ...(maxTokens === null ? {} : { maxTokens }),

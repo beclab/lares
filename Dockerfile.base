@@ -1,7 +1,10 @@
 # syntax=docker/dockerfile:1.7
-# Environment image: OS toolchain, global CLIs, npm deps.
+# Environment image: OS toolchain, language runtimes, global CLIs, npm deps.
 # Rebuild with `scripts/build-image.sh --base` when this file, package-lock, or CLI pins change.
 FROM node:22-bookworm-slim
+
+ARG GO_VERSION=1.27.0
+ARG TARGETARCH
 
 # build-essential + python3: community dsh plugins (e.g. dsh-better-sidebar →
 # node-pty) have no linux prebuilds and compile via node-gyp at profile install
@@ -14,10 +17,11 @@ FROM node:22-bookworm-slim
 # olares-doctor skill asks whether a service answers, from inside the pod).
 # Debian's `yq` is the jq wrapper, not mikefarah's Go tool -- the filter syntax
 # is jq's and YAML output needs -y.
+# pkg-config / libssl-dev: native crates and node-gyp modules that link OpenSSL.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
     ca-certificates curl fd-find ffmpeg git jq ripgrep tini \
-    build-essential python3 \
+    build-essential pkg-config libssl-dev python3 \
     file less procps tree \
     unzip zip xz-utils zstd \
     openssh-client patch rsync \
@@ -56,33 +60,49 @@ ENV PIP_BREAK_SYSTEM_PACKAGES=1
 # headline rather than a script that cannot run.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
-    python3-dev python3-pip python3-venv pipx \
+    python3-dev python3-pip python3-venv python-is-python3 pipx \
     python3-numpy python3-scipy python3-pil python3-cairosvg \
     fonts-dejavu-core \
+  && ln -sf "$(command -v pip3)" /usr/local/bin/pip \
   && rm -rf /var/lib/apt/lists/* \
   && pip install --no-cache-dir uv==0.12.5 \
   && uv --version \
   && python3 -c "import PIL, numpy, scipy, cairosvg"
+
+# Go/Rust under /usr/local. HOME=/data/home is a volume at runtime, so a
+# user-local rustup/gopath from the build would disappear after mount.
+RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz" \
+  | tar -C /usr/local -xzf -
+
+ENV RUSTUP_HOME=/usr/local/rustup \
+  CARGO_HOME=/usr/local/cargo
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+    | sh -s -- -y --no-modify-path --profile default --default-toolchain stable \
+  && chmod -R a+rwX "$RUSTUP_HOME" "$CARGO_HOME"
 
 WORKDIR /app
 # PATH: the pod runs as uid 1000 and cannot write /usr, so `pip install --user`
 # is the only route open to it. That lands in $HOME/.local, which is on the PVC
 # and therefore survives a restart -- but its bin directory is not on PATH by
 # default, so an installed command would be unreachable.
+# GOPATH stays on the PVC; the toolchain itself is in the image.
 ENV PORT=8080 \
   HOSTNAME=0.0.0.0 \
-  PATH=/data/home/.local/bin:$PATH \
+  PATH=/data/home/.local/bin:/usr/local/go/bin:/usr/local/cargo/bin:$PATH \
   HOME=/data/home \
   LARES_WORKSPACE=/data/workspace \
   LARES_DATA_DIR=/data/lares \
   LLM_GATEWAY_URL=http://router-svc.router-shared/v1 \
   OLARES_APP_ID=lares \
-  LARES_CLI_ROOT=/data/cli
+  LARES_CLI_ROOT=/data/cli \
+  GOPATH=/data/home/go \
+  GOTOOLCHAIN=local
 
 # Debian's /etc/profile assigns PATH outright rather than appending to it, so a
 # login shell throws away the entry above -- and whether an agent's shell is a
 # login shell is not ours to decide. profile.d runs after that assignment.
-RUN printf 'PATH=/data/home/.local/bin:$PATH\n' > /etc/profile.d/10-lares-user-bin.sh
+RUN printf 'PATH=/data/home/.local/bin:/usr/local/go/bin:/usr/local/cargo/bin:$PATH\n' \
+  > /etc/profile.d/10-lares-user-bin.sh
 
 USER root
 # The olares-* agent skills come out of this binary (app image runs
@@ -93,7 +113,12 @@ RUN npm install -g @olares/cli@1.12.7-cli.4 @olares/hass-cli@0.0.1 \
   && ln -sf "$(npm root -g)/@olares/hass-cli/bin/hass-cli.js" /usr/local/bin/hass-cli \
   && olares-cli -v \
   && olares-cli skills list -q \
-  && hass-cli -v
+  && hass-cli -v \
+  && python3 --version \
+  && pip --version \
+  && go version \
+  && rustc --version \
+  && cargo --version
 
 COPY package.json package-lock.json ./
 

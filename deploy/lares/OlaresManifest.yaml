@@ -23,6 +23,7 @@ spec:
     - Official dsh web UI (three-column layout) with Lares product profile
     - Zero-config Router auth via in-cluster app identity (`x-caller-appid`)
     - Bundled client plugins (voice input, web search) when enabled in the build
+    - Optional Docker-in-Docker sidecar (`ENABLE_DIND`, default on) so the agent can run `docker` against a pod-local daemon
 
     ## Requirements
     - Olares >= 1.12.7
@@ -46,12 +47,12 @@ spec:
   locale:
     - en-US
     - zh-CN
-  requiredCpu: 200m
-  limitedCpu: "2"
-  requiredMemory: 512Mi
-  limitedMemory: 4Gi
+  requiredCpu: 400m
+  limitedCpu: "6"
+  requiredMemory: 768Mi
+  limitedMemory: 12Gi
   requiredDisk: 2Gi
-  limitedDisk: 20Gi
+  limitedDisk: 50Gi
   supportArch:
     - amd64
     - arm64
@@ -83,3 +84,11 @@ options:
       type: application
 workloadReplicas:
   lares: 1
+envs:
+  - envName: ENABLE_DIND
+    type: bool
+    required: false
+    applyOnChange: true
+    editable: true
+    default: "true"
+    description: "Run a privileged Docker-in-Docker sidecar in the pod. Exposes the docker CLI via DOCKER_HOST=tcp://localhost:2375 (uses extra CPU/RAM/disk under app data). Disable if your environment forbids privileged containers"

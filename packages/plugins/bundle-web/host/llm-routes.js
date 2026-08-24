@@ -5,6 +5,7 @@ import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { URL } from "node:url";
 import { readBody, sendError } from "../../shared/host/http.js";
+import { carriesWebpImage, transcodeWebpImages } from "./router-images.js";
 
 export const name = "lares-llm-routes";
 export const inject = ["webServer"];
@@ -58,6 +59,7 @@ function proxyToRouter(req, res) {
         maxBytes: isAudio ? 25 * 1024 * 1024 : 16 * 1024 * 1024,
         message: isAudio ? "audio exceeds 25MB" : "LLM request exceeds 16MB",
       });
+      if (!isAudio && carriesWebpImage(body)) body = await transcodeWebpImages(body);
       headers["content-length"] = String(body.length);
     }
 

@@ -134,6 +134,10 @@
       name: '@lares/voice-input'
       inject: [webServer]
 
+    - id: lares-file-input
+      name: '@lares/file-input'
+      inject: [webServer, workspaceRegistry]
+
     - id: lares-web-search
       name: '@lares/web-search'
       inject: [web, webServer]

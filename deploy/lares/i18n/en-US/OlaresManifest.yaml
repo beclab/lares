@@ -12,6 +12,7 @@ spec:
     - Official dsh web UI (three-column layout) with Lares product profile
     - Zero-config Router auth via in-cluster app identity (`x-caller-appid`)
     - Bundled client plugins (voice input, web search) when enabled in the build
+    - Optional Docker-in-Docker sidecar (`ENABLE_DIND`, default on) so the agent can run `docker` against a pod-local daemon
 
     ## Requirements
     - Olares >= 1.12.7

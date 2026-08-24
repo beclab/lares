@@ -3,13 +3,33 @@ const SAFE_MODEL_ID = /^[^\u0000-\u001f\u007f]{1,512}$/;
 const THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
 /**
+ * The capability flags one catalog row declares, named without Router's
+ * `supports_` prefix. Router spells them differently per surface — the gateway
+ * catalog lists bare tokens (`vision`), its admin API a `supports_*`-keyed
+ * dict — and both spellings mean the same flag.
+ */
+function capabilities(item) {
+  const declared = Array.isArray(item.supports)
+    ? item.supports
+    : item.supports && typeof item.supports === "object"
+      ? Object.keys(item.supports).filter((key) => item.supports[key] === true)
+      : [];
+  const flags = new Set();
+  for (const entry of declared) {
+    const flag = String(entry ?? "").trim().toLowerCase().replace(/^supports_/, "");
+    if (flag) flags.add(flag);
+  }
+  if (item.supports_vision === true) flags.add("vision");
+  return flags;
+}
+
+/**
  * The effort levels Router advertises for one model, keyed by pi-ai level with
  * Router's own spelling as the wire value. A dict offering nothing beyond `off`
  * is no capability at all, and pi-ai rejects it.
  */
-function reasoningEfforts(item) {
-  const supports = Array.isArray(item.supports) ? item.supports : [];
-  if (!supports.includes("reasoning_effort")) return null;
+function reasoningEfforts(item, flags) {
+  if (!flags.has("reasoning_effort")) return null;
   const options = Array.isArray(item.reasoning_effort?.options) ? item.reasoning_effort.options : [];
   const efforts = {};
   for (const option of options) {
@@ -38,11 +58,13 @@ export function routerCatalogRows(payload) {
     const id = String(item.id ?? "").trim();
     if (!SAFE_MODEL_ID.test(id) || seen.has(id)) continue;
     seen.add(id);
+    const flags = capabilities(item);
     rows.push({
       id,
       name: id,
       mode: String(item.mode ?? "").trim().toLowerCase() || null,
-      reasoningEfforts: reasoningEfforts(item),
+      supportsVision: flags.has("vision"),
+      reasoningEfforts: reasoningEfforts(item, flags),
       contextWindow: tokenCount(item.context_size),
       maxTokens: tokenCount(item.max_output_tokens),
     });
