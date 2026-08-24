@@ -1,5 +1,5 @@
 import { ZH, EN, attachLocale, bindTranslate, getTranslate } from "./locale.js";
-import { HideOfficialWebSearchCard, WebSearchSettings, settingsCss } from "./settings.js";
+import { WebSearchSettings, settingsCss } from "./settings.js";
 import { installPluginStyle } from "../../../shared/client/plugin-style.js";
 
 export const inject = [];
@@ -23,18 +23,6 @@ export function apply(ctx) {
           label: () => translate("settings.title"),
         },
         WebSearchSettings,
-      ),
-    );
-
-    // Same id as the official Plugins → Web search card; priority -1 shadows it.
-    scope.slots.inject("settings.plugin.item", () =>
-      scope.slots.register(
-        {
-          name: "settings.plugin.item",
-          id: "web-search",
-          priority: -1,
-        },
-        HideOfficialWebSearchCard,
       ),
     );
   });
