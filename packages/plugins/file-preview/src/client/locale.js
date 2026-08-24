@@ -1,0 +1,51 @@
+export const ZH = {
+  hierarchy: "会话层级",
+  tabs: "工作区标签页",
+  chat: "对话",
+  preview: "文件预览",
+  close: "关闭 {name}",
+  evicted: "已关闭最久未使用的文件 {name}",
+  empty: "选择一个文件进行预览",
+  loading: "正在加载文件…",
+  failed: "无法预览此文件",
+  retry: "重试",
+  truncated: "文件较大，仅显示前 1 MB 内容。",
+  unsupportedTitle: "暂不支持预览这种文件",
+  unsupported: "目前支持图片、PDF、音视频、Markdown 和文本文件。",
+  "error.file_not_found": "文件不存在或已被移动",
+  "error.file_not_text": "文件不是有效的 UTF-8 文本",
+  "error.file_too_large": "文件超过预览大小限制",
+  "error.path_forbidden": "不能预览工作区外的文件",
+  "error.workspace_not_found": "当前会话没有可用工作区",
+  "error.workspace_unavailable": "当前工作区不可用",
+  "error.file_preview_failed": "文件预览加载失败",
+};
+
+export const EN = {
+  hierarchy: "Session hierarchy",
+  tabs: "Workspace tabs",
+  chat: "Chat",
+  preview: "File preview",
+  close: "Close {name}",
+  evicted: "Closed least recently used file {name}",
+  empty: "Select a file to preview",
+  loading: "Loading file…",
+  failed: "Unable to preview this file",
+  retry: "Retry",
+  truncated: "This file is large; only the first 1 MB is shown.",
+  unsupportedTitle: "This file type cannot be previewed yet",
+  unsupported: "Images, PDF, audio, video, Markdown, and text files are supported.",
+  "error.file_not_found": "The file no longer exists",
+  "error.file_not_text": "The file is not valid UTF-8 text",
+  "error.file_too_large": "The file exceeds the preview size limit",
+  "error.path_forbidden": "Files outside the workspace cannot be previewed",
+  "error.workspace_not_found": "No workspace is available for this session",
+  "error.workspace_unavailable": "The current workspace is unavailable",
+  "error.file_preview_failed": "File preview failed to load",
+};
+
+export function errorMessage(t, code) {
+  const key = `error.${code}`;
+  const value = t(key);
+  return value === key ? t("error.file_preview_failed") : value;
+}

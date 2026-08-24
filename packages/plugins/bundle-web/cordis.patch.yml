@@ -138,6 +138,10 @@
       name: '@lares/file-input'
       inject: [webServer, workspaceRegistry]
 
+    - id: lares-file-preview
+      name: '@lares/file-preview'
+      inject: [webServer, workspaceRegistry]
+
     - id: lares-web-search
       name: '@lares/web-search'
       inject: [web, webServer]
