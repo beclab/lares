@@ -27,6 +27,10 @@ test("identity prompt names the product and refuses DeepSeek Harness", () => {
   assert.doesNotMatch(text, /powered by DeepSeek Harness/);
 });
 
+test("identity prompt keeps read_image off attached images", () => {
+  assert.match(identityPrompt(), /attaches are already in context; read_image is only for image files that exist on disk/);
+});
+
 test("surface prompt is product-branded", () => {
   const text = surfacePrompt("http://127.0.0.1:8080");
   assert.match(text, new RegExp(PRODUCT_NAME));
