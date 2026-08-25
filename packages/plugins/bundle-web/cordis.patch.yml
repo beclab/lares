@@ -81,6 +81,12 @@
   config:
     policy: !!js "(process.env.DSH_PERMISSION_MODE ?? process.env.LARES_PERMISSION_MODE ?? 'workspace-write') === 'danger-full-access' ? 'never' : 'ask'"
 
+# Preset `name` / `description` reach the composer chip, its tooltip and the
+# Settings row verbatim — the wire carries no locale, so localized copy here
+# would stay Chinese under an English UI. Keep the kebab keys dsh's display
+# transform title-cases (`workspace-write` → Workspace Write,
+# `danger-full-access` → Full access) and leave the surrounding copy to the
+# client dictionaries.
 - id: permission
   config:
     defaultPreset: !!js process.env.DSH_PERMISSION_MODE ?? process.env.LARES_PERMISSION_MODE ?? 'workspace-write'
@@ -88,18 +94,18 @@
       read-only:
         sandbox: read-only
         approval: ask
-        name: 只读
-        description: 只能读文件；写操作与危险命令需审批
+        name: read-only
+        description: Read files only; writes and risky commands require approval.
       workspace-write:
         sandbox: workspace-write
         approval: ask
-        name: 工作区可写
-        description: 可改工作区内文件；越权操作需审批
+        name: workspace-write
+        description: Write inside the workspace; anything wider requires approval.
       danger-full-access:
         sandbox: danger-full-access
         approval: never
-        name: 完全访问
-        description: 不限制文件沙箱，也不再弹出审批
+        name: danger-full-access
+        description: No file sandbox and no approval prompts.
 
 - insert:
     - id: lares-llm-routes
