@@ -134,6 +134,10 @@
       name: '@lares/file-preview'
       inject: [webServer, workspaceRegistry]
 
+    - id: lares-drive-import
+      name: '@lares/drive-import'
+      inject: [tools, systemPrompt]
+
     - id: lares-web-search
       name: '@lares/web-search'
       inject: [web, webServer]

@@ -1,9 +1,10 @@
-import { createWriteStream, existsSync, mkdirSync, openSync, rmSync, statSync } from "node:fs";
+import { createWriteStream, existsSync, openSync, rmSync, statSync } from "node:fs";
 import { rename } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { HttpError } from "../../shared/host/http.js";
+import { ensureWorkspaceDirectory } from "../../shared/host/workspace-path.js";
 
 export const DEFAULT_MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
 const UPLOAD_DIRECTORY = [".lares", "uploads"];
@@ -87,8 +88,7 @@ export async function saveUpload(req, workspacePath, filename, maxBytes = DEFAUL
     throw new HttpError("file_too_large", 413, `file exceeds ${maxBytes} bytes`);
   }
 
-  const directory = join(workspacePath, ...UPLOAD_DIRECTORY);
-  mkdirSync(directory, { recursive: true });
+  const { directory } = await ensureWorkspaceDirectory(workspacePath, UPLOAD_DIRECTORY);
   const claim = claimName(directory, filename);
   try {
     await pipeline(

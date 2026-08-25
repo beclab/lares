@@ -19,7 +19,7 @@ function errorCode(payload) {
   return payload?.error?.code || "file_preview_failed";
 }
 
-async function fetchPreview(sessionId, path) {
+export async function fetchPreview(sessionId, path) {
   const query = new URLSearchParams({ sessionId, path });
   const response = await fetch(`/api/lares/file-preview/preview?${query}`);
   const payload = await response.json().catch(() => null);

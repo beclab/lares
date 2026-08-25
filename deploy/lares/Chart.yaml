@@ -1,6 +1,6 @@
 apiVersion: v2
 name: lares
-description: Lares chat on DeepSeek Harness path — WorkBuddy shell + Olares Router
+description: Chat on DeepSeek Harness (dsh web), wired to Olares Router
 type: application
 version: 0.22.0
 appVersion: "0.22.0"

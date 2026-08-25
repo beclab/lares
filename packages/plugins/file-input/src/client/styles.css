@@ -33,6 +33,40 @@
   animation: lares-file-picker-spin 0.8s linear infinite;
 }
 
+/* The input dock spans the composer stack, so occupants narrow themselves to
+   the card column the way the official queue and todo docks do. */
+.lares-upload-failures {
+  box-sizing: border-box;
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  max-width: var(--dsh-composer-card-max-width);
+  margin: 0 auto;
+  padding: 0 var(--dsh-composer-side-clearance);
+}
+
+.lares-upload-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.lares-upload-status.is-error {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.lares-upload-status-text {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 @keyframes lares-file-picker-spin {
   to {
     transform: rotate(360deg);

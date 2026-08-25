@@ -305,6 +305,127 @@
   font-size: 12px;
 }
 
+.lares-turn-deliverables {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.lares-turn-media-loading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 13px;
+  line-height: 22px;
+}
+
+.lares-turn-media-list {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.lares-turn-media {
+  display: flex;
+  width: fit-content;
+  max-width: 100%;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 10px;
+  overflow: hidden;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 14px;
+  background: var(--dsw-alias-bg-module-platform);
+}
+
+.lares-turn-media-caption {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.lares-turn-media-caption > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lares-turn-media-image,
+.lares-turn-media-video {
+  display: block;
+  max-width: min(100%, 640px);
+  max-height: 420px;
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-base);
+  object-fit: contain;
+}
+
+.lares-turn-media-image {
+  width: auto;
+  height: auto;
+}
+
+.lares-turn-media-video {
+  width: 640px;
+}
+
+.lares-turn-media-audio {
+  display: block;
+  width: min(520px, calc(100vw - 96px));
+  max-width: 100%;
+}
+
+.lares-turn-files {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 22px;
+}
+
+.lares-turn-files-label {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.lares-turn-files-row {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.lares-turn-file {
+  max-width: 320px;
+  padding: 0 8px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 6px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  font: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lares-turn-file:hover {
+  color: var(--dsw-alias-label-primary);
+  text-decoration: underline;
+}
+
 @keyframes lares-preview-spin {
   to {
     transform: rotate(360deg);

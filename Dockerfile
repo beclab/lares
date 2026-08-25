@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 # App image: compile and ship Lares code on top of the environment image.
 # Default `scripts/build-image.sh` rebuilds only this file.
-ARG BASE_IMAGE=docker.io/beclab/lares-base:2
+ARG BASE_IMAGE=docker.io/beclab/lares-base:3
 FROM ${BASE_IMAGE}
 
 USER root

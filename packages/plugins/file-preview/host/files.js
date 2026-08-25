@@ -1,7 +1,12 @@
 import { createReadStream } from "node:fs";
-import { open, realpath, stat } from "node:fs/promises";
-import { basename, extname, isAbsolute, relative, resolve, sep } from "node:path";
+import { open, stat } from "node:fs/promises";
+import { basename, extname, relative } from "node:path";
 import { HttpError } from "../../shared/host/http.js";
+import {
+  resolveExistingWorkspacePath,
+  resolveWorkspaceRoot,
+  workspaceCandidate,
+} from "../../shared/host/workspace-path.js";
 
 export const MAX_PREVIEW_TEXT_BYTES = 1024 * 1024;
 export const MAX_RAW_BYTES = 200 * 1024 * 1024;
@@ -52,28 +57,13 @@ export function previewTypeForName(name) {
   return { kind: "unsupported", mediaType: "application/octet-stream" };
 }
 
-function isInside(root, target) {
-  const path = relative(root, target);
-  return path === "" || (path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path));
-}
-
 export async function resolveWorkspaceFile(workspacePath, requestedPath) {
   if (typeof requestedPath !== "string" || !requestedPath.trim() || requestedPath.includes("\0")) {
     throw new HttpError("path_invalid", 400, "file path is required");
   }
-  const root = await realpath(workspacePath).catch(() => {
-    throw new HttpError("workspace_unavailable", 409, "session workspace is unavailable");
-  });
-  const candidate = resolve(root, requestedPath);
-  if (!isInside(root, candidate)) {
-    throw new HttpError("path_forbidden", 403, "file path leaves the session workspace");
-  }
-  const absolutePath = await realpath(candidate).catch(() => {
-    throw new HttpError("file_not_found", 404, "file was not found");
-  });
-  if (!isInside(root, absolutePath)) {
-    throw new HttpError("path_forbidden", 403, "file path leaves the session workspace");
-  }
+  const root = await resolveWorkspaceRoot(workspacePath);
+  const candidate = workspaceCandidate(root, requestedPath);
+  const absolutePath = await resolveExistingWorkspacePath(root, candidate);
   const info = await stat(absolutePath).catch(() => {
     throw new HttpError("file_not_found", 404, "file was not found");
   });

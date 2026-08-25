@@ -14,6 +14,7 @@ import {
   rewriteWorkspaceTargets,
   workspaceTargetPath,
 } from "../../packages/plugins/file-preview/src/client/markdown.js";
+import { producedForClosing } from "../../packages/plugins/file-preview/src/client/deliverables.js";
 import { FilePreviewWorkspace } from "../../packages/plugins/file-preview/src/client/workspace.js";
 
 test("previewTypeForName classifies browser-safe preview formats", () => {
@@ -25,6 +26,25 @@ test("previewTypeForName classifies browser-safe preview formats", () => {
   assert.equal(previewTypeForName("main.ts").kind, "text");
   assert.equal(previewTypeForName("slides.pptx").kind, "unsupported");
   assert.equal(previewTypeForName("unsafe.svg").kind, "unsupported");
+});
+
+test("turn media keeps produced paths ordered, unique, and bounded by closing seq", () => {
+  const owner = {
+    seq: 8,
+    turn: {
+      data: new Map([
+        ["deliverables", {
+          produced: [
+            { seq: 3, path: "image/card.png" },
+            { seq: 7, path: "audio/brief.mp3" },
+            { seq: 8, path: "image/card.png" },
+            { seq: 9, path: "later.mp4" },
+          ],
+        }],
+      ]),
+    },
+  };
+  assert.deepEqual(producedForClosing(owner), ["image/card.png", "audio/brief.mp3"]);
 });
 
 test("parseRange accepts bounded, open, and suffix byte ranges", () => {

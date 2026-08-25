@@ -2,6 +2,8 @@ import React from "react";
 import { createHeaderTabs } from "./HeaderTabs.js";
 import { createPreviewOverlay } from "./PreviewOverlay.js";
 import { createPreviewView } from "./PreviewView.js";
+import { createTurnMedia } from "./TurnMedia.js";
+import { selectProducedFiles } from "./deliverables.js";
 import { EN, ZH } from "./locale.js";
 import { installPathOpener } from "./open.js";
 import styles from "./styles.css";
@@ -27,6 +29,7 @@ export function apply(ctx) {
     const HeaderTabs = createHeaderTabs(workspace, t);
     const PreviewView = createPreviewView(workspace, t);
     const PreviewOverlay = createPreviewOverlay(workspace, PreviewView);
+    const TurnMedia = createTurnMedia(t);
 
     // The header seat is the session-scope mount: the overlay hides the input
     // zone, so it cannot be rendered from a seat inside it.
@@ -48,6 +51,15 @@ export function apply(ctx) {
           label: () => t("preview"),
         },
         FilePreviewSurface,
+      ),
+    );
+    scope.slots.inject("conversation.chat.turnTail", () =>
+      scope.slots.register(
+        {
+          name: "conversation.chat.turnTail",
+          select: selectProducedFiles,
+        },
+        TurnMedia,
       ),
     );
   });

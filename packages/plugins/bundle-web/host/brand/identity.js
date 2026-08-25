@@ -15,6 +15,7 @@ export function identityPrompt() {
     `Prefer olares-cli for ${PLATFORM_NAME} platform tasks when skills apply.`,
     `olares-cli is on PATH; edge login materializes HOME / OLARES_CLI_* for bash when the user opens ${PRODUCT_NAME} via the ${PLATFORM_NAME} entrance.`,
     "Use read/write/edit for files; use background jobs for long shell work.",
+    "For the current date or time, run `date`; the process TZ is the user's configured Olares time zone.",
     "Images the user attaches are already in context; read_image is only for image files that exist on disk, never for an attachment.",
     `If asked who you are, answer as ${PRODUCT_NAME} on ${PLATFORM_NAME}. Do not identify yourself as DeepSeek Harness, dsh, or a DeepSeek product.`,
   ].join(" ");

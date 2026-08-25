@@ -5,6 +5,8 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     app: {{ .Chart.Name }}
+  annotations:
+    applications.app.bytetrade.io/gpu-inject: "true"
 spec:
   replicas: {{ .Values.workloads.lares.replicaCount }}
   strategy:
@@ -23,6 +25,9 @@ spec:
         runAsUser: 1000
         runAsGroup: 1000
         fsGroup: 1000
+        supplementalGroups:
+          - 44
+          - 994
       initContainers:
         - name: fix-data-perms
           image: beclab/aboveos-busybox:1.37.0
@@ -114,6 +119,8 @@ spec:
               value: "8080"
             - name: HOSTNAME
               value: "0.0.0.0"
+            - name: TZ
+              value: {{ .Values.olaresEnv.TIMEZONE | quote }}
             - name: LARES_WORKSPACE
               value: /data/workspace
             - name: LARES_DATA_DIR
@@ -186,6 +193,8 @@ spec:
           env:
             - name: DOCKER_TLS_CERTDIR
               value: ""
+            - name: TZ
+              value: {{ .Values.olaresEnv.TIMEZONE | quote }}
           command:
             - dockerd
             - --host

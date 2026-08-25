@@ -1,10 +1,11 @@
 import { HttpError, createRouteHandler, sendJson } from "../../shared/host/http.js";
-import { findWorkspaceForSession, saveUpload } from "./storage.js";
+import { findWorkspaceForSession, sanitizeFilename, saveUpload } from "./storage.js";
 
 export const name = "lares-file-input";
 export const inject = ["webServer", "workspaceRegistry"];
 
 const ROUTE_PREFIX = "/api/lares/files";
+const REQUEST_ID = /^[A-Za-z0-9_-]{16,80}$/;
 
 function decodeFilename(value) {
   if (typeof value !== "string" || !value) return "file";
@@ -29,14 +30,37 @@ export function createUploadHandler(workspaceRegistry) {
       throw new HttpError("workspace_unavailable", 409, "session workspace is unavailable");
     }
 
+    const requestId = req.headers["x-lares-upload-request-id"];
+    if (typeof requestId !== "string" || !REQUEST_ID.test(requestId)) {
+      throw new HttpError("upload_request_invalid", 400, "valid upload request id is required");
+    }
     const filename = decodeFilename(req.headers["x-lares-file-name"]);
-    const stored = await saveUpload(req, workspace.path, filename);
-    sendJson(res, 201, {
-      path: stored.path,
-      name: filename,
-      size: stored.size,
-      mediaType: String(req.headers["content-type"] || "application/octet-stream").split(";", 1)[0],
-    });
+    const safeName = sanitizeFilename(filename);
+    const log = { requestId, sessionId, name: safeName };
+    console.log("[lares:file-upload]", JSON.stringify({ event: "start", ...log }));
+    try {
+      const stored = await saveUpload(req, workspace.path, filename);
+      console.log("[lares:file-upload]", JSON.stringify({
+        event: "committed",
+        ...log,
+        path: stored.path,
+        size: stored.size,
+      }));
+      sendJson(res, 201, {
+        path: stored.path,
+        name: safeName,
+        size: stored.size,
+        mediaType: String(req.headers["content-type"] || "application/octet-stream").split(";", 1)[0],
+      });
+    } catch (error) {
+      console.error("[lares:file-upload]", JSON.stringify({
+        event: "failed",
+        ...log,
+        code: error?.code ?? "file_upload_failed",
+        message: error instanceof Error ? error.message : String(error),
+      }));
+      throw error;
+    }
   };
 }
 

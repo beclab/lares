@@ -19,14 +19,14 @@ ARG TARGETARCH
 # is jq's and YAML output needs -y.
 # pkg-config / libssl-dev: native crates and node-gyp modules that link OpenSSL.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends \
+  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     ca-certificates curl fd-find ffmpeg git jq ripgrep tini \
     build-essential pkg-config libssl-dev python3 \
     file less procps tree \
     unzip zip xz-utils zstd \
     openssh-client patch rsync \
     dnsutils iproute2 iputils-ping netcat-openbsd socat \
-    shellcheck yq \
+    shellcheck tzdata yq \
   && ln -sf "$(command -v fdfind)" /usr/local/bin/fd \
   && rm -rf /var/lib/apt/lists/*
 

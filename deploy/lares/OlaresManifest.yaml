@@ -85,6 +85,12 @@ options:
 workloadReplicas:
   lares: 1
 envs:
+  - envName: TIMEZONE
+    required: true
+    applyOnChange: true
+    valueFrom:
+      envName: OLARES_USER_TIMEZONE
+    description: "Time zone used by Lares, its agents, and commands (IANA name such as Asia/Shanghai)"
   - envName: ENABLE_DIND
     type: bool
     required: false
