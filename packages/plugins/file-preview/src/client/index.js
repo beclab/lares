@@ -57,6 +57,7 @@ export function apply(ctx) {
       scope.slots.register(
         {
           name: "conversation.chat.turnTail",
+          priority: -100,
           select: selectProducedFiles,
         },
         TurnMedia,

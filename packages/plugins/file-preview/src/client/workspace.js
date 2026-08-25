@@ -1,3 +1,5 @@
+import { ChatScrollport } from "./chat-scrollport.js";
+
 const MAX_TABS = 8;
 
 function fileName(path) {
@@ -28,10 +30,16 @@ export async function fetchPreview(sessionId, path) {
 }
 
 const RAW_ROUTE = "/api/lares/file-preview/raw";
+const DOWNLOAD_ROUTE = "/api/lares/file-preview/download";
 
 export function rawFileUrl(sessionId, path) {
   const query = new URLSearchParams({ sessionId, path });
   return `${RAW_ROUTE}?${query}`;
+}
+
+export function downloadFileUrl(sessionId, path) {
+  const query = new URLSearchParams({ sessionId, path });
+  return `${DOWNLOAD_ROUTE}?${query}`;
 }
 
 /** Absolute form: markdown targets survive the renderer only as full URLs. */
@@ -56,9 +64,10 @@ export function rawUrlPath(sessionId, href) {
 }
 
 export class FilePreviewWorkspace {
-  constructor() {
+  constructor(scrollport = new ChatScrollport()) {
     this.sessions = new Map();
     this.current = null;
+    this.scrollport = scrollport;
   }
 
   session(sessionId) {
@@ -71,6 +80,7 @@ export class FilePreviewWorkspace {
       offsets: new Map(),
       listeners: new Set(),
       requestVersions: new Map(),
+      chatOffset: null,
     };
     this.sessions.set(sessionId, state);
     return state;
@@ -250,9 +260,37 @@ export class FilePreviewWorkspace {
     if (state.snapshot.activePath === path) this.emit(sessionId, { content });
   }
 
+  /**
+   * Hand the chat scrollport back where the reader left it. Called once the
+   * overlay is off screen — earlier the flow is still collapsed and the write
+   * would be clamped away again.
+   */
+  restoreChatScroll(sessionId) {
+    const state = this.session(sessionId);
+    if (state.chatOffset === null) return;
+    const offset = state.chatOffset;
+    state.chatOffset = null;
+    this.scrollport.scrollTo(offset);
+  }
+
+  /**
+   * Drop a captured offset without writing it. Switching sessions unmounts the
+   * previous conversation: its scroller is gone, and writing into the new one
+   * would jump a different thread.
+   */
+  abandonChatScroll(sessionId) {
+    this.session(sessionId).chatOffset = null;
+  }
+
   emit(sessionId, patch) {
     const state = this.session(sessionId);
-    state.snapshot = { ...state.snapshot, ...patch };
+    const next = { ...state.snapshot, ...patch };
+    // Mode transitions run ahead of the commit that mounts the overlay, so this
+    // is the last moment the reader's own offset is still readable.
+    if (state.snapshot.mode === "chat" && next.mode === "preview") {
+      state.chatOffset = this.scrollport.offset();
+    }
+    state.snapshot = next;
     for (const listener of state.listeners) listener();
   }
 }

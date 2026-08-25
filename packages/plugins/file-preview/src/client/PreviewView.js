@@ -1,11 +1,17 @@
 import React from "react";
-import { Button, IconLoadingOutline16, MarkdownText } from "@deepseek-ai/dsh-client-ui-primitives";
+import {
+  Button,
+  IconDownloadOutline16,
+  IconLoadingOutline16,
+  MarkdownText,
+} from "@deepseek-ai/dsh-client-ui-primitives";
 import { errorMessage } from "./locale.js";
 import { rewriteWorkspaceTargets } from "./markdown.js";
-import { rawFileHref, rawFileUrl, rawUrlPath } from "./workspace.js";
+import { downloadCurrentFile } from "./download.js";
+import { downloadFileUrl, rawFileHref, rawFileUrl, rawUrlPath } from "./workspace.js";
 
 const h = React.createElement;
-const { useCallback, useLayoutEffect, useRef, useSyncExternalStore } = React;
+const { useCallback, useLayoutEffect, useRef, useState, useSyncExternalStore } = React;
 
 function PreviewBody({ data, sessionId, openPath, scroll, t }) {
   if (data.kind === "image") {
@@ -102,6 +108,11 @@ export function createPreviewView(workspace, t) {
     const content = snapshot.content;
     const scrollRef = useRef(null);
     const ready = content.status === "ready";
+    const [downloadError, setDownloadError] = useState(null);
+
+    useLayoutEffect(() => {
+      setDownloadError(null);
+    }, [path]);
 
     // Before paint, so reopening a tab shows no jump from the top.
     useLayoutEffect(() => {
@@ -120,7 +131,31 @@ export function createPreviewView(workspace, t) {
     return h(
       "section",
       { className: "lares-preview-view", "aria-label": t("preview") },
-      h("div", { className: "lares-preview-path", title: path }, path),
+      h(
+        "div",
+        { className: "lares-preview-header" },
+        h("div", { className: "lares-preview-path", title: path }, path),
+        downloadError && h("div", { className: "lares-preview-download-error", role: "alert" }, downloadError),
+        h(
+          Button,
+          {
+            variant: "ghost",
+            size: "sm",
+            className: "lares-preview-download",
+            onClick: () => {
+              void downloadCurrentFile(downloadFileUrl(sessionId, path)).then(
+                () => setDownloadError(null),
+                (error) => setDownloadError(errorMessage(
+                  t,
+                  error instanceof Error ? error.message : "file_preview_failed",
+                )),
+              );
+            },
+          },
+          h(IconDownloadOutline16, { size: 14 }),
+          t("download"),
+        ),
+      ),
       h(
         "div",
         { className: "lares-preview-content" },

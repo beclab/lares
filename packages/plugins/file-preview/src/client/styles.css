@@ -170,9 +170,31 @@
   padding: 12px 20px 20px;
 }
 
-.lares-preview-path {
+.lares-preview-header {
+  display: flex;
+  min-width: 0;
   flex: none;
-  padding: 0 4px 10px;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 10px;
+}
+
+.lares-preview-download {
+  flex: none;
+  gap: 5px;
+}
+
+.lares-preview-download-error {
+  flex: none;
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.lares-preview-path {
+  min-width: 0;
+  flex: 1;
+  padding: 0 4px;
   overflow: hidden;
   color: var(--dsw-alias-label-tertiary);
   font-size: 12px;

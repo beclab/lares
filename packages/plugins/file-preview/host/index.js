@@ -1,6 +1,6 @@
 import { HttpError, createRouteHandler, sendJson } from "../../shared/host/http.js";
 import { findWorkspaceForSession } from "../../file-input/host/storage.js";
-import { buildPreview, resolveWorkspaceFile, sendRawFile } from "./files.js";
+import { buildPreview, resolveWorkspaceFile, sendFileDownload, sendRawFile } from "./files.js";
 
 export const name = "lares-file-preview";
 export const inject = ["webServer", "workspaceRegistry"];
@@ -37,14 +37,23 @@ export function createRawHandler(workspaceRegistry) {
   };
 }
 
+export function createDownloadHandler(workspaceRegistry) {
+  return async (req, res) => {
+    const file = await resolveRequestFile(req, workspaceRegistry);
+    sendFileDownload(req, res, file);
+  };
+}
+
 export function apply(ctx) {
   const preview = createPreviewHandler(ctx.workspaceRegistry);
   const raw = createRawHandler(ctx.workspaceRegistry);
+  const download = createDownloadHandler(ctx.workspaceRegistry);
   const handler = createRouteHandler({
     prefix: ROUTE_PREFIX,
     routes: {
       "/preview": { GET: preview },
       "/raw": { GET: raw, HEAD: raw },
+      "/download": { GET: download, HEAD: download },
     },
     fallbackCode: "file_preview_failed",
   });

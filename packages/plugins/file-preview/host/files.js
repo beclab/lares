@@ -158,13 +158,7 @@ export function parseRange(value, size) {
   return { start, end: Math.min(end, size - 1) };
 }
 
-export function sendRawFile(req, res, file) {
-  if (!["image", "video", "audio", "pdf"].includes(file.kind)) {
-    throw new HttpError("preview_unsupported", 415, "raw preview is not supported for this file");
-  }
-  if (file.size > MAX_RAW_BYTES) {
-    throw new HttpError("file_too_large", 413, `file exceeds ${MAX_RAW_BYTES} bytes`);
-  }
+function sendFile(req, res, file, disposition) {
   const range = parseRange(req.headers.range, file.size);
   const start = range?.start ?? 0;
   const end = range?.end ?? Math.max(0, file.size - 1);
@@ -173,7 +167,7 @@ export function sendRawFile(req, res, file) {
     "cache-control": "private, max-age=60",
     "content-type": file.mediaType,
     "content-length": String(file.size === 0 ? 0 : end - start + 1),
-    "content-disposition": `inline; filename*=UTF-8''${encodeURIComponent(file.name)}`,
+    "content-disposition": `${disposition}; filename*=UTF-8''${encodeURIComponent(file.name)}`,
     "x-content-type-options": "nosniff",
   };
   if (range) headers["content-range"] = `bytes ${start}-${end}/${file.size}`;
@@ -183,4 +177,23 @@ export function sendRawFile(req, res, file) {
     return;
   }
   createReadStream(file.absolutePath, { start, end }).pipe(res);
+}
+
+export function sendRawFile(req, res, file) {
+  if (!["image", "video", "audio", "pdf"].includes(file.kind)) {
+    throw new HttpError("preview_unsupported", 415, "raw preview is not supported for this file");
+  }
+  if (file.size > MAX_RAW_BYTES) {
+    throw new HttpError("file_too_large", 413, `file exceeds ${MAX_RAW_BYTES} bytes`);
+  }
+  sendFile(req, res, file, "inline");
+}
+
+/**
+ * Saving a file is not previewing it: the kind and size limits guard what a
+ * media element or iframe will be asked to hold, and neither says anything
+ * about what the user may keep a copy of.
+ */
+export function sendFileDownload(req, res, file) {
+  sendFile(req, res, file, "attachment");
 }

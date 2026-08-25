@@ -1,10 +1,10 @@
 import React from "react";
 import { Button, IconLoadingOutline16 } from "@deepseek-ai/dsh-client-ui-primitives";
+import { partitionPreviews } from "./preview-groups.js";
 import { fetchPreview, rawFileUrl } from "./workspace.js";
 
 const h = React.createElement;
 const { useEffect, useMemo, useState } = React;
-const MEDIA_KINDS = new Set(["image", "video", "audio"]);
 
 function basename(path) {
   const parts = String(path).split(/[/\\]/);
@@ -63,21 +63,10 @@ export function createTurnMedia(t) {
       };
     }, [key, sessionId]);
 
-    const { media, files, loading } = useMemo(() => {
-      const mediaItems = [];
-      const filePaths = [];
-      let pending = false;
-      for (const path of paths) {
-        if (!previews.has(path)) {
-          pending = true;
-          continue;
-        }
-        const preview = previews.get(path);
-        if (preview !== null && MEDIA_KINDS.has(preview.kind)) mediaItems.push(preview);
-        else filePaths.push(path);
-      }
-      return { media: mediaItems, files: filePaths, loading: pending };
-    }, [key, previews]);
+    const { media, files, loading } = useMemo(
+      () => partitionPreviews(paths, previews),
+      [key, previews],
+    );
 
     return h(
       "section",
