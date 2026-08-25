@@ -1,0 +1,25 @@
+{
+  "name": "@lares/file-preview",
+  "version": "0.15.0",
+  "private": true,
+  "type": "module",
+  "description": "Lares session-scoped tabbed workspace file preview",
+  "exports": {
+    ".": "./host/index.js",
+    "./client": "../../../dist/plugins/file-preview/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-deliverables",
+        "@deepseek-ai/dsh-client-ui-slots"
+      ]
+    }
+  },
+  "files": [
+    "host"
+  ]
+}

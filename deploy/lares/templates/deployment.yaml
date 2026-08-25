@@ -114,6 +114,8 @@ spec:
               value: "8080"
             - name: HOSTNAME
               value: "0.0.0.0"
+            - name: TZ
+              value: {{ .Values.olaresEnv.TIMEZONE | quote }}
             - name: LARES_WORKSPACE
               value: /data/workspace
             - name: LARES_DATA_DIR
@@ -186,6 +188,8 @@ spec:
           env:
             - name: DOCKER_TLS_CERTDIR
               value: ""
+            - name: TZ
+              value: {{ .Values.olaresEnv.TIMEZONE | quote }}
           command:
             - dockerd
             - --host

@@ -75,11 +75,7 @@ async function handleTranscribe(req, res) {
   const config = readConfig();
   const model = await resolveSttModel(config.model);
   if (!model) {
-    throw new VoiceError(
-      "voice_model_unavailable",
-      503,
-      "Router 目录暂无可用的语音模型",
-    );
+    throw new VoiceError("voice_model_unavailable", 503, "no voice model available in the Router catalog");
   }
   const url = new URL(req.url ?? "/", "http://x");
   const requestedLanguage = url.searchParams.get("language");

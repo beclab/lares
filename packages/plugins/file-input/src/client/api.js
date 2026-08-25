@@ -1,4 +1,3 @@
-const RETRYABLE_STATUS = new Set([429, 502, 503, 504]);
 const UPLOAD_TIMEOUT_MS = 120_000;
 
 function errorCode(payload) {
@@ -7,9 +6,12 @@ function errorCode(payload) {
     : "file_upload_failed";
 }
 
-async function uploadAttempt(file, sessionId) {
+export async function uploadFile(file, sessionId, options = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
+  const onAbort = () => controller.abort(options.signal?.reason);
+  if (options.signal?.aborted) controller.abort(options.signal.reason);
+  else options.signal?.addEventListener("abort", onAbort, { once: true });
   try {
     const response = await fetch("/api/lares/files/upload", {
       method: "POST",
@@ -17,6 +19,7 @@ async function uploadAttempt(file, sessionId) {
         "content-type": file.type || "application/octet-stream",
         "x-lares-file-name": encodeURIComponent(file.name || "file"),
         "x-lares-session-id": sessionId,
+        "x-lares-upload-request-id": options.requestId ?? crypto.randomUUID(),
       },
       body: file,
       signal: controller.signal,
@@ -31,19 +34,6 @@ async function uploadAttempt(file, sessionId) {
     return payload;
   } finally {
     clearTimeout(timer);
-  }
-}
-
-/**
- * A retry writes a second copy under a numbered name when the first attempt
- * stored the file but its response never arrived — the cost of naming uploads
- * after the file rather than after an upload id.
- */
-export async function uploadFile(file, sessionId) {
-  try {
-    return await uploadAttempt(file, sessionId);
-  } catch (error) {
-    if (error?.name !== "AbortError" && !RETRYABLE_STATUS.has(error?.status)) throw error;
-    return uploadAttempt(file, sessionId);
+    options.signal?.removeEventListener("abort", onAbort);
   }
 }

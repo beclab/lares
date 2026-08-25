@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 # Environment image: OS toolchain, language runtimes, global CLIs, npm deps.
 # Rebuild with `scripts/build-image.sh --base` when this file, package-lock, or CLI pins change.
-FROM node:22-bookworm-slim
+FROM node:22-trixie-slim
 
 ARG GO_VERSION=1.27.0
 ARG TARGETARCH
@@ -10,23 +10,23 @@ ARG TARGETARCH
 # node-pty) have no linux prebuilds and compile via node-gyp at profile install
 # time. The cluster forbids root pods, so the toolchain must live in the image
 # and the boot-time `npm install` runs as uid 1000 with build scripts enabled.
-# ffmpeg/ffprobe: on PATH for agent skills that process video (Debian package).
+# ffmpeg/ffprobe: on PATH for agent skills and ffmpeg_encode (Debian package).
 #
-# The rest is what a coding agent reaches for and node:22-bookworm-slim does not
+# The rest is what a coding agent reaches for and node:22-trixie-slim does not
 # have: inspection, archives, transfer, and in-cluster network diagnosis (the
 # olares-doctor skill asks whether a service answers, from inside the pod).
 # Debian's `yq` is the jq wrapper, not mikefarah's Go tool -- the filter syntax
 # is jq's and YAML output needs -y.
 # pkg-config / libssl-dev: native crates and node-gyp modules that link OpenSSL.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends \
+  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     ca-certificates curl fd-find ffmpeg git jq ripgrep tini \
-    build-essential pkg-config libssl-dev python3 \
+    build-essential pkg-config libssl-dev \
     file less procps tree \
     unzip zip xz-utils zstd \
     openssh-client patch rsync \
     dnsutils iproute2 iputils-ping netcat-openbsd socat \
-    shellcheck yq \
+    shellcheck tzdata yq \
   && ln -sf "$(command -v fdfind)" /usr/local/bin/fd \
   && rm -rf /var/lib/apt/lists/*
 
@@ -43,26 +43,25 @@ RUN install -m 0755 -d /etc/apt/keyrings \
   && rm -rf /var/lib/apt/lists/* \
   && gh --version
 
-# bookworm marks the system Python externally managed (PEP 668), so pip refuses
+# Debian marks the system Python externally managed (PEP 668), so pip refuses
 # to install anything without this -- at build time below, and at runtime for
 # whoever is holding the shell.
 ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
-# Python development environment on the distro's 3.11 -- the same interpreter
-# node-gyp already uses above, so there is no second runtime to keep current.
+# Python development environment on the distro interpreter (Trixie: 3.13) --
+# the same one node-gyp uses, so there is no second runtime to keep current.
 #
 # The science stack is here because two olares-publish skill scripts need it:
 # generate_icon.py imports PIL, numpy and scipy (cairosvg too, for SVG input)
 # and render_promo.py loads a font by absolute path. fonts-dejavu-core is that
-# font -- a slim node image carries none at all, so without it the script fails
-# on a machine that has every library it asked for. Noto CJK is deliberately
-# absent: it is 110 MB, and the cost of not having it is tofu in a Chinese
-# headline rather than a script that cannot run.
+# font -- a slim node image carries none at all, so without it the script fails.
+# ffmpeg_encode burns translated subtitles, so it also needs a CJK font rather
+# than silently rendering Chinese as tofu.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
-    python3-dev python3-pip python3-venv python-is-python3 pipx \
+    python3-dev python3-pip python3-venv python-is-python3 \
     python3-numpy python3-scipy python3-pil python3-cairosvg \
-    fonts-dejavu-core \
+    fonts-dejavu-core fonts-noto-cjk \
   && ln -sf "$(command -v pip3)" /usr/local/bin/pip \
   && rm -rf /var/lib/apt/lists/* \
   && pip install --no-cache-dir uv==0.12.5 \

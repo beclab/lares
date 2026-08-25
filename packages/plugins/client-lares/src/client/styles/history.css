@@ -1,0 +1,118 @@
+/* ChatView ships a bare 12px line while a session's history loads; restyle that
+   same node into a skeleton turn. The class hash is CSS-module noise, so match
+   the stable suffix and degrade to the official text if the module renames. */
+[data-chat-flow] > [class*="_hint"] {
+  --lares-history-fill: var(--dsw-alias-interactive-bg-active);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  /* Clips the shadow copies below, which start left of the content box. */
+  overflow: hidden;
+  font: var(--dsw-font-s-strong-14);
+  white-space: nowrap;
+  /* Shimmering text is the shell's own "working" language (turn status line). */
+  background: linear-gradient(
+    90deg,
+    var(--dsw-static-deepseek-500) 0%,
+    var(--dsw-static-deepseek-500) 40%,
+    var(--dsw-static-deepseek-200) 50%,
+    var(--dsw-static-deepseek-500) 60%,
+    var(--dsw-static-deepseek-500) 100%
+  );
+  background-position: 100% 0;
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation:
+    1.8s linear infinite lares-history-shimmer,
+    220ms ease-out 80ms both lares-history-enter;
+}
+
+/* The anonymous text item keeps order 0, so the skeleton sits under the label. */
+[data-chat-flow] > [class*="_hint"]::before,
+[data-chat-flow] > [class*="_hint"]::after {
+  content: "";
+  flex: none;
+  background: var(--lares-history-fill);
+  animation: 1.8s ease-in-out infinite lares-history-pulse;
+}
+
+/* Mirrors the user bubble: 22px radius over one line of 16px/24 text. */
+[data-chat-flow] > [class*="_hint"]::before {
+  order: 1;
+  align-self: flex-end;
+  width: min(320px, 60%);
+  height: 44px;
+  border-radius: 22px;
+}
+
+/* One reply line plus three shadow copies, ragged like wrapped prose. */
+[data-chat-flow] > [class*="_hint"]::after {
+  order: 2;
+  height: 14px;
+  margin-bottom: 72px;
+  border-radius: 7px;
+  box-shadow:
+    0 24px 0 0 var(--lares-history-fill),
+    -64px 48px 0 0 var(--lares-history-fill),
+    -240px 72px 0 0 var(--lares-history-fill);
+  animation-delay: 300ms;
+}
+
+/* Same flow, older pages: the paging button only swaps its label while
+   fetching, so give it a spinner. */
+[data-chat-flow] > [class*="_older"] button {
+  align-items: center;
+  gap: 6px;
+  display: inline-flex;
+}
+
+[data-chat-flow] > [class*="_older"] button:disabled::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: 700ms linear infinite lares-history-spin;
+}
+
+@keyframes lares-history-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@keyframes lares-history-shimmer {
+  to {
+    background-position: 0 0;
+  }
+}
+
+@keyframes lares-history-enter {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes lares-history-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-chat-flow] > [class*="_hint"] {
+    background-position: 0 0;
+    background-size: 100% 100%;
+    animation: none;
+  }
+
+  [data-chat-flow] > [class*="_hint"]::before,
+  [data-chat-flow] > [class*="_hint"]::after,
+  [data-chat-flow] > [class*="_older"] button:disabled::before {
+    animation: none;
+  }
+}

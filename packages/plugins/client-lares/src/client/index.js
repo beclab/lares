@@ -1,5 +1,6 @@
 import shellCss from "./styles/shell.css";
 import modelCss from "./styles/model.css";
+import historyCss from "./styles/history.css";
 import { ModelSwitch, bindLocale, registerLocale, t } from "./model-switch.js";
 import { BrandMark, BrandName, keepProductTitle } from "./brand.js";
 import { HideOpenDocument, RetireStatsLine, HideModelSeat } from "./shell-overrides.js";
@@ -8,7 +9,12 @@ import { installPluginStyle } from "../../../shared/client/plugin-style.js";
 export const inject = [];
 
 export function apply(ctx) {
-  installPluginStyle(ctx, "@lares/client-lares", `${shellCss}\n${modelCss}`, "lares-client-css");
+  installPluginStyle(
+    ctx,
+    "@lares/client-lares",
+    `${shellCss}\n${modelCss}\n${historyCss}`,
+    "lares-client-css",
+  );
 
   ctx.effect(() => keepProductTitle(), "lares-document-title");
 
