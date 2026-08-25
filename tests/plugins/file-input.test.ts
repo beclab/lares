@@ -1,12 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { createUploadHandler } from "../../packages/plugins/file-input/host/index.js";
 import {
-  findWorkspaceForSession,
   numberedName,
   saveUpload,
   sanitizeFilename,
@@ -109,15 +117,6 @@ test("numberedName keeps the extension last", () => {
   assert.equal(numberedName("report.pdf", 3), "report-3.pdf");
   assert.equal(numberedName("archive.tar.gz", 2), "archive.tar-2.gz");
   assert.equal(numberedName("LICENSE", 2), "LICENSE-2");
-});
-
-test("findWorkspaceForSession only returns an owning workspace", () => {
-  const first = { id: "a", sessionIds: ["one"] };
-  const second = { id: "b", sessionIds: ["two", "three"] };
-  const registry = { list: () => [first, second] };
-  assert.equal(findWorkspaceForSession(registry, "three"), second);
-  assert.equal(findWorkspaceForSession(registry, "missing"), null);
-  assert.equal(findWorkspaceForSession(registry, ""), null);
 });
 
 test("saveUpload stores the file under its own name inside the workspace", async () => {
@@ -346,15 +345,23 @@ test("uploadFile makes one request and leaves retry to the user", async () => {
   }
 });
 
-test("unicode markdown upload opens through the preview handler", async () => {
-  const root = mkdtempSync(join(tmpdir(), "lares-file-input-"));
-  const sessionId = "session-test";
-  const workspace = {
-    path: root,
-    sessionIds: [sessionId],
-    status: async () => "ok",
+/** Stands in for the Host context the route plugins are applied with. */
+function hostContext(root: string) {
+  const workspace = { path: root, status: async () => "ok" };
+  return {
+    get: () => undefined,
+    sessionPersistence: { list: async () => [{ id: sessionId, cwd: root }] },
+    workspaceRegistry: {
+      resolveByPath: async (path: string) => (path === root ? workspace : undefined),
+    },
   };
-  const registry = { list: () => [workspace] };
+}
+
+const sessionId = "session-test";
+
+test("unicode markdown upload opens through the preview handler", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lares-file-input-")));
+  const ctx = hostContext(root);
   try {
     mkdirSync(root, { recursive: true });
     const req = request("# 第二季度\n", {
@@ -365,17 +372,20 @@ test("unicode markdown upload opens through the preview handler", async () => {
       "x-lares-upload-request-id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     });
     const uploadRes = response();
-    await createUploadHandler(registry)(req, uploadRes);
+    await createUploadHandler(ctx)(req, uploadRes);
     assert.equal(uploadRes.result().status, 201);
     const uploaded = JSON.parse(uploadRes.result().body);
 
     const previewRes = response();
-    await createPreviewHandler(registry)(
+    await createPreviewHandler(ctx)(
       { url: `/api/lares/file-preview/preview?sessionId=${sessionId}&path=${encodeURIComponent(uploaded.path)}` },
       previewRes,
     );
     assert.equal(previewRes.result().status, 200);
-    assert.deepEqual(JSON.parse(previewRes.result().body), {
+    const preview = JSON.parse(previewRes.result().body);
+    assert.equal(typeof preview.modifiedAt, "number");
+    delete preview.modifiedAt;
+    assert.deepEqual(preview, {
       path: join(".lares", "uploads", "季度经营分析_2026Q2.md"),
       name: "季度经营分析_2026Q2.md",
       kind: "markdown",
@@ -390,18 +400,18 @@ test("unicode markdown upload opens through the preview handler", async () => {
 });
 
 test("upload handler requires a traceable request id", async () => {
-  const workspace = {
-    path: "/unused",
-    sessionIds: ["s1"],
-    status: async () => "ok",
-  };
-  const req = request("hello", {
-    "x-lares-file-name": "notes.md",
-    "x-lares-session-id": "s1",
-  });
-  await assert.rejects(
-    () => createUploadHandler({ list: () => [workspace] })(req, response()),
-    (error: { code?: string; status?: number }) =>
-      error.code === "upload_request_invalid" && error.status === 400,
-  );
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lares-file-input-")));
+  try {
+    const req = request("hello", {
+      "x-lares-file-name": "notes.md",
+      "x-lares-session-id": sessionId,
+    });
+    await assert.rejects(
+      () => createUploadHandler(hostContext(root))(req, response()),
+      (error: { code?: string; status?: number }) =>
+        error.code === "upload_request_invalid" && error.status === 400,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

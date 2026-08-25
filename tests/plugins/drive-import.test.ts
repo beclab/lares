@@ -187,6 +187,10 @@ test("resolveFfmpegEncode builds a testsrc2 job without encoder or device flags"
     () => resolveFfmpegEncode({ input: "a.mp4", subtitles: "sub/captions.txt" }),
     /subtitles must end in/,
   );
+  assert.throws(
+    () => resolveFfmpegEncode({ input: "a.mp4", destination: "outputs/a.mkv" }),
+    /destination must end in \.mp4/,
+  );
   assert.equal(describeFfmpegEncode({ pattern: "nope", duration: 1 }), null);
 });
 
@@ -375,6 +379,31 @@ test("drive_fetch refuses to clobber a destination unless overwrite is asked for
     assert.equal(replaced.path, "downloads/a.txt");
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("overwrite never follows a destination symlink out of the workspace", async () => {
+  const root = mkdtempSync(join(tmpdir(), "lares-drive-import-"));
+  const outside = mkdtempSync(join(tmpdir(), "lares-drive-import-outside-"));
+  try {
+    mkdirSync(join(root, "downloads"));
+    const target = join(outside, "a.txt");
+    writeFileSync(target, "outside");
+    symlinkSync(target, join(root, "downloads", "a.txt"));
+    const tool = createFetchTool(async (_source: string, absolutePath: string) => {
+      writeFileSync(absolutePath, "escaped");
+    });
+    await assert.rejects(
+      tool.execute(
+        { path: "drive/Home/a.txt", overwrite: true },
+        execContext(root),
+      ),
+      /cannot overwrite a symlink/,
+    );
+    assert.equal(readFileSync(target, "utf8"), "outside");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
   }
 });
 

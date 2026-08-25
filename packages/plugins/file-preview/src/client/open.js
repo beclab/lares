@@ -16,7 +16,7 @@ export function installPathOpener(ctx, workspace) {
         await openNative.call(workspaces, path);
       };
       return () => {
-        delete workspaces.openPath;
+        workspaces.openPath = openNative;
       };
     }, "lares-file-preview-open");
   });

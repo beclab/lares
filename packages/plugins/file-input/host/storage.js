@@ -21,11 +21,6 @@ export function sanitizeFilename(value) {
   return safe || "file";
 }
 
-export function findWorkspaceForSession(registry, sessionId) {
-  if (!sessionId) return null;
-  return registry.list().find((workspace) => workspace.sessionIds.includes(sessionId)) ?? null;
-}
-
 /**
  * `report.pdf` → `report-2.pdf`. The number goes before the extension so the
  * file type survives, and the model reading the mention still sees the name the

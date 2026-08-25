@@ -20,7 +20,7 @@ function PreviewBody({ data, sessionId, openPath, scroll, t }) {
       { className: "lares-preview-media", ...scroll },
       h("img", {
         className: "lares-preview-image",
-        src: rawFileUrl(sessionId, data.path),
+        src: rawFileUrl(sessionId, data.path, data.modifiedAt),
         alt: data.name,
       }),
     );
@@ -31,7 +31,7 @@ function PreviewBody({ data, sessionId, openPath, scroll, t }) {
       { className: "lares-preview-media" },
       h("video", {
         className: "lares-preview-video",
-        src: rawFileUrl(sessionId, data.path),
+        src: rawFileUrl(sessionId, data.path, data.modifiedAt),
         controls: true,
         playsInline: true,
       }),
@@ -44,7 +44,7 @@ function PreviewBody({ data, sessionId, openPath, scroll, t }) {
       h("div", { className: "lares-preview-audio-name" }, data.name),
       h("audio", {
         className: "lares-preview-audio",
-        src: rawFileUrl(sessionId, data.path),
+        src: rawFileUrl(sessionId, data.path, data.modifiedAt),
         controls: true,
       }),
     );
@@ -52,7 +52,7 @@ function PreviewBody({ data, sessionId, openPath, scroll, t }) {
   if (data.kind === "pdf") {
     return h("iframe", {
       className: "lares-preview-pdf",
-      src: rawFileUrl(sessionId, data.path),
+      src: rawFileUrl(sessionId, data.path, data.modifiedAt),
       title: data.name,
     });
   }

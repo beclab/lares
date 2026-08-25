@@ -13,7 +13,7 @@ function basename(path) {
 
 function MediaBody({ item, sessionId }) {
   const common = {
-    src: rawFileUrl(sessionId, item.path),
+    src: rawFileUrl(sessionId, item.path, item.modifiedAt),
     title: item.path,
   };
   if (item.kind === "image") {

@@ -1,4 +1,3 @@
-import { createReadStream } from "node:fs";
 import { open, stat } from "node:fs/promises";
 import { basename, extname, relative } from "node:path";
 import { HttpError } from "../../shared/host/http.js";
@@ -41,7 +40,7 @@ const TEXT_EXTENSIONS = new Set([
   ".py", ".sh", ".bash", ".zsh", ".env", ".ini", ".cfg", ".conf", ".rs",
   ".go", ".java", ".kt", ".c", ".h", ".cpp", ".hpp", ".sql", ".r", ".rb",
   ".php", ".swift", ".vue", ".svelte", ".mdx", ".gitignore", ".dockerignore",
-  ".editorconfig",
+    ".editorconfig", ".srt", ".vtt", ".ass", ".ssa",
 ]);
 
 export function previewTypeForName(name) {
@@ -76,6 +75,8 @@ export async function resolveWorkspaceFile(workspacePath, requestedPath) {
     name: basename(absolutePath),
     size: info.size,
     modifiedAt: info.mtimeMs,
+    device: info.dev,
+    inode: info.ino,
     ...previewTypeForName(absolutePath),
   };
 }
@@ -96,16 +97,17 @@ function trimPartialUtf8(body) {
 }
 
 export async function buildPreview(file) {
-  if (!["text", "markdown"].includes(file.kind)) {
-    return {
-      path: file.path,
-      name: file.name,
-      kind: file.kind,
-      mediaType: file.mediaType,
-      size: file.size,
-    };
-  }
-  const handle = await open(file.absolutePath, "r");
+  const metadata = {
+    path: file.path,
+    name: file.name,
+    kind: file.kind,
+    mediaType: file.mediaType,
+    size: file.size,
+    modifiedAt: file.modifiedAt,
+  };
+  const knownText = ["text", "markdown"].includes(file.kind);
+  if (!knownText && file.kind !== "unsupported") return metadata;
+  const handle = await openVerified(file);
   try {
     const length = Math.min(file.size, MAX_PREVIEW_TEXT_BYTES + 1);
     const buffer = Buffer.alloc(length);
@@ -114,23 +116,56 @@ export async function buildPreview(file) {
     const read = buffer.subarray(0, Math.min(bytesRead, MAX_PREVIEW_TEXT_BYTES));
     const body = truncated ? trimPartialUtf8(read) : read;
     const text = new TextDecoder("utf-8", { fatal: true }).decode(body);
+    if (!knownText && !looksLikeText(text)) return metadata;
     return {
-      path: file.path,
-      name: file.name,
-      kind: file.kind,
-      mediaType: file.mediaType,
-      size: file.size,
+      ...metadata,
+      kind: knownText ? file.kind : "text",
+      mediaType: knownText ? file.mediaType : "text/plain; charset=utf-8",
       text,
       truncated: file.size > MAX_PREVIEW_TEXT_BYTES,
     };
   } catch (error) {
     if (error instanceof TypeError) {
+      if (!knownText) return metadata;
       throw new HttpError("file_not_text", 415, "file is not valid UTF-8 text");
     }
     throw error;
   } finally {
     await handle.close();
   }
+}
+
+async function openVerified(file) {
+  let handle;
+  try {
+    handle = await open(file.absolutePath, "r");
+    const info = await handle.stat();
+    if (
+      info.dev !== file.device
+      || info.ino !== file.inode
+      || info.size !== file.size
+      || info.mtimeMs !== file.modifiedAt
+    ) {
+      throw new HttpError("file_changed", 409, "file changed while it was being opened");
+    }
+    return handle;
+  } catch (error) {
+    await handle?.close().catch(() => {});
+    if (error?.code === "ENOENT") {
+      throw new HttpError("file_not_found", 404, "file was not found");
+    }
+    throw error;
+  }
+}
+
+function looksLikeText(text) {
+  if (text.includes("\0")) return false;
+  let controls = 0;
+  for (const char of text) {
+    const code = char.codePointAt(0);
+    if (code < 32 && char !== "\n" && char !== "\r" && char !== "\t") controls += 1;
+  }
+  return controls <= Math.max(2, text.length / 100);
 }
 
 export function parseRange(value, size) {
@@ -158,13 +193,14 @@ export function parseRange(value, size) {
   return { start, end: Math.min(end, size - 1) };
 }
 
-function sendFile(req, res, file, disposition) {
+async function sendFile(req, res, file, disposition) {
   const range = parseRange(req.headers.range, file.size);
+  const handle = await openVerified(file);
   const start = range?.start ?? 0;
   const end = range?.end ?? Math.max(0, file.size - 1);
   const headers = {
     "accept-ranges": "bytes",
-    "cache-control": "private, max-age=60",
+    "cache-control": "private, no-cache",
     "content-type": file.mediaType,
     "content-length": String(file.size === 0 ? 0 : end - start + 1),
     "content-disposition": `${disposition}; filename*=UTF-8''${encodeURIComponent(file.name)}`,
@@ -173,20 +209,28 @@ function sendFile(req, res, file, disposition) {
   if (range) headers["content-range"] = `bytes ${start}-${end}/${file.size}`;
   res.writeHead(range ? 206 : 200, headers);
   if (req.method === "HEAD" || file.size === 0) {
+    await handle.close();
     res.end();
     return;
   }
-  createReadStream(file.absolutePath, { start, end }).pipe(res);
+  const stream = handle.createReadStream({ start, end, autoClose: true });
+  stream.on("error", (error) => {
+    if (!res.headersSent) res.destroy(error);
+    else res.destroy();
+  });
+  stream.pipe(res);
 }
 
 export function sendRawFile(req, res, file) {
   if (!["image", "video", "audio", "pdf"].includes(file.kind)) {
     throw new HttpError("preview_unsupported", 415, "raw preview is not supported for this file");
   }
-  if (file.size > MAX_RAW_BYTES) {
+  // Video and audio are range-streamed, so their total size is not browser
+  // memory pressure. Images and PDFs are consumed as whole documents.
+  if (["image", "pdf"].includes(file.kind) && file.size > MAX_RAW_BYTES) {
     throw new HttpError("file_too_large", 413, `file exceeds ${MAX_RAW_BYTES} bytes`);
   }
-  sendFile(req, res, file, "inline");
+  return sendFile(req, res, file, "inline");
 }
 
 /**
@@ -195,5 +239,5 @@ export function sendRawFile(req, res, file) {
  * about what the user may keep a copy of.
  */
 export function sendFileDownload(req, res, file) {
-  sendFile(req, res, file, "attachment");
+  return sendFile(req, res, file, "attachment");
 }

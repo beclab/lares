@@ -28,6 +28,8 @@ test("ffmpegEncodeArgv encodes lavfi with libx264", () => {
     "3",
   ]);
   assert.ok(args.includes("libx264"));
+  assert.equal(args[args.indexOf("-pix_fmt") + 1], "yuv420p");
+  assert.ok(args.includes("+faststart"));
   assert.equal(args.at(-1), "/tmp/out.mp4");
 });
 
@@ -40,7 +42,7 @@ test("ffmpegEncodeArgv burns subtitles as a software filter", () => {
   }, { overwrite: true });
   assert.equal(
     args[args.indexOf("-vf") + 1],
-    subtitleFilter("/data/workspace/sub/captions:zh,final.srt"),
+    `pad=ceil(iw/2)*2:ceil(ih/2)*2,${subtitleFilter("/data/workspace/sub/captions:zh,final.srt")}`,
   );
   assert.ok(args.includes("libx264"));
 });

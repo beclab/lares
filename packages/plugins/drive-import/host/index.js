@@ -9,7 +9,7 @@
  * the chip, the inline-code mention, and the conversation's media player appear,
  * so every route into the workspace goes through one of these tools.
  */
-import { existsSync, statSync } from "node:fs";
+import { lstatSync, statSync } from "node:fs";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import { workspaceRootFromEnv } from "../../bundle-web/host/default-workspace.js";
 import {
@@ -57,7 +57,9 @@ const PROMPT = [
   "workspace_publish when the output is already a file in this session workspace. Do not stop at a task",
   "id, expiring URL, or unregistered shell-created path. After a skill or another shell command creates",
   "or transforms a file that ffmpeg_encode does not cover, call workspace_publish for each final output,",
-  "not temporary intermediates.",
+  "not temporary intermediates. A subagent's own tool calls belong to its child turn and do not publish",
+  "a file in the parent conversation: when a subagent reports a final workspace path, the parent must",
+  "call workspace_publish on that path before replying.",
   "Use ffmpeg_encode to generate or transcode H.264 video, including burning SRT, VTT, ASS, or SSA",
   "subtitles into an input video. It writes the file with libx264 and publishes it for preview.",
   "Do not run ffmpeg or ffprobe in the shell for those jobs, and do not call workspace_publish",
@@ -79,8 +81,19 @@ async function prepareTarget(root, destination, overwrite) {
   const segments = destination.split("/");
   const { directory } = await ensureWorkspaceDirectory(root, segments.slice(0, -1));
   const absolutePath = workspaceCandidate(directory, segments.at(-1));
-  if (!overwrite && existsSync(absolutePath)) {
-    throw new Error(`${destination} already exists; pass overwrite or choose another destination`);
+  let current = null;
+  try {
+    current = lstatSync(absolutePath);
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+  if (current !== null) {
+    if (!overwrite) {
+      throw new Error(`${destination} already exists; pass overwrite or choose another destination`);
+    }
+    if (current.isSymbolicLink() || !current.isFile()) {
+      throw new Error(`${destination} cannot overwrite a symlink or non-regular file`);
+    }
   }
   return absolutePath;
 }
@@ -277,7 +290,7 @@ export function createFfmpegEncodeTool(encode = encodeWorkspaceVideo) {
       destination: {
         type: "string",
         description:
-          "Workspace-relative output (.mp4, .mkv, or .mov). Omit to use outputs/<name>.mp4.",
+          "Workspace-relative browser-previewable .mp4 output. Omit to use outputs/<name>.mp4.",
       },
       input: {
         type: "string",

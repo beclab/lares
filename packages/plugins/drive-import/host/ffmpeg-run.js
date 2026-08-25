@@ -5,7 +5,13 @@ import { extname } from "node:path";
 const LOG_LIMIT = 32_000;
 const STDERR_LIMIT = 2000;
 const SUBTITLE_STYLE = "FontName=Noto Sans CJK SC,FontSize=20,Outline=2,Shadow=0,MarginV=28";
-const LIBX264_ARGV = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23"];
+const EVEN_DIMENSIONS = "pad=ceil(iw/2)*2:ceil(ih/2)*2";
+const LIBX264_ARGV = [
+  "-c:v", "libx264",
+  "-preset", "veryfast",
+  "-crf", "23",
+  "-pix_fmt", "yuv420p",
+];
 
 export function parseFfmpegReport(log, fallbackEncoder = "libx264") {
   const text = String(log ?? "");
@@ -35,11 +41,14 @@ export function ffmpegEncodeArgv(job, { overwrite = false } = {}) {
     args.push("-i", job.inputAbsolute);
   }
   if (job.duration != null) args.push("-t", String(job.duration));
-  if (job.subtitlesAbsolute) args.push("-vf", subtitleFilter(job.subtitlesAbsolute));
+  const filters = [];
+  if (!generated) filters.push(EVEN_DIMENSIONS);
+  if (job.subtitlesAbsolute) filters.push(subtitleFilter(job.subtitlesAbsolute));
+  if (filters.length > 0) args.push("-vf", filters.join(","));
   args.push(...LIBX264_ARGV);
   if (!generated) args.push("-map", "0:v:0", "-map", "0:a:0?", "-c:a", "aac", "-b:a", "128k");
   const ext = extname(job.absolutePath).toLowerCase();
-  if (ext === ".mp4" || ext === ".mov") args.push("-movflags", "+faststart");
+  if (ext === ".mp4") args.push("-movflags", "+faststart");
   args.push(job.absolutePath);
   return args;
 }

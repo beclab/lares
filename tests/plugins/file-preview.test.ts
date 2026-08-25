@@ -1,12 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  rmSync,
+  symlinkSync,
+  truncateSync,
+  writeFileSync,
+} from "node:fs";
 import { Writable } from "node:stream";
 import { once } from "node:events";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   MAX_PREVIEW_TEXT_BYTES,
+  MAX_RAW_BYTES,
   buildPreview,
   parseRange,
   previewTypeForName,
@@ -21,7 +29,10 @@ import {
 import { producedForClosing } from "../../packages/plugins/file-preview/src/client/deliverables.js";
 import { downloadCurrentFile, filenameFromDisposition } from "../../packages/plugins/file-preview/src/client/download.js";
 import { partitionPreviews } from "../../packages/plugins/file-preview/src/client/preview-groups.js";
-import { FilePreviewWorkspace } from "../../packages/plugins/file-preview/src/client/workspace.js";
+import {
+  FilePreviewWorkspace,
+  rawFileUrl,
+} from "../../packages/plugins/file-preview/src/client/workspace.js";
 
 test("previewTypeForName classifies browser-safe preview formats", () => {
   assert.deepEqual(previewTypeForName("photo.webp"), { kind: "image", mediaType: "image/webp" });
@@ -137,6 +148,29 @@ test("resolveWorkspaceFile confines real files and symlinks to the workspace", a
   }
 });
 
+test("streaming refuses a file replaced after path validation", async () => {
+  const root = mkdtempSync(join(tmpdir(), "lares-file-preview-"));
+  const outside = mkdtempSync(join(tmpdir(), "lares-file-preview-outside-"));
+  try {
+    writeFileSync(join(root, "report.txt"), "inside");
+    writeFileSync(join(outside, "secret.txt"), "secret");
+    const resolved = await resolveWorkspaceFile(root, "report.txt");
+    rmSync(join(root, "report.txt"));
+    symlinkSync(join(outside, "secret.txt"), join(root, "report.txt"));
+    await assert.rejects(
+      () => sendFileDownload(
+        { method: "HEAD", headers: {} } as never,
+        { writeHead: () => {}, end: () => {} } as never,
+        resolved,
+      ),
+      (error: { code?: string }) => error.code === "file_changed",
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
+
 test("buildPreview returns UTF-8 text and rejects binary text", async () => {
   const root = mkdtempSync(join(tmpdir(), "lares-file-preview-"));
   try {
@@ -150,6 +184,24 @@ test("buildPreview returns UTF-8 text and rejects binary text", async () => {
       async () => buildPreview(await resolveWorkspaceFile(root, "broken.txt")),
       (error: { code?: string }) => error.code === "file_not_text",
     );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("unknown extensions preview when their contents are text, not binary", async () => {
+  const root = mkdtempSync(join(tmpdir(), "lares-file-preview-"));
+  try {
+    writeFileSync(join(root, "schema.protox"), "message Report {}\n");
+    writeFileSync(join(root, "font.unknown"), Buffer.from([0, 1, 2, 3, 4]));
+
+    const text = await buildPreview(await resolveWorkspaceFile(root, "schema.protox"));
+    assert.equal(text.kind, "text");
+    assert.equal(text.text, "message Report {}\n");
+
+    const binary = await buildPreview(await resolveWorkspaceFile(root, "font.unknown"));
+    assert.equal(binary.kind, "unsupported");
+    assert.equal("text" in binary, false);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -170,7 +222,7 @@ test("download serves what inline preview refuses, as an attachment", async () =
       },
       end: () => {},
     };
-    sendFileDownload({ method: "HEAD", headers: {} } as never, res as never, file);
+    await sendFileDownload({ method: "HEAD", headers: {} } as never, res as never, file);
 
     assert.equal(sent.status, 200);
     assert.equal(sent.headers?.["content-length"], "4");
@@ -195,13 +247,56 @@ test("download serves what inline preview refuses, as an attachment", async () =
       streamed.status = status;
       streamed.headers = headers;
     };
-    sendFileDownload({ method: "GET", headers: {} } as never, body as never, file);
+    await sendFileDownload({ method: "GET", headers: {} } as never, body as never, file);
     await once(body, "finish");
     assert.equal(streamed.status, 200);
     assert.equal(Buffer.concat(chunks).toString(), "deck");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("large range-streamed media stays previewable while whole documents stay bounded", async () => {
+  const root = mkdtempSync(join(tmpdir(), "lares-file-preview-"));
+  try {
+    writeFileSync(join(root, "large.mp4"), "");
+    writeFileSync(join(root, "large.png"), "");
+    truncateSync(join(root, "large.mp4"), MAX_RAW_BYTES + 1);
+    truncateSync(join(root, "large.png"), MAX_RAW_BYTES + 1);
+    const sent: { status?: number; headers?: Record<string, string> } = {};
+    const res = {
+      writeHead: (status: number, headers: Record<string, string>) => {
+        sent.status = status;
+        sent.headers = headers;
+      },
+      end: () => {},
+    };
+    await sendRawFile(
+      { method: "HEAD", headers: {} } as never,
+      res as never,
+      await resolveWorkspaceFile(root, "large.mp4"),
+    );
+    assert.equal(sent.status, 200);
+    assert.equal(sent.headers?.["cache-control"], "private, no-cache");
+    const image = await resolveWorkspaceFile(root, "large.png");
+    assert.throws(
+      () => sendRawFile(
+        { method: "HEAD", headers: {} } as never,
+        res as never,
+        image,
+      ),
+      (error: { code?: string }) => error.code === "file_too_large",
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("raw media URLs change when the file version changes", () => {
+  assert.notEqual(
+    rawFileUrl("s1", "outputs/video.mp4", 100),
+    rawFileUrl("s1", "outputs/video.mp4", 101),
+  );
 });
 
 test("workspaceTargetPath resolves workspace targets and rejects the rest", () => {
@@ -275,6 +370,84 @@ test("openCurrent claims workspace files and declines everything else", async ()
     assert.deepEqual(requested, ["/data/workspace/.", "notes.txt"]);
   } finally {
     unbind();
+    globalThis.fetch = original;
+  }
+});
+
+test("reopening a path refetches files that were overwritten in place", async () => {
+  const original = globalThis.fetch;
+  let revision = 0;
+  globalThis.fetch = (async () => {
+    revision += 1;
+    return new Response(JSON.stringify({
+      path: "notes.txt",
+      name: "notes.txt",
+      kind: "text",
+      size: revision,
+      modifiedAt: revision,
+      text: `revision ${revision}`,
+    }), { status: 200 });
+  }) as typeof fetch;
+
+  const workspace = new FilePreviewWorkspace();
+  const unbind = workspace.bindCurrent("s1");
+  try {
+    assert.equal(await workspace.openCurrent("notes.txt"), true);
+    assert.equal(workspace.getSnapshot("s1").content.data.text, "revision 1");
+    assert.equal(await workspace.openCurrent("notes.txt"), true);
+    assert.equal(workspace.getSnapshot("s1").content.data.text, "revision 2");
+  } finally {
+    unbind();
+    globalThis.fetch = original;
+  }
+});
+
+test("absolute and relative open requests share the host-canonical tab", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(JSON.stringify({
+    path: "notes.txt",
+    name: "notes.txt",
+    kind: "text",
+    size: 2,
+    modifiedAt: 1,
+    text: "ok",
+  }), { status: 200 })) as typeof fetch;
+  const workspace = new FilePreviewWorkspace();
+  const unbind = workspace.bindCurrent("s1");
+  try {
+    await workspace.openCurrent("/data/workspace/notes.txt");
+    await workspace.openCurrent("notes.txt");
+    assert.deepEqual(
+      workspace.getSnapshot("s1").tabs.map((tab) => tab.path),
+      ["notes.txt"],
+    );
+  } finally {
+    unbind();
+    globalThis.fetch = original;
+  }
+});
+
+test("opening an existing tab through a markdown link also refreshes it", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(JSON.stringify({
+    path: "notes.txt",
+    name: "notes.txt",
+    kind: "text",
+    size: 2,
+    modifiedAt: 2,
+    text: "new",
+  }), { status: 200 })) as typeof fetch;
+
+  const workspace = new FilePreviewWorkspace();
+  workspace.open("s1", "notes.txt", {
+    status: "ready",
+    data: { path: "notes.txt", name: "notes.txt", kind: "text", size: 1, modifiedAt: 1, text: "old" },
+  });
+  try {
+    workspace.open("s1", "notes.txt");
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(workspace.getSnapshot("s1").content.data.text, "new");
+  } finally {
     globalThis.fetch = original;
   }
 });
