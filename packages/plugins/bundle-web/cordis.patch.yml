@@ -134,11 +134,11 @@
 
     - id: lares-file-input
       name: '@lares/file-input'
-      inject: [webServer, workspaceRegistry]
+      inject: [webServer, workspaceRegistry, sessionPersistence]
 
     - id: lares-file-preview
       name: '@lares/file-preview'
-      inject: [webServer, workspaceRegistry]
+      inject: [webServer, workspaceRegistry, sessionPersistence]
 
     - id: lares-drive-import
       name: '@lares/drive-import'

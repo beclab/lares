@@ -1,53 +1,45 @@
 import { HttpError, createRouteHandler, sendJson } from "../../shared/host/http.js";
-import { findWorkspaceForSession } from "../../file-input/host/storage.js";
+import { resolveSessionWorkspace } from "../../shared/host/session-workspace.js";
 import { buildPreview, resolveWorkspaceFile, sendFileDownload, sendRawFile } from "./files.js";
 
 export const name = "lares-file-preview";
-export const inject = ["webServer", "workspaceRegistry"];
+export const inject = ["webServer", "workspaceRegistry", "sessionPersistence"];
 
 const ROUTE_PREFIX = "/api/lares/file-preview";
 
-async function resolveRequestFile(req, workspaceRegistry) {
+async function resolveRequestFile(req, ctx) {
   const url = new URL(req.url ?? "/", "http://x");
-  const sessionId = url.searchParams.get("sessionId");
   const path = url.searchParams.get("path");
-  if (!sessionId) throw new HttpError("session_required", 400, "session id is required");
   if (!path) throw new HttpError("path_invalid", 400, "file path is required");
-  const workspace = findWorkspaceForSession(workspaceRegistry, sessionId);
-  if (workspace === null) {
-    throw new HttpError("workspace_not_found", 404, "session workspace was not found");
-  }
-  if ((await workspace.status()) !== "ok") {
-    throw new HttpError("workspace_unavailable", 409, "session workspace is unavailable");
-  }
+  const workspace = await resolveSessionWorkspace(ctx, url.searchParams.get("sessionId"));
   return resolveWorkspaceFile(workspace.path, path);
 }
 
-export function createPreviewHandler(workspaceRegistry) {
+export function createPreviewHandler(ctx) {
   return async (req, res) => {
-    const file = await resolveRequestFile(req, workspaceRegistry);
+    const file = await resolveRequestFile(req, ctx);
     sendJson(res, 200, await buildPreview(file));
   };
 }
 
-export function createRawHandler(workspaceRegistry) {
+export function createRawHandler(ctx) {
   return async (req, res) => {
-    const file = await resolveRequestFile(req, workspaceRegistry);
-    sendRawFile(req, res, file);
+    const file = await resolveRequestFile(req, ctx);
+    await sendRawFile(req, res, file);
   };
 }
 
-export function createDownloadHandler(workspaceRegistry) {
+export function createDownloadHandler(ctx) {
   return async (req, res) => {
-    const file = await resolveRequestFile(req, workspaceRegistry);
-    sendFileDownload(req, res, file);
+    const file = await resolveRequestFile(req, ctx);
+    await sendFileDownload(req, res, file);
   };
 }
 
 export function apply(ctx) {
-  const preview = createPreviewHandler(ctx.workspaceRegistry);
-  const raw = createRawHandler(ctx.workspaceRegistry);
-  const download = createDownloadHandler(ctx.workspaceRegistry);
+  const preview = createPreviewHandler(ctx);
+  const raw = createRawHandler(ctx);
+  const download = createDownloadHandler(ctx);
   const handler = createRouteHandler({
     prefix: ROUTE_PREFIX,
     routes: {

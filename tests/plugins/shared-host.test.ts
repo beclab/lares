@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { EventEmitter } from "node:events";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   createRouteHandler,
   readJsonObject,
   sendJson,
 } from "../../packages/plugins/shared/host/http.js";
+import { resolveSessionWorkspace } from "../../packages/plugins/shared/host/session-workspace.js";
 
 function request(method: string, url: string, body = "") {
   const req = Object.assign(new EventEmitter(), { method, url });
@@ -34,6 +38,78 @@ function response() {
     },
   };
 }
+
+type Header = { id: string; cwd?: string };
+
+/** Stands in for the Host context: a live session table, session logs, and the registry. */
+function context(root: string, live: Header[], persisted: Header[]) {
+  const workspace = { path: root, status: async () => "ok" };
+  let listed = 0;
+  return {
+    get: (name: string) =>
+      name !== "sessions" ? undefined : {
+        get: (id: string) => {
+          const header = live.find((entry) => entry.id === id);
+          return header === undefined ? undefined : { header };
+        },
+      },
+    sessionPersistence: {
+      list: async () => {
+        listed += 1;
+        return persisted;
+      },
+    },
+    workspaceRegistry: {
+      resolveByPath: async (path: string) => (path === root ? workspace : undefined),
+    },
+    workspace,
+    reads: () => listed,
+  };
+}
+
+test("a session's workspace follows its cwd, not workspace grouping", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lares-session-workspace-")));
+  try {
+    // dsh attaches a session to a workspace only when the client names one at
+    // create time, so an ungrouped session must still resolve by its own cwd.
+    const ungrouped = context(root, [], [{ id: "persisted", cwd: root }]);
+    assert.equal(await resolveSessionWorkspace(ungrouped, "persisted"), ungrouped.workspace);
+
+    const running = context(root, [{ id: "live", cwd: root }], []);
+    assert.equal(await resolveSessionWorkspace(running, "live"), running.workspace);
+    assert.equal(running.reads(), 0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a session outside the served workspaces cannot reach files through it", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lares-session-workspace-")));
+  const outside = realpathSync(mkdtempSync(join(tmpdir(), "lares-session-outside-")));
+  try {
+    const ctx = context(root, [], [
+      { id: "elsewhere", cwd: outside },
+      { id: "gone", cwd: join(root, "removed") },
+      { id: "headless" },
+    ]);
+    for (const [sessionId, code, status] of [
+      ["elsewhere", "workspace_not_found", 404],
+      ["gone", "workspace_unavailable", 409],
+      ["headless", "workspace_not_found", 404],
+      ["unknown", "workspace_not_found", 404],
+      ["", "session_required", 400],
+    ] as const) {
+      await assert.rejects(
+        () => resolveSessionWorkspace(ctx, sessionId),
+        (error: { code?: string; status?: number }) =>
+          error.code === code && error.status === status,
+      );
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
 
 test("shared HTTP reader accepts only bounded JSON objects", async () => {
   assert.deepEqual(await readJsonObject(request("POST", "/", '{"ok":true}') as never), { ok: true });

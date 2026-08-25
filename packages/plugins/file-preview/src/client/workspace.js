@@ -32,8 +32,9 @@ export async function fetchPreview(sessionId, path) {
 const RAW_ROUTE = "/api/lares/file-preview/raw";
 const DOWNLOAD_ROUTE = "/api/lares/file-preview/download";
 
-export function rawFileUrl(sessionId, path) {
+export function rawFileUrl(sessionId, path, modifiedAt) {
   const query = new URLSearchParams({ sessionId, path });
+  if (modifiedAt !== undefined) query.set("v", String(modifiedAt));
   return `${RAW_ROUTE}?${query}`;
 }
 
@@ -112,11 +113,6 @@ export class FilePreviewWorkspace {
   async openCurrent(path) {
     if (!this.current) return false;
     const { sessionId } = this.current;
-    const known = this.session(sessionId).contents.get(path);
-    if (known?.status === "ready") {
-      this.open(sessionId, path, known);
-      return true;
-    }
     const content = await this.fetchContent(sessionId, path);
     if (content.status === "error" && content.message === "path_not_file") return false;
     this.open(sessionId, path, content);
@@ -129,6 +125,7 @@ export class FilePreviewWorkspace {
 
   /** @param resolved - content the caller already fetched; absent loads it here. */
   open(sessionId, path, resolved) {
+    if (resolved?.status === "ready" && resolved.data?.path) path = resolved.data.path;
     const state = this.session(sessionId);
     const existing = state.snapshot.tabs.find((tab) => tab.path === path);
     let tabs = state.snapshot.tabs;
@@ -158,7 +155,7 @@ export class FilePreviewWorkspace {
       content: state.contents.get(path) ?? { status: "idle" },
       evictedName,
     });
-    if (resolved === undefined) void this.load(sessionId, path);
+    if (resolved === undefined) void this.load(sessionId, path, true);
   }
 
   activate(sessionId, path) {
@@ -171,7 +168,7 @@ export class FilePreviewWorkspace {
       content: state.contents.get(path) ?? { status: "idle" },
       evictedName: null,
     });
-    void this.load(sessionId, path);
+    void this.load(sessionId, path, true);
   }
 
   close(sessionId, path) {
@@ -246,14 +243,16 @@ export class FilePreviewWorkspace {
     }
   }
 
-  async load(sessionId, path) {
+  async load(sessionId, path, force = false) {
     const state = this.session(sessionId);
     const current = state.contents.get(path);
-    if (current?.status === "ready" || current?.status === "loading") return;
+    if (!force && (current?.status === "ready" || current?.status === "loading")) return;
     const version = (state.requestVersions.get(path) ?? 0) + 1;
     state.requestVersions.set(path, version);
-    state.contents.set(path, { status: "loading" });
-    if (state.snapshot.activePath === path) this.emit(sessionId, { content: { status: "loading" } });
+    if (current?.status !== "ready") {
+      state.contents.set(path, { status: "loading" });
+      if (state.snapshot.activePath === path) this.emit(sessionId, { content: { status: "loading" } });
+    }
     const content = await this.fetchContent(sessionId, path);
     if (state.requestVersions.get(path) !== version) return;
     state.contents.set(path, content);

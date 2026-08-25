@@ -175,7 +175,6 @@ export function describeWorkspacePublish(args) {
 }
 
 const PATTERN = "testsrc2";
-const VIDEO_EXT = new Set([".mp4", ".mkv", ".mov"]);
 const SUBTITLE_EXT = new Set([".ass", ".srt", ".ssa", ".vtt"]);
 const DEFAULT_ENCODE_DIRECTORY = "outputs";
 const PATTERN_RATE = 30;
@@ -258,8 +257,8 @@ export function resolveFfmpegEncode(args) {
   const width = evenDim(args?.width, 1280, "width");
   const height = evenDim(args?.height, 720, "height");
   const destination = defaultEncodeDestination(args, inputRaw, pattern);
-  if (!VIDEO_EXT.has(extname(destination).toLowerCase())) {
-    throw new Error("destination must end in .mp4, .mkv, or .mov");
+  if (extname(destination).toLowerCase() !== ".mp4") {
+    throw new Error("destination must end in .mp4");
   }
   return {
     input: inputRaw || null,

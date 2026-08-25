@@ -1,8 +1,9 @@
 import { HttpError, createRouteHandler, sendJson } from "../../shared/host/http.js";
-import { findWorkspaceForSession, sanitizeFilename, saveUpload } from "./storage.js";
+import { resolveSessionWorkspace } from "../../shared/host/session-workspace.js";
+import { sanitizeFilename, saveUpload } from "./storage.js";
 
 export const name = "lares-file-input";
-export const inject = ["webServer", "workspaceRegistry"];
+export const inject = ["webServer", "workspaceRegistry", "sessionPersistence"];
 
 const ROUTE_PREFIX = "/api/lares/files";
 const REQUEST_ID = /^[A-Za-z0-9_-]{16,80}$/;
@@ -16,19 +17,10 @@ function decodeFilename(value) {
   }
 }
 
-export function createUploadHandler(workspaceRegistry) {
+export function createUploadHandler(ctx) {
   return async (req, res) => {
     const sessionId = req.headers["x-lares-session-id"];
-    if (typeof sessionId !== "string" || !sessionId) {
-      throw new HttpError("session_required", 400, "session id is required");
-    }
-    const workspace = findWorkspaceForSession(workspaceRegistry, sessionId);
-    if (workspace === null) {
-      throw new HttpError("workspace_not_found", 404, "session workspace was not found");
-    }
-    if ((await workspace.status()) !== "ok") {
-      throw new HttpError("workspace_unavailable", 409, "session workspace is unavailable");
-    }
+    const workspace = await resolveSessionWorkspace(ctx, sessionId);
 
     const requestId = req.headers["x-lares-upload-request-id"];
     if (typeof requestId !== "string" || !REQUEST_ID.test(requestId)) {
@@ -68,7 +60,7 @@ export function apply(ctx) {
   const handler = createRouteHandler({
     prefix: ROUTE_PREFIX,
     routes: {
-      "/upload": { POST: createUploadHandler(ctx.workspaceRegistry) },
+      "/upload": { POST: createUploadHandler(ctx) },
     },
     fallbackCode: "file_upload_failed",
   });
