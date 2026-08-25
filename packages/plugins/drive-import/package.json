@@ -3,7 +3,7 @@
   "version": "0.15.0",
   "private": true,
   "type": "module",
-  "description": "Lares tool that fetches an Olares files path into the session workspace",
+  "description": "Lares tools that normalize external and generated files into previewable workspace artifacts",
   "exports": {
     ".": "./host/index.js",
     "./package.json": "./package.json"

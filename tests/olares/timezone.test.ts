@@ -36,6 +36,6 @@ test("the app image follows the bumped timezone-capable base tag", () => {
   const project = JSON.parse(readFileSync(join(root, "project.json"), "utf8"));
   const dockerfile = readFileSync(join(root, "Dockerfile"), "utf8");
 
-  assert.equal(project.image_base_tag, "3");
-  assert.match(dockerfile, /^ARG BASE_IMAGE=docker\.io\/beclab\/lares-base:3$/m);
+  assert.equal(project.image_base_tag, "6");
+  assert.match(dockerfile, /^ARG BASE_IMAGE=docker\.io\/beclab\/lares-base:6$/m);
 });

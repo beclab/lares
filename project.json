@@ -2,6 +2,6 @@
   "name": "lares",
   "title": "Lares",
   "image_repo": "docker.io/beclab/lares",
-  "image_base_tag": "3",
+  "image_base_tag": "6",
   "npm_scope": "@lares"
 }
