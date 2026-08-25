@@ -11,6 +11,8 @@ test("the chart does not mount GPU devices or raise NVENC capabilities", () => {
   assert.doesNotMatch(deployment, /\$mountDri/);
   assert.doesNotMatch(deployment, /path: \/dev\/dri/);
   assert.doesNotMatch(deployment, /LIBVA_DRIVER_NAME/);
+  assert.doesNotMatch(deployment, /gpu-inject/);
+  assert.doesNotMatch(deployment, /supplementalGroups/);
 });
 
 test("the base image ships Debian ffmpeg, not jellyfin or Intel VAAPI", () => {
