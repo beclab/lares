@@ -20,10 +20,6 @@ spec:
         app: {{ .Chart.Name }}
     spec:
       {{- $enableDind := ne (toString (index (.Values.olaresEnv | default dict) "ENABLE_DIND")) "false" }}
-      {{- $gpuType := "cpu" }}
-      {{- if and .Values.GPU .Values.GPU.Type }}{{ $gpuType = .Values.GPU.Type }}{{ end }}
-      {{- if .Values.gpu }}{{ $gpuType = .Values.gpu }}{{ end }}
-      {{- $mountDri := or (eq $gpuType "intel") (eq $gpuType "amd") (eq $gpuType "intel-gpu") (eq $gpuType "amd-gpu") (eq $gpuType "apple-m") (eq (default "" .Values.deviceName) "Olares One") }}
       enableServiceLinks: false
       securityContext:
         runAsUser: 1000
@@ -105,14 +101,10 @@ spec:
           securityContext:
             runAsUser: 1000
             runAsGroup: 1000
-            {{- if $mountDri }}
-            privileged: true
-            {{- else }}
             allowPrivilegeEscalation: false
             capabilities:
               drop:
                 - ALL
-            {{- end }}
           {{- if .Values.dev.hotReload }}
           command:
             - npm
@@ -152,13 +144,6 @@ spec:
               value: {{ .Values.dev.hotReload | quote }}
             - name: NODE_ENV
               value: "production"
-            # Default NVIDIA inject is compute+utility; NVENC needs `video`.
-            - name: NVIDIA_DRIVER_CAPABILITIES
-              value: "compute,utility,video"
-            {{- if and $mountDri (eq (default "" .Values.deviceName) "Olares One") }}
-            - name: LIBVA_DRIVER_NAME
-              value: iHD
-            {{- end }}
             {{- if $enableDind }}
             - name: DOCKER_HOST
               value: "tcp://localhost:2375"
@@ -196,10 +181,6 @@ spec:
               mountPath: /usr/local/bin/docker
               subPath: docker
               readOnly: true
-            {{- end }}
-            {{- if $mountDri }}
-            - name: dev-dri
-              mountPath: /dev/dri
             {{- end }}
         {{- if $enableDind }}
         - name: docker-dind
@@ -267,10 +248,4 @@ spec:
           hostPath:
             path: "{{ .Values.userspace.appData }}/docker"
             type: DirectoryOrCreate
-        {{- end }}
-        {{- if $mountDri }}
-        - name: dev-dri
-          hostPath:
-            path: /dev/dri
-            type: Directory
         {{- end }}

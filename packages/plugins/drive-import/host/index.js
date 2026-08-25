@@ -58,9 +58,9 @@ const PROMPT = [
   "id, expiring URL, or unregistered shell-created path. After a skill or another shell command creates",
   "or transforms a file that ffmpeg_encode does not cover, call workspace_publish for each final output,",
   "not temporary intermediates.",
-  "Use ffmpeg_encode to generate or transcode H.264 video in this session workspace. It picks the host",
-  "encoder, writes the file, and publishes it for preview. Do not run ffmpeg, ffprobe, vainfo,",
-  "nvidia-smi, or encoder/device probes in the shell for those jobs, and do not call workspace_publish",
+  "Use ffmpeg_encode to generate or transcode H.264 video, including burning SRT, VTT, ASS, or SSA",
+  "subtitles into an input video. It writes the file with libx264 and publishes it for preview.",
+  "Do not run ffmpeg or ffprobe in the shell for those jobs, and do not call workspace_publish",
   "afterwards. Report the encoder and speed from the tool result.",
   "Name every returned workspace path in markdown inline code so the UI can open it. The conversation",
   "renders produced images, video, and audio right below the reply, so put those mentions in the closing",
@@ -269,9 +269,10 @@ export function createFfmpegEncodeTool(encode = encodeWorkspaceVideo) {
   return defineTool({
     name: "ffmpeg_encode",
     description:
-      "Generate or transcode one H.264 video into the session workspace and publish it for preview."
-      + " Use this instead of shell ffmpeg for ordinary encodes. The host selects NVENC, VAAPI, or"
-      + " libx264; do not pass encoder flags, GPU devices, or run hardware probes.",
+      "Generate, transcode, or burn subtitles into one H.264 video in the session workspace and publish"
+      + " it for preview."
+      + " Use this instead of shell ffmpeg for ordinary encodes. The host uses libx264;"
+      + " do not pass encoder flags.",
     parameters: {
       destination: {
         type: "string",
@@ -281,6 +282,12 @@ export function createFfmpegEncodeTool(encode = encodeWorkspaceVideo) {
       input: {
         type: "string",
         description: "Workspace-relative video to transcode. Mutually exclusive with pattern.",
+      },
+      subtitles: {
+        type: "string",
+        description:
+          "Workspace-relative .srt, .vtt, .ass, or .ssa file to burn into input."
+          + " Requires input; the host supplies a readable CJK-capable style.",
       },
       pattern: {
         type: "string",
@@ -326,17 +333,25 @@ export function createFfmpegEncodeTool(encode = encodeWorkspaceVideo) {
       const root = workspaceRoot(exec);
       const absolutePath = await prepareTarget(root, resolved.destination, resolved.overwrite);
       let inputAbsolute = null;
+      let subtitlesAbsolute = null;
       if (resolved.input) {
         const workspace = await resolveWorkspaceRoot(root);
         inputAbsolute = await resolveExistingWorkspacePath(
           workspace,
           workspaceCandidate(workspace, resolved.input),
         );
+        if (resolved.subtitles) {
+          subtitlesAbsolute = await resolveExistingWorkspacePath(
+            workspace,
+            workspaceCandidate(workspace, resolved.subtitles),
+          );
+        }
       }
       const result = await encode({
         ...resolved,
         absolutePath,
         inputAbsolute,
+        subtitlesAbsolute,
       }, { signal: exec.signal });
       return {
         path: resolved.destination,

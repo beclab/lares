@@ -1,48 +1,6 @@
 # syntax=docker/dockerfile:1.7
 # Environment image: OS toolchain, language runtimes, global CLIs, npm deps.
 # Rebuild with `scripts/build-image.sh --base` when this file, package-lock, or CLI pins change.
-FROM node:22-trixie-slim AS intel-va-builder
-
-ARG TARGETARCH
-ARG LIBVA_VERSION=2.21.0
-ARG GMMLIB_VERSION=22.3.18
-ARG INTEL_MEDIA_VERSION=24.1.5
-
-# Distro iHD still predates Arrow Lake (8086:7d67). Build the same driver
-# generation used by the Olares host against this image's glibc instead of
-# copying Ubuntu host libraries, which require a newer GLIBC than some nodes.
-RUN set -eux; \
-  mkdir -p /opt/intel-va; \
-  if [ "$TARGETARCH" != "amd64" ]; then exit 0; fi; \
-  apt-get update; \
-  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    ca-certificates curl cmake meson ninja-build pkg-config \
-    build-essential libdrm-dev; \
-  curl -fsSL "https://github.com/intel/libva/archive/refs/tags/${LIBVA_VERSION}.tar.gz" \
-    | tar -C /tmp -xzf -; \
-  meson setup /tmp/libva-build "/tmp/libva-${LIBVA_VERSION}" \
-    --prefix=/opt/intel-va --libdir=lib \
-    -Ddriverdir=/opt/intel-va/lib/dri \
-    -Dwith_x11=no -Dwith_wayland=no -Dwith_glx=no -Dwith_win32=no; \
-  meson compile -C /tmp/libva-build; \
-  meson install -C /tmp/libva-build; \
-  curl -fsSL "https://github.com/intel/gmmlib/archive/refs/tags/intel-gmmlib-${GMMLIB_VERSION}.tar.gz" \
-    | tar -C /tmp -xzf -; \
-  cmake -S "/tmp/gmmlib-intel-gmmlib-${GMMLIB_VERSION}" -B /tmp/gmmlib-build -G Ninja \
-    -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/intel-va \
-    -DCMAKE_INSTALL_LIBDIR=lib; \
-  cmake --build /tmp/gmmlib-build; \
-  cmake --install /tmp/gmmlib-build; \
-  curl -fsSL "https://github.com/intel/media-driver/archive/refs/tags/intel-media-${INTEL_MEDIA_VERSION}.tar.gz" \
-    | tar -C /tmp -xzf -; \
-  PKG_CONFIG_PATH=/opt/intel-va/lib/pkgconfig \
-    cmake -S "/tmp/media-driver-intel-media-${INTEL_MEDIA_VERSION}" \
-      -B /tmp/media-driver-build -G Ninja \
-      -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/intel-va \
-      -DCMAKE_INSTALL_LIBDIR=lib -DMEDIA_BUILD_FATAL_WARNINGS=OFF; \
-  cmake --build /tmp/media-driver-build; \
-  cmake --install /tmp/media-driver-build
-
 FROM node:22-trixie-slim
 
 ARG GO_VERSION=1.27.0
@@ -52,11 +10,7 @@ ARG TARGETARCH
 # node-pty) have no linux prebuilds and compile via node-gyp at profile install
 # time. The cluster forbids root pods, so the toolchain must live in the image
 # and the boot-time `npm install` runs as uid 1000 with build scripts enabled.
-#
-# jellyfin-ffmpeg (below) is the only ffmpeg: Debian's is CPU-only. Intel VAAPI
-# uses the Arrow Lake iHD built into /opt/intel-va, not the distro media-driver.
-# mesa-va-drivers is the AMD (and other non-Intel) VAAPI userspace; the encode
-# tool searches that path after /opt/intel-va.
+# ffmpeg/ffprobe: on PATH for agent skills and ffmpeg_encode (Debian package).
 #
 # The rest is what a coding agent reaches for and node:22-trixie-slim does not
 # have: inspection, archives, transfer, and in-cluster network diagnosis (the
@@ -66,8 +20,7 @@ ARG TARGETARCH
 # pkg-config / libssl-dev: native crates and node-gyp modules that link OpenSSL.
 RUN apt-get update \
   && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    ca-certificates curl fd-find git jq ripgrep tini \
-    mesa-va-drivers \
+    ca-certificates curl fd-find ffmpeg git jq ripgrep tini \
     build-essential pkg-config libssl-dev \
     file less procps tree \
     unzip zip xz-utils zstd \
@@ -76,21 +29,6 @@ RUN apt-get update \
     shellcheck tzdata yq \
   && ln -sf "$(command -v fdfind)" /usr/local/bin/fd \
   && rm -rf /var/lib/apt/lists/*
-
-# jellyfin-ffmpeg: NVENC lives in the Video Codec SDK the NVIDIA toolkit mounts
-# at runtime (`NVIDIA_DRIVER_CAPABILITIES` must include `video`). No CUDA toolkit
-# in this image. TARGETARCH matches the Debian package arch (amd64/arm64).
-ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
-ARG JELLYFIN_FFMPEG_VERSION=7.1.4-3
-RUN curl -fsSL -o /tmp/jellyfin-ffmpeg.deb \
-    "https://github.com/jellyfin/jellyfin-ffmpeg/releases/download/v${JELLYFIN_FFMPEG_VERSION}/jellyfin-ffmpeg7_${JELLYFIN_FFMPEG_VERSION}-trixie_${TARGETARCH}.deb" \
-  && apt-get update \
-  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends /tmp/jellyfin-ffmpeg.deb \
-  && rm -f /tmp/jellyfin-ffmpeg.deb \
-  && rm -rf /var/lib/apt/lists/* \
-  && ln -sf /usr/lib/jellyfin-ffmpeg/ffmpeg /usr/local/bin/ffmpeg \
-  && ln -sf /usr/lib/jellyfin-ffmpeg/ffprobe /usr/local/bin/ffprobe \
-  && /usr/local/bin/ffmpeg -hide_banner -encoders | grep -E 'h264_nvenc|h264_vaapi'
 
 # gh has no Debian package; upstream's apt repo is the only maintained route.
 # The arch in the sources line comes from dpkg so both build legs resolve.
@@ -116,15 +54,14 @@ ENV PIP_BREAK_SYSTEM_PACKAGES=1
 # The science stack is here because two olares-publish skill scripts need it:
 # generate_icon.py imports PIL, numpy and scipy (cairosvg too, for SVG input)
 # and render_promo.py loads a font by absolute path. fonts-dejavu-core is that
-# font -- a slim node image carries none at all, so without it the script fails
-# on a machine that has every library it asked for. Noto CJK is deliberately
-# absent: it is 110 MB, and the cost of not having it is tofu in a Chinese
-# headline rather than a script that cannot run.
+# font -- a slim node image carries none at all, so without it the script fails.
+# ffmpeg_encode burns translated subtitles, so it also needs a CJK font rather
+# than silently rendering Chinese as tofu.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
     python3-dev python3-pip python3-venv python-is-python3 \
     python3-numpy python3-scipy python3-pil python3-cairosvg \
-    fonts-dejavu-core \
+    fonts-dejavu-core fonts-noto-cjk \
   && ln -sf "$(command -v pip3)" /usr/local/bin/pip \
   && rm -rf /var/lib/apt/lists/* \
   && pip install --no-cache-dir uv==0.12.5 \
@@ -202,10 +139,7 @@ RUN npm ci --include=dev \
   && npm cache clean --force \
   && rm -rf "$HOME/.cache"
 
-COPY --from=intel-va-builder /opt/intel-va /opt/intel-va
-ENV LD_LIBRARY_PATH=/opt/intel-va/lib \
-  LIBVA_DRIVERS_PATH=/opt/intel-va/lib/dri:/usr/lib/x86_64-linux-gnu/dri:/usr/lib/aarch64-linux-gnu/dri \
-  NODE_ENV=production
+ENV NODE_ENV=production
 VOLUME ["/data"]
 EXPOSE 8080
 

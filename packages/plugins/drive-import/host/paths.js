@@ -176,6 +176,7 @@ export function describeWorkspacePublish(args) {
 
 const PATTERN = "testsrc2";
 const VIDEO_EXT = new Set([".mp4", ".mkv", ".mov"]);
+const SUBTITLE_EXT = new Set([".ass", ".srt", ".ssa", ".vtt"]);
 const DEFAULT_ENCODE_DIRECTORY = "outputs";
 const PATTERN_RATE = 30;
 
@@ -235,6 +236,11 @@ export function resolveFfmpegEncode(args) {
   const inputRaw = args?.input === undefined || args?.input === null || String(args.input).trim() === ""
     ? ""
     : parseWorkspaceRelative(args.input, "input");
+  const subtitlesRaw = args?.subtitles === undefined
+    || args?.subtitles === null
+    || String(args.subtitles).trim() === ""
+    ? ""
+    : parseWorkspaceRelative(args.subtitles, "subtitles");
   const patternRaw = String(args?.pattern ?? "").trim().toLowerCase();
   const pattern = patternRaw === "" ? "" : patternRaw;
   if (Boolean(inputRaw) === Boolean(pattern)) {
@@ -242,6 +248,12 @@ export function resolveFfmpegEncode(args) {
   }
   if (pattern && pattern !== PATTERN) {
     throw new Error(`pattern must be ${PATTERN}`);
+  }
+  if (subtitlesRaw && !inputRaw) {
+    throw new Error("subtitles require an input video");
+  }
+  if (subtitlesRaw && !SUBTITLE_EXT.has(extname(subtitlesRaw).toLowerCase())) {
+    throw new Error("subtitles must end in .ass, .srt, .ssa, or .vtt");
   }
   const width = evenDim(args?.width, 1280, "width");
   const height = evenDim(args?.height, 720, "height");
@@ -251,6 +263,7 @@ export function resolveFfmpegEncode(args) {
   }
   return {
     input: inputRaw || null,
+    subtitles: subtitlesRaw || null,
     pattern: pattern || null,
     lavfi: pattern ? lavfiSource(width, height) : null,
     duration: parseDuration(args?.duration, Boolean(pattern)),

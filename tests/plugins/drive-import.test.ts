@@ -147,14 +147,15 @@ test("resolveFfmpegEncode builds a testsrc2 job without encoder or device flags"
       duration: 3,
       width: 1280,
       height: 720,
-      destination: "gpu_final_probe.mp4",
+      destination: "out.mp4",
     }),
     {
       input: null,
+      subtitles: null,
       pattern: "testsrc2",
       lavfi: "testsrc2=size=1280x720:rate=30",
       duration: 3,
-      destination: "gpu_final_probe.mp4",
+      destination: "out.mp4",
       overwrite: false,
     },
   );
@@ -162,10 +163,29 @@ test("resolveFfmpegEncode builds a testsrc2 job without encoder or device flags"
     resolveFfmpegEncode({ input: "downloads/clip.webm" }).destination,
     "outputs/clip.mp4",
   );
+  assert.equal(
+    resolveFfmpegEncode({
+      input: "downloads/clip.webm",
+      subtitles: "sub/中文字幕.srt",
+    }).subtitles,
+    "sub/中文字幕.srt",
+  );
   assert.throws(() => resolveFfmpegEncode({ pattern: "testsrc2" }), /duration is required/);
   assert.throws(
     () => resolveFfmpegEncode({ pattern: "testsrc2", duration: 3, input: "a.mp4" }),
     /exactly one of input or pattern/,
+  );
+  assert.throws(
+    () => resolveFfmpegEncode({
+      pattern: "testsrc2",
+      duration: 3,
+      subtitles: "sub/captions.srt",
+    }),
+    /subtitles require an input video/,
+  );
+  assert.throws(
+    () => resolveFfmpegEncode({ input: "a.mp4", subtitles: "sub/captions.txt" }),
+    /subtitles must end in/,
   );
   assert.equal(describeFfmpegEncode({ pattern: "nope", duration: 1 }), null);
 });
@@ -268,25 +288,50 @@ test("ffmpeg_encode publishes the output and reports encoder and speed", async (
   try {
     const tool = createFfmpegEncodeTool(async (job: { absolutePath: string }) => {
       writeFileSync(job.absolutePath, "mp4-bytes");
-      return { bytes: 9, encoder: "h264_vaapi", speed: "2.83x", hw: "vaapi" };
+      return { bytes: 9, encoder: "libx264", speed: "2.83x" };
     });
     const args = {
       pattern: "testsrc2",
       duration: 3,
       width: 1280,
       height: 720,
-      destination: "gpu_final_probe.mp4",
+      destination: "out.mp4",
     };
     const view = tool.presentCall?.(args) as any;
     assert.equal(view?.kind, "edit");
-    assert.deepEqual(view?.locations, [{ path: "gpu_final_probe.mp4" }]);
+    assert.deepEqual(view?.locations, [{ path: "out.mp4" }]);
     assert.deepEqual(await tool.execute(args, execContext(root)), {
-      path: "gpu_final_probe.mp4",
+      path: "out.mp4",
       bytes: 9,
-      encoder: "h264_vaapi",
+      encoder: "libx264",
       speed: "2.83x",
     });
-    assert.equal(readFileSync(join(root, "gpu_final_probe.mp4"), "utf8"), "mp4-bytes");
+    assert.equal(readFileSync(join(root, "out.mp4"), "utf8"), "mp4-bytes");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("ffmpeg_encode resolves an input and subtitles inside the workspace", async () => {
+  const root = mkdtempSync(join(tmpdir(), "lares-ffmpeg-subtitles-"));
+  try {
+    mkdirSync(join(root, "inputs"));
+    mkdirSync(join(root, "sub"));
+    writeFileSync(join(root, "inputs", "clip.mp4"), "video");
+    writeFileSync(join(root, "sub", "captions.srt"), "subtitles");
+    let seen: any = null;
+    const tool = createFfmpegEncodeTool(async (job: any) => {
+      seen = job;
+      writeFileSync(job.absolutePath, "encoded");
+      return { bytes: 7, encoder: "libx264", speed: "4.2x" };
+    });
+    await tool.execute({
+      input: "inputs/clip.mp4",
+      subtitles: "sub/captions.srt",
+      destination: "outputs/subtitled.mp4",
+    }, execContext(root));
+    assert.equal(seen.inputAbsolute, join(realpathSync(root), "inputs", "clip.mp4"));
+    assert.equal(seen.subtitlesAbsolute, join(realpathSync(root), "sub", "captions.srt"));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
