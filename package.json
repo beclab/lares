@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "workspaces": [
-    "packages/core"
+    "packages/core",
+    "packages/mobile"
   ],
   "scripts": {
     "predev": "npm run build:client",

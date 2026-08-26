@@ -65,6 +65,11 @@ export async function interceptOpenPath(workspace, path, openNative) {
 const RAW_ROUTE = "/api/lares/file-preview/raw";
 const DOWNLOAD_ROUTE = "/api/lares/file-preview/download";
 
+export function previewMetaUrl(sessionId, path) {
+  const query = new URLSearchParams({ sessionId, path });
+  return `/api/lares/file-preview/preview?${query}`;
+}
+
 export function rawFileUrl(sessionId, path, modifiedAt) {
   const query = new URLSearchParams({ sessionId, path });
   if (modifiedAt !== undefined) query.set("v", String(modifiedAt));

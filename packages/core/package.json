@@ -1,8 +1,7 @@
 {
   "name": "@lares/core",
   "version": "0.15.0",
-  "private": true,
-  "description": "Lares \u5171\u4eab\u4e1a\u52a1\u6838\u5fc3\uff1aRouter\u3001workspace\u3001\u6587\u4ef6/\u5a92\u4f53\u3001Olares \u8eab\u4efd\uff08\u65e0 UI\u3001\u65e0\u5e73\u53f0\u58f3\uff09",
+  "description": "Lares 共享业务核心：Router、workspace、文件/媒体、Olares 身份（无 UI、无平台壳）",
   "type": "module",
   "exports": {
     "./tools/http": "./tools/http.js",
@@ -19,6 +18,7 @@
     "./i18n/voice": "./i18n/voice.js",
     "./i18n/search": "./i18n/search.js",
     "./i18n/preview": "./i18n/preview.js",
+    "./i18n/mobile": "./i18n/mobile.js",
     "./router/catalog": "./router/catalog.js",
     "./router/gateway": "./router/gateway.js",
     "./router/models": {
@@ -66,6 +66,12 @@
     "./olares/identity": "./olares/identity.js",
     "./olares/session-identity": "./olares/session-identity.js",
     "./olares/entrance": "./olares/entrance.js",
-    "./olares/trusted-host": "./olares/trusted-host.js"
+    "./olares/trusted-host": "./olares/trusted-host.js",
+    "./larepass/host": "./larepass/host.js",
+    "./larepass/rpc": "./larepass/rpc.js",
+    "./larepass/transcript": "./larepass/transcript.js",
+    "./larepass/chat": "./larepass/chat.js",
+    "./larepass/mux": "./larepass/mux.js",
+    "./larepass/runtime": "./larepass/runtime.js"
   }
 }
