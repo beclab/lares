@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 // @ts-expect-error plain ESM shared client source
-import { routerConsoleUrl } from "@lares/core/olares/entrance";
+import { loopbackWebUrl, routerConsoleUrl } from "@lares/core/olares/entrance";
+
+test("loopbackWebUrl is the canonical local surface", () => {
+  assert.equal(loopbackWebUrl(8080), "http://127.0.0.1:8080");
+  assert.throws(() => loopbackWebUrl(undefined), /webServer missing/);
+});
 
 test("router console keeps the entrance zone", () => {
   assert.equal(routerConsoleUrl("", "e274648a.yaotest004.olares.com"), "https://router.yaotest004.olares.com");

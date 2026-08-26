@@ -6,15 +6,15 @@
  * a path that is not a workspace file, such as the produced-files row's folder —
  * keeps the native path, and its failure stays the Host's to report.
  */
+import { interceptOpenPath } from "@lares/core/files/preview-workspace";
+
 export function installPathOpener(ctx, workspace) {
   ctx.inject(["workspaces"], (scope) => {
     scope.effect(() => {
       const workspaces = scope.workspaces;
       const openNative = workspaces.openPath;
-      workspaces.openPath = async (path) => {
-        if (await workspace.openCurrent(path)) return;
-        await openNative.call(workspaces, path);
-      };
+      workspaces.openPath = (path) =>
+        interceptOpenPath(workspace, path, (target) => openNative.call(workspaces, target));
       return () => {
         workspaces.openPath = openNative;
       };

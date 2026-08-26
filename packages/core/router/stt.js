@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { createInFlightCoalescer } from "../tools/async.js";
 import { routerCatalogRows } from "./catalog.js";
 import { routerShimBaseUrl } from "./gateway.js";
 
@@ -70,14 +71,26 @@ const CATALOG_TIMEOUT_MS = 15_000;
 const RETRY_BACKOFF_MS = [1_000, 3_000];
 const RESOLVED_TTL_MS = 120_000;
 
-/** @returns {Promise<{ id: string, mode: string | null }[]>} */
-export async function listModels() {
+const coalesceCatalog = createInFlightCoalescer();
+/** @type {{ expires: number, rows: { id: string, mode: string | null }[] } | null} */
+let catalog = null;
+
+async function fetchCatalog() {
   const res = await fetch(`${routerShimBaseUrl()}/models`, {
     headers: { accept: "application/json" },
     signal: AbortSignal.timeout(CATALOG_TIMEOUT_MS),
   });
   if (!res.ok) throw new VoiceError("voice_model_unavailable", 503, `Router /models returned ${res.status}`);
-  return routerCatalogRows(await res.json()).map(({ id, mode }) => ({ id, mode }));
+  const rows = routerCatalogRows(await res.json()).map(({ id, mode }) => ({ id, mode }));
+  catalog = { expires: Date.now() + RESOLVED_TTL_MS, rows };
+  return rows;
+}
+
+/** @returns {Promise<{ id: string, mode: string | null }[]>} */
+export async function listModels(options) {
+  if (!options?.refresh && catalog && catalog.expires > Date.now()) return catalog.rows;
+  if (options?.refresh) return fetchCatalog();
+  return coalesceCatalog(fetchCatalog);
 }
 
 /** @returns {Promise<string[]>} */
@@ -99,13 +112,14 @@ export async function resolveSttModel(preferred, options) {
   ) {
     return resolved.id;
   }
-  const id = pickSttModelId(await listModels(), want);
+  const id = pickSttModelId(await listModels(options), want);
   resolved = id ? { expires: Date.now() + RESOLVED_TTL_MS, id, preferred: want } : null;
   return id;
 }
 
 export function forgetSttModel() {
   resolved = null;
+  catalog = null;
 }
 
 /** @param {Record<string, string>} fields @param {{ filename: string, contentType: string, bytes: Buffer }} file */

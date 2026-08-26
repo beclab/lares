@@ -4,6 +4,52 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { classifyFailure, pickSttModelId, retryable } from "@lares/core/router/stt";
+import { TranscriptQueue } from "@lares/core/voice/client";
+import { isComposerVoiceReady, isRecordingTooShort } from "@lares/core/voice/recorder";
+import {
+  EMPTY_VOICE_CONFIG,
+  STT_LANGUAGE_CHOICES,
+  voiceLanguageItems,
+  voiceMenuValue,
+  voiceModelItems,
+  voiceStatusReady,
+  voiceValueFromMenu,
+} from "@lares/core/voice/languages";
+
+test("a take is too short when it is only a container header", () => {
+  assert.equal(isRecordingTooShort(699, 2048), true);
+  assert.equal(isRecordingTooShort(800, 1023), true);
+  assert.equal(isRecordingTooShort(800, 1024), false);
+});
+
+test("voice settings map the auto sentinel to an empty stored value", () => {
+  assert.equal(voiceMenuValue(""), "auto");
+  assert.equal(voiceValueFromMenu("auto"), "");
+  assert.equal(voiceValueFromMenu("zh"), "zh");
+  assert.deepEqual(STT_LANGUAGE_CHOICES.map((item) => item.id), ["zh", "en", "ja", "ko"]);
+  assert.deepEqual(EMPTY_VOICE_CONFIG, { model: "", language: "" });
+  assert.equal(voiceLanguageItems("Auto")[0].label, "Auto");
+  assert.deepEqual(voiceModelItems(["whisper-a"], "Auto"), [
+    { id: "auto", label: "Auto" },
+    { id: "whisper-a", label: "whisper-a" },
+  ]);
+  assert.equal(voiceStatusReady({ modelAvailable: true }), true);
+  assert.equal(voiceStatusReady(null), false);
+});
+
+test("transcript queue waits until the composer is writable", () => {
+  const drafts: string[] = [];
+  const queue = new TranscriptQueue();
+  queue.apply("hello", false, "", (next: string) => drafts.push(next));
+  assert.deepEqual(drafts, []);
+  queue.flush(true, "hi", (next: string) => drafts.push(next));
+  assert.deepEqual(drafts, ["hi hello"]);
+});
+
+test("voice input only writes the draft while the composer is plain", () => {
+  assert.equal(isComposerVoiceReady("plain", () => {}), true);
+  assert.equal(isComposerVoiceReady("streaming", () => {}), false);
+});
 
 test("pickSttModelId honors a listed preference, else the first whisper/stt row", () => {
   const catalog = [
@@ -28,6 +74,32 @@ test("classifyFailure separates undecodable audio from transient upstream", () =
 test("retryable covers cold-start / restart statuses only", () => {
   for (const status of [429, 500, 502, 503, 504]) assert.equal(retryable(status), true);
   for (const status of [400, 401, 404, 422]) assert.equal(retryable(status), false);
+});
+
+test("listModels reuses a live catalog until refresh", async () => {
+  let fetches = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    fetches += 1;
+    return new Response(JSON.stringify({ data: [{ id: "whisper-a", mode: "audio" }] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+  try {
+    const { forgetSttModel, listModels } = await import(
+      `../../packages/core/router/stt.js?catalog=${Date.now()}`
+    );
+    forgetSttModel();
+    await Promise.all([listModels(), listModels()]);
+    assert.equal(fetches, 1);
+    await listModels();
+    assert.equal(fetches, 1);
+    await listModels({ refresh: true });
+    assert.equal(fetches, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("resolved STT cache is keyed by the configured preference", async () => {

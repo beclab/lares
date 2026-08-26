@@ -1,9 +1,15 @@
 import React from "react";
 import { Tooltip } from "@deepseek-ai/dsh-client-ui-primitives";
-import { mergeTranscript, postTranscribe } from "@lares/core/voice/client";
+import { postTranscribe, TranscriptQueue } from "@lares/core/voice/client";
 import { MicGlyph, Spinner } from "./icons.js";
 import { messageFor, useT } from "./locale.js";
-import { formatElapsed, MIN_RECORDING_MS, pickRecordingMime } from "@lares/core/voice/recorder";
+import {
+  formatElapsed,
+  isComposerVoiceReady,
+  isRecordingTooShort,
+  pickRecordingMime,
+  RECORDING_AUDIO,
+} from "@lares/core/voice/recorder";
 import micCss from "./styles/mic.css";
 
 const { useCallback, useEffect, useRef, useState } = React;
@@ -20,10 +26,10 @@ export function MicButton(props) {
 
   // Outside `plain`, setDraft is dropped — queue until composer is writable again.
   const inputPhase = props.useInput ? props.useInput((state) => state?.phase ?? null) : null;
-  const composerReady = inputPhase === "plain" && typeof inputActions?.setDraft === "function";
+  const composerReady = isComposerVoiceReady(inputPhase, inputActions?.setDraft);
   const composerReadyRef = useRef(composerReady);
   composerReadyRef.current = composerReady;
-  const pendingRef = useRef(null);
+  const queueRef = useRef(new TranscriptQueue());
 
   const [phase, setPhase] = useState("idle"); // idle | recording | transcribing | error
   const [error, setError] = useState(null);
@@ -90,7 +96,7 @@ export function MicButton(props) {
       return;
     }
     const blob = new Blob(chunks, { type });
-    if (took < MIN_RECORDING_MS || blob.size < 1024) {
+    if (isRecordingTooShort(took, blob.size)) {
       failWith("voice_too_short");
       return;
     }
@@ -101,12 +107,7 @@ export function MicButton(props) {
       const text = await postTranscribe(blob, props.language, controller.signal);
       if (!mountedRef.current) return;
       setPhase("idle");
-      if (!text) return;
-      if (composerReadyRef.current) {
-        inputActions.setDraft(mergeTranscript(draftRef.current, text));
-      } else {
-        pendingRef.current = text;
-      }
+      queueRef.current.apply(text, composerReadyRef.current, draftRef.current, inputActions.setDraft);
     } catch (err) {
       if (!mountedRef.current || controller.signal.aborted) return;
       failWith(err instanceof Error ? err.message : "voice_failed");
@@ -116,10 +117,7 @@ export function MicButton(props) {
   }, [failWith, inputActions, props.language, releaseStream, stopTimer]);
 
   useEffect(() => {
-    if (!composerReady || pendingRef.current === null) return;
-    const text = pendingRef.current;
-    pendingRef.current = null;
-    inputActions.setDraft(mergeTranscript(draftRef.current, text));
+    queueRef.current.flush(composerReady, draftRef.current, inputActions.setDraft);
   }, [composerReady, inputActions]);
 
   const start = useCallback(async () => {
@@ -133,9 +131,7 @@ export function MicButton(props) {
     cancelRef.current = false;
     let stream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: { channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: true },
-      });
+      stream = await navigator.mediaDevices.getUserMedia({ audio: RECORDING_AUDIO });
     } catch {
       failWith("voice_permission_denied");
       return;

@@ -1,5 +1,8 @@
 import { readJsonFile, writeJsonFile } from "../tools/json-file.js";
 import { dshPluginConfigPath } from "../workspace/home.js";
+import { STT_LANGUAGE_CHOICES } from "./languages.js";
+
+export { STT_LANGUAGE_CHOICES, VOICE_AUTO, voiceMenuValue, voiceValueFromMenu } from "./languages.js";
 
 const DEFAULTS = {
   model: "",
@@ -7,7 +10,7 @@ const DEFAULTS = {
 };
 
 const WRITABLE = new Set(Object.keys(DEFAULTS));
-const SUPPORTED_LANGUAGES = new Set(["", "zh", "en", "ja", "ko"]);
+const SUPPORTED_LANGUAGES = new Set(["", ...STT_LANGUAGE_CHOICES.map((item) => item.id)]);
 const SAFE_MODEL = /^[^\u0000-\u001f\u007f]{0,512}$/;
 
 function invalid(message) {

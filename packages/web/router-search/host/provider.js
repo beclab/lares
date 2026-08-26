@@ -1,5 +1,5 @@
 import { WebError } from "@deepseek-ai/dsh-web";
-import { LARES_PROVIDER_ID, readConfig } from "@lares/core/search/config";
+import { configuredSearchModel, LARES_PROVIDER_ID } from "@lares/core/search/config";
 import { routerSearch } from "./router.js";
 
 export { LARES_PROVIDER_ID };
@@ -12,10 +12,10 @@ export function createLaresSearchProvider() {
   return {
     id: LARES_PROVIDER_ID,
     available() {
-      return Boolean(readConfig().defaultSearchModel);
+      return Boolean(configuredSearchModel());
     },
     async search(request, signal) {
-      const model = readConfig().defaultSearchModel;
+      const model = configuredSearchModel();
       if (!model) {
         throw new WebError(
           "No Router search service selected as default",

@@ -8,6 +8,19 @@ export class SearchError extends Error {
   }
 }
 
+export const SEARCH_WEB_CODES = {
+  no_model: "WEB_PROVIDER_CONFIGURED_UNAVAILABLE",
+  empty_query: "WEB_PROVIDER_ERROR",
+  aborted: "WEB_ABORTED",
+  timeout: "WEB_PROVIDER_ERROR",
+  credential: "WEB_PROVIDER_CREDENTIAL_MISSING",
+  failed: "WEB_PROVIDER_ERROR",
+};
+
+export function searchWebErrorCode(code) {
+  return SEARCH_WEB_CODES[code] ?? "WEB_PROVIDER_ERROR";
+}
+
 export function searchModelsFromRouterCatalog(payload) {
   return routerCatalogRows(payload)
     .filter((model) => model.mode === "search")

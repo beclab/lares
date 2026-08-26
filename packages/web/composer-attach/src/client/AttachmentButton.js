@@ -1,7 +1,15 @@
 import React from "react";
 import { IconLoadingOutline16, Tooltip } from "@deepseek-ai/dsh-client-ui-primitives";
 import { DEFAULT_MAX_UPLOAD_BYTES } from "@lares/core/files/limits";
-import { claimComposerBlock, documentPasteFiles, partitionDocumentsBySize, splitComposerFiles } from "./intake.js";
+import {
+  claimComposerBlock,
+  commitComposerImages,
+  composerAttachReady,
+  composerDropHasDocuments,
+  composerPasteInCard,
+  documentPasteFiles,
+  processComposerFiles,
+} from "@lares/core/files/intake";
 import { useT } from "./locale.js";
 
 const h = React.createElement;
@@ -34,10 +42,12 @@ export function createAttachmentButton(conversation, intake, commitFor) {
     );
     const fileInputRef = useRef(null);
     const pending = upload.pending > 0;
-    const ready = phase === "plain"
-      && !pending
-      && typeof input?.addImages === "function"
-      && typeof sessionId === "string";
+    const ready = composerAttachReady({
+      phase,
+      pending,
+      addImages: input?.addImages,
+      sessionId,
+    });
 
     useEffect(() => {
       if (!pending || typeof sessionId !== "string") return undefined;
@@ -51,30 +61,24 @@ export function createAttachmentButton(conversation, intake, commitFor) {
     const commit = useMemo(() => commitFor(sessionId), [sessionId]);
 
     const addImages = useCallback((files) => {
-      if (files.length === 0) return;
-      let attachments = [];
-      try {
-        attachments = conversation.createDraftImages(files);
-        if (!input.addImages(attachments.map((attachment) => attachment.id))) {
-          conversation.releaseDraftImages(attachments);
-          for (const file of files) intake.reportFailure(sessionId, file, "file_input_blocked");
-        }
-      } catch (reason) {
-        if (attachments.length > 0) conversation.releaseDraftImages(attachments);
-        const code = reason instanceof Error ? reason.message : "file_upload_failed";
-        for (const file of files) intake.reportFailure(sessionId, file, code);
-      }
+      commitComposerImages({
+        createDraftImages: (next) => conversation.createDraftImages(next),
+        addImages: (ids) => input.addImages(ids),
+        releaseDraftImages: (attachments) => conversation.releaseDraftImages(attachments),
+        reportFailure: (id, file, code) => intake.reportFailure(id, file, code),
+      }, files, sessionId);
     }, [conversation, input, intake, sessionId]);
 
     const processFiles = useCallback((incoming) => {
-      if (!ready || incoming.length === 0) return;
-      const files = [...incoming];
-      const { images, documents } = splitComposerFiles(files);
-      addImages(images);
-      if (documents.length === 0) return;
-      const { accepted, oversized } = partitionDocumentsBySize(documents, MAX_UPLOAD_BYTES);
-      for (const file of oversized) intake.reportFailure(sessionId, file, "file_too_large");
-      void intake.uploadFiles(sessionId, accepted, commit);
+      void processComposerFiles({
+        ready,
+        sessionId,
+        maxBytes: MAX_UPLOAD_BYTES,
+        addImages,
+        reportFailure: (id, file, code) => intake.reportFailure(id, file, code),
+        uploadFiles: (id, files, next) => intake.uploadFiles(id, files, next),
+        commit,
+      }, incoming);
     }, [addImages, commit, intake, ready, sessionId]);
 
     const processRef = useRef(processFiles);
@@ -82,7 +86,7 @@ export function createAttachmentButton(conversation, intake, commitFor) {
 
     useEffect(() => {
       const onPaste = (event) => {
-        if (!ready || !(event.target instanceof Element) || !event.target.closest("[data-composer-card]")) return;
+        if (!ready || !composerPasteInCard(event.target)) return;
         const files = documentPasteFiles(event.clipboardData);
         if (files === null) return;
         event.preventDefault();
@@ -92,7 +96,7 @@ export function createAttachmentButton(conversation, intake, commitFor) {
       const onDrop = (event) => {
         if (!ready) return;
         const files = Array.from(event.dataTransfer?.files ?? []);
-        if (files.length === 0 || splitComposerFiles(files).documents.length === 0) return;
+        if (!composerDropHasDocuments(files)) return;
         event.preventDefault();
         event.stopImmediatePropagation();
         void processRef.current(files);

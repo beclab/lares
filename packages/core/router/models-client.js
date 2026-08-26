@@ -1,4 +1,8 @@
+import { createSnapshotStore } from "../tools/async.js";
+
 export const API = "/api/lares/models";
+
+const settings = createSnapshotStore();
 
 async function readPayload(res, path) {
   const payload = await res.json().catch(() => ({}));
@@ -8,12 +12,20 @@ async function readPayload(res, path) {
   return payload;
 }
 
+export function rememberedModelSettings() {
+  return settings.peek();
+}
+
+export async function loadModelSettings(options = {}) {
+  return settings.load(fetchState, options);
+}
+
 export async function fetchState() {
   return readPayload(await fetch(API), "/");
 }
 
 export async function refreshModels() {
-  return readPayload(await fetch(`${API}/refresh`, { method: "POST" }), "/refresh");
+  return settings.remember(await readPayload(await fetch(`${API}/refresh`, { method: "POST" }), "/refresh"));
 }
 
 /** @param {{ provider: string, model: string }} selection */
@@ -23,5 +35,5 @@ export async function setDefaultModel(selection) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify(selection),
   });
-  return readPayload(res, "/default");
+  return settings.remember(await readPayload(res, "/default"));
 }

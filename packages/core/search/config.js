@@ -1,4 +1,5 @@
 import { readJsonFile, writeJsonFile } from "../tools/json-file.js";
+import { HttpError } from "../tools/http.js";
 import { dshPluginConfigPath } from "../workspace/home.js";
 import { fetchRouterSearchModels } from "../router/search.js";
 
@@ -56,9 +57,7 @@ export function setDefaultSearchModel(id, available) {
     || /[\u0000-\u001f\u007f]/.test(model)
     || !available.some((item) => item.id === model)
   ) {
-    throw Object.assign(new Error("search service is not available from Router"), {
-      code: "not_available",
-    });
+    throw new HttpError("not_available", 400, "search service is not available from Router");
   }
   return persist({ defaultSearchModel: model });
 }
@@ -72,18 +71,23 @@ export async function currentSearchConfig() {
 }
 
 export const LARES_PROVIDER_ID = "lares";
+export { SEARCH_NONE, searchDefaultReady, searchMenuValue, searchValueFromMenu } from "./menu.js";
+
+export function configuredSearchModel() {
+  return readConfig().defaultSearchModel;
+}
 
 export function defaultSearchModelFromBody(body) {
   const id = body?.defaultSearchModel === null ? null : body?.defaultSearchModel;
   if (id !== null && typeof id !== "string") {
-    throw Object.assign(new Error("invalid defaultSearchModel"), { code: "bad_model", status: 400 });
+    throw new HttpError("bad_model", 400, "invalid defaultSearchModel");
   }
   return id;
 }
 
 export async function setDefaultSearchFromRequest(id) {
   if (id !== null && typeof id !== "string") {
-    throw Object.assign(new Error("invalid defaultSearchModel"), { code: "bad_model", status: 400 });
+    throw new HttpError("bad_model", 400, "invalid defaultSearchModel");
   }
   const searchModels = await fetchRouterSearchModels();
   const saved = setDefaultSearchModel(id, searchModels);

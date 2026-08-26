@@ -25,6 +25,64 @@ export function documentPasteFiles(clipboardData) {
   return splitComposerFiles(files).documents.length > 0 ? files : null;
 }
 
+export function composerAttachReady({ phase, pending, addImages, sessionId }) {
+  return phase === "plain"
+    && !pending
+    && typeof addImages === "function"
+    && typeof sessionId === "string";
+}
+
+export function claimComposerBlock(registry, sessionId, reason) {
+  const store = registry.storeFor(sessionId);
+  if (store.getSnapshot() !== undefined) return () => {};
+  const block = { reason };
+  registry.set(sessionId, block);
+  return () => {
+    if (store.getSnapshot() === block) registry.set(sessionId, undefined);
+  };
+}
+
+export const COMPOSER_CARD = "[data-composer-card]";
+
+export function composerPasteInCard(target) {
+  return Boolean(target && typeof target.closest === "function" && target.closest(COMPOSER_CARD));
+}
+
+export function composerDropHasDocuments(files) {
+  return files.length > 0 && splitComposerFiles(files).documents.length > 0;
+}
+
+export function draftImageFailureCode(reason) {
+  return reason instanceof Error ? reason.message : "file_upload_failed";
+}
+
+export function commitComposerImages(ports, files, sessionId) {
+  if (files.length === 0) return;
+  let attachments = [];
+  try {
+    attachments = ports.createDraftImages(files);
+    if (!ports.addImages(attachments.map((attachment) => attachment.id))) {
+      ports.releaseDraftImages(attachments);
+      for (const file of files) ports.reportFailure(sessionId, file, "file_input_blocked");
+    }
+  } catch (reason) {
+    if (attachments.length > 0) ports.releaseDraftImages(attachments);
+    const code = draftImageFailureCode(reason);
+    for (const file of files) ports.reportFailure(sessionId, file, code);
+  }
+}
+
+export function processComposerFiles(ports, incoming) {
+  if (!ports.ready || incoming.length === 0) return;
+  const files = [...incoming];
+  const { images, documents } = splitComposerFiles(files);
+  ports.addImages(images);
+  if (documents.length === 0) return;
+  const { accepted, oversized } = partitionDocumentsBySize(documents, ports.maxBytes);
+  for (const file of oversized) ports.reportFailure(ports.sessionId, file, "file_too_large");
+  return ports.uploadFiles(ports.sessionId, accepted, ports.commit);
+}
+
 export function partitionDocumentsBySize(documents, maxBytes) {
   const accepted = [];
   const oversized = [];

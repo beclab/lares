@@ -1,36 +1,19 @@
 import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { createLocaleBinding } from "../../../shared/client/locale-binding.js";
+import { EN, ZH } from "@lares/core/i18n/chat-model-switch";
+import {
+  currentEffortId,
+  effortDisplayLabel,
+  effortMenuRows,
+  effortSwitchSelection,
+  findListedModel,
+  isSameSessionModel,
+  modelSwitchSelection,
+  sessionModelLabel,
+} from "@lares/core/router/session-model";
 
 const h = React.createElement;
-
-const ZH = {
-  "reasoning.default": "默认",
-  "reasoning.title": "推理等级",
-  "reasoning.switchAria": "切换推理等级，当前 {label}",
-  "model.select": "选择模型",
-  "model.switchAria": "切换模型，当前 {label}",
-  "model.menuAria": "模型",
-  "model.refreshing": "正在刷新模型列表…",
-  "model.opFailed": "模型操作失败：{msg}",
-  "model.loadFailed": "{name} 加载失败：{msg}",
-  "model.empty": "没有可用的模型。",
-  "slot.model": "模型",
-};
-
-const EN = {
-  "reasoning.default": "Default",
-  "reasoning.title": "Reasoning effort",
-  "reasoning.switchAria": "Switch reasoning effort, current {label}",
-  "model.select": "Select model",
-  "model.switchAria": "Switch model, current {label}",
-  "model.menuAria": "Model",
-  "model.refreshing": "Refreshing models…",
-  "model.opFailed": "Model action failed: {msg}",
-  "model.loadFailed": "{name} failed to load: {msg}",
-  "model.empty": "No models available.",
-  "slot.model": "Model",
-};
 
 const localeBinding = createLocaleBinding("lares.chat-model.switch");
 
@@ -168,21 +151,11 @@ export function ModelSwitch({ available, directory, load, select, locked }) {
   if (!available) return null;
 
   const current = state.current;
-  let currentModel;
-  for (const group of state.groups) {
-    for (const model of group.models) {
-      if (current && group.id === current.provider && model.id === current.model) currentModel = model;
-    }
-  }
+  const currentModel = findListedModel(state.groups, current);
   const reasoning = currentModel?.reasoning;
-  const effort = current?.reasoningEffort ?? reasoning?.defaultEffort;
-  const effortLabel =
-    reasoning === undefined
-      ? undefined
-      : effort === undefined
-        ? t("reasoning.default")
-        : (reasoning.efforts.find((level) => level.id === effort)?.name ?? effort);
-  const label = currentModel?.name ?? current?.model ?? t("model.select");
+  const effort = currentEffortId(current, reasoning);
+  const effortLabel = effortDisplayLabel(reasoning, effort, t("reasoning.default"));
+  const label = sessionModelLabel(currentModel, current, t("model.select"));
   const busy = state.status === "selecting";
 
   const submit = (selection) => {
@@ -192,17 +165,11 @@ export function ModelSwitch({ available, directory, load, select, locked }) {
   };
 
   const chooseModel = (group, model) => {
-    if (current?.provider === group.id && current.model === model.id) {
+    if (isSameSessionModel(current, group, model)) {
       setOpenMenu(null);
       return;
     }
-    submit({
-      provider: group.id,
-      model: model.id,
-      ...(model.reasoning?.defaultEffort === undefined
-        ? {}
-        : { reasoningEffort: model.reasoning.defaultEffort }),
-    });
+    submit(modelSwitchSelection(group, model));
   };
 
   const chooseEffort = (level) => {
@@ -210,22 +177,10 @@ export function ModelSwitch({ available, directory, load, select, locked }) {
       setOpenMenu(null);
       return;
     }
-    submit({
-      provider: current.provider,
-      model: current.model,
-      ...(level === undefined ? {} : { reasoningEffort: level }),
-    });
+    submit(effortSwitchSelection(current, level));
   };
 
-  const efforts =
-    reasoning === undefined
-      ? []
-      : [
-          ...(reasoning.defaultEffort === undefined
-            ? [{ key: "provider-default", id: undefined, name: t("reasoning.default") }]
-            : []),
-          ...reasoning.efforts,
-        ];
+  const efforts = effortMenuRows(reasoning, t("reasoning.default"));
 
   const toggle = (menu) => setOpenMenu((current) => (current === menu ? null : menu));
 
@@ -286,7 +241,7 @@ export function ModelSwitch({ available, directory, load, select, locked }) {
                 model.id,
                 model.name,
                 model.description,
-                current?.provider === group.id && current.model === model.id,
+                current && isSameSessionModel(current, group, model),
                 busy,
                 () => chooseModel(group, model),
               ),

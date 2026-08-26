@@ -23,16 +23,7 @@ async function handleGetConfig(_req, res) {
 /** Switch default immediately: { defaultSearchModel: string|null }. */
 async function handleSetDefault(req, res) {
   const body = await readJsonObject(req);
-  try {
-    sendJson(res, 200, await setDefaultSearchFromRequest(defaultSearchModelFromBody(body)));
-  } catch (err) {
-    const code = err && typeof err === "object" && "code" in err ? String(err.code) : "bad_request";
-    const status = err && typeof err === "object" && "status" in err && typeof err.status === "number"
-      ? err.status
-      : 400;
-    const message = err instanceof Error ? err.message : String(err);
-    sendJson(res, status, { error: { code, message } });
-  }
+  sendJson(res, 200, await setDefaultSearchFromRequest(defaultSearchModelFromBody(body)));
 }
 
 /** @type {Record<string, Record<string, (req, res) => Promise<void>>>} */

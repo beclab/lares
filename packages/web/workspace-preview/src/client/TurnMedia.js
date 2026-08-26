@@ -1,15 +1,10 @@
 import React from "react";
 import { Button, IconLoadingOutline16 } from "@deepseek-ai/dsh-client-ui-primitives";
 import { partitionPreviews } from "@lares/core/files/preview-groups";
-import { fetchPreview, rawFileUrl } from "@lares/core/files/preview-workspace";
+import { fetchPreviewMap, fileName, rawFileUrl } from "@lares/core/files/preview-workspace";
 
 const h = React.createElement;
 const { useEffect, useMemo, useState } = React;
-
-function basename(path) {
-  const parts = String(path).split(/[/\\]/);
-  return parts.at(-1) || path;
-}
 
 function MediaBody({ item, sessionId }) {
   const common = {
@@ -49,14 +44,8 @@ export function createTurnMedia(t) {
     useEffect(() => {
       let live = true;
       setPreviews(new Map());
-      void Promise.all(paths.map(async (path) => {
-        try {
-          return [path, await fetchPreview(sessionId, path)];
-        } catch {
-          return [path, null];
-        }
-      })).then((entries) => {
-        if (live) setPreviews(new Map(entries));
+      void fetchPreviewMap(sessionId, paths).then((next) => {
+        if (live) setPreviews(next);
       });
       return () => {
         live = false;
@@ -116,7 +105,7 @@ export function createTurnMedia(t) {
               title: path,
               onClick: () => openFile(path),
             },
-            basename(path),
+            fileName(path),
           )),
         ),
       ),

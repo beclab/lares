@@ -1,1 +1,1 @@
-export { API, getJson, postJson } from "@lares/core/search/client";
+export { API, getJson, loadSearchSettings, postJson, rememberedSearchSettings, saveSearchDefault } from "@lares/core/search/client";

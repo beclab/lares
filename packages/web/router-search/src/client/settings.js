@@ -9,19 +9,24 @@ import {
   SettingsStatus,
 } from "../../../shared/client/settings-controls.js";
 import { useLatest, useMountedRef } from "../../../shared/client/react-lifecycle.js";
-import { getJson, postJson } from "./api.js";
+import { loadSearchSettings, rememberedSearchSettings, saveSearchDefault } from "./api.js";
+import {
+  searchDefaultReady,
+  searchMenuValue,
+  searchSelectorItems,
+  searchValueFromMenu,
+} from "@lares/core/search/menu";
 import { useT } from "./locale.js";
 import localSettingsCss from "./styles/settings.css";
 
 const { useCallback, useEffect, useState } = React;
 const h = React.createElement;
-const NONE = "none";
 
 export const settingsCss = `${controlsCss}${localSettingsCss}`;
 
 export function WebSearchSettings() {
   const t = useT();
-  const [config, setConfig] = useState(null);
+  const [config, setConfig] = useState(rememberedSearchSettings);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -30,7 +35,7 @@ export function WebSearchSettings() {
 
   useEffect(() => {
     let alive = true;
-    getJson("/config")
+    loadSearchSettings()
       .then((next) => {
         if (alive) setConfig(next);
       })
@@ -50,7 +55,7 @@ export function WebSearchSettings() {
     setRefreshing(true);
     setError("");
     try {
-      const next = await getJson("/config");
+      const next = await loadSearchSettings({ force: true });
       if (mounted.current) setConfig(next);
     } catch (err) {
       if (mounted.current) {
@@ -62,11 +67,11 @@ export function WebSearchSettings() {
   }, [t]);
 
   const setDefault = useCallback(async (rawId) => {
-    const id = rawId === NONE ? null : rawId;
+    const id = searchValueFromMenu(rawId);
     setSaving(true);
     setError("");
     try {
-      const next = await postJson("/config/default", { defaultSearchModel: id });
+      const next = await saveSearchDefault(id);
       if (mounted.current) setConfig(next);
     } catch (err) {
       if (mounted.current) {
@@ -78,13 +83,13 @@ export function WebSearchSettings() {
   }, [t]);
 
   const models = Array.isArray(config?.searchModels) ? config.searchModels : [];
-  const items = [
-    { id: NONE, label: t("settings.default.none") },
-    ...models.map((model) => ({ id: model.id, label: model.name || model.id })),
-  ];
+  const items = searchSelectorItems(models, {
+    none: t("settings.default.none"),
+    empty: t("settings.default.empty"),
+  });
   const disabled = !config || saving || refreshing;
-  const value = config?.defaultSearchModel ?? NONE;
-  const ready = models.some((model) => model.id === config?.defaultSearchModel);
+  const value = searchMenuValue(config?.defaultSearchModel);
+  const ready = searchDefaultReady(models, config?.defaultSearchModel);
 
   return h(
     "div",
@@ -120,7 +125,7 @@ export function WebSearchSettings() {
       ),
       h(SettingsSelector, {
         value,
-        items: models.length === 0 ? [{ id: NONE, label: t("settings.default.empty") }] : items,
+        items,
         disabled,
         onSelect: setDefault,
       }),

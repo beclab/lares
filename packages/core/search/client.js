@@ -1,4 +1,20 @@
+import { createSnapshotStore } from "../tools/async.js";
+
 export const API = "/api/lares/web-search";
+
+const settings = createSnapshotStore();
+
+export function rememberedSearchSettings() {
+  return settings.peek();
+}
+
+export async function loadSearchSettings(options = {}) {
+  return settings.load(() => getJson("/config"), options);
+}
+
+export async function saveSearchDefault(id) {
+  return settings.remember(await postJson("/config/default", { defaultSearchModel: id }));
+}
 
 export async function getJson(path) {
   const res = await fetch(`${API}${path}`);

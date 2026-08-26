@@ -1,4 +1,57 @@
+import { createSnapshotStore } from "../tools/async.js";
+
 export const API = "/api/lares/voice";
+
+const settings = createSnapshotStore();
+
+export function rememberedVoiceSettings() {
+  return settings.peek();
+}
+
+export async function loadVoiceSettings(options = {}) {
+  const query = options.force ? "?refresh=1" : "";
+  return settings.load(async () => {
+    const [config, status, models] = await Promise.all([
+      getJson("/config"),
+      getJson(`/status${query}`),
+      getJson(`/models${query}`),
+    ]);
+    return {
+      config,
+      status,
+      sttModels: Array.isArray(models.stt) ? models.stt : [],
+    };
+  }, options);
+}
+
+export async function saveVoiceSettings(patch) {
+  const res = await fetch(`${API}/config`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) throw new Error(String(res.status));
+  return loadVoiceSettings({ force: true });
+}
+
+export class TranscriptQueue {
+  constructor() {
+    this.pending = null;
+  }
+
+  apply(text, ready, draft, setDraft) {
+    if (!text) return;
+    if (ready) setDraft(mergeTranscript(draft, text));
+    else this.pending = text;
+  }
+
+  flush(ready, draft, setDraft) {
+    if (!ready || this.pending === null) return;
+    const text = this.pending;
+    this.pending = null;
+    setDraft(mergeTranscript(draft, text));
+  }
+}
 
 export function mergeTranscript(draft, transcript) {
   const base = String(draft ?? "").replace(/\s+$/, "");

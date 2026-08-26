@@ -6,29 +6,23 @@ import {
   SettingsStatus,
 } from "../../../shared/client/settings-controls.js";
 import { useLatest, useMountedRef } from "../../../shared/client/react-lifecycle.js";
-import { API, getJson } from "./api.js";
+import { loadVoiceSettings, rememberedVoiceSettings, saveVoiceSettings } from "./api.js";
+import {
+  EMPTY_VOICE_CONFIG,
+  voiceLanguageItems,
+  voiceMenuValue,
+  voiceModelItems,
+  voiceStatusReady,
+  voiceValueFromMenu,
+} from "@lares/core/voice/languages";
 import { MicGlyph } from "./icons.js";
 import { useT } from "./locale.js";
 import localSettingsCss from "./styles/settings.css";
 
-const { useCallback, useEffect, useRef, useState } = React;
+const { useCallback, useEffect, useState } = React;
 const h = React.createElement;
 
 export const settingsCss = `${controlsCss}${localSettingsCss}`;
-
-/** Menu selectedId cannot be empty. */
-const AUTO = "auto";
-
-/** Target-language names stay native; only the auto row is localized. */
-function languageItems(t) {
-  return [
-    { id: AUTO, label: t("lang.auto") },
-    { id: "zh", label: "中文" },
-    { id: "en", label: "English" },
-    { id: "ja", label: "日本語" },
-    { id: "ko", label: "한국어" },
-  ];
-}
 
 function Row(title, hint, control) {
   return h(
@@ -46,90 +40,67 @@ function Row(title, hint, control) {
 
 export function VoiceSettings() {
   const t = useT();
-  const [config, setConfig] = useState(null);
-  const [sttModels, setSttModels] = useState([]);
-  const [status, setStatus] = useState(null);
+  const [view, setView] = useState(rememberedVoiceSettings);
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [notice, setNotice] = useState(null);
   const mounted = useMountedRef();
-  const refreshSequence = useRef(0);
   const translate = useLatest(t);
 
   useEffect(() => {
-    return () => {
-      refreshSequence.current += 1;
-    };
-  }, [mounted]);
-
-  const refresh = useCallback(async () => {
-    const sequence = ++refreshSequence.current;
-    setRefreshing(true);
-    setNotice(null);
-    try {
-      const [next, models] = await Promise.all([getJson("/status"), getJson("/models")]);
-      if (!mounted.current || sequence !== refreshSequence.current) return;
-      setStatus(next);
-      setSttModels(models.stt ?? []);
-    } catch {
-      if (mounted.current && sequence === refreshSequence.current) {
-        setNotice({ kind: "error", text: translate.current("settings.refreshFailed") });
-      }
-    } finally {
-      if (mounted.current && sequence === refreshSequence.current) setRefreshing(false);
-    }
-  }, []);
-
-  useEffect(() => {
     let alive = true;
-    (async () => {
-      let cfg;
-      try {
-        cfg = await getJson("/config");
-      } catch {
+    loadVoiceSettings()
+      .then((next) => {
+        if (alive) setView(next);
+      })
+      .catch(() => {
         if (alive && mounted.current) {
-          setConfig({ model: "", language: "" });
+          setView((current) => current ?? {
+            config: EMPTY_VOICE_CONFIG,
+            status: { modelAvailable: false },
+            sttModels: [],
+          });
           setNotice({ kind: "error", text: translate.current("settings.loadFailed") });
         }
-        return;
-      }
-      if (!alive) return;
-      setConfig(cfg);
-      if (mounted.current) await refresh();
-    })();
+      });
     return () => {
       alive = false;
     };
-  }, [refresh]);
+  }, []);
+
+  const refresh = useCallback(async () => {
+    setRefreshing(true);
+    setNotice(null);
+    try {
+      const next = await loadVoiceSettings({ force: true });
+      if (mounted.current) setView(next);
+    } catch {
+      if (mounted.current) setNotice({ kind: "error", text: translate.current("settings.refreshFailed") });
+    } finally {
+      if (mounted.current) setRefreshing(false);
+    }
+  }, []);
 
   const patch = useCallback(async (key, value) => {
-    if (!config) return;
-    const previous = config;
-    setConfig({ ...config, [key]: value });
+    if (!view) return;
+    const previous = view;
+    setView({ ...view, config: { ...view.config, [key]: value } });
     setSaving(true);
     setNotice(null);
     try {
-      const res = await fetch(`${API}/config`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ [key]: value }),
-      });
-      if (!res.ok) throw new Error(String(res.status));
-      const next = await res.json();
-      if (!mounted.current) return;
-      setConfig(next);
-      await refresh();
+      const next = await saveVoiceSettings({ [key]: value });
+      if (mounted.current) setView(next);
     } catch {
       if (mounted.current) {
-        setConfig(previous);
+        setView(previous);
         setNotice({ kind: "error", text: translate.current("settings.saveFailed") });
       }
     } finally {
       if (mounted.current) setSaving(false);
     }
-  }, [config, refresh]);
+  }, [view]);
 
-  if (!config) {
+  if (!view) {
     return h(
       "div",
       { className: "lares-voice" },
@@ -137,10 +108,9 @@ export function VoiceSettings() {
     );
   }
 
-  const modelItems = [{ id: AUTO, label: t("settings.model.auto") }].concat(
-    sttModels.map((id) => ({ id, label: id })),
-  );
-  const ready = Boolean(status?.modelAvailable);
+  const { config, status, sttModels } = view;
+  const modelItems = voiceModelItems(sttModels, t("settings.model.auto"));
+  const ready = voiceStatusReady(status);
 
   return h(
     "div",
@@ -169,20 +139,20 @@ export function VoiceSettings() {
         t("settings.model.title"),
         t("settings.model.hint"),
         h(SettingsSelector, {
-          value: config.model || AUTO,
+          value: voiceMenuValue(config.model),
           items: modelItems,
           disabled: saving || refreshing,
-          onSelect: (id) => patch("model", id === AUTO ? "" : id),
+          onSelect: (id) => patch("model", voiceValueFromMenu(id)),
         }),
       ),
       Row(
         t("settings.language.title"),
         t("settings.language.hint"),
         h(SettingsSelector, {
-          value: config.language || AUTO,
-          items: languageItems(t),
+          value: voiceMenuValue(config.language),
+          items: voiceLanguageItems(t("lang.auto")),
           disabled: saving || refreshing,
-          onSelect: (id) => patch("language", id === AUTO ? "" : id),
+          onSelect: (id) => patch("language", voiceValueFromMenu(id)),
         }),
       ),
     ),

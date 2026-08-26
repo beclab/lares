@@ -50,6 +50,12 @@ export function previewQueryFromUrl(reqUrl) {
   return { path, sessionId: url.searchParams.get("sessionId") };
 }
 
+export async function fileFromPreviewRequest(reqUrl, resolveWorkspace) {
+  const { path, sessionId } = previewQueryFromUrl(reqUrl);
+  const workspace = await resolveWorkspace(sessionId);
+  return resolveWorkspaceFile(workspace.path, path);
+}
+
 export function previewTypeForName(name) {
   const extension = extname(name).toLowerCase();
   if (IMAGE_TYPES.has(extension)) return { kind: "image", mediaType: IMAGE_TYPES.get(extension) };

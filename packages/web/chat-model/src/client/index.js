@@ -3,6 +3,7 @@ import { ModelsSettings, settingsCss } from "./settings.js";
 import modelCss from "./styles/model.css";
 import { ModelSwitch, bindLocale, registerLocale, t, HideModelSeat } from "./model-switch.js";
 import { installPluginStyle } from "../../../shared/client/plugin-style.js";
+import { bindComposerModelDirectory, isComposerModelAvailable } from "@lares/core/router/session-model";
 
 export const inject = [];
 
@@ -41,19 +42,11 @@ export function apply(ctx) {
   ctx.inject(["slots", "sessions", "modelDirectories"], (scope) => {
     const models = scope.modelDirectories;
     const sessions = scope.sessions;
-    const seat = (sessionId) => {
-      const directory = models.directoryFor(sessionId);
-      const available = sessions.subagentAddress(sessionId) === undefined;
-      return {
-        available,
-        directory: directory.store,
-        load: () => {
-          if (available) directory.load().catch(() => {});
-        },
-        select: (selection) =>
-          available ? directory.select(selection).then(() => true, () => false) : Promise.resolve(false),
-      };
-    };
+    const seat = (sessionId) =>
+      bindComposerModelDirectory(
+        models.directoryFor(sessionId),
+        isComposerModelAvailable(sessions.subagentAddress(sessionId)),
+      );
 
     scope.slots.inject("conversation.input.model", () =>
       scope.slots.register({ name: "conversation.input.model", priority: -1 }, HideModelSeat),

@@ -7,14 +7,15 @@ identity policy.
 Import surfaces (`@lares/core/<export>`):
 
 - `tools/*`: HTTP helpers, JSON file IO, in-flight coalescing, insecure-origin `randomUUID` shim.
-- `router/*`: Router transport contracts, catalog normalization, LLM shim, model / STT / search policy, and catalog sync.
+- `router/*`: Router transport contracts, catalog normalization, LLM shim, model / STT / search policy, catalog sync, session model switching, and search error codes.
 - `workspace/*`: workspace boundaries, default seed, and dsh session-to-workspace resolution.
 - `files/*`: intake, preview workspace, markdown rewrite, Host upload/preview HTTP.
-- `drive/*`: path policy, tool execution, and present cards.
+- `drive/*`: path policy, tool execution, present cards, and agent tool definitions.
 - `voice/*`, `search/*`: STT/search settings, Host payloads, and client API contracts.
 - `olares/*`: Olares entrance identity, trusted-host loopback, and CLI session materialization.
-- `brand/identity`: product identity consumed by the Host and clients.
+- `brand/identity`, `brand/manifest`: product identity and PWA manifest consumed by the Host and clients.
 - `icons/*`: product mark SVG and public icon paths (no React).
+- `i18n/*`: ZH/EN catalogs and `t` / `{name}` interpolation (no React, no dsh locale).
 
 Core may depend on Node.js and backend libraries, but never on `packages/web`,
 `packages/mobile`, React, or browser UI.

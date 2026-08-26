@@ -9,34 +9,15 @@ import {
   SettingsStatus,
 } from "../../../shared/client/settings-controls.js";
 import { useLatest, useMountedRef } from "../../../shared/client/react-lifecycle.js";
-import { fetchState, refreshModels, setDefaultModel } from "./api.js";
+import { loadModelSettings, rememberedModelSettings, refreshModels, setDefaultModel } from "./api.js";
 import { useT } from "./locale.js";
+import { catalogDefaultReady, groupModelsByProvider, selectionKey } from "@lares/core/router/session-model";
 import localSettingsCss from "./styles/settings.css";
 
 const { useCallback, useEffect, useState } = React;
 const h = React.createElement;
 
 export const settingsCss = `${controlsCss}${localSettingsCss}`;
-
-function keyOf(selection) {
-  return `${selection.provider}\u0000${selection.model ?? selection.id}`;
-}
-
-/** Keep provider routes in registration order; models keep adapter order. */
-function groupByProvider(models) {
-  const groups = [];
-  const index = new Map();
-  for (const model of models) {
-    let group = index.get(model.provider);
-    if (group === undefined) {
-      group = { provider: model.provider, models: [] };
-      index.set(model.provider, group);
-      groups.push(group);
-    }
-    group.models.push(model);
-  }
-  return groups;
-}
 
 function ModelRow({ model, selected, busy, disabled, onSelect, t }) {
   return h(
@@ -71,7 +52,7 @@ function ModelRow({ model, selected, busy, disabled, onSelect, t }) {
 
 export function ModelsSettings() {
   const t = useT();
-  const [state, setState] = useState(null);
+  const [state, setState] = useState(rememberedModelSettings);
   const [error, setError] = useState("");
   const [pending, setPending] = useState("");
   const [refreshing, setRefreshing] = useState(false);
@@ -80,7 +61,7 @@ export function ModelsSettings() {
 
   useEffect(() => {
     let alive = true;
-    fetchState()
+    loadModelSettings()
       .then((next) => {
         if (alive) setState(next);
       })
@@ -114,7 +95,7 @@ export function ModelsSettings() {
   const choose = useCallback(
     async (model) => {
       const selection = { provider: model.provider, model: model.id };
-      setPending(keyOf(selection));
+      setPending(selectionKey(selection));
       setError("");
       try {
         const next = await setDefaultModel(selection);
@@ -130,11 +111,9 @@ export function ModelsSettings() {
     [t],
   );
 
-  const current = state?.default ? keyOf(state.default) : "";
-  const groups = groupByProvider(state?.models ?? []);
-  const ready = groups.some((group) =>
-    group.models.some((model) => keyOf({ provider: model.provider, model: model.id }) === current),
-  );
+  const current = state?.default ? selectionKey(state.default) : "";
+  const groups = groupModelsByProvider(state?.models ?? []);
+  const ready = catalogDefaultReady(state?.models ?? [], state?.default);
 
   return h(
     "div",
@@ -173,7 +152,7 @@ export function ModelsSettings() {
             "div",
             { className: "lares-models-list" },
             group.models.map((model) => {
-              const key = keyOf({ provider: model.provider, model: model.id });
+              const key = selectionKey({ provider: model.provider, model: model.id });
               return h(ModelRow, {
                 key,
                 model,

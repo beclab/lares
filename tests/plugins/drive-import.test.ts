@@ -36,6 +36,19 @@ import {
   isPublicAddress,
   saveDataUrl,
 } from "@lares/core/drive/url-download";
+import {
+  driveFetchDefinition,
+  ffmpegEncodeDefinition,
+  urlFetchDefinition,
+  workspacePublishDefinition,
+} from "@lares/core/drive/tools";
+
+test("agent tool definitions live in core, not the web host", () => {
+  assert.equal(driveFetchDefinition().name, "drive_fetch");
+  assert.equal(urlFetchDefinition().name, "url_fetch");
+  assert.equal(workspacePublishDefinition().name, "workspace_publish");
+  assert.equal(ffmpegEncodeDefinition().name, "ffmpeg_encode");
+});
 
 function execContext(cwd: string) {
   return {

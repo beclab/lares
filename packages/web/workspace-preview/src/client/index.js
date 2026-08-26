@@ -3,7 +3,7 @@ import { createHeaderTabs } from "./HeaderTabs.js";
 import { createPreviewOverlay } from "./PreviewOverlay.js";
 import { createPreviewView } from "./PreviewView.js";
 import { createTurnMedia } from "./TurnMedia.js";
-import { selectProducedFiles } from "./deliverables.js";
+import { selectProducedFiles } from "@lares/core/files/deliverables";
 import { EN, ZH } from "./locale.js";
 import { installPathOpener } from "./open.js";
 import styles from "./styles.css";

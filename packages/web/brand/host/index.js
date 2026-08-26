@@ -1,12 +1,12 @@
 /** Brand: index.html tap (splash before client plugins), mark/manifest, LLM identity. */
 import { PRODUCT_NAME, THEME_COLOR, identityPrompt, surfacePrompt } from "@lares/core/brand/identity";
+import { loopbackWebUrl } from "@lares/core/olares/entrance";
 import { BRAND_CSS } from "./stylesheet.js";
 import { MANIFEST, MANIFEST_PATH, MARK_PATH, MARK_SVG } from "./mark.js";
 
 export const name = "lares-brand";
 export const inject = ["webServer"];
 
-const LOOPBACK_HOST = "127.0.0.1";
 const DSH_WEB_URL = "DSH_WEB_URL";
 
 function serve(body, contentType) {
@@ -21,9 +21,7 @@ function serve(body, contentType) {
 
 /** @param {import("@deepseek-ai/cordis").Context} ctx */
 function localWebUrl(ctx) {
-  const port = ctx.get("webServer")?.port;
-  if (port === undefined) throw new Error("lares-brand: webServer missing while resolving surface URL");
-  return `http://${LOOPBACK_HOST}:${String(port)}`;
+  return loopbackWebUrl(ctx.get("webServer")?.port);
 }
 
 /**

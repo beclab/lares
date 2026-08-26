@@ -8,7 +8,7 @@ export class NullScrollport {
 
 const MAX_TABS = 8;
 
-function fileName(path) {
+export function fileName(path) {
   const parts = String(path).split(/[/\\]/);
   return parts.at(-1) || path;
 }
@@ -33,6 +33,33 @@ export async function fetchPreview(sessionId, path) {
   const payload = await response.json().catch(() => null);
   if (!response.ok) throw new Error(errorCode(payload));
   return payload;
+}
+
+export async function fetchPreviewMap(sessionId, paths) {
+  const entries = await Promise.all(paths.map(async (path) => {
+    try {
+      return [path, await fetchPreview(sessionId, path)];
+    } catch {
+      return [path, null];
+    }
+  }));
+  return new Map(entries);
+}
+
+export function isPrimaryUnmodifiedClick(event) {
+  return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+}
+
+export function workspaceLinkClickPath(sessionId, event) {
+  if (!isPrimaryUnmodifiedClick(event)) return null;
+  const anchor = event.target?.closest?.("a[href]");
+  if (!anchor) return null;
+  return rawUrlPath(sessionId, anchor.getAttribute("href"));
+}
+
+export async function interceptOpenPath(workspace, path, openNative) {
+  if (await workspace.openCurrent(path)) return;
+  await openNative(path);
 }
 
 const RAW_ROUTE = "/api/lares/file-preview/raw";

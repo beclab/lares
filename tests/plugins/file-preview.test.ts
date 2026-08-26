@@ -16,6 +16,7 @@ import {
   MAX_PREVIEW_TEXT_BYTES,
   MAX_RAW_BYTES,
   buildPreview,
+  fileFromPreviewRequest,
   parseRange,
   previewTypeForName,
   resolveWorkspaceFile,
@@ -32,7 +33,10 @@ import { downloadCurrentFile } from "../../packages/web/workspace-preview/src/cl
 import { partitionPreviews } from "@lares/core/files/preview-groups";
 import {
   FilePreviewWorkspace,
+  interceptOpenPath,
+  isPrimaryUnmodifiedClick,
   rawFileUrl,
+  workspaceLinkClickPath,
 } from "@lares/core/files/preview-workspace";
 
 test("previewTypeForName classifies browser-safe preview formats", () => {
@@ -142,6 +146,15 @@ test("resolveWorkspaceFile confines real files and symlinks to the workspace", a
     await assert.rejects(
       () => resolveWorkspaceFile(root, "docs/missing.txt"),
       (error: { code?: string }) => error.code === "file_not_found",
+    );
+    const fromRequest = await fileFromPreviewRequest(
+      "/preview?path=docs/notes.txt&sessionId=s1",
+      async () => ({ path: root }),
+    );
+    assert.equal(fromRequest.path, join("docs", "notes.txt"));
+    await assert.rejects(
+      () => fileFromPreviewRequest("/preview", async () => ({ path: root })),
+      (error: { code?: string }) => error.code === "path_invalid",
     );
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -339,6 +352,37 @@ test("rewriteWorkspaceTargets rewrites prose targets and leaves code verbatim", 
   assert.match(rewritten, /\[gone\]\(\.\.\/\.\.\/etc\/passwd\)/);
   assert.match(rewritten, /\[fenced\]\(a\.png\)/);
   assert.match(rewritten, /\[after\]\(https:\/\/host\/raw\?p=demo\/b\.md\)/);
+});
+
+test("markdown preview clicks only intercept unmodified same-origin workspace links", () => {
+  assert.equal(isPrimaryUnmodifiedClick({ button: 0 }), true);
+  assert.equal(isPrimaryUnmodifiedClick({ button: 0, metaKey: true }), false);
+  const href = rawFileUrl("s1", "notes.md");
+  assert.equal(
+    workspaceLinkClickPath("s1", {
+      button: 0,
+      target: { closest: () => ({ getAttribute: () => href }) },
+    }),
+    "notes.md",
+  );
+  assert.equal(
+    workspaceLinkClickPath("s1", {
+      button: 0,
+      target: { closest: () => ({ getAttribute: () => "https://example.com" }) },
+    }),
+    null,
+  );
+});
+
+test("interceptOpenPath falls back to the native opener when preview declines", async () => {
+  const native: string[] = [];
+  await interceptOpenPath({ openCurrent: async () => false }, "folder/", (path) => {
+    native.push(path);
+  });
+  assert.deepEqual(native, ["folder/"]);
+  await interceptOpenPath({ openCurrent: async () => true }, "notes.md", () => {
+    throw new Error("should not fall back");
+  });
 });
 
 test("openCurrent claims workspace files and declines everything else", async () => {

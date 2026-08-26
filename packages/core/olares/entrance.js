@@ -9,6 +9,13 @@
  * 端口转发 / IP 直连等非入口访问下无法推断，返回空串，调用方应隐藏入口。
  */
 
+export function loopbackWebUrl(port) {
+  if (port === undefined || port === null || port === "") {
+    throw new Error("webServer missing while resolving surface URL");
+  }
+  return `http://127.0.0.1:${String(port)}`;
+}
+
 const ROUTER_LABEL = "router";
 const OLARES_ZONES = new Set(["olares.com", "olares.local"]);
 const DNS_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;

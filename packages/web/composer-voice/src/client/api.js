@@ -1,1 +1,9 @@
-export { API, getJson, mergeTranscript, postTranscribe } from "@lares/core/voice/client";
+export {
+  API,
+  getJson,
+  loadVoiceSettings,
+  rememberedVoiceSettings,
+  saveVoiceSettings,
+  mergeTranscript,
+  postTranscribe,
+} from "@lares/core/voice/client";

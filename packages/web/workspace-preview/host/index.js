@@ -2,8 +2,7 @@ import { createRouteHandler, sendJson } from "@lares/core/tools/http";
 import { resolveSessionWorkspace } from "@lares/core/workspace/session";
 import {
   buildPreview,
-  previewQueryFromUrl,
-  resolveWorkspaceFile,
+  fileFromPreviewRequest,
   sendFileDownload,
   sendRawFile,
 } from "@lares/core/files/preview";
@@ -13,30 +12,26 @@ export const inject = ["webServer", "workspaceRegistry", "sessionPersistence"];
 
 const ROUTE_PREFIX = "/api/lares/file-preview";
 
-async function resolveRequestFile(req, ctx) {
-  const { path, sessionId } = previewQueryFromUrl(req.url);
-  const workspace = await resolveSessionWorkspace(ctx, sessionId);
-  return resolveWorkspaceFile(workspace.path, path);
+function workspaceOf(ctx) {
+  return (sessionId) => resolveSessionWorkspace(ctx, sessionId);
 }
 
 export function createPreviewHandler(ctx) {
   return async (req, res) => {
-    const file = await resolveRequestFile(req, ctx);
+    const file = await fileFromPreviewRequest(req.url, workspaceOf(ctx));
     sendJson(res, 200, await buildPreview(file));
   };
 }
 
 export function createRawHandler(ctx) {
   return async (req, res) => {
-    const file = await resolveRequestFile(req, ctx);
-    await sendRawFile(req, res, file);
+    await sendRawFile(req, res, await fileFromPreviewRequest(req.url, workspaceOf(ctx)));
   };
 }
 
 export function createDownloadHandler(ctx) {
   return async (req, res) => {
-    const file = await resolveRequestFile(req, ctx);
-    await sendFileDownload(req, res, file);
+    await sendFileDownload(req, res, await fileFromPreviewRequest(req.url, workspaceOf(ctx)));
   };
 }
 

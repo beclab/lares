@@ -17,6 +17,7 @@ const {
   LEGACY_AGENTS_MARKDOWN,
 } = await import("@lares/core/brand/identity");
 const { MARK_PATH, MARK_SVG, MARK_DATA_URI } = await import("@lares/core/icons/mark");
+const { MANIFEST, MANIFEST_PATH } = await import("@lares/core/brand/manifest");
 const { seedWorkspaceAgents } = await import(seedPath);
 
 test("identity prompt names the product and refuses DeepSeek Harness", () => {
@@ -61,4 +62,11 @@ test("product mark SVG names the product and encodes as a data URI", () => {
   assert.equal(MARK_PATH, "/lares/mark.svg");
   assert.match(MARK_SVG, new RegExp(`aria-label="${PRODUCT_NAME}"`));
   assert.match(MARK_DATA_URI, /^url\("data:image\/svg\+xml,/);
+});
+
+test("PWA manifest names the product and points at the mark", () => {
+  assert.equal(MANIFEST_PATH, "/lares/manifest.webmanifest");
+  assert.equal(MANIFEST.name, PRODUCT_NAME);
+  assert.equal(MANIFEST.display, "fullscreen");
+  assert.equal(MANIFEST.icons[0]?.src, MARK_PATH);
 });

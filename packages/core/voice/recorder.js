@@ -7,6 +7,22 @@ const MIME_CANDIDATES = [
 
 /** Below this the blob is container header only. */
 export const MIN_RECORDING_MS = 700;
+export const MIN_RECORDING_BYTES = 1024;
+
+export const RECORDING_AUDIO = {
+  channelCount: 1,
+  echoCancellation: false,
+  noiseSuppression: false,
+  autoGainControl: true,
+};
+
+export function isComposerVoiceReady(phase, setDraft) {
+  return phase === "plain" && typeof setDraft === "function";
+}
+
+export function isRecordingTooShort(durationMs, byteSize) {
+  return durationMs < MIN_RECORDING_MS || byteSize < MIN_RECORDING_BYTES;
+}
 
 export function pickRecordingMime(recorder = globalThis.MediaRecorder) {
   if (typeof recorder === "undefined" || recorder === undefined) return "";

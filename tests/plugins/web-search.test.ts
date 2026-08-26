@@ -3,6 +3,36 @@ import test from "node:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  searchDefaultReady,
+  searchMenuValue,
+  searchSelectorItems,
+  searchValueFromMenu,
+} from "@lares/core/search/menu";
+import { searchWebErrorCode } from "@lares/core/router/search";
+
+test("search settings map none to an unset default", () => {
+  assert.equal(searchMenuValue(null), "none");
+  assert.equal(searchValueFromMenu("none"), null);
+  assert.equal(searchDefaultReady([{ id: "tavily/search" }], "tavily/search"), true);
+  assert.equal(searchDefaultReady([{ id: "tavily/search" }], "missing"), false);
+  assert.deepEqual(searchSelectorItems([], { none: "None", empty: "No services" }), [
+    { id: "none", label: "No services" },
+  ]);
+  assert.deepEqual(
+    searchSelectorItems([{ id: "tavily/search", name: "Tavily" }], { none: "None", empty: "No services" }),
+    [
+      { id: "none", label: "None" },
+      { id: "tavily/search", label: "Tavily" },
+    ],
+  );
+});
+
+test("SearchError codes map onto dsh WebError codes", () => {
+  assert.equal(searchWebErrorCode("no_model"), "WEB_PROVIDER_CONFIGURED_UNAVAILABLE");
+  assert.equal(searchWebErrorCode("aborted"), "WEB_ABORTED");
+  assert.equal(searchWebErrorCode("unknown"), "WEB_PROVIDER_ERROR");
+});
 
 test("Router catalog exposes only search models", async () => {
     const { searchModelsFromRouterCatalog } = await import(
@@ -39,7 +69,7 @@ test("default search model must come from the live Router catalog", async () => 
     assert.equal(readConfig().defaultSearchModel, null);
     assert.throws(
       () => setDefaultSearchModel("missing/search", available),
-      (err: { code?: string }) => err.code === "not_available",
+      (err: { code?: string; status?: number }) => err.code === "not_available" && err.status === 400,
     );
 
     const saved = setDefaultSearchModel("  tavily/search  ", available);

@@ -12,12 +12,12 @@ import {
 
 export { STT_MAX_AUDIO_BYTES };
 
-export async function voiceStatusPayload() {
+export async function voiceStatusPayload(options) {
   const config = readConfig();
   let modelAvailable = false;
   let resolvedModel = config.model;
   try {
-    const models = await listModels();
+    const models = await listModels(options);
     resolvedModel = pickSttModelId(models, config.model) ?? "";
     modelAvailable = Boolean(resolvedModel);
   } catch {
@@ -31,8 +31,8 @@ export async function voiceStatusPayload() {
   };
 }
 
-export async function voiceModelsPayload() {
-  const models = await listModels();
+export async function voiceModelsPayload(options) {
+  const models = await listModels(options);
   const ids = models.map((model) => model.id);
   const stt = sttModelIds(models);
   const selected = pickSttModelId(models, readConfig().model);

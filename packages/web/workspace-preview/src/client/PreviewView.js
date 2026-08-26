@@ -8,7 +8,7 @@ import {
 import { errorMessage } from "./locale.js";
 import { rewriteWorkspaceTargets } from "@lares/core/files/markdown";
 import { downloadCurrentFile } from "./download.js";
-import { downloadFileUrl, rawFileHref, rawFileUrl, rawUrlPath } from "@lares/core/files/preview-workspace";
+import { downloadFileUrl, rawFileHref, rawFileUrl, workspaceLinkClickPath } from "@lares/core/files/preview-workspace";
 
 const h = React.createElement;
 const { useCallback, useLayoutEffect, useRef, useState, useSyncExternalStore } = React;
@@ -64,11 +64,7 @@ function PreviewBody({ data, sessionId, openPath, scroll, t }) {
           className: "lares-preview-markdown",
           ...scroll,
           onClick: (event) => {
-            if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-            const anchor = event.target.closest?.("a[href]");
-            const path = anchor === null || anchor === undefined
-              ? null
-              : rawUrlPath(sessionId, anchor.getAttribute("href"));
+            const path = workspaceLinkClickPath(sessionId, event);
             if (path === null) return;
             event.preventDefault();
             openPath(path);

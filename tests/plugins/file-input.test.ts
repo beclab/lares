@@ -20,10 +20,17 @@ import {
   sanitizeFilename,
 } from "@lares/core/files/upload";
 import { uploadFile } from "@lares/core/files/upload-client";
-import { FileIntake, documentPasteFiles, partitionDocumentsBySize, splitComposerFiles } from "@lares/core/files/intake";
-import { claimComposerBlock } from "../../packages/web/composer-attach/src/client/intake.js";
-import { uploadReference } from "@lares/core/files/mention";
-import { insertUploadReferences } from "../../packages/web/composer-attach/src/client/reference.js";
+import {
+  FileIntake,
+  claimComposerBlock,
+  commitComposerImages,
+  composerDropHasDocuments,
+  composerPasteInCard,
+  documentPasteFiles,
+  partitionDocumentsBySize,
+  splitComposerFiles,
+} from "@lares/core/files/intake";
+import { createUploadCommit, insertUploadReferences, uploadReference } from "@lares/core/files/mention";
 import { createPreviewHandler } from "../../packages/web/workspace-preview/host/index.js";
 
 type FakeRequest = Readable & { headers: Record<string, string> };
@@ -304,6 +311,38 @@ test("document intake cancellation leaves no path or failure behind", async () =
   await pending;
   assert.equal(committed, false);
   assert.deepEqual(intake.getSnapshot("s1"), { pending: 0, failures: [] });
+});
+
+test("composer paste/drop only claims documents inside the composer card", () => {
+  assert.equal(composerPasteInCard({ closest: (sel: string) => (sel === "[data-composer-card]" ? {} : null) }), true);
+  assert.equal(composerPasteInCard({ closest: () => null }), false);
+  assert.equal(composerDropHasDocuments([{ type: "image/png" }]), false);
+  assert.equal(composerDropHasDocuments([{ type: "text/markdown" }]), true);
+});
+
+test("draft image insert reports blocked and rolls back attachments", () => {
+  const failures: string[] = [];
+  const files = [{ name: "a.png" }];
+  commitComposerImages({
+    createDraftImages: () => [{ id: "img-1" }],
+    addImages: () => false,
+    releaseDraftImages: () => {},
+    reportFailure: (_id: string, _file: unknown, code: string) => failures.push(code),
+  }, files, "s1");
+  assert.deepEqual(failures, ["file_input_blocked"]);
+});
+
+test("createUploadCommit skips a session that has already closed", () => {
+  const notices: string[] = [];
+  const commit = createUploadCommit({
+    scopeSession: () => undefined,
+    inputFor: () => {
+      throw new Error("should not open input");
+    },
+    unlinkedMessage: (path: string) => path,
+  });
+  commit("gone")([".lares/uploads/a.md"]);
+  assert.deepEqual(notices, []);
 });
 
 test("composer upload block clears only when it still owns the block", () => {

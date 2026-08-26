@@ -16,12 +16,16 @@ export const inject = ["webServer"];
 
 const ROUTE_PREFIX = "/api/lares/voice";
 
-async function handleStatus(_req, res) {
-  sendJson(res, 200, await voiceStatusPayload());
+function wantsRefresh(req) {
+  return new URL(req.url ?? "/", "http://x").searchParams.get("refresh") === "1";
 }
 
-async function handleModels(_req, res) {
-  sendJson(res, 200, await voiceModelsPayload());
+async function handleStatus(req, res) {
+  sendJson(res, 200, await voiceStatusPayload({ refresh: wantsRefresh(req) }));
+}
+
+async function handleModels(req, res) {
+  sendJson(res, 200, await voiceModelsPayload({ refresh: wantsRefresh(req) }));
 }
 
 async function handleGetConfig(_req, res) {

@@ -2,7 +2,7 @@ import { createAttachmentButton } from "./AttachmentButton.js";
 import { FileIntake } from "@lares/core/files/intake";
 import { uploadFile } from "@lares/core/files/upload-client";
 import { EN, ZH, attachLocale, bindTranslate, getTranslate } from "./locale.js";
-import { insertUploadReferences } from "./reference.js";
+import { createUploadCommit } from "@lares/core/files/mention";
 import styles from "./styles.css";
 import { createUploadFailures } from "./UploadFailures.js";
 import { installPluginStyle } from "../../../shared/client/plugin-style.js";
@@ -19,14 +19,11 @@ export function apply(ctx) {
     const t = getTranslate();
     const intake = new FileIntake(uploadFile);
 
-    const commitFor = (sessionId) => (paths) => {
-      const sessionCtx = scope.sessions.scope(sessionId);
-      if (sessionCtx === undefined) return;
-      const input = scope.conversation.input.for(sessionCtx);
-      for (const path of insertUploadReferences(input, paths)) {
-        input.notify("error", t("upload.unlinked", { path }));
-      }
-    };
+    const commitFor = createUploadCommit({
+      scopeSession: (sessionId) => scope.sessions.scope(sessionId),
+      inputFor: (sessionCtx) => scope.conversation.input.for(sessionCtx),
+      unlinkedMessage: (path) => t("upload.unlinked", { path }),
+    });
 
     const AttachmentButton = createAttachmentButton(scope.conversation, intake, commitFor);
     const UploadFailures = createUploadFailures(intake, commitFor);

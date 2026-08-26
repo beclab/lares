@@ -9,3 +9,26 @@ export function createInFlightCoalescer() {
     return shared;
   };
 }
+
+/** Last successful payload survives remounts; Refresh / save pass `{ force: true }`. */
+export function createSnapshotStore() {
+  let value = null;
+  const coalesce = createInFlightCoalescer();
+  return {
+    peek() {
+      return value;
+    },
+    remember(next) {
+      value = next;
+      return next;
+    },
+    load(start, options = {}) {
+      if (!options.force && value !== null) return Promise.resolve(value);
+      return coalesce(async () => {
+        const next = await start();
+        value = next;
+        return next;
+      });
+    },
+  };
+}
