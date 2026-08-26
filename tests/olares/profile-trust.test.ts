@@ -56,12 +56,12 @@ test("nav icon patch fails loudly when the settings shell drifts", () => {
 test("Lares profile packages link to authoritative source directories", () => {
   const root = mkdtempSync(join(tmpdir(), "lares-profile-"));
   const profileDir = join(root, "profile");
-  const source = join(root, "bundle-web");
+  const source = join(root, "dsh-overlay");
   mkdirSync(source);
 
   try {
-    linkOwnedProfileDeps(profileDir, [["@lares/bundle-web", source]]);
-    const target = join(profileDir, "node_modules", "@lares", "bundle-web");
+    linkOwnedProfileDeps(profileDir, [["@lares/dsh-overlay", source]]);
+    const target = join(profileDir, "node_modules", "@lares", "dsh-overlay");
     assert.equal(lstatSync(target).isSymbolicLink(), true);
     assert.equal(readlinkSync(target), source);
   } finally {

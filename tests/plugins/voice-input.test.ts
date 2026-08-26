@@ -3,7 +3,7 @@ import test from "node:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { classifyFailure, pickSttModelId, retryable } from "../../packages/plugins/voice-input/host/stt.js";
+import { classifyFailure, pickSttModelId, retryable } from "@lares/core/router/stt";
 
 test("pickSttModelId honors a listed preference, else the first whisper/stt row", () => {
   const catalog = [
@@ -44,7 +44,7 @@ test("resolved STT cache is keyed by the configured preference", async () => {
     );
   try {
     const { forgetSttModel, resolveSttModel } = await import(
-      `../../packages/plugins/voice-input/host/stt.js?cache=${Date.now()}`
+      `../../packages/core/router/stt.js?cache=${Date.now()}`
     );
     forgetSttModel();
     assert.equal(await resolveSttModel("whisper-a"), "whisper-a");
@@ -60,7 +60,7 @@ test("readConfig / writeConfig round-trip through DSH_HOME", async () => {
   process.env.DSH_HOME = home;
   try {
     const { readConfig, validateConfigPatch, writeConfig } = await import(
-      `../../packages/plugins/voice-input/host/config.js?cfg=${Date.now()}`
+      `../../packages/core/voice/config.js?cfg=${Date.now()}`
     );
     assert.deepEqual(readConfig(), { model: "", language: "" });
     const saved = writeConfig({ model: "  whisper-x  ", language: "zh" });

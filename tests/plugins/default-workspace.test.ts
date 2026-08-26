@@ -2,13 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-const pluginPath = resolve(HERE, "../../packages/plugins/bundle-web/host/default-workspace.js");
-
-const { DEFAULT_WORKSPACE_TITLE, seedDefaultWorkspace, workspaceRootFromEnv } = await import(pluginPath);
+import { join } from "node:path";
+import { workspaceRootFromEnv, workspaceRootFromSession } from "@lares/core/workspace/env";
+import { DEFAULT_WORKSPACE_TITLE, seedDefaultWorkspace } from "@lares/core/workspace/seed";
 
 test("workspaceRootFromEnv prefers DSH_CWD then LARES_WORKSPACE", () => {
   assert.equal(workspaceRootFromEnv({}), null);
@@ -18,6 +14,14 @@ test("workspaceRootFromEnv prefers DSH_CWD then LARES_WORKSPACE", () => {
     workspaceRootFromEnv({ DSH_CWD: "/app/work", LARES_WORKSPACE: "/data/workspace" }),
     "/app/work",
   );
+});
+
+test("workspaceRootFromSession prefers the live session cwd", () => {
+  assert.equal(
+    workspaceRootFromSession({ agent: { session: { header: { cwd: "/session/work" } } } }),
+    "/session/work",
+  );
+  assert.throws(() => workspaceRootFromSession({}, {}), { message: /no session workspace/ });
 });
 
 test("seedDefaultWorkspace creates the directory and registers it once", async () => {

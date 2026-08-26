@@ -13,24 +13,18 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
-import { createUploadHandler } from "../../packages/plugins/file-input/host/index.js";
+import { createUploadHandler } from "../../packages/web/composer-attach/host/index.js";
 import {
   numberedName,
   saveUpload,
   sanitizeFilename,
-} from "../../packages/plugins/file-input/host/storage.js";
-import { uploadFile } from "../../packages/plugins/file-input/src/client/api.js";
-import {
-  claimComposerBlock,
-  documentPasteFiles,
-  FileIntake,
-  splitComposerFiles,
-} from "../../packages/plugins/file-input/src/client/intake.js";
-import {
-  insertUploadReferences,
-  uploadReference,
-} from "../../packages/plugins/file-input/src/client/reference.js";
-import { createPreviewHandler } from "../../packages/plugins/file-preview/host/index.js";
+} from "@lares/core/files/upload";
+import { uploadFile } from "@lares/core/files/upload-client";
+import { FileIntake, documentPasteFiles, partitionDocumentsBySize, splitComposerFiles } from "@lares/core/files/intake";
+import { claimComposerBlock } from "../../packages/web/composer-attach/src/client/intake.js";
+import { uploadReference } from "@lares/core/files/mention";
+import { insertUploadReferences } from "../../packages/web/composer-attach/src/client/reference.js";
+import { createPreviewHandler } from "../../packages/web/workspace-preview/host/index.js";
 
 type FakeRequest = Readable & { headers: Record<string, string> };
 
@@ -220,6 +214,10 @@ test("document intake commits paths only after upload succeeds", async () => {
   assert.deepEqual(splitComposerFiles([markdown, image]), {
     images: [image],
     documents: [markdown],
+  });
+  assert.deepEqual(partitionDocumentsBySize([markdown, { ...markdown, size: 99 }], 10), {
+    accepted: [markdown],
+    oversized: [{ ...markdown, size: 99 }],
   });
 
   const intake = new FileIntake(async () => ({

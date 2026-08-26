@@ -17,7 +17,7 @@ type Ctx = {
 };
 
 function catalogModule() {
-  return import(`../../packages/plugins/models/host/catalog.js?t=${Date.now()}`);
+  return import(`../../packages/web/chat-model/host/catalog.js?t=${Date.now()}`);
 }
 
 function stubCtx(overrides: Partial<Ctx["llm"]> = {}, saved: unknown[] = [], mutations: unknown[] = []): Ctx {

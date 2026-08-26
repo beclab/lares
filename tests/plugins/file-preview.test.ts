@@ -21,18 +21,19 @@ import {
   resolveWorkspaceFile,
   sendFileDownload,
   sendRawFile,
-} from "../../packages/plugins/file-preview/host/files.js";
+} from "@lares/core/files/preview";
 import {
   rewriteWorkspaceTargets,
   workspaceTargetPath,
-} from "../../packages/plugins/file-preview/src/client/markdown.js";
-import { producedForClosing } from "../../packages/plugins/file-preview/src/client/deliverables.js";
-import { downloadCurrentFile, filenameFromDisposition } from "../../packages/plugins/file-preview/src/client/download.js";
-import { partitionPreviews } from "../../packages/plugins/file-preview/src/client/preview-groups.js";
+} from "@lares/core/files/markdown";
+import { producedForClosing } from "@lares/core/files/deliverables";
+import { filenameFromDisposition } from "@lares/core/files/disposition";
+import { downloadCurrentFile } from "../../packages/web/workspace-preview/src/client/download.js";
+import { partitionPreviews } from "@lares/core/files/preview-groups";
 import {
   FilePreviewWorkspace,
   rawFileUrl,
-} from "../../packages/plugins/file-preview/src/client/workspace.js";
+} from "@lares/core/files/preview-workspace";
 
 test("previewTypeForName classifies browser-safe preview formats", () => {
   assert.deepEqual(previewTypeForName("photo.webp"), { kind: "image", mediaType: "image/webp" });

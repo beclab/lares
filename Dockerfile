@@ -10,6 +10,8 @@ WORKDIR /app
 COPY tsconfig.base.json tsconfig.server.json ./
 COPY scripts/build-client.mjs ./scripts/
 COPY packages/ ./packages/
+RUN mkdir -p node_modules/@lares \
+  && ln -sfn ../../packages/core node_modules/@lares/core
 
 # The olares-* skills are not in git: they belong to the olares-cli in the base
 # image, and a hand-copied snapshot describes verbs some other release has.

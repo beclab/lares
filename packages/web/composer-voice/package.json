@@ -1,0 +1,23 @@
+{
+  "name": "@lares/composer-voice",
+  "version": "0.15.0",
+  "private": true,
+  "type": "module",
+  "description": "Composer microphone transcribed by an Olares Router STT model",
+  "exports": {
+    ".": "./host/index.js",
+    "./client": "../../../dist/plugins/composer-voice/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-slots"
+      ]
+    }
+  },
+  "files": [
+    "host"
+  ]
+}

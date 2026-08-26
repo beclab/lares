@@ -338,7 +338,7 @@ ensure_dest_dir() {
   fi
 }
 
-# App root layout at DEST_DIR (/app): package.json, dist/, packages/{service,plugins,skills}
+# App root layout at DEST_DIR (/app): package.json, dist/, packages/{service,core,web,mobile,skills}
 APP_ROOT="${REPO_ROOT}"
 
 RSYNC_EXCLUDES=(

@@ -145,8 +145,8 @@ export default async function (page, session) {
     });
     assert(shell.title, "document title is empty");
     assert(shell.micLabel, "voice microphone is not mounted");
-    assert(shell.pluginStyles.includes("@lares/client-lares"), "client-lares stylesheet is missing");
-    assert(shell.pluginStyles.includes("@lares/voice-input"), "voice-input stylesheet is missing");
+    assert(shell.pluginStyles.includes("@lares/brand"), "brand stylesheet is missing");
+    assert(shell.pluginStyles.includes("@lares/composer-voice"), "composer-voice stylesheet is missing");
     assert(shell.api.every((item) => item.ok), `API regression failed: ${JSON.stringify(shell.api)}`);
 
     const modelTrigger = await page.evaluate(() => Boolean(document.querySelector(".lares-model-trigger")));

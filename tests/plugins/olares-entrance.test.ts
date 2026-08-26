@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 // @ts-expect-error plain ESM shared client source
-import { routerConsoleUrl } from "../../packages/plugins/shared/client/olares-entrance.js";
+import { routerConsoleUrl } from "@lares/core/olares/entrance";
 
 test("router console keeps the entrance zone", () => {
   assert.equal(routerConsoleUrl("", "e274648a.yaotest004.olares.com"), "https://router.yaotest004.olares.com");

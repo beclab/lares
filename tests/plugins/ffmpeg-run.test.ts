@@ -9,7 +9,7 @@ import {
   ffmpegEncodeArgv,
   parseFfmpegReport,
   subtitleFilter,
-} from "../../packages/plugins/drive-import/host/ffmpeg-run.js";
+} from "@lares/core/media/ffmpeg-run";
 
 test("ffmpegEncodeArgv encodes lavfi with libx264", () => {
   const args = ffmpegEncodeArgv({

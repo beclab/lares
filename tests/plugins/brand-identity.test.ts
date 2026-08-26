@@ -6,7 +6,6 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const identityPath = resolve(HERE, "../../packages/plugins/bundle-web/host/brand/identity.js");
 const seedPath = resolve(HERE, "../../packages/service/dsh/agents-seed.ts");
 
 const {
@@ -16,7 +15,8 @@ const {
   surfacePrompt,
   agentsMarkdown,
   LEGACY_AGENTS_MARKDOWN,
-} = await import(identityPath);
+} = await import("@lares/core/brand/identity");
+const { MARK_PATH, MARK_SVG, MARK_DATA_URI } = await import("@lares/core/icons/mark");
 const { seedWorkspaceAgents } = await import(seedPath);
 
 test("identity prompt names the product and refuses DeepSeek Harness", () => {
@@ -55,4 +55,10 @@ test("seedWorkspaceAgents writes and rewrites the legacy DeepSeek seed", () => {
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("product mark SVG names the product and encodes as a data URI", () => {
+  assert.equal(MARK_PATH, "/lares/mark.svg");
+  assert.match(MARK_SVG, new RegExp(`aria-label="${PRODUCT_NAME}"`));
+  assert.match(MARK_DATA_URI, /^url\("data:image\/svg\+xml,/);
 });

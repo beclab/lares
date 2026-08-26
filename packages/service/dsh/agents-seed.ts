@@ -3,7 +3,7 @@ import path from "node:path";
 import {
   agentsMarkdown,
   LEGACY_AGENTS_MARKDOWN,
-} from "../../../packages/plugins/bundle-web/host/brand/identity.js";
+} from "@lares/core/brand/identity";
 
 /** Ensure the workspace has an AGENTS.md so dsh workspaceContext has a baseline. */
 export function seedWorkspaceAgents(workspace: string): void {

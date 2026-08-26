@@ -17,8 +17,8 @@ import {
   createFfmpegEncodeTool,
   createUrlFetchTool,
   createWorkspacePublishTool,
-} from "../../packages/plugins/drive-import/host/index.js";
-import { runOlaresDownload } from "../../packages/plugins/drive-import/host/download.js";
+} from "../../packages/web/workspace-artifacts/host/index.js";
+import { runOlaresDownload } from "@lares/core/drive/download";
 import {
   describeFetch,
   describeFfmpegEncode,
@@ -28,14 +28,14 @@ import {
   resolveFfmpegEncode,
   resolveUrlFetch,
   resolveWorkspacePublish,
-} from "../../packages/plugins/drive-import/host/paths.js";
+} from "@lares/core/drive/paths";
 import {
   assertPublicUrl,
   decodeDataUrl,
   downloadUrl,
   isPublicAddress,
   saveDataUrl,
-} from "../../packages/plugins/drive-import/host/url-download.js";
+} from "@lares/core/drive/url-download";
 
 function execContext(cwd: string) {
   return {

@@ -122,6 +122,7 @@ test("pickChatModelId prefers the MTP sibling over the plain build", () => {
 
 test("isPlaceholderModelId", () => {
   assert.equal(isPlaceholderModelId(null), true);
+  assert.equal(isPlaceholderModelId("   "), true);
   assert.equal(isPlaceholderModelId("default"), true);
   assert.equal(isPlaceholderModelId("deepseek-v4-flash"), true);
   assert.equal(isPlaceholderModelId("Qwen/chat"), false);

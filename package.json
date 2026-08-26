@@ -3,6 +3,9 @@
   "version": "0.15.0",
   "private": true,
   "type": "module",
+  "workspaces": [
+    "packages/core"
+  ],
   "scripts": {
     "predev": "npm run build:client",
     "dev": "tsx watch packages/service/index.ts",
@@ -16,6 +19,7 @@
     "dump-config": "tsx packages/service/dsh-web/dump-config.ts"
   },
   "dependencies": {
+    "@lares/core": "*",
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-app-boot": "^0.1.1-rc.2",

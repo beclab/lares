@@ -4,8 +4,10 @@ Olares Chat：**dsh web UI 主壳** + **Olares Router LLM shim**（WorkBuddy 仅
 
 ```text
 packages/
-  service/          业务：dsh web boot / Olares 集成
-  plugins/          自研 dsh 插件（bundle-web、client-lares、voice-input）
+  service/          启动与 Olares 编排
+  core/             `@lares/core` 业务逻辑子包（PC / 移动端共用）
+  web/              PC 端 UI
+  mobile/           移动端 UI
   skills/           ha-* agent skills（olares-* 由构建期导出，不入仓）
 tests/              单元测试（与源码分离）
 deploy/lares/        Olares chart（可选热更新）
@@ -30,7 +32,7 @@ npm run start          # http://127.0.0.1:8080  （dsh web）
 scripts/install-better-sidebar.sh 1   # 右侧工作台
 ```
 
-语音输入是自研插件 `@lares/voice-input`（随镜像内建，无需单独安装）：输入框旁的
+语音输入是自研插件 `@lares/composer-voice`（随镜像内建，无需单独安装）：输入框旁的
 麦克风录音，录完经 `/api/lares/voice/transcribe` 走 Router STT 回填文本；在
 **设置 → 语音输入** 里选模型 / 语言。语音模型需在 Olares 模型控制台另行安装。
 

@@ -1,0 +1,14 @@
+{
+  "name": "@lares/workspace-artifacts",
+  "version": "0.15.0",
+  "private": true,
+  "type": "module",
+  "description": "Agent tools that fetch, publish, or encode files as previewable workspace artifacts",
+  "exports": {
+    ".": "./host/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "host"
+  ]
+}
