@@ -1,7 +1,6 @@
-# Publish @olares/lares-core then @olares/lares-mobile to registry.npmjs.org.
-#
-# Manual dispatch only. Chart tags (v*) publish the Docker image, not these
-# packages — npm versions live in packages/*/package.json and can lag the chart.
+# Pack @olares/lares-core and @olares/lares-mobile on PRs. Publish only from
+# workflow_dispatch (after this file is on main) or a PR labeled `npm-publish`.
+# Chart tags (v*) publish the Docker image, not these packages.
 #
 # Required repository secret:
 #   NPM_OLARES_PUBLISH_TOKEN  org-scoped npm token with publish rights on @olares
@@ -10,6 +9,8 @@ name: npm
 
 on:
   workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
 
 permissions:
   contents: read
@@ -19,8 +20,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  publish:
-    name: publish
+  check:
+    name: check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -46,6 +47,21 @@ jobs:
           npm pack -w @olares/lares-core
           npm pack -w @olares/lares-mobile
           echo "packed @olares/lares-core@$core @olares/lares-mobile@$mobile"
+
+  publish:
+    name: publish
+    needs: check
+    if: github.event_name == 'workflow_dispatch' || (github.event.action == 'labeled' && contains(github.event.pull_request.labels.*.name, 'npm-publish'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: 'https://registry.npmjs.org'
+
+      - run: npm ci
 
       - name: Refuse a version that is already on npm
         run: |
