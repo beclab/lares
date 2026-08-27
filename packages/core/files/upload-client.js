@@ -14,7 +14,7 @@ export async function uploadFile(file, sessionId, options = {}) {
   if (options.signal?.aborted) controller.abort(options.signal.reason);
   else options.signal?.addEventListener("abort", onAbort, { once: true });
   try {
-    const response = await fetch(FILES_UPLOAD_PATH, {
+    const response = await fetch(options.url ?? FILES_UPLOAD_PATH, {
       method: "POST",
       headers: {
         "content-type": file.type || "application/octet-stream",

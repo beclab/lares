@@ -1,16 +1,30 @@
 import { isAuthFailure } from "./host.js";
-import { foldTranscript, mergeEvents } from "./transcript.js";
+import { listRootSessions, summarizeSession } from "./chat.js";
+import { consumeMuxFrames } from "./mux.js";
+import { createSessionCache } from "./session-cache.js";
+import { foldTranscript } from "./transcript.js";
 
-function viewOf(state) {
-  const snap = foldTranscript(state.events);
+const DRAFT_SESSION = "@lares/draft";
+
+function isDraft(sessionId) {
+  return sessionId === DRAFT_SESSION;
+}
+
+function viewOf(state, cache) {
+  const page = cache.peek(state.sessionId);
+  const events = page?.events ?? [];
+  const snap = foldTranscript(events);
   return {
-    sessionId: state.sessionId,
+    sessionId: isDraft(state.sessionId) ? "" : state.sessionId,
     items: snap.items,
     messages: snap.messages,
     running: snap.running,
     error: state.error || snap.error,
     failed: state.failed,
     phase: state.phase,
+    sessions: state.sessions,
+    sessionsReady: state.sessionsReady,
+    historyLoading: Boolean(state.sessionId) && !page?.ready && events.length === 0,
   };
 }
 
@@ -26,39 +40,63 @@ export function restoreScroll(saved, height, view) {
 
 export function createChatRuntime(client) {
   const listeners = new Set();
+  const cache = createSessionCache();
   const state = {
     sessionId: "",
-    events: [],
     error: "",
     failed: "",
     phase: "idle",
-    scroll: { top: 0, stick: true },
+    sessions: [],
+    sessionsReady: false,
   };
+  let liveScroll = { top: 0, stick: true };
   let abort = null;
   let dead = false;
   let muxLoop = null;
+  let listing = null;
+  let creating = null;
 
   const emit = () => {
-    const view = viewOf(state);
+    const view = viewOf(state, cache);
     for (const listener of listeners) listener(view);
   };
 
-  const ingest = (extra) => {
-    state.events = mergeEvents(state.events, extra);
-    const snap = foldTranscript(state.events);
-    if (snap.error) state.error = snap.error;
-    emit();
-  };
+  function noteFilled(sessionId) {
+    const row = state.sessions.find((item) => item.sessionId === sessionId);
+    if (!row?.blank) return false;
+    row.blank = false;
+    return true;
+  }
 
-  async function pullHistory() {
-    if (!state.sessionId) return;
-    const history = await client.rpc("session.history", { sessionId: state.sessionId });
-    if (!history.ok) {
-      state.failed = history.error?.message || history.error?.code || "history";
-      emit();
-      return;
-    }
-    ingest(history.value?.events);
+  function ingest(sessionId, extra) {
+    const changed = cache.merge(sessionId, extra);
+    const filled = extra?.length ? noteFilled(sessionId) : false;
+    if (filled || (changed && sessionId === state.sessionId)) emit();
+  }
+
+  function rememberListed(row) {
+    if (!row?.sessionId) return;
+    state.sessions = [row, ...state.sessions.filter((item) => item.sessionId !== row.sessionId)];
+    state.sessionsReady = true;
+  }
+
+  function pullHistory(sessionId) {
+    if (!sessionId || dead || isDraft(sessionId)) return Promise.resolve();
+    return cache.load(sessionId, async () => {
+      const history = await client.rpc("session.history", { sessionId });
+      if (dead) return;
+      if (!history.ok) {
+        if (sessionId !== state.sessionId) return;
+        cache.rememberHistory(sessionId, []);
+        state.failed = history.error?.message || history.error?.code || "history";
+        emit();
+        return;
+      }
+      const events = history.value?.events;
+      const changed = cache.rememberHistory(sessionId, events);
+      const filled = events?.length ? noteFilled(sessionId) : false;
+      if (filled || (changed && sessionId === state.sessionId)) emit();
+    });
   }
 
   async function listenOnce() {
@@ -78,9 +116,9 @@ export function createChatRuntime(client) {
     state.failed = "";
     emit();
     try {
-      for await (const event of client.consumeMux(opened.body, state.sessionId)) {
+      for await (const frame of consumeMuxFrames(opened.body)) {
         if (dead) return "stop";
-        ingest([event]);
+        ingest(frame.sessionId, [frame.event]);
       }
     } catch (err) {
       if (dead || err?.name === "AbortError") return "stop";
@@ -104,7 +142,7 @@ export function createChatRuntime(client) {
         muxLoop = null;
         return;
       }
-      await pullHistory();
+      await pullHistory(state.sessionId);
       await new Promise((resolve) => setTimeout(resolve, 800));
     }
     muxLoop = null;
@@ -116,11 +154,102 @@ export function createChatRuntime(client) {
     muxLoop = listenLoop();
   }
 
+  async function refreshSessions() {
+    if (dead) return state.sessions;
+    if (listing) return listing;
+    listing = (async () => {
+      const listed = await listRootSessions(client.rpc);
+      if (listed.ok) state.sessions = listed.value.items;
+      state.sessionsReady = true;
+      emit();
+      return state.sessions;
+    })().finally(() => {
+      listing = null;
+    });
+    return listing;
+  }
+
+  function occupy(sessionId) {
+    state.sessionId = sessionId;
+    state.error = "";
+    state.failed = "";
+    liveScroll = cache.scroll(sessionId);
+    emit();
+  }
+
+  function currentIsEmpty() {
+    if (!state.sessionId || isDraft(state.sessionId)) return false;
+    const page = cache.peek(state.sessionId);
+    return Boolean(page?.ready && page.events.length === 0);
+  }
+
+  function reusableBlank() {
+    return state.sessions.find((row) => {
+      if (!row?.blank || !row.sessionId || row.sessionId === state.sessionId) return false;
+      const page = cache.peek(row.sessionId);
+      return !page || page.events.length === 0;
+    })?.sessionId;
+  }
+
+  async function openSession(sessionId) {
+    if (!sessionId || dead || isDraft(sessionId)) return;
+    if (sessionId === state.sessionId) {
+      emit();
+      return;
+    }
+    occupy(sessionId);
+    if (!cache.ready(sessionId)) await pullHistory(sessionId);
+    ensureMux();
+  }
+
+  async function createSession() {
+    if (dead) return;
+    if (creating) return creating;
+    creating = (async () => {
+      if (currentIsEmpty()) {
+        emit();
+        return;
+      }
+      const blankId = reusableBlank();
+      if (blankId) {
+        cache.readyEmpty(blankId);
+        occupy(blankId);
+        ensureMux();
+        pullHistory(blankId);
+        return;
+      }
+      const previous = state.sessionId;
+      cache.readyEmpty(DRAFT_SESSION);
+      occupy(DRAFT_SESSION);
+      ensureMux();
+      const opened = await client.rpc("session.create", {});
+      if (dead) return;
+      if (!opened.ok) {
+        cache.drop(DRAFT_SESSION);
+        if (state.sessionId !== DRAFT_SESSION) return;
+        if (previous) occupy(previous);
+        state.failed = opened.error?.message || opened.error?.code || "session";
+        emit();
+        return;
+      }
+      const sessionId = opened.value.sessionId;
+      cache.readyEmpty(sessionId);
+      rememberListed(summarizeSession({ ...opened.value, sessionId, blank: true }));
+      cache.drop(DRAFT_SESSION);
+      if (state.sessionId !== DRAFT_SESSION && state.sessionId !== sessionId) return;
+      occupy(sessionId);
+      ensureMux();
+    })().finally(() => {
+      creating = null;
+    });
+    return creating;
+  }
+
   return {
-    snapshot: () => viewOf(state),
+    snapshot: () => viewOf(state, cache),
     subscribe(listener) {
       listeners.add(listener);
-      listener(viewOf(state));
+      listener(viewOf(state, cache));
       return () => listeners.delete(listener);
     },
     async start() {
@@ -150,12 +279,26 @@ export function createChatRuntime(client) {
         return;
       }
       state.sessionId = opened.value.sessionId;
-      await pullHistory();
+      liveScroll = cache.scroll(state.sessionId);
+      const listed = Array.isArray(opened.value.sessions)
+        ? (state.sessions = opened.value.sessions, state.sessionsReady = true, Promise.resolve(state.sessions))
+        : refreshSessions();
+      await Promise.all([pullHistory(state.sessionId), listed]);
       ensureMux();
       emit();
     },
+    refreshSessions,
+    async listSessions() {
+      if (state.sessionsReady) {
+        refreshSessions();
+        return state.sessions;
+      }
+      return refreshSessions();
+    },
+    openSession,
+    createSession,
     async send(text) {
-      if (!state.sessionId) {
+      if (!state.sessionId || isDraft(state.sessionId)) {
         return { ok: false, error: { message: "no session" } };
       }
       return client.prompt(state.sessionId, text);
@@ -172,24 +315,44 @@ export function createChatRuntime(client) {
     downloadUrl(path) {
       return client.downloadUrl?.(state.sessionId, path) ?? "";
     },
+    upload(file, options, sessionId = state.sessionId) {
+      const id = sessionId || state.sessionId;
+      if (!id || isDraft(id) || typeof client.upload !== "function") {
+        return Promise.reject(new Error("file_upload_failed"));
+      }
+      return client.upload(id, file, options);
+    },
+    transcribe(blob, language, signal) {
+      if (typeof client.transcribe !== "function") {
+        return Promise.reject(new Error("voice_failed"));
+      }
+      return client.transcribe(blob, language, signal);
+    },
+    settings: client.settings,
     rememberScroll(top, height, view) {
       if (view <= 0) return;
-      state.scroll = pinnedScroll(top, height, view);
+      liveScroll = pinnedScroll(top, height, view);
+      if (state.sessionId) cache.setScroll(state.sessionId, liveScroll);
     },
     pinToBottom() {
-      state.scroll = { top: 0, stick: true };
+      liveScroll = { top: 0, stick: true };
+      if (state.sessionId) cache.setScroll(state.sessionId, liveScroll);
     },
     sticking() {
-      return state.scroll.stick !== false;
+      return (state.sessionId ? cache.scroll(state.sessionId) : liveScroll).stick !== false;
     },
     scrollTop(height, view) {
       if (view <= 0) return null;
-      return restoreScroll(state.scroll, height, view);
+      const saved = state.sessionId ? cache.peek(state.sessionId)?.scroll ?? liveScroll : liveScroll;
+      return restoreScroll(saved, height, view);
     },
     dispose() {
       dead = true;
       abort?.abort();
       muxLoop = null;
+      listing = null;
+      creating = null;
+      cache.clear();
       listeners.clear();
     },
   };

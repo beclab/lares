@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { classifyFailure, pickSttModelId, retryable } from "@lares/core/router/stt";
-import { TranscriptQueue } from "@lares/core/voice/client";
+import { postTranscribe, TranscriptQueue } from "@lares/core/voice/client";
 import { isComposerVoiceReady, isRecordingTooShort } from "@lares/core/voice/recorder";
 import {
   EMPTY_VOICE_CONFIG,
@@ -35,6 +35,25 @@ test("voice settings map the auto sentinel to an empty stored value", () => {
   ]);
   assert.equal(voiceStatusReady({ modelAvailable: true }), true);
   assert.equal(voiceStatusReady(null), false);
+});
+
+test("postTranscribe posts the blob to the Host voice URL", async () => {
+  const original = globalThis.fetch;
+  const calls: { url: string; type: string }[] = [];
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    calls.push({ url: String(url), type: String((init?.headers as Record<string, string>)?.["content-type"] ?? "") });
+    return new Response(JSON.stringify({ text: "你好" }), { status: 200 });
+  }) as typeof fetch;
+  try {
+    const blob = new Blob(["xxxx"], { type: "audio/webm" });
+    assert.equal(
+      await postTranscribe(blob, "zh", undefined, { baseUrl: "/laresHost/api/lares/voice" }),
+      "你好",
+    );
+    assert.deepEqual(calls, [{ url: "/laresHost/api/lares/voice/transcribe?language=zh", type: "audio/webm" }]);
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test("transcript queue waits until the composer is writable", () => {

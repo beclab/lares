@@ -19,9 +19,6 @@ scripts/dev-sync/machines.json
 .env.*
 !.env.example
 
-# Local TermiPass clone（独立 git 仓库；忽略以免 `git add` 进 dina）
-TermiPass/
-
 # Local reference sources（外部参考源码，非本仓业务；默认全部忽略，需显式指定才纳入）
 _参考/
 __tools/

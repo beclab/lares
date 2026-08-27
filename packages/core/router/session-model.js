@@ -38,6 +38,34 @@ export function currentEffortId(current, reasoning) {
   return current?.reasoningEffort ?? reasoning?.defaultEffort;
 }
 
+const EFFORT_ORDER = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+/** Router catalog dict `{ low: "low" }` → the effort menu shape the switcher already uses. */
+export function reasoningFromEfforts(raw) {
+  if (!raw || typeof raw !== "object") return undefined;
+  if (Array.isArray(raw.efforts)) {
+    return raw.efforts.length ? raw : undefined;
+  }
+  const efforts = [];
+  for (const id of EFFORT_ORDER) {
+    if (raw[id] != null) efforts.push({ id, name: id });
+  }
+  if (!efforts.length) {
+    for (const id of Object.keys(raw)) {
+      if (typeof id === "string" && id) efforts.push({ id, name: id });
+    }
+  }
+  if (!efforts.length) return undefined;
+  return {
+    efforts,
+    defaultEffort: efforts.find((row) => row.id !== "off")?.id ?? efforts[0].id,
+  };
+}
+
+export function reasoningOfModel(model) {
+  return reasoningFromEfforts(model?.reasoning ?? model?.reasoningEfforts);
+}
+
 export function modelSwitchSelection(group, model) {
   return {
     provider: group.id,

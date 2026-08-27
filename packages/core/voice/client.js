@@ -62,9 +62,10 @@ export function mergeTranscript(draft, transcript) {
   return `${base} ${text}`;
 }
 
-export async function postTranscribe(blob, language, signal) {
+export async function postTranscribe(blob, language, signal, options = {}) {
   const query = language ? `?language=${encodeURIComponent(language)}` : "";
-  const res = await fetch(`${API}/transcribe${query}`, {
+  const base = String(options.baseUrl ?? API).replace(/\/$/, "");
+  const res = await fetch(`${base}/transcribe${query}`, {
     method: "POST",
     headers: { "content-type": blob.type || "audio/webm" },
     body: blob,

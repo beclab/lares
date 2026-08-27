@@ -32,11 +32,20 @@ export function sseData(block) {
     .join("");
 }
 
-export function muxSessionEvent(envelope, sessionId) {
+export function muxEventFrame(envelope) {
   const frame = envelope?.type === "server-request" ? envelope.payload : envelope;
   if (frame?.type !== "session/event" || !frame.event) return null;
+  return {
+    sessionId: frame.sessionId || "",
+    event: frame.view ? { ...frame.event, view: frame.view } : frame.event,
+  };
+}
+
+export function muxSessionEvent(envelope, sessionId) {
+  const frame = muxEventFrame(envelope);
+  if (!frame) return null;
   if (sessionId && frame.sessionId !== sessionId) return null;
-  return frame.view ? { ...frame.event, view: frame.view } : frame.event;
+  return frame.event;
 }
 
 function decodeChunk(chunk, decoder) {
@@ -118,12 +127,21 @@ export async function* iterateWsJson(socket) {
   }
 }
 
-export async function* consumeMux(source, sessionId) {
+export async function* consumeMuxFrames(source) {
   const envelopes = typeof source?.getReader === "function"
     ? iterateSseJson(bytesOf(source))
     : iterateWsJson(source);
   for await (const envelope of envelopes) {
-    const event = muxSessionEvent(envelope, sessionId);
-    if (event) yield event;
+    const frame = muxEventFrame(envelope);
+    if (frame) yield frame;
+  }
+}
+
+export async function* consumeMux(source, sessionId) {
+  const currentId = () => (typeof sessionId === "function" ? sessionId() : sessionId);
+  for await (const frame of consumeMuxFrames(source)) {
+    const want = currentId();
+    if (want && frame.sessionId !== want) continue;
+    yield frame.event;
   }
 }

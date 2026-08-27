@@ -12,12 +12,13 @@ function sseFrame(payload) {
   })}\n\n`;
 }
 
-function mockClient({ events = [], sessionId = "s1" } = {}) {
+function mockClient({ events = [], eventsById, sessionId = "s1" } = {}) {
   let probes = 0;
   let histories = 0;
   let muxes = 0;
   let encoder;
   let controller;
+  const byId = eventsById ?? { [sessionId]: events };
   const body = new ReadableStream({
     start(c) {
       controller = c;
@@ -37,10 +38,26 @@ function mockClient({ events = [], sessionId = "s1" } = {}) {
       return { status: "ok", http: 200 };
     },
     ensureSession: async () => ({ ok: true, value: { sessionId } }),
-    rpc: async (method) => {
-      if (method !== "session.history") throw new Error(method);
-      histories += 1;
-      return { ok: true, value: { events } };
+    rpc: async (method, payload = {}) => {
+      if (method === "session.list") {
+        return {
+          ok: true,
+          value: {
+            items: [
+              { sessionId: "child", parentSessionId: sessionId, origin: "subagent" },
+              ...Object.keys(byId).map((id) => ({ sessionId: id, title: id })),
+            ],
+          },
+        };
+      }
+      if (method === "session.create") {
+        return { ok: true, value: { sessionId: "s3" } };
+      }
+      if (method === "session.history") {
+        histories += 1;
+        return { ok: true, value: { events: byId[payload.sessionId] || [] } };
+      }
+      throw new Error(method);
     },
     prompt: async () => ({ ok: true, value: { accepted: true } }),
     openMux: async () => {
@@ -132,4 +149,336 @@ test("runtime keeps pinned scroll across remounts and ignores a collapsed viewpo
   runtime.pinToBottom();
   assert.equal(runtime.sticking(), true);
   assert.equal(runtime.scrollTop(5000, 400), 4600);
+});
+
+test("listSessions hides subagents and openSession replaces the transcript", async () => {
+  const user = (text) => ({
+    type: "user/message",
+    seq: 1,
+    data: { content: [{ type: "text", text }], source: { kind: "user" } },
+  });
+  const client = mockClient({
+    eventsById: {
+      s1: [user("one")],
+      s2: [user("two")],
+    },
+  });
+  const runtime = createChatRuntime(client);
+  await runtime.start();
+  assert.deepEqual(runtime.snapshot().messages, [{ role: "user", text: "one" }]);
+  assert.deepEqual(
+    await runtime.listSessions(),
+    [
+      { sessionId: "s1", title: "s1", updatedAt: 0, blank: false },
+      { sessionId: "s2", title: "s2", updatedAt: 0, blank: false },
+    ],
+  );
+  await runtime.openSession("s2");
+  assert.equal(runtime.snapshot().sessionId, "s2");
+  assert.deepEqual(runtime.snapshot().messages, [{ role: "user", text: "two" }]);
+  await runtime.createSession();
+  assert.equal(runtime.snapshot().sessionId, "s3");
+  assert.deepEqual(runtime.snapshot().messages, []);
+  runtime.dispose();
+  client.close();
+});
+
+test("listSessions is served from cache and openSession restores a remembered transcript immediately", async () => {
+  const user = (text) => ({
+    type: "user/message",
+    seq: 1,
+    data: { content: [{ type: "text", text }], source: { kind: "user" } },
+  });
+  let historyDelay = 0;
+  const client = mockClient({
+    eventsById: {
+      s1: [user("one")],
+      s2: [user("two")],
+    },
+  });
+  const originalRpc = client.rpc;
+  client.rpc = async (method, payload = {}) => {
+    if (method === "session.history" && historyDelay) {
+      await new Promise((resolve) => setTimeout(resolve, historyDelay));
+    }
+    return originalRpc(method, payload);
+  };
+  const runtime = createChatRuntime(client);
+  await runtime.start();
+  const cached = runtime.snapshot().sessions;
+  assert.deepEqual(
+    cached.map((row) => row.sessionId),
+    ["s1", "s2"],
+  );
+  const listed = await runtime.listSessions();
+  assert.equal(listed, cached);
+  await runtime.openSession("s2");
+  historyDelay = 50;
+  const pending = runtime.openSession("s1");
+  assert.deepEqual(runtime.snapshot().messages, [{ role: "user", text: "one" }]);
+  await pending;
+  assert.deepEqual(runtime.snapshot().messages, [{ role: "user", text: "one" }]);
+  runtime.dispose();
+  client.close();
+});
+
+test("openSession exposes historyLoading until the transcript arrives", async () => {
+  const user = (text) => ({
+    type: "user/message",
+    seq: 1,
+    data: { content: [{ type: "text", text }], source: { kind: "user" } },
+  });
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const client = mockClient({
+    eventsById: {
+      s1: [user("one")],
+      s2: [user("two")],
+    },
+  });
+  const originalRpc = client.rpc;
+  client.rpc = async (method, payload = {}) => {
+    if (method === "session.history" && payload.sessionId === "s2") await gate;
+    return originalRpc(method, payload);
+  };
+  const runtime = createChatRuntime(client);
+  await runtime.start();
+  assert.equal(runtime.snapshot().historyLoading, false);
+  const pending = runtime.openSession("s2");
+  assert.equal(runtime.snapshot().sessionId, "s2");
+  assert.equal(runtime.snapshot().historyLoading, true);
+  assert.deepEqual(runtime.snapshot().messages, []);
+  release();
+  await pending;
+  assert.equal(runtime.snapshot().historyLoading, false);
+  assert.deepEqual(runtime.snapshot().messages, [{ role: "user", text: "two" }]);
+  runtime.dispose();
+  client.close();
+});
+
+test("a slower history fetch does not overwrite a later session", async () => {
+  const user = (text) => ({
+    type: "user/message",
+    seq: 1,
+    data: { content: [{ type: "text", text }], source: { kind: "user" } },
+  });
+  let releaseS2;
+  const gateS2 = new Promise((resolve) => {
+    releaseS2 = resolve;
+  });
+  const client = mockClient({
+    eventsById: {
+      s1: [user("one")],
+      s2: [user("two")],
+    },
+  });
+  const originalRpc = client.rpc;
+  client.rpc = async (method, payload = {}) => {
+    if (method === "session.history" && payload.sessionId === "s2") await gateS2;
+    return originalRpc(method, payload);
+  };
+  const runtime = createChatRuntime(client);
+  await runtime.start();
+  const pendingS2 = runtime.openSession("s2");
+  await runtime.openSession("s1");
+  releaseS2();
+  await pendingS2;
+  assert.equal(runtime.snapshot().sessionId, "s1");
+  assert.equal(runtime.snapshot().historyLoading, false);
+  assert.deepEqual(runtime.snapshot().messages, [{ role: "user", text: "one" }]);
+  const histories = client.stats().histories;
+  const pending = runtime.openSession("s2");
+  assert.equal(runtime.snapshot().sessionId, "s2");
+  assert.equal(runtime.snapshot().historyLoading, false);
+  assert.deepEqual(runtime.snapshot().messages, [{ role: "user", text: "two" }]);
+  await pending;
+  assert.equal(client.stats().histories, histories);
+  runtime.dispose();
+  client.close();
+});
+
+test("switching away mid-load still keeps the later session and fills the abandoned cache", async () => {
+  const user = (text) => ({
+    type: "user/message",
+    seq: 1,
+    data: { content: [{ type: "text", text }], source: { kind: "user" } },
+  });
+  let releaseS2;
+  let releaseS3;
+  const gateS2 = new Promise((resolve) => {
+    releaseS2 = resolve;
+  });
+  const gateS3 = new Promise((resolve) => {
+    releaseS3 = resolve;
+  });
+  const client = mockClient({
+    eventsById: {
+      s1: [user("one")],
+      s2: [user("two")],
+      s3: [user("three")],
+    },
+  });
+  const originalRpc = client.rpc;
+  client.rpc = async (method, payload = {}) => {
+    if (method === "session.history" && payload.sessionId === "s2") await gateS2;
+    if (method === "session.history" && payload.sessionId === "s3") await gateS3;
+    return originalRpc(method, payload);
+  };
+  const runtime = createChatRuntime(client);
+  await runtime.start();
+  const pendingS2 = runtime.openSession("s2");
+  const pendingS3 = runtime.openSession("s3");
+  assert.equal(runtime.snapshot().sessionId, "s3");
+  assert.equal(runtime.snapshot().historyLoading, true);
+  assert.deepEqual(runtime.snapshot().messages, []);
+  releaseS2();
+  await pendingS2;
+  assert.equal(runtime.snapshot().sessionId, "s3");
+  assert.deepEqual(runtime.snapshot().messages, []);
+  releaseS3();
+  await pendingS3;
+  assert.deepEqual(runtime.snapshot().messages, [{ role: "user", text: "three" }]);
+  const pending = runtime.openSession("s2");
+  assert.deepEqual(runtime.snapshot().messages, [{ role: "user", text: "two" }]);
+  await pending;
+  runtime.dispose();
+  client.close();
+});
+
+test("createSession leaves the previous transcript before session.create returns", async () => {
+  const user = (text) => ({
+    type: "user/message",
+    seq: 1,
+    data: { content: [{ type: "text", text }], source: { kind: "user" } },
+  });
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const client = mockClient({ events: [user("one")] });
+  const originalRpc = client.rpc;
+  let creates = 0;
+  let histories = 0;
+  client.rpc = async (method, payload = {}) => {
+    if (method === "session.create") {
+      creates += 1;
+      await gate;
+    }
+    if (method === "session.history") histories += 1;
+    return originalRpc(method, payload);
+  };
+  const runtime = createChatRuntime(client);
+  await runtime.start();
+  assert.deepEqual(runtime.snapshot().messages, [{ role: "user", text: "one" }]);
+  const pending = runtime.createSession();
+  assert.equal(runtime.snapshot().sessionId, "");
+  assert.deepEqual(runtime.snapshot().messages, []);
+  assert.equal(runtime.snapshot().historyLoading, false);
+  assert.equal(creates, 1);
+  const startedHistories = histories;
+  release();
+  await pending;
+  assert.equal(runtime.snapshot().sessionId, "s3");
+  assert.deepEqual(runtime.snapshot().messages, []);
+  assert.equal(histories, startedHistories);
+  runtime.dispose();
+  client.close();
+});
+
+test("createSession is a no-op when the current chat is already empty", async () => {
+  const client = mockClient({ events: [] });
+  const originalRpc = client.rpc;
+  let creates = 0;
+  client.rpc = async (method, payload = {}) => {
+    if (method === "session.create") creates += 1;
+    return originalRpc(method, payload);
+  };
+  const runtime = createChatRuntime(client);
+  await runtime.start();
+  await runtime.createSession();
+  assert.equal(creates, 0);
+  assert.equal(runtime.snapshot().sessionId, "s1");
+  runtime.dispose();
+  client.close();
+});
+
+test("createSession reuses a listed blank session without calling session.create", async () => {
+  const user = (text) => ({
+    type: "user/message",
+    seq: 1,
+    data: { content: [{ type: "text", text }], source: { kind: "user" } },
+  });
+  const client = mockClient({
+    eventsById: {
+      s1: [user("one")],
+      spare: [],
+    },
+  });
+  const originalRpc = client.rpc;
+  let creates = 0;
+  client.rpc = async (method, payload = {}) => {
+    if (method === "session.list") {
+      return {
+        ok: true,
+        value: {
+          items: [
+            { sessionId: "s1", title: "s1" },
+            { sessionId: "spare", title: "", blank: true },
+          ],
+        },
+      };
+    }
+    if (method === "session.create") {
+      creates += 1;
+      return originalRpc(method, payload);
+    }
+    return originalRpc(method, payload);
+  };
+  const runtime = createChatRuntime(client);
+  await runtime.start();
+  await runtime.refreshSessions();
+  const pending = runtime.createSession();
+  assert.equal(runtime.snapshot().sessionId, "spare");
+  assert.deepEqual(runtime.snapshot().messages, []);
+  assert.equal(creates, 0);
+  await pending;
+  assert.equal(runtime.snapshot().sessionId, "spare");
+  assert.equal(creates, 0);
+  runtime.dispose();
+  client.close();
+});
+
+test("createSession does not steal the view if another chat was opened while creating", async () => {
+  const user = (text) => ({
+    type: "user/message",
+    seq: 1,
+    data: { content: [{ type: "text", text }], source: { kind: "user" } },
+  });
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const client = mockClient({
+    eventsById: {
+      s1: [user("one")],
+      s2: [user("two")],
+    },
+  });
+  const originalRpc = client.rpc;
+  client.rpc = async (method, payload = {}) => {
+    if (method === "session.create") await gate;
+    return originalRpc(method, payload);
+  };
+  const runtime = createChatRuntime(client);
+  await runtime.start();
+  const pending = runtime.createSession();
+  await runtime.openSession("s2");
+  release();
+  await pending;
+  assert.equal(runtime.snapshot().sessionId, "s2");
+  assert.deepEqual(runtime.snapshot().messages, [{ role: "user", text: "two" }]);
+  runtime.dispose();
+  client.close();
 });

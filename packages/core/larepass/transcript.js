@@ -1,6 +1,6 @@
 import { producedPathsFromView } from "../files/deliverables.js";
-
-const SKIP_USER_KINDS = new Set(["plugin", "tool"]);
+import { contextForm, contextProvenance, isHumanUserSource } from "./context-provenance.js";
+import { toolRowModel } from "./tool-row.js";
 
 export function textFromBlocks(blocks) {
   if (!Array.isArray(blocks)) return "";
@@ -33,80 +33,12 @@ export function mergeEvents(base, extra) {
     .map(([, event]) => event);
 }
 
-function emptyOpen() {
-  return {
-    reasoning: "",
-    text: "",
-    settled: false,
-    tools: [],
-    toolById: new Map(),
-    files: [],
-    fileSeen: new Set(),
-  };
-}
-
 function callViewOf(view) {
   return view?.for === "call" ? view.view : null;
 }
 
 function resultViewOf(view) {
   return view?.for === "result" ? view.view : null;
-}
-
-function toolTitle(name, view) {
-  if (typeof view?.title === "string" && view.title.trim()) return view.title;
-  return name || "tool";
-}
-
-function toolDetail(data, view) {
-  if (typeof view?.description === "string" && view.description.trim()) return view.description;
-  const raw = data?.arguments;
-  if (typeof raw !== "string" || !raw) return "";
-  try {
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === "object") {
-      return parsed.command || parsed.path || parsed.query || parsed.url || "";
-    }
-  } catch {
-    // keep a short raw fallback
-  }
-  return raw.slice(0, 200);
-}
-
-function rememberFile(open, path) {
-  if (!path || open.fileSeen.has(path)) return;
-  open.fileSeen.add(path);
-  open.files.push(path);
-}
-
-function applyChunk(open, chunk) {
-  if (!chunk || typeof chunk !== "object") return;
-  if (chunk.type === "text-delta" && typeof chunk.text === "string") {
-    open.text += chunk.text;
-    return;
-  }
-  if (chunk.type === "reasoning-delta" && typeof chunk.text === "string") {
-    open.reasoning += chunk.text;
-    return;
-  }
-  if (chunk.type === "block-end" && chunk.block?.type === "text" && typeof chunk.block.text === "string" && !open.text) {
-    open.text = chunk.block.text;
-  }
-  if (chunk.type === "block-end" && chunk.block?.type === "reasoning" && typeof chunk.block.text === "string" && !open.reasoning) {
-    open.reasoning = chunk.block.text;
-  }
-}
-
-function applyAssistantMessage(open, content) {
-  let reasoning = "";
-  let text = "";
-  for (const block of Array.isArray(content) ? content : []) {
-    if (block?.type === "reasoning" && typeof block.text === "string") reasoning += block.text;
-    if (block?.type === "text" && typeof block.text === "string") text += block.text;
-  }
-  open.reasoning = reasoning;
-  open.text = text;
-  open.settled = true;
 }
 
 function resultCallId(data) {
@@ -119,35 +51,12 @@ function resultIsError(data) {
   return Array.isArray(blocks) && blocks.some((block) => block?.isError);
 }
 
-function snapshotOpen(open, running) {
-  const items = [];
-  if (open.reasoning) {
-    items.push({
-      type: "reasoning",
-      text: open.reasoning,
-      running: Boolean(running && !open.settled),
-    });
-  }
-  for (const tool of open.tools) {
-    items.push({
-      type: "tool",
-      callId: tool.callId,
-      name: tool.name,
-      title: tool.title,
-      status: tool.status,
-      detail: tool.detail,
-      paths: tool.paths,
-    });
-  }
-  if (open.text) {
-    items.push({
-      type: "assistant",
-      text: open.text,
-      ...(running && !open.settled ? { pending: true } : {}),
-    });
-  }
-  if (open.files.length) items.push({ type: "files", paths: [...open.files] });
-  return items;
+function retrySeconds(milliseconds) {
+  return Math.max(1, Math.ceil(Number(milliseconds) / 1000) || 1);
+}
+
+function blockKey(turn, step, index) {
+  return `${turn ?? 0}:${step ?? 0}:${index ?? 0}`;
 }
 
 function messagesFromItems(items) {
@@ -165,15 +74,144 @@ function messagesFromItems(items) {
   return messages;
 }
 
+function upsert(items, indexOf, key, row) {
+  if (indexOf.has(key)) {
+    Object.assign(items[indexOf.get(key)], row);
+    return items[indexOf.get(key)];
+  }
+  items.push(row);
+  indexOf.set(key, items.length - 1);
+  return row;
+}
+
+function settleOpen(items, running) {
+  for (const row of items) {
+    if (row.type === "reasoning") row.running = Boolean(running && row.running);
+    if (row.type === "assistant" && !running) delete row.pending;
+    if (row.type === "retry" && !running && row.retryState === "scheduled") {
+      row.retryState = "cancelled";
+    }
+  }
+}
+
 export function foldTranscript(entries) {
   const items = [];
-  let open = emptyOpen();
+  const blocks = new Map();
+  const tools = new Map();
+  const retries = new Map();
+  const fileSeen = new Set();
+  let files = [];
+  let filesAt = -1;
   let running = false;
   let error = "";
+  let streamCursor = { loc: "", kind: "", index: 0 };
 
-  const flushOpen = () => {
-    items.push(...snapshotOpen(open, false));
-    open = emptyOpen();
+  const rememberFile = (path) => {
+    if (!path || fileSeen.has(path)) return;
+    fileSeen.add(path);
+    files.push(path);
+  };
+
+  const syncFiles = () => {
+    if (!files.length) return;
+    if (filesAt >= 0) {
+      items[filesAt].paths = [...files];
+      return;
+    }
+    items.push({ type: "files", paths: [...files] });
+    filesAt = items.length - 1;
+  };
+
+  const closeTurn = () => {
+    running = false;
+    for (const row of items) {
+      if (row.type === "reasoning") row.running = false;
+      if (row.type === "assistant") delete row.pending;
+    }
+    syncFiles();
+  };
+
+  const putBlock = (turn, step, index, row) => {
+    upsert(items, blocks, blockKey(turn, step, index), row);
+  };
+
+  const chunkIndex = (data, chunk) => {
+    if (typeof chunk.index === "number") return chunk.index;
+    const loc = `${data.turn ?? 0}:${data.step ?? 0}`;
+    const kind = chunk.type === "reasoning-delta" || chunk.block?.type === "reasoning"
+      ? "reasoning"
+      : chunk.type === "text-delta" || chunk.block?.type === "text"
+        ? "text"
+        : chunk.type;
+    if (streamCursor.loc !== loc || streamCursor.kind !== kind) {
+      streamCursor.index = streamCursor.loc === loc ? streamCursor.index + 1 : 0;
+      streamCursor.loc = loc;
+      streamCursor.kind = kind;
+    }
+    return streamCursor.index;
+  };
+
+  const applyChunk = (data) => {
+    const chunk = data?.chunk;
+    if (!chunk || typeof chunk !== "object") return;
+    const turn = data.turn;
+    const step = data.step;
+    const index = chunkIndex(data, chunk);
+    if (chunk.type === "text-delta" && typeof chunk.text === "string") {
+      const prev = blocks.has(blockKey(turn, step, index))
+        ? items[blocks.get(blockKey(turn, step, index))]
+        : null;
+      const text = `${prev?.type === "assistant" ? prev.text : ""}${chunk.text}`;
+      putBlock(turn, step, index, {
+        type: "assistant",
+        text,
+        ...(running ? { pending: true } : {}),
+      });
+      return;
+    }
+    if (chunk.type === "reasoning-delta" && typeof chunk.text === "string") {
+      const prev = blocks.has(blockKey(turn, step, index))
+        ? items[blocks.get(blockKey(turn, step, index))]
+        : null;
+      const text = `${prev?.type === "reasoning" ? prev.text : ""}${chunk.text}`;
+      putBlock(turn, step, index, {
+        type: "reasoning",
+        text,
+        running: Boolean(running),
+      });
+      return;
+    }
+    if (chunk.type === "block-end" && chunk.block?.type === "text" && typeof chunk.block.text === "string") {
+      putBlock(turn, step, index, {
+        type: "assistant",
+        text: chunk.block.text,
+        ...(running ? { pending: true } : {}),
+      });
+      return;
+    }
+    if (chunk.type === "block-end" && chunk.block?.type === "reasoning" && typeof chunk.block.text === "string") {
+      putBlock(turn, step, index, {
+        type: "reasoning",
+        text: chunk.block.text,
+        running: Boolean(running),
+      });
+    }
+  };
+
+  const applyAssistantMessage = (data) => {
+    const content = data?.message?.content;
+    const turn = data?.turn ?? data?.message?.turn;
+    const step = data?.step ?? data?.message?.step;
+    if (!Array.isArray(content)) return;
+    content.forEach((block, index) => {
+      if (block?.type === "reasoning" && typeof block.text === "string") {
+        putBlock(turn, step, index, { type: "reasoning", text: block.text, running: false });
+        return;
+      }
+      if (block?.type === "text" && typeof block.text === "string") {
+        putBlock(turn, step, index, { type: "assistant", text: block.text });
+      }
+    });
   };
 
   for (const entry of Array.isArray(entries) ? entries : []) {
@@ -183,72 +221,111 @@ export function foldTranscript(entries) {
     const view = entryView(entry, event);
 
     if (event.type === "turn/start") {
-      flushOpen();
+      closeTurn();
+      files = [];
+      fileSeen.clear();
+      filesAt = -1;
       running = true;
       error = "";
       continue;
     }
 
     if (event.type === "turn/end") {
-      running = false;
       if (data.reason?.kind === "error") {
         error = data.reason.error?.message || "turn failed";
       }
-      flushOpen();
+      closeTurn();
       continue;
     }
 
     if (event.type === "user/message") {
-      if (SKIP_USER_KINDS.has(data.source?.kind)) continue;
       const text = textFromBlocks(data.content);
-      if (text) items.push({ type: "user", text });
+      if (isHumanUserSource(data.source)) {
+        if (text) items.push({ type: "user", text });
+        continue;
+      }
+      const provenance = contextProvenance(data.source);
+      items.push({
+        type: "context",
+        role: provenance.role,
+        label: provenance.label,
+        form: contextForm(data.source),
+        text,
+      });
       continue;
     }
 
     if (event.type === "assistant/message") {
-      applyAssistantMessage(open, data.message?.content);
+      applyAssistantMessage(data);
       continue;
     }
 
     if (event.type === "assistant/chunk") {
-      applyChunk(open, data.chunk);
+      applyChunk(data);
       continue;
     }
 
     if (event.type === "tool/call") {
       const callView = callViewOf(view);
-      const tool = {
+      const argsRaw = typeof data.arguments === "string" ? data.arguments : "";
+      const model = toolRowModel(data.name, argsRaw);
+      const row = {
+        type: "tool",
         callId: data.callId,
         name: data.name,
-        title: toolTitle(data.name, callView),
         status: "running",
-        detail: String(toolDetail(data, callView) || ""),
+        argsRaw,
         paths: producedPathsFromView(callView),
-        callView,
+        ...model,
       };
-      open.tools.push(tool);
-      if (data.callId) open.toolById.set(data.callId, tool);
+      items.push(row);
+      if (data.callId) tools.set(data.callId, items.length - 1);
       continue;
     }
 
     if (event.type === "tool/result") {
       const id = resultCallId(data);
-      const tool = open.toolById.get(id);
-      const resultView = resultViewOf(view);
+      const index = tools.get(id);
+      const tool = index === undefined ? null : items[index];
       if (tool) {
         tool.status = resultIsError(data) ? "error" : "done";
-        if (resultView) tool.title = toolTitle(tool.name, resultView);
+        const resultView = resultViewOf(view);
+        if (resultView?.title) tool.title = resultView.title;
         if (tool.status === "done") {
-          for (const path of tool.paths) rememberFile(open, path);
+          for (const path of tool.paths) rememberFile(path);
         }
       }
+      continue;
+    }
+
+    if (event.type === "llm/retry") {
+      const retryId = data.retryId || String(event.seq ?? items.length);
+      upsert(items, retries, retryId, {
+        type: "retry",
+        retryId,
+        retry: data.retry,
+        maxRetries: data.maxRetries,
+        mode: data.mode,
+        delayMs: data.delayMs,
+        seconds: retrySeconds(data.delayMs),
+        failure: data.failure,
+        retryState: "scheduled",
+      });
+      continue;
+    }
+
+    if (event.type === "llm/retry-started") {
+      const retryId = data.retryId;
+      const index = retries.get(retryId);
+      if (index !== undefined) items[index].retryState = "started";
     }
   }
 
-  const all = [...items, ...snapshotOpen(open, running)];
+  settleOpen(items, running);
+  if (running) syncFiles();
   return {
-    items: all,
-    messages: messagesFromItems(all),
+    items,
+    messages: messagesFromItems(items),
     running,
     error,
   };

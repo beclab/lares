@@ -1,7 +1,10 @@
 import { hostConfigFromEnv, hostUrl, MODELS_PATH, probeHost } from "@lares/core/larepass/host";
 import { callRpc, consumeMux, ensureSession, loadTranscript, MUX_PATH, sendPrompt } from "@lares/core/larepass/chat";
 import { muxWsUrl } from "@lares/core/larepass/mux";
+import { createHostSettings } from "@lares/core/larepass/settings";
 import { downloadFileUrl, previewMetaUrl, rawFileUrl } from "@lares/core/files/preview-workspace";
+import { FILES_UPLOAD_PATH, uploadFile } from "@lares/core/files/upload-client";
+import { API as VOICE_API, postTranscribe } from "@lares/core/voice/client";
 
 function pageOrigin() {
   try {
@@ -129,6 +132,12 @@ export function createHostClient(ports = {}) {
     downloadUrl(sessionId, path) {
       return urlFor(downloadFileUrl(sessionId, path));
     },
+    upload(sessionId, file, options) {
+      return uploadFile(file, sessionId, { ...options, url: urlFor(FILES_UPLOAD_PATH) });
+    },
+    transcribe(blob, language, signal) {
+      return postTranscribe(blob, language, signal, { baseUrl: urlFor(VOICE_API) });
+    },
     async openMux(signal) {
       try {
         return await openMuxSocket(urlFor(MUX_PATH), signal);
@@ -141,5 +150,6 @@ export function createHostClient(ports = {}) {
       }
     },
     consumeMux,
+    settings: createHostSettings(request),
   };
 }

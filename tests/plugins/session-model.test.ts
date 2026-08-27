@@ -13,9 +13,20 @@ import {
   isComposerModelAvailable,
   isSameSessionModel,
   modelSwitchSelection,
+  reasoningFromEfforts,
+  reasoningOfModel,
   selectionKey,
   sessionModelLabel,
 } from "@lares/core/router/session-model";
+
+test("Router catalog effort dict becomes the switcher menu shape", () => {
+  assert.deepEqual(reasoningFromEfforts({ low: "low", high: "high" }), {
+    efforts: [{ id: "low", name: "low" }, { id: "high", name: "high" }],
+    defaultEffort: "low",
+  });
+  assert.equal(reasoningOfModel({ reasoningEfforts: { off: "off" } }).defaultEffort, "off");
+  assert.equal(reasoningFromEfforts(undefined), undefined);
+});
 
 test("composer model switching is off on a subagent session", () => {
   assert.equal(isComposerModelAvailable(undefined), true);

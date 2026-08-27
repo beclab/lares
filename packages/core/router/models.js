@@ -110,6 +110,8 @@ export function listedCatalogModel(provider, model) {
     id: model.id,
     name: model.name || model.id,
     ...(model.description ? { description: model.description } : {}),
+    ...(model.reasoningEfforts ? { reasoningEfforts: model.reasoningEfforts } : {}),
+    ...(model.reasoning ? { reasoning: model.reasoning } : {}),
   };
 }
 

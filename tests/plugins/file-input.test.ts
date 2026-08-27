@@ -30,7 +30,7 @@ import {
   partitionDocumentsBySize,
   splitComposerFiles,
 } from "@lares/core/files/intake";
-import { createUploadCommit, insertUploadReferences, uploadReference } from "@lares/core/files/mention";
+import { appendDraftMentions, createUploadCommit, insertUploadReferences, uploadReference } from "@lares/core/files/mention";
 import { createPreviewHandler } from "../../packages/web/workspace-preview/host/index.js";
 
 type FakeRequest = Readable & { headers: Record<string, string> };
@@ -239,6 +239,15 @@ test("document intake commits paths only after upload succeeds", async () => {
   assert.deepEqual(intake.getSnapshot("s1"), { pending: 0, failures: [] });
 });
 
+test("appendDraftMentions spaces mentions for a plain composer draft", () => {
+  assert.equal(appendDraftMentions("", [".lares/uploads/a.md"]), "@.lares/uploads/a.md");
+  assert.equal(
+    appendDraftMentions("看这个", [".lares/uploads/a.md", ".lares/uploads/b.md"]),
+    "看这个 @.lares/uploads/a.md @.lares/uploads/b.md",
+  );
+  assert.equal(appendDraftMentions("已有 ", [".lares/uploads/c.md"]), "已有 @.lares/uploads/c.md");
+});
+
 test("an uploaded file becomes a file reference the model still sees as a path", () => {
   assert.deepEqual(uploadReference(".lares/uploads/季度经营分析_2026Q2.md"), {
     source: "reference",
@@ -365,18 +374,21 @@ test("composer upload block clears only when it still owns the block", () => {
 
 test("uploadFile makes one request and leaves retry to the user", async () => {
   const original = globalThis.fetch;
-  let calls = 0;
-  globalThis.fetch = (async () => {
-    calls += 1;
+  const calls: string[] = [];
+  globalThis.fetch = (async (url: string) => {
+    calls.push(String(url));
     throw new TypeError("network down");
   }) as typeof fetch;
   try {
     const file = new File(["hello"], "notes.md", { type: "text/markdown" });
     await assert.rejects(
-      () => uploadFile(file, "s1", { requestId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }),
+      () => uploadFile(file, "s1", {
+        requestId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        url: "/laresHost/api/lares/files/upload",
+      }),
       /network down/,
     );
-    assert.equal(calls, 1);
+    assert.deepEqual(calls, ["/laresHost/api/lares/files/upload"]);
   } finally {
     globalThis.fetch = original;
   }

@@ -1,0 +1,21 @@
+.lares-shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  color: var(--q-ink-1);
+}
+
+.lares-shell button,
+.lares-shell textarea,
+.lares-shell select {
+  font: inherit;
+  color: inherit;
+}
+
+.lares-shell button:disabled,
+.lares-shell textarea:disabled,
+.lares-shell select:disabled {
+  opacity: 0.5;
+}

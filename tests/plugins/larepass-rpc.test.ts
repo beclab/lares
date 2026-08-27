@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { callRpc, ensureSession, loadTranscript, sendPrompt } from "@lares/core/larepass/chat";
+import { callRpc, ensureSession, groupSessionsByRecency, loadTranscript, rootSessions, sendPrompt, summarizeSession, visibleHistorySessions } from "@lares/core/larepass/chat";
 import { promptPayload, rpcPath, unwrapServerResponse, wrapClientRequest } from "@lares/core/larepass/rpc";
+import { STAGE_COPY } from "@lares/core/larepass/stage-copy";
 import { foldTranscript, textFromBlocks } from "@lares/core/larepass/transcript";
+import { toolVariantIcon } from "@lares/core/larepass/tool-row";
 
 test("rpc envelope wraps POST /api/<method> and unwraps server-response", () => {
   const req = wrapClientRequest("session.prompt", { sessionId: "s1" });
@@ -87,9 +89,64 @@ test("foldTranscript keeps reasoning, tools, and produced files", () => {
   assert.equal(folded.running, false);
   assert.deepEqual(folded.items.map((item) => item.type), ["user", "reasoning", "tool", "assistant", "files"]);
   assert.equal(folded.items[1].text, "plan it");
-  assert.equal(folded.items[2].title, "Write out.png");
+  assert.equal(folded.items[2].title, "Write");
+  assert.equal(folded.items[2].summary, "out.png");
   assert.equal(folded.items[2].status, "done");
   assert.deepEqual(folded.items[4].paths, ["out.png"]);
+});
+
+test("foldTranscript projects injected context and keeps think/tool/retry order", () => {
+  const folded = foldTranscript([
+    { type: "turn/start", seq: 1, data: { turn: 1 } },
+    { type: "user/message", seq: 2, data: { content: [{ type: "text", text: "run ffmpeg" }], source: { kind: "user" } } },
+    {
+      type: "user/message",
+      seq: 3,
+      data: {
+        content: [{ type: "text", text: "<system-reminder>\nInstructions from: AGENTS.md\n" }],
+        source: { kind: "agent-instructions", form: "instructions", changes: [{ path: "AGENTS.md" }] },
+      },
+    },
+    {
+      type: "user/message",
+      seq: 4,
+      data: {
+        content: [{ type: "text", text: "<system-reminder>\n<available_skills>\n" }],
+        source: { kind: "plugin", plugin: "skill-catalog", form: "catalog" },
+      },
+    },
+    { type: "assistant/chunk", seq: 5, data: { turn: 1, step: 1, chunk: { type: "reasoning-delta", index: 0, text: "Need ffmpeg.\n" } } },
+    {
+      type: "tool/call",
+      seq: 6,
+      data: { callId: "c1", name: "ffmpeg_encode", arguments: "{\"filter\":\"testsrc2\"}" },
+    },
+    {
+      type: "llm/retry",
+      seq: 7,
+      data: { retryId: "r1", retry: 5, maxRetries: 5, mode: "normal", delayMs: 9000, failure: { message: "timeout" } },
+    },
+    { type: "assistant/chunk", seq: 8, data: { turn: 1, step: 2, chunk: { type: "reasoning-delta", index: 0, text: "Done. Report encoder." } } },
+    { type: "assistant/chunk", seq: 9, data: { turn: 1, step: 2, chunk: { type: "text-delta", index: 1, text: "ok" } } },
+    { type: "turn/end", seq: 10, data: { turn: 1, reason: { kind: "completed" } } },
+  ]);
+  assert.deepEqual(folded.items.map((item) => item.type), [
+    "user",
+    "context",
+    "context",
+    "reasoning",
+    "tool",
+    "retry",
+    "reasoning",
+    "assistant",
+  ]);
+  assert.equal(folded.items[1].label, "AGENTS.md");
+  assert.equal(folded.items[2].label, "skill-catalog");
+  assert.equal(folded.items[4].title, "Tool call");
+  assert.equal(folded.items[4].summary, "ffmpeg_encode · testsrc2");
+  assert.equal(folded.items[5].retry, 5);
+  assert.equal(folded.items[5].seconds, 9);
+  assert.deepEqual(folded.messages.map((row) => row.role), ["user", "assistant"]);
 });
 
 test("callRpc maps auth redirects and business errors", async () => {
@@ -133,12 +190,59 @@ test("ensureSession reuses a top-level row before creating", async () => {
     };
   });
   assert.equal(reused.value.sessionId, "s1");
+  assert.equal(reused.value.sessions[0].sessionId, "s1");
+  assert.equal(reused.value.sessions.length, 1);
   const created = await ensureSession(async (method) => {
     if (method === "session.list") return { ok: true, value: { items: [] } };
     assert.equal(method, "session.create");
     return { ok: true, value: { sessionId: "fresh" } };
   });
   assert.equal(created.value.sessionId, "fresh");
+});
+
+test("rootSessions drops subagent rows and summarizeSession picks a title", () => {
+  assert.deepEqual(
+    rootSessions([
+      { sessionId: "child", parentSessionId: "s1", origin: "subagent", title: "tool" },
+      { sessionId: "s1", title: "hello", updatedAt: 9 },
+      { name: "orphan" },
+    ]).map(summarizeSession),
+    [{ sessionId: "s1", title: "hello", updatedAt: 9, blank: false }],
+  );
+  assert.equal(summarizeSession({ sessionId: "s2", name: "  draft  ", createdAt: 3 }).title, "draft");
+  assert.equal(
+    summarizeSession({
+      sessionId: "s3",
+      updatedAt: 2,
+      projections: { values: { title: "gpu check" } },
+    }).title,
+    "gpu check",
+  );
+});
+
+test("history groups by today and the previous 7 days and hides spare blanks", () => {
+  const now = Date.parse("2026-08-26T12:00:00+08:00");
+  const today = Date.parse("2026-08-26T09:00:00+08:00");
+  const week = Date.parse("2026-08-22T09:00:00+08:00");
+  const older = Date.parse("2026-07-01T09:00:00+08:00");
+  const grouped = groupSessionsByRecency(
+    visibleHistorySessions(
+      [
+        { sessionId: "blank", title: "", updatedAt: today, blank: true },
+        { sessionId: "cur", title: "", updatedAt: today, blank: true },
+        { sessionId: "a", title: "today", updatedAt: today, blank: false },
+        { sessionId: "b", title: "week", updatedAt: week, blank: false },
+        { sessionId: "c", title: "old", updatedAt: older, blank: false },
+      ],
+      "cur",
+    ),
+    now,
+  );
+  assert.deepEqual(grouped.map((section) => [section.id, section.rows.map((row) => row.sessionId)]), [
+    ["today", ["cur", "a"]],
+    ["week", ["b"]],
+    ["older", ["c"]],
+  ]);
 });
 
 test("loadTranscript and sendPrompt ride the rpc surface", async () => {
@@ -159,4 +263,17 @@ test("loadTranscript and sendPrompt ride the rpc surface", async () => {
     return { ok: true, value: { accepted: true } };
   }, "s1", "ping");
   assert.equal(sent.value.accepted, true);
+});
+
+test("toolVariantIcon follows dsh VARIANT_ICONS and stage copy stays English", () => {
+  assert.equal(toolVariantIcon("search"), "search");
+  assert.equal(toolVariantIcon("read"), "browse");
+  assert.equal(toolVariantIcon("bash"), "api");
+  assert.equal(toolVariantIcon("write"), "edit");
+  assert.equal(toolVariantIcon("edit"), "edit");
+  assert.equal(toolVariantIcon("code"), "code");
+  assert.equal(toolVariantIcon("others"), "sparkle");
+  assert.equal(STAGE_COPY.think, "Think");
+  assert.equal(STAGE_COPY.contextInjection, "Context injection");
+  assert.equal(STAGE_COPY.retry.started, "Retried model request");
 });

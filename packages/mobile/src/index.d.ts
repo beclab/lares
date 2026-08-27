@@ -51,3 +51,11 @@ export const LaresApp: DefineComponent<{
   env?: HostEnv;
   request?: (url: string, init?: HostRequestInit) => Promise<HostResponse>;
 }>;
+
+export const LaresAgentSettings: DefineComponent<{
+  locale?: string;
+  baseUrl?: string;
+  proxyPrefix?: string;
+  env?: HostEnv;
+  request?: (url: string, init?: HostRequestInit) => Promise<HostResponse>;
+}>;

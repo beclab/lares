@@ -69,9 +69,14 @@
     "./olares/trusted-host": "./olares/trusted-host.js",
     "./larepass/host": "./larepass/host.js",
     "./larepass/rpc": "./larepass/rpc.js",
+    "./larepass/context-provenance": "./larepass/context-provenance.js",
+    "./larepass/tool-row": "./larepass/tool-row.js",
+    "./larepass/stage-copy": "./larepass/stage-copy.js",
     "./larepass/transcript": "./larepass/transcript.js",
     "./larepass/chat": "./larepass/chat.js",
     "./larepass/mux": "./larepass/mux.js",
-    "./larepass/runtime": "./larepass/runtime.js"
+    "./larepass/session-cache": "./larepass/session-cache.js",
+    "./larepass/runtime": "./larepass/runtime.js",
+    "./larepass/settings": "./larepass/settings.js"
   }
 }

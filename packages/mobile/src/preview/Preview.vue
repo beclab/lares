@@ -30,7 +30,12 @@
       :src="mediaSrc"
       :title="name"
     />
-    <pre v-else-if="data?.kind === 'text' || data?.kind === 'markdown'" class="lares-preview__text">{{ data.text }}</pre>
+    <div
+      v-else-if="data?.kind === 'markdown'"
+      class="lares-preview__markdown"
+      v-html="renderMarkdown(data.text)"
+    />
+    <pre v-else-if="data?.kind === 'text'" class="lares-preview__text">{{ data.text }}</pre>
     <div v-else class="lares-preview__hint">
       <p>{{ t("unsupportedTitle") }}</p>
       <p>{{ t("unsupported") }}</p>
@@ -42,6 +47,7 @@
 <script>
 import { fileName } from "@lares/core/files/preview-workspace";
 import { messageFromCode } from "@lares/core/i18n/t";
+import { renderMarkdown } from "../chat/markdown.js";
 
 export default {
   name: "LaresPreview",
@@ -62,6 +68,7 @@ export default {
       return messageFromCode(this.t, this.error, "failed");
     },
   },
+  methods: { renderMarkdown },
 };
 </script>
 
@@ -69,17 +76,19 @@ export default {
 .lares-preview {
   position: absolute;
   inset: 0;
-  z-index: 2;
+  z-index: 4;
   display: flex;
   flex-direction: column;
-  background: #f8fafc;
+  background: var(--q-background-1);
+  color: var(--q-ink-1);
 }
 
 .lares-preview__bar {
   display: flex;
   gap: 8px;
   align-items: center;
-  padding: 8px 12px;
+  height: 56px;
+  padding: 0 12px;
 }
 
 .lares-preview__name {
@@ -88,7 +97,8 @@ export default {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14px;
+  font-size: 16px;
+  font-weight: 500;
 }
 
 .lares-preview__back,
@@ -96,20 +106,27 @@ export default {
   border: 0;
   background: none;
   font: inherit;
-  color: inherit;
+  color: var(--q-blue-default);
   text-decoration: none;
 }
 
 .lares-preview__hint,
-.lares-preview__text {
+.lares-preview__text,
+.lares-preview__markdown {
   margin: 0;
-  padding: 12px 16px;
-  font-size: 13px;
+  padding: 12px 20px;
+  font-size: 14px;
+  color: var(--q-ink-2);
+}
+
+.lares-preview__text,
+.lares-preview__markdown {
+  flex: 1;
+  overflow: auto;
+  color: var(--q-ink-1);
 }
 
 .lares-preview__text {
-  flex: 1;
-  overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;
 }

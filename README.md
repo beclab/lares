@@ -12,7 +12,6 @@ packages/
 tests/              单元测试（与源码分离）
 deploy/lares/        Olares chart（可选热更新）
 scripts/            镜像、chart 打包、dev-sync、better-sidebar、无头浏览器验证
-TermiPass/          LarePass 宿主（独立 git；dina .gitignore，勿加入本仓提交）
 _参考/              deepseek-harness / WorkBuddy 截图
 ```
 

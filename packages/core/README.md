@@ -14,7 +14,7 @@ Import surfaces (`@lares/core/<export>`):
 - `voice/*`, `search/*`: STT/search settings, Host payloads, and client API contracts.
 - `olares/*`: Olares entrance identity, trusted-host loopback, and CLI session materialization.
 - `larepass/host`: find the Lares entrance from LarePass `myApps`, PC-test proxy URLs, Host probe, and `hostConfigFromEnv`.
-- `larepass/rpc`, `larepass/transcript`, `larepass/chat`, `larepass/mux`, `larepass/runtime`: dsh host-RPC envelope, session fold (text / reasoning / tools / produced files), browser mux as WebSocket (same frames as PC), and the LarePass chat runtime (UI only subscribes).
+- `larepass/rpc`, `larepass/transcript`, `larepass/context-provenance`, `larepass/tool-row`, `larepass/stage-copy`, `larepass/chat`, `larepass/mux`, `larepass/session-cache`, `larepass/runtime`, `larepass/settings`: dsh host-RPC envelope, session timeline fold (user / context / reasoning / tool / retry / files; same classification as dsh conversation nodes), English stage chrome copy and tool-row variants, browser mux as WebSocket (same frames as PC), per-session page cache (switch reads cache; history/mux write only on change), the LarePass chat runtime (UI only subscribes), and Host HTTP for model / voice / search settings.
 - `brand/identity`, `brand/manifest`: product identity and PWA manifest consumed by the Host and clients.
 - `icons/*`: product mark SVG and public icon paths (no React).
 - `i18n/*`: ZH/EN catalogs and `t` / `{name}` interpolation (no React, no dsh locale), including the LarePass mobile shell.

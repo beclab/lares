@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   consumeMux,
+  consumeMuxFrames,
   iterateSseJson,
   muxSessionEvent,
   muxWsUrl,
@@ -50,6 +51,55 @@ test("consumeMux reads browser websocket JSON frames", async () => {
   for await (const event of pending) events.push(event);
   assert.equal(events.length, 1);
   assert.equal(events[0].data.chunk.text, "hi");
+});
+
+test("consumeMux rereads a sessionId getter so switched chats drop stale frames", async () => {
+  const stream = new ReadableStream({
+    start(controller) {
+      const send = (sessionId, text) => {
+        controller.enqueue(new TextEncoder().encode(sseFrame({
+          type: "session/event",
+          sessionId,
+          event: { type: "assistant/chunk", seq: 1, data: { chunk: { type: "text-delta", text } } },
+        })));
+      };
+      send("s1", "keep");
+      send("s1", "stale");
+      send("s2", "next");
+      controller.close();
+    },
+  });
+  const events = [];
+  for await (const event of consumeMux(stream, () => (events.length === 0 ? "s1" : "s2"))) {
+    events.push(event);
+  }
+  assert.deepEqual(
+    events.map((event) => event.data.chunk.text),
+    ["keep", "next"],
+  );
+});
+
+test("consumeMuxFrames keeps every session's frames so a cache can ingest in the background", async () => {
+  const stream = new ReadableStream({
+    start(controller) {
+      const send = (sessionId, text) => {
+        controller.enqueue(new TextEncoder().encode(sseFrame({
+          type: "session/event",
+          sessionId,
+          event: { type: "assistant/chunk", seq: 1, data: { chunk: { type: "text-delta", text } } },
+        })));
+      };
+      send("s1", "keep");
+      send("s2", "next");
+      controller.close();
+    },
+  });
+  const frames = [];
+  for await (const frame of consumeMuxFrames(stream)) frames.push(frame);
+  assert.deepEqual(
+    frames.map((frame) => [frame.sessionId, frame.event.data.chunk.text]),
+    [["s1", "keep"], ["s2", "next"]],
+  );
 });
 
 function sseFrame(payload) {

@@ -28,7 +28,6 @@ packages/
 tests/              单元测试
 deploy/lares/        Olares chart
 scripts/            镜像、chart 打包、dev-sync
-TermiPass/          LarePass 宿主（独立 git；dina .gitignore，勿加入本仓提交）
 _参考/              外部参考（默认忽略；勿当本仓业务）
 ```
 
