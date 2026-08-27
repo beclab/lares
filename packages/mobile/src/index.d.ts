@@ -29,9 +29,22 @@ export type HostPorts = {
 
 export const PC_TEST_PROXY: string;
 
+export function findLaresEntrance(apps?: unknown[]): string;
+
 export function hostConfigFromEnv(env?: HostEnv): {
   baseUrl: string;
   proxyPrefix: string;
+};
+
+export function hostKey(ports?: HostPorts): string;
+
+export function laresPortsFromAccount(input?: {
+  env?: HostEnv;
+  apps?: unknown[];
+}): {
+  baseUrl?: string;
+  env?: HostEnv;
+  proxyPrefix?: string;
 };
 
 export function defaultRequest(url: string, init?: HostRequestInit): Promise<HostResponse>;

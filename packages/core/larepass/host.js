@@ -45,6 +45,33 @@ export function hostConfigFromEnv(env = {}) {
   };
 }
 
+/** Resolve the live Host origin. Explicit baseUrl/proxyPrefix win over env. */
+export function hostTarget(ports = {}) {
+  const fromEnv = hostConfigFromEnv(ports.env);
+  return {
+    baseUrl: ports.baseUrl ?? fromEnv.baseUrl,
+    proxyPrefix: ports.proxyPrefix ?? fromEnv.proxyPrefix,
+  };
+}
+
+export function hostKey(ports = {}) {
+  const { baseUrl, proxyPrefix } = hostTarget(ports);
+  return hostUrl({ baseUrl, proxyPrefix, path: "/api" });
+}
+
+/**
+ * LarePass → Host ports. PC preview keeps the webpack env + /laresHost proxy.
+ * A logged-in account uses the current myApps entrance, never a baked subdomain.
+ */
+export function laresPortsFromAccount({ env, apps } = {}) {
+  const fromEnv = hostConfigFromEnv(env);
+  if (fromEnv.proxyPrefix) {
+    return { env, proxyPrefix: fromEnv.proxyPrefix, baseUrl: undefined };
+  }
+  const baseUrl = findLaresEntrance(apps);
+  return { baseUrl: baseUrl || undefined, env: undefined, proxyPrefix: undefined };
+}
+
 export function hostUrl({ baseUrl = "", proxyPrefix = "", path }) {
   const suffix = path.startsWith("/") ? path : `/${path}`;
   if (proxyPrefix) {

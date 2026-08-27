@@ -7,8 +7,11 @@ import {
   entranceFromDomain,
   findLaresEntrance,
   hostConfigFromEnv,
+  hostKey,
+  hostTarget,
   hostUrl,
   isLaresPluginPath,
+  laresPortsFromAccount,
   originOf,
   probeHost,
 } from "@olares/lares-core/larepass/host";
@@ -105,4 +108,53 @@ test("probeHost maps HTTP and network failures", async () => {
     http: 503,
   });
   assert.equal((await probeHost(async () => { throw new Error("ECONNREFUSED"); })).status, "unreachable");
+});
+
+test("hostTarget prefers explicit ports over env", () => {
+  assert.deepEqual(
+    hostTarget({
+      baseUrl: "https://from-apps.olares.com",
+      env: {
+        PROTOCOL: "https:",
+        LARES_SUB_DOMAIN: "baked",
+        ACCOUNT_DOMAIN: "old.olares.com",
+      },
+    }),
+    { baseUrl: "https://from-apps.olares.com", proxyPrefix: "" },
+  );
+  assert.equal(
+    hostKey({ env: { IS_PC_TEST: "1" } }),
+    `${PC_TEST_PROXY}/api`,
+  );
+});
+
+test("laresPortsFromAccount uses myApps unless this is a PC-test proxy build", () => {
+  const env = {
+    PROTOCOL: "https:",
+    LARES_SUB_DOMAIN: "baked",
+    ACCOUNT_DOMAIN: "old.olares.com",
+  };
+  assert.deepEqual(
+    laresPortsFromAccount({
+      env: { ...env, IS_PC_TEST: "1" },
+      apps: [{ appid: APP_ID, url: "https://live.olares.com/chat" }],
+    }),
+    { env: { ...env, IS_PC_TEST: "1" }, proxyPrefix: PC_TEST_PROXY, baseUrl: undefined },
+  );
+  assert.deepEqual(
+    laresPortsFromAccount({
+      env,
+      apps: [{ appid: APP_ID, url: "https://489966aa.luolong01.olares.com/chat" }],
+    }),
+    {
+      baseUrl: "https://489966aa.luolong01.olares.com",
+      env: undefined,
+      proxyPrefix: undefined,
+    },
+  );
+  assert.deepEqual(laresPortsFromAccount({ env, apps: [] }), {
+    baseUrl: undefined,
+    env: undefined,
+    proxyPrefix: undefined,
+  });
 });

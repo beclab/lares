@@ -141,6 +141,7 @@ export default {
     return {
       sending: false,
       starting: false,
+      hostGen: 0,
       running: false,
       sessionId: "",
       draft: "",
@@ -182,6 +183,9 @@ export default {
     },
     runtime() {
       return connectChat(this.ports);
+    },
+    hostKey() {
+      return this.runtime.key;
     },
     t() {
       return createT(this.locale);
@@ -274,6 +278,9 @@ export default {
     sessionId(id) {
       this.bindIntake(id);
     },
+    hostKey() {
+      this.switchHost();
+    },
   },
   created() {
     this.intake = new FileIntake((file, sessionId, options) => this.runtime.upload(file, options, sessionId));
@@ -290,7 +297,7 @@ export default {
       },
     });
     this.bindIntake(this.sessionId);
-    this.unsub = this.runtime.subscribe((snap) => this.applySnap(snap));
+    this.bindRuntime();
     try {
       const raw = JSON.parse(localStorage.getItem("lares.mobile.effort") || "{}");
       if (raw && typeof raw === "object") this.effortByModel = raw;
@@ -404,16 +411,46 @@ export default {
       this.preview = { path: "", status: "idle", data: null, error: "" };
     },
     async retry() {
+      const gen = ++this.hostGen;
       this.starting = true;
       try {
         await this.runtime.start();
+        if (gen !== this.hostGen) return;
         await this.loadComposerMeta();
       } finally {
-        this.starting = false;
+        if (gen === this.hostGen) this.starting = false;
       }
     },
     modelKey(model) {
       return selectionKey({ provider: model.provider, model: model.id });
+    },
+    bindRuntime() {
+      this.unsub?.();
+      this.unsub = this.runtime.subscribe((snap) => this.applySnap(snap));
+    },
+    switchHost() {
+      this.voiceCap?.stop?.(true);
+      this.intakeUnsub?.();
+      if (this.sessionId) this.intake?.cancelSession(this.sessionId);
+      this.sessionId = "";
+      this.items = [];
+      this.sessions = [];
+      this.sessionsReady = false;
+      this.previews = {};
+      this.preview = { path: "", status: "idle", data: null, error: "" };
+      this.pendingUser = "";
+      this.failed = "";
+      this.error = "";
+      this.models = null;
+      this.modelError = "";
+      this.modelPending = "";
+      this.modelSheet = false;
+      this.panel = "";
+      this.question = null;
+      this.questionBusy = false;
+      this.bindIntake("");
+      this.bindRuntime();
+      this.retry();
     },
     bindIntake(sessionId) {
       this.intakeUnsub?.();

@@ -1,4 +1,4 @@
-import { hostConfigFromEnv, hostUrl, MODELS_PATH, probeHost } from "@olares/lares-core/larepass/host";
+import { hostTarget, hostUrl, MODELS_PATH, probeHost } from "@olares/lares-core/larepass/host";
 import { callRpc, consumeMux, ensureSession, loadTranscript, MUX_PATH, sendPrompt } from "@olares/lares-core/larepass/chat";
 import { muxWsUrl } from "@olares/lares-core/larepass/mux";
 import { RESPOND_PATH } from "@olares/lares-core/larepass/rpc";
@@ -92,9 +92,7 @@ export async function defaultRequest(url, init = {}) {
 }
 
 export function createHostClient(ports = {}) {
-  const fromEnv = hostConfigFromEnv(ports.env);
-  const baseUrl = ports.baseUrl ?? fromEnv.baseUrl;
-  const proxyPrefix = ports.proxyPrefix ?? fromEnv.proxyPrefix;
+  const { baseUrl, proxyPrefix } = hostTarget(ports);
   const send = ports.request ?? defaultRequest;
   const urlFor = (path) => hostUrl({ baseUrl, proxyPrefix, path });
   const request = (path, init) => send(urlFor(path), init);

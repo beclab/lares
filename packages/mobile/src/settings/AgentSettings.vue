@@ -94,7 +94,9 @@ import {
   searchValueFromMenu,
 } from "@olares/lares-core/search/menu";
 import { rememberedSettings } from "@olares/lares-core/larepass/settings";
+import { hostKey as hostSessionKey } from "@olares/lares-core/larepass/host";
 import { createHostClient } from "../host.js";
+import { adoptHost } from "../runtime.js";
 import { createT } from "../i18n.js";
 import LaresSettingRow from "./SettingRow.vue";
 import LaresSheet from "./Sheet.vue";
@@ -138,13 +140,19 @@ export default {
     t() {
       return createT(this.locale);
     },
-    settings() {
-      return createHostClient({
+    ports() {
+      return {
         baseUrl: this.baseUrl,
         proxyPrefix: this.proxyPrefix,
         request: this.request,
         env: this.env,
-      }).settings;
+      };
+    },
+    hostKey() {
+      return hostSessionKey(this.ports);
+    },
+    settings() {
+      return createHostClient(this.ports).settings;
     },
     busy() {
       return this.loading || Boolean(this.pending);
@@ -236,6 +244,19 @@ export default {
       if (this.panel === "model") return this.tModel("settings.empty");
       if (this.panel === "search") return this.tSearch("settings.default.empty");
       return "";
+    },
+  },
+  watch: {
+    hostKey() {
+      adoptHost(this.ports);
+      this.panel = "";
+      this.models = null;
+      this.voice = null;
+      this.search = null;
+      this.modelError = "";
+      this.voiceError = "";
+      this.searchError = "";
+      this.load(true);
     },
   },
   mounted() {
