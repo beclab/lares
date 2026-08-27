@@ -2,8 +2,8 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   agentsMarkdown,
-  LEGACY_AGENTS_MARKDOWN,
-} from "@lares/core/brand/identity";
+  LEGACY_AGENTS_SEEDS,
+} from "@olares/lares-core/brand/identity";
 
 /** Ensure the workspace has an AGENTS.md so dsh workspaceContext has a baseline. */
 export function seedWorkspaceAgents(workspace: string): void {
@@ -17,6 +17,6 @@ export function seedWorkspaceAgents(workspace: string): void {
     previous = null;
   }
   if (previous === next) return;
-  if (previous !== null && previous !== LEGACY_AGENTS_MARKDOWN) return;
+  if (previous !== null && !LEGACY_AGENTS_SEEDS.includes(previous)) return;
   writeFileSync(target, next, "utf8");
 }

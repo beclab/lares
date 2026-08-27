@@ -4,7 +4,7 @@ import {
   createHostSettings,
   rememberedSettings,
   resetHostSettingsCache,
-} from "@lares/core/larepass/settings";
+} from "@olares/lares-core/larepass/settings";
 
 function ok(body) {
   return { ok: true, status: 200, body };

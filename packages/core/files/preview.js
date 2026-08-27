@@ -1,11 +1,14 @@
 import { open, stat } from "node:fs/promises";
 import { basename, extname, relative } from "node:path";
+import { isFilesPath, parseFilesPath } from "../drive/files-path.js";
+import { statFilesFile } from "../drive/ls.js";
 import { HttpError } from "../tools/http.js";
 import {
   resolveExistingWorkspacePath,
   resolveWorkspaceRoot,
   workspaceCandidate,
 } from "../workspace/path.js";
+import { materializeFilesFile } from "./preview-cache.js";
 
 export const MAX_PREVIEW_TEXT_BYTES = 1024 * 1024;
 export const MAX_RAW_BYTES = 200 * 1024 * 1024;
@@ -50,10 +53,55 @@ export function previewQueryFromUrl(reqUrl) {
   return { path, sessionId: url.searchParams.get("sessionId") };
 }
 
-export async function fileFromPreviewRequest(reqUrl, resolveWorkspace) {
+function asPreviewHttpError(error) {
+  if (error instanceof HttpError) return error;
+  const code = error?.code;
+  const message = error instanceof Error ? error.message : String(error);
+  if (code === "file_not_found") return new HttpError("file_not_found", 404, "file was not found");
+  if (code === "path_not_file") return new HttpError("path_not_file", 415, "path is not a regular file");
+  if (code === "path_invalid") return new HttpError("path_invalid", 400, message);
+  return new HttpError("file_preview_failed", 502, message);
+}
+
+export async function resolveFilesPreviewFile(requestedPath, deps = {}) {
+  let source;
+  try {
+    source = parseFilesPath(requestedPath);
+  } catch (error) {
+    throw new HttpError("path_invalid", 400, error instanceof Error ? error.message : String(error));
+  }
+  try {
+    const info = await (deps.stat ?? statFilesFile)(source, deps);
+    return {
+      origin: "files",
+      path: info.path,
+      name: info.name,
+      size: info.size,
+      modifiedAt: info.modifiedAt,
+      ...previewTypeForName(info.name),
+    };
+  } catch (error) {
+    throw asPreviewHttpError(error);
+  }
+}
+
+export async function fileFromPreviewRequest(reqUrl, resolveWorkspace, deps = {}) {
   const { path, sessionId } = previewQueryFromUrl(reqUrl);
+  if (isFilesPath(path)) return resolveFilesPreviewFile(path, deps);
   const workspace = await resolveWorkspace(sessionId);
   return resolveWorkspaceFile(workspace.path, path);
+}
+
+async function ensurePreviewBytes(file, deps = {}) {
+  if (file.absolutePath) return file;
+  if (file.origin !== "files") {
+    throw new HttpError("file_preview_failed", 500, "file has no local path");
+  }
+  try {
+    return await (deps.materialize ?? materializeFilesFile)(file, deps);
+  } catch (error) {
+    throw asPreviewHttpError(error);
+  }
 }
 
 export function previewTypeForName(name) {
@@ -109,7 +157,7 @@ function trimPartialUtf8(body) {
   return body;
 }
 
-export async function buildPreview(file) {
+export async function buildPreview(file, deps) {
   const metadata = {
     path: file.path,
     name: file.name,
@@ -120,9 +168,10 @@ export async function buildPreview(file) {
   };
   const knownText = ["text", "markdown"].includes(file.kind);
   if (!knownText && file.kind !== "unsupported") return metadata;
-  const handle = await openVerified(file);
+  const local = await ensurePreviewBytes(file, deps);
+  const handle = await openVerified(local);
   try {
-    const length = Math.min(file.size, MAX_PREVIEW_TEXT_BYTES + 1);
+    const length = Math.min(local.size, MAX_PREVIEW_TEXT_BYTES + 1);
     const buffer = Buffer.alloc(length);
     const { bytesRead } = await handle.read(buffer, 0, length, 0);
     const truncated = bytesRead > MAX_PREVIEW_TEXT_BYTES;
@@ -135,7 +184,7 @@ export async function buildPreview(file) {
       kind: knownText ? file.kind : "text",
       mediaType: knownText ? file.mediaType : "text/plain; charset=utf-8",
       text,
-      truncated: file.size > MAX_PREVIEW_TEXT_BYTES,
+      truncated: local.size > MAX_PREVIEW_TEXT_BYTES,
     };
   } catch (error) {
     if (error instanceof TypeError) {
@@ -234,7 +283,7 @@ async function sendFile(req, res, file, disposition) {
   stream.pipe(res);
 }
 
-export function sendRawFile(req, res, file) {
+export async function sendRawFile(req, res, file, deps) {
   if (!["image", "video", "audio", "pdf"].includes(file.kind)) {
     throw new HttpError("preview_unsupported", 415, "raw preview is not supported for this file");
   }
@@ -243,7 +292,7 @@ export function sendRawFile(req, res, file) {
   if (["image", "pdf"].includes(file.kind) && file.size > MAX_RAW_BYTES) {
     throw new HttpError("file_too_large", 413, `file exceeds ${MAX_RAW_BYTES} bytes`);
   }
-  return sendFile(req, res, file, "inline");
+  return sendFile(req, res, await ensurePreviewBytes(file, deps), "inline");
 }
 
 /**
@@ -251,6 +300,6 @@ export function sendRawFile(req, res, file) {
  * media element or iframe will be asked to hold, and neither says anything
  * about what the user may keep a copy of.
  */
-export function sendFileDownload(req, res, file) {
-  return sendFile(req, res, file, "attachment");
+export async function sendFileDownload(req, res, file, deps) {
+  return sendFile(req, res, await ensurePreviewBytes(file, deps), "attachment");
 }

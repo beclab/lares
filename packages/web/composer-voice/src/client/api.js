@@ -6,4 +6,4 @@ export {
   saveVoiceSettings,
   mergeTranscript,
   postTranscribe,
-} from "@lares/core/voice/client";
+} from "@olares/lares-core/voice/client";

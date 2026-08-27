@@ -1,27 +1,18 @@
 import { createWriteStream, existsSync, openSync, rmSync, statSync } from "node:fs";
 import { rename } from "node:fs/promises";
-import { basename, extname, join } from "node:path";
+import { extname, join } from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { HttpError } from "../tools/http.js";
 import { ensureWorkspaceDirectory } from "../workspace/path.js";
+import { sanitizeFilename } from "./filename.js";
 import { DEFAULT_MAX_UPLOAD_BYTES } from "./limits.js";
 
-export { DEFAULT_MAX_UPLOAD_BYTES };
+export { DEFAULT_MAX_UPLOAD_BYTES, sanitizeFilename };
 export const UPLOAD_REQUEST_ID = /^[A-Za-z0-9_-]{16,80}$/;
 const UPLOAD_DIRECTORY = [".lares", "uploads"];
 /** More same-named files than any composer batch; past it the name is hostile. */
 const MAX_NAME_ATTEMPTS = 200;
-
-export function sanitizeFilename(value) {
-  const source = basename(String(value || "file")).normalize("NFC");
-  const safe = source
-    .replace(/[\u0000-\u001f\u007f/\\:*?"<>|]/g, "_")
-    .replace(/\s+/g, "_")
-    .replace(/^\.+/, "")
-    .slice(0, 160);
-  return safe || "file";
-}
 
 export function decodeUploadFilename(value) {
   if (typeof value !== "string" || !value) return "file";

@@ -11,7 +11,7 @@ import {
 } from "../olares/router-models.js";
 import { seedOlaresSkills } from "../olares/skills-seed.js";
 import { seedWorkspaceAgents } from "../dsh/agents-seed.js";
-import { identityPrompt } from "@lares/core/brand/identity";
+import { identityPrompt } from "@olares/lares-core/brand/identity";
 import {
   ensureLaresWebProfile,
   installProfileDeps,

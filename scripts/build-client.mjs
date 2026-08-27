@@ -38,8 +38,8 @@ function laresCorePlugin() {
   return {
     name: "lares-core",
     setup(build) {
-      build.onResolve({ filter: /^@lares\/core\// }, (args) => {
-        const subpath = args.path.slice("@lares/core/".length);
+      build.onResolve({ filter: /^@olares\/lares-core\// }, (args) => {
+        const subpath = args.path.slice("@olares/lares-core/".length);
         return { path: join(CORE, `${subpath}.js`) };
       });
     },
@@ -52,12 +52,12 @@ function platformExternalsPlugin() {
     name: "dsh-platform-externals",
     setup(build) {
       build.onResolve({ filter: /^[^./]|^@/ }, (args) => {
-        if (args.path.startsWith("@lares/core/")) return;
+        if (args.path.startsWith("@olares/lares-core/")) return;
         if (allowed.has(args.path)) return { path: args.path, external: true };
         return {
           errors: [
             {
-              text: `Unsupported bare client import ${JSON.stringify(args.path)}; use a relative source import, @lares/core/*, or a dsh platform seed`,
+              text: `Unsupported bare client import ${JSON.stringify(args.path)}; use a relative source import, @olares/lares-core/*, or a dsh platform seed`,
             },
           ],
         };

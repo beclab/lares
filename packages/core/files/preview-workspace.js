@@ -93,7 +93,12 @@ export function rawFileHref(sessionId, path) {
 /**
  * The workspace path behind a raw URL this session owns, or null for anything
  * else — the seam that turns a rewritten markdown target back into a preview.
+ * The pathname may carry a host-proxy prefix (LarePass `/laresHost`).
  */
+function isRawFilePathname(pathname) {
+  return pathname === RAW_ROUTE || pathname.endsWith(RAW_ROUTE);
+}
+
 export function rawUrlPath(sessionId, href) {
   let url;
   try {
@@ -101,7 +106,7 @@ export function rawUrlPath(sessionId, href) {
   } catch {
     return null;
   }
-  if (url.origin !== pageOrigin() || url.pathname !== RAW_ROUTE) return null;
+  if (url.origin !== pageOrigin() || !isRawFilePathname(url.pathname)) return null;
   if (url.searchParams.get("sessionId") !== sessionId) return null;
   return url.searchParams.get("path");
 }

@@ -3,11 +3,11 @@ import { createHeaderTabs } from "./HeaderTabs.js";
 import { createPreviewOverlay } from "./PreviewOverlay.js";
 import { createPreviewView } from "./PreviewView.js";
 import { createTurnMedia } from "./TurnMedia.js";
-import { selectProducedFiles } from "@lares/core/files/deliverables";
+import { selectProducedFiles } from "@olares/lares-core/files/deliverables";
 import { EN, ZH } from "./locale.js";
 import { installPathOpener } from "./open.js";
 import styles from "./styles.css";
-import { FilePreviewWorkspace } from "@lares/core/files/preview-workspace";
+import { FilePreviewWorkspace } from "@olares/lares-core/files/preview-workspace";
 import { ChatScrollport } from "./chat-scrollport.js";
 import { installPluginStyle } from "../../../shared/client/plugin-style.js";
 

@@ -1,8 +1,8 @@
 import { createAttachmentButton } from "./AttachmentButton.js";
-import { FileIntake } from "@lares/core/files/intake";
-import { uploadFile } from "@lares/core/files/upload-client";
+import { FileIntake } from "@olares/lares-core/files/intake";
+import { uploadFile } from "@olares/lares-core/files/upload-client";
 import { EN, ZH, attachLocale, bindTranslate, getTranslate } from "./locale.js";
-import { createUploadCommit } from "@lares/core/files/mention";
+import { createUploadCommit } from "@olares/lares-core/files/mention";
 import styles from "./styles.css";
 import { createUploadFailures } from "./UploadFailures.js";
 import { installPluginStyle } from "../../../shared/client/plugin-style.js";

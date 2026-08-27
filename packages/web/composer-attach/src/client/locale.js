@@ -1,7 +1,7 @@
 import { createLocaleBinding } from "../../../shared/client/locale-binding.js";
-import { messageFromCode } from "@lares/core/i18n/t";
+import { messageFromCode } from "@olares/lares-core/i18n/t";
 
-export { ZH, EN } from "@lares/core/i18n/files";
+export { ZH, EN } from "@olares/lares-core/i18n/files";
 
 const binding = createLocaleBinding("lares.files");
 

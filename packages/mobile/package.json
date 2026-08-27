@@ -1,8 +1,17 @@
 {
-  "name": "@lares/mobile",
+  "name": "@olares/lares-mobile",
   "version": "0.15.0",
   "description": "Lares chat component for LarePass",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/beclab/lares.git",
+    "directory": "packages/mobile"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "main": "./src/index.js",
   "types": "./src/index.d.ts",
   "exports": {
@@ -19,6 +28,7 @@
     "vue": "^3.2.0"
   },
   "dependencies": {
-    "@lares/core": "0.15.0"
+    "@olares/lares-core": "0.15.0",
+    "markdown-it": "^14.3.0"
   }
 }

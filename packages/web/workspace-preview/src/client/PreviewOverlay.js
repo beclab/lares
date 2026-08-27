@@ -2,7 +2,7 @@ import React from "react";
 import { createPortal } from "react-dom";
 
 const h = React.createElement;
-const { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } = React;
+const { useLayoutEffect, useRef, useState, useSyncExternalStore } = React;
 
 export function createPreviewOverlay(workspace, PreviewView) {
   return function FilePreviewOverlay({ sessionId }) {
@@ -14,9 +14,17 @@ export function createPreviewOverlay(workspace, PreviewView) {
     const owns = snapshot.mode === "preview" && Boolean(snapshot.activePath);
     const previousSession = useRef(sessionId);
 
-    useEffect(() => {
-      setTarget(document.querySelector("[data-conversation-scroll]"));
-    }, []);
+    // The overlay lives in the session header outlet; the scrollport lives in
+    // the body outlet. Those fill independently, so a mount-time query is often
+    // null and would never retry — the file tab appears, the page does not.
+    useLayoutEffect(() => {
+      if (!owns) return undefined;
+      const find = () => document.querySelector("[data-conversation-scroll]");
+      setTarget(find());
+      if (find()) return undefined;
+      const frame = requestAnimationFrame(() => setTarget(find()));
+      return () => cancelAnimationFrame(frame);
+    }, [owns, sessionId]);
 
     // Before paint of the commit that released the scrollport: the flow is
     // scrollable again here, so the reader lands where they were. A session

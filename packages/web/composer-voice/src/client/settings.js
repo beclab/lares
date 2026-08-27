@@ -14,7 +14,7 @@ import {
   voiceModelItems,
   voiceStatusReady,
   voiceValueFromMenu,
-} from "@lares/core/voice/languages";
+} from "@olares/lares-core/voice/languages";
 import { MicGlyph } from "./icons.js";
 import { useT } from "./locale.js";
 import localSettingsCss from "./styles/settings.css";

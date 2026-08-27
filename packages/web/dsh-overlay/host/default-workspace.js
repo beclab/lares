@@ -1,5 +1,5 @@
-import { workspaceRootFromEnv } from "@lares/core/workspace/env";
-import { DEFAULT_WORKSPACE_TITLE, seedDefaultWorkspace } from "@lares/core/workspace/seed";
+import { workspaceRootFromEnv } from "@olares/lares-core/workspace/env";
+import { DEFAULT_WORKSPACE_TITLE, seedDefaultWorkspace } from "@olares/lares-core/workspace/seed";
 
 export { DEFAULT_WORKSPACE_TITLE, seedDefaultWorkspace, workspaceRootFromEnv };
 

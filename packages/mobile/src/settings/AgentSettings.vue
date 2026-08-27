@@ -77,23 +77,23 @@
 </template>
 
 <script>
-import { t as translate } from "@lares/core/i18n/t";
-import { EN as MODEL_EN, ZH as MODEL_ZH } from "@lares/core/i18n/chat-model";
-import { EN as VOICE_EN, ZH as VOICE_ZH } from "@lares/core/i18n/voice";
-import { EN as SEARCH_EN, ZH as SEARCH_ZH } from "@lares/core/i18n/search";
-import { groupModelsByProvider, selectionKey } from "@lares/core/router/session-model";
+import { t as translate } from "@olares/lares-core/i18n/t";
+import { EN as MODEL_EN, ZH as MODEL_ZH } from "@olares/lares-core/i18n/chat-model";
+import { EN as VOICE_EN, ZH as VOICE_ZH } from "@olares/lares-core/i18n/voice";
+import { EN as SEARCH_EN, ZH as SEARCH_ZH } from "@olares/lares-core/i18n/search";
+import { groupModelsByProvider, selectionKey } from "@olares/lares-core/router/session-model";
 import {
   voiceLanguageItems,
   voiceMenuValue,
   voiceModelItems,
   voiceValueFromMenu,
-} from "@lares/core/voice/languages";
+} from "@olares/lares-core/voice/languages";
 import {
   searchMenuValue,
   searchSelectorItems,
   searchValueFromMenu,
-} from "@lares/core/search/menu";
-import { rememberedSettings } from "@lares/core/larepass/settings";
+} from "@olares/lares-core/search/menu";
+import { rememberedSettings } from "@olares/lares-core/larepass/settings";
 import { createHostClient } from "../host.js";
 import { createT } from "../i18n.js";
 import LaresSettingRow from "./SettingRow.vue";

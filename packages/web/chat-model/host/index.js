@@ -1,5 +1,5 @@
 /** Lares model settings Host routes under /api/lares/models. */
-import { createRouteHandler, readJsonObject, sendJson } from "@lares/core/tools/http";
+import { createRouteHandler, readJsonObject, sendJson } from "@olares/lares-core/tools/http";
 import { catalogPanelState, refreshCatalog, saveDefault } from "./catalog.js";
 
 export const name = "lares-chat-model";

@@ -4,8 +4,8 @@ import {
   ffmpegEncodeDefinition,
   urlFetchDefinition,
   workspacePublishDefinition,
-} from "@lares/core/drive/tools";
-import { DRIVE_IMPORT_PROMPT } from "@lares/core/drive/paths";
+} from "@olares/lares-core/drive/tools";
+import { DRIVE_IMPORT_PROMPT } from "@olares/lares-core/drive/paths";
 
 export const name = "lares-workspace-artifacts";
 export const inject = ["tools", "systemPrompt"];
@@ -19,8 +19,8 @@ export function createUrlFetchTool(download) {
   return defineTool(urlFetchDefinition(download));
 }
 
-export function createWorkspacePublishTool() {
-  return defineTool(workspacePublishDefinition());
+export function createWorkspacePublishTool(statFile) {
+  return defineTool(workspacePublishDefinition(statFile));
 }
 
 export function createFfmpegEncodeTool(encode) {

@@ -1,11 +1,11 @@
-import { createRouteHandler, sendJson } from "@lares/core/tools/http";
-import { resolveSessionWorkspace } from "@lares/core/workspace/session";
+import { createRouteHandler, sendJson } from "@olares/lares-core/tools/http";
+import { resolveSessionWorkspace } from "@olares/lares-core/workspace/session";
 import {
   buildPreview,
   fileFromPreviewRequest,
   sendFileDownload,
   sendRawFile,
-} from "@lares/core/files/preview";
+} from "@olares/lares-core/files/preview";
 
 export const name = "lares-workspace-preview";
 export const inject = ["webServer", "workspaceRegistry", "sessionPersistence"];

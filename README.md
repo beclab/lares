@@ -1,18 +1,18 @@
 # Lares
 
-Olares Chat：**dsh web UI 主壳** + **Olares Router LLM shim**（WorkBuddy 仅作交互参考）。
+Olares 上的聊天应用：**Web 主壳** + **Olares Router**（WorkBuddy 仅作交互参考）。
 
 ```text
 packages/
   service/          启动与 Olares 编排
-  core/             `@lares/core` 业务逻辑子包（PC / 移动端共用）
+  core/             `@olares/lares-core` 业务逻辑子包（PC / 移动端共用）
   web/              PC 端 UI
   mobile/           移动端 UI
   skills/           ha-* agent skills（olares-* 由构建期导出，不入仓）
 tests/              单元测试（与源码分离）
 deploy/lares/        Olares chart（可选热更新）
 scripts/            镜像、chart 打包、dev-sync、better-sidebar、无头浏览器验证
-_参考/              deepseek-harness / WorkBuddy 截图
+_参考/              上游 UI / WorkBuddy 截图
 ```
 
 ## Local

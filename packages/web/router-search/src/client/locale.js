@@ -1,6 +1,6 @@
 import { createLocaleBinding } from "../../../shared/client/locale-binding.js";
 
-export { ZH, EN } from "@lares/core/i18n/search";
+export { ZH, EN } from "@olares/lares-core/i18n/search";
 
 const binding = createLocaleBinding("lares.webSearch");
 

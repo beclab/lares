@@ -8,6 +8,7 @@ import {
   workspaceCandidate,
 } from "../workspace/path.js";
 import { runOlaresDownload } from "./download.js";
+import { statFilesFile } from "./ls.js";
 import {
   describeFetch,
   describeFfmpegEncode,
@@ -46,8 +47,12 @@ export async function executeUrlFetch(args, exec, download) {
   return { path: resolved.destination, bytes: result.bytes, mediaType: result.mediaType };
 }
 
-export async function executeWorkspacePublish(args, exec) {
+export async function executeWorkspacePublish(args, exec, statFile) {
   const resolved = resolveWorkspacePublish(args);
+  if (resolved.origin === "files") {
+    const info = await (statFile ?? statFilesFile)(resolved.path, { signal: exec.signal });
+    return { path: resolved.path, bytes: info.size };
+  }
   const root = await resolveWorkspaceRoot(workspaceRootFromSession(exec));
   const absolutePath = await resolveExistingWorkspacePath(
     root,

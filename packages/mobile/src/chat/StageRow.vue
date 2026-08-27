@@ -1,23 +1,14 @@
 <template>
   <div class="lares-stage" :data-kind="kind" :data-open="open ? 'true' : 'false'">
     <button type="button" class="lares-stage__row" :aria-expanded="open" @click="open = !open">
-      <span v-if="kind !== 'think'" class="lares-stage__leading" aria-hidden="true">
+      <span class="lares-stage__leading" aria-hidden="true">
         <LaresStageIcon :name="iconName" />
       </span>
       <span class="lares-stage__title">{{ title }}</span>
-      <template v-if="kind !== 'think' && summary">
+      <template v-if="summary">
         <span class="lares-stage__sep" aria-hidden="true" />
         <span class="lares-stage__summary">{{ summary }}</span>
       </template>
-      <svg
-        v-if="kind === 'think'"
-        class="lares-stage__chevron"
-        :data-open="open ? 'true' : 'false'"
-        viewBox="0 0 16 16"
-        aria-hidden="true"
-      >
-        <path d="M4 6.5 8 10.5 12 6.5" />
-      </svg>
     </button>
     <pre v-if="open && body" class="lares-stage__body">{{ body }}</pre>
   </div>
@@ -38,7 +29,7 @@ export default {
     body: { type: String, default: "" },
   },
   data() {
-    return { open: this.kind === "think" };
+    return { open: false };
   },
   computed: {
     iconName() {
@@ -51,6 +42,7 @@ export default {
 <style scoped>
 .lares-stage {
   min-width: 0;
+  max-width: 100%;
 }
 
 .lares-stage__row {
@@ -74,7 +66,7 @@ export default {
   width: 16px;
   height: 16px;
   margin-right: 6px;
-  color: var(--q-ink-3);
+  color: var(--q-ink-2);
 }
 
 .lares-stage__title {
@@ -96,13 +88,9 @@ export default {
   flex: auto;
 }
 
-.lares-stage[data-kind="think"] .lares-stage__title {
-  color: var(--q-ink-3);
-}
-
 .lares-stage__summary {
   flex: auto;
-  color: var(--q-ink-3);
+  color: var(--q-ink-2);
 }
 
 .lares-stage__sep {
@@ -111,37 +99,23 @@ export default {
   height: 2px;
   margin: 0 8px;
   border-radius: 1px;
-  background: var(--q-ink-3);
-}
-
-.lares-stage__chevron {
-  width: 14px;
-  height: 14px;
-  margin-left: 4px;
-  flex: none;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  color: var(--q-ink-3);
-}
-
-.lares-stage__chevron[data-open="false"] {
-  transform: rotate(-90deg);
+  background: var(--q-ink-2);
 }
 
 .lares-stage__body {
   box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
   max-height: 141px;
   margin: 4px 0 0 22px;
   border-radius: 8px;
   padding: 10px 12px;
   overflow: auto;
   background: var(--q-background-3);
-  color: var(--q-ink-3);
+  color: var(--q-ink-2);
   font: 400 11px/16px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   word-break: break-word;
 }
 

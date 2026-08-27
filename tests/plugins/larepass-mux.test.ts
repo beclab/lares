@@ -3,13 +3,14 @@ import test from "node:test";
 import {
   consumeMux,
   consumeMuxFrames,
+  classifyMuxEnvelope,
   iterateSseJson,
   muxSessionEvent,
   muxWsUrl,
   splitSseBlocks,
   sseData,
-} from "@lares/core/larepass/mux";
-import { foldTranscript, mergeEvents } from "@lares/core/larepass/transcript";
+} from "@olares/lares-core/larepass/mux";
+import { foldTranscript, mergeEvents } from "@olares/lares-core/larepass/transcript";
 
 test("muxWsUrl turns the Host HTTP path into a websocket URL", () => {
   assert.equal(
@@ -198,6 +199,34 @@ test("consumeMux folds token deltas as they arrive", async () => {
     { role: "assistant", text: "he", pending: true },
   ]);
   assert.equal(last.items.at(-1).pending, true);
+});
+
+test("classifyMuxEnvelope keeps question waits that session/event folding would drop", () => {
+  const envelope = {
+    type: "server-request",
+    rpcId: "q1",
+    method: "events.mux",
+    payload: {
+      type: "question/requested",
+      sessionId: "s1",
+      questions: [{ id: "bg-style", question: "style?" }],
+    },
+  };
+  assert.deepEqual(classifyMuxEnvelope(envelope), {
+    kind: "question",
+    sessionId: "s1",
+    rpcId: "q1",
+    questions: [{ id: "bg-style", question: "style?" }],
+  });
+  assert.equal(muxSessionEvent(envelope, "s1"), null);
+  assert.deepEqual(
+    classifyMuxEnvelope({
+      type: "server-request",
+      rpcId: "q1",
+      payload: { type: "question/resolved", sessionId: "s1", questionRpcId: "q1", outcome: "answered" },
+    }),
+    { kind: "question-resolved", sessionId: "s1", rpcId: "q1", outcome: "answered" },
+  );
 });
 
 test("mergeEvents is seq-idempotent and ordered", () => {

@@ -1,6 +1,6 @@
 import { createLocaleBinding } from "../../../shared/client/locale-binding.js";
 
-export { ZH, EN } from "@lares/core/i18n/chat-model";
+export { ZH, EN } from "@olares/lares-core/i18n/chat-model";
 
 const binding = createLocaleBinding("lares.chat-model");
 

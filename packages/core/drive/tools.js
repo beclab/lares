@@ -15,12 +15,13 @@ export function driveFetchDefinition(download) {
     name: "drive_fetch",
     description:
       "Copy one file from the Olares files backend (drive/…, sync/…, external/…, cloud accounts) into"
-      + " the session workspace, where it can be read, edited, and opened by the user.",
+      + " the session workspace when a later edit or transcode needs it there. Preview of a files path"
+      + " does not require this — workspace_publish the drive/… path instead. Size is not a reason to skip.",
     parameters: {
       path: {
         type: "string",
         required: true,
-        description: "Olares files path of a single file, e.g. drive/Home/Downloads/clip.webm.",
+        description: "Olares files path of a single file, e.g. drive/Home/Documents/clip.webm.",
       },
       destination: {
         type: "string",
@@ -57,10 +58,10 @@ export function urlFetchDefinition(download) {
   return {
     name: "url_fetch",
     description:
-      "Download one public HTTP(S) URL, or a data: URL / base64 payload, into the session workspace."
-      + " Use after web search for online files, or when olares-cli router / FlowStudio returns a URL or"
-      + " inline bytes; unlike curl/wget, this reports the file as a produced artifact so the user can"
-      + " open or preview it.",
+      "Download one public HTTP(S) URL, or a data: URL / base64 payload, into the session workspace"
+      + " and publish it for preview. This is the default for a pasted or requested online file; do"
+      + " not answer with only the URL. Use after web search, or when olares-cli router / FlowStudio"
+      + " returns a URL or inline bytes. Size is not a reason to skip.",
     parameters: {
       url: {
         type: "string",
@@ -99,19 +100,22 @@ export function urlFetchDefinition(download) {
   };
 }
 
-export function workspacePublishDefinition() {
+export function workspacePublishDefinition(statFile) {
   return {
     name: "workspace_publish",
     description:
-      "Publish one file that already exists in the session workspace as a produced artifact. Use after"
-      + " olares-cli router, FlowStudio, a skill, or another shell process writes an image, audio, or"
-      + " other final file locally; this makes the UI open or preview it. Do not use it after"
-      + " ffmpeg_encode, which already publishes the video.",
+      "Publish one existing file as a produced artifact so the UI can preview it. Path is either"
+      + " workspace-relative or an Olares files path (drive/Home/Documents/clip.webm). After knowledge"
+      + " / Wise / yt-dlp lands in Files, call this immediately on that drive/… path — the user does"
+      + " not need to request preview. Also use after a skill writes a local file. Do not use it after"
+      + " drive_fetch, url_fetch, or ffmpeg_encode, which already publish.",
     parameters: {
       path: {
         type: "string",
         required: true,
-        description: "Exact workspace-relative path of one existing regular file.",
+        description:
+          "Workspace-relative path of one existing regular file, or an Olares files path such as"
+          + " drive/Home/Documents/clip.webm.",
       },
     },
     output: {
@@ -128,7 +132,7 @@ export function workspacePublishDefinition() {
         text: `Published ${value.path} (${value.bytes} bytes).`,
       }],
     },
-    execute: executeWorkspacePublish,
+    execute: (args, exec) => executeWorkspacePublish(args, exec, statFile),
     presentCall: presentWorkspacePublish,
   };
 }

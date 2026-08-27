@@ -3,9 +3,9 @@ import test from "node:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { classifyFailure, pickSttModelId, retryable } from "@lares/core/router/stt";
-import { postTranscribe, TranscriptQueue } from "@lares/core/voice/client";
-import { isComposerVoiceReady, isRecordingTooShort } from "@lares/core/voice/recorder";
+import { classifyFailure, pickSttModelId, retryable } from "@olares/lares-core/router/stt";
+import { postTranscribe, TranscriptQueue } from "@olares/lares-core/voice/client";
+import { isComposerVoiceReady, isRecordingTooShort } from "@olares/lares-core/voice/recorder";
 import {
   EMPTY_VOICE_CONFIG,
   STT_LANGUAGE_CHOICES,
@@ -14,7 +14,7 @@ import {
   voiceModelItems,
   voiceStatusReady,
   voiceValueFromMenu,
-} from "@lares/core/voice/languages";
+} from "@olares/lares-core/voice/languages";
 
 test("a take is too short when it is only a container header", () => {
   assert.equal(isRecordingTooShort(699, 2048), true);

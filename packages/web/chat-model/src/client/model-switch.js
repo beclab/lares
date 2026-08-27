@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { createLocaleBinding } from "../../../shared/client/locale-binding.js";
-import { EN, ZH } from "@lares/core/i18n/chat-model-switch";
+import { EN, ZH } from "@olares/lares-core/i18n/chat-model-switch";
 import {
   currentEffortId,
   effortDisplayLabel,
@@ -11,7 +11,7 @@ import {
   isSameSessionModel,
   modelSwitchSelection,
   sessionModelLabel,
-} from "@lares/core/router/session-model";
+} from "@olares/lares-core/router/session-model";
 
 const h = React.createElement;
 

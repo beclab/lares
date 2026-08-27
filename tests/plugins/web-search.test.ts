@@ -8,8 +8,8 @@ import {
   searchMenuValue,
   searchSelectorItems,
   searchValueFromMenu,
-} from "@lares/core/search/menu";
-import { searchWebErrorCode } from "@lares/core/router/search";
+} from "@olares/lares-core/search/menu";
+import { searchWebErrorCode } from "@olares/lares-core/router/search";
 
 test("search settings map none to an unset default", () => {
   assert.equal(searchMenuValue(null), "none");

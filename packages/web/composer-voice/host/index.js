@@ -1,15 +1,15 @@
 /**
  * Voice-input Host routes under /api/lares/voice (STT via /llm/v1 shim).
  */
-import { createRouteHandler, readBody, readJsonObject, sendJson } from "@lares/core/tools/http";
-import { readConfig } from "@lares/core/voice/config";
+import { createRouteHandler, readBody, readJsonObject, sendJson } from "@olares/lares-core/tools/http";
+import { readConfig } from "@olares/lares-core/voice/config";
 import {
   STT_MAX_AUDIO_BYTES,
   saveVoiceConfig,
   transcribeFromHttp,
   voiceModelsPayload,
   voiceStatusPayload,
-} from "@lares/core/voice/service";
+} from "@olares/lares-core/voice/service";
 
 export const name = "lares-composer-voice";
 export const inject = ["webServer"];

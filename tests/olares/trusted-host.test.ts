@@ -7,7 +7,7 @@ import {
   shouldRewriteApiLoopback,
   trustedEntranceHosts,
   viaOlaresEntrance,
-} from "@lares/core/olares/trusted-host";
+} from "@olares/lares-core/olares/trusted-host";
 
 test("trustedEntranceHosts splits DSH_TRUSTED_HOSTS", () => {
   assert.deepEqual(trustedEntranceHosts({ DSH_TRUSTED_HOSTS: "" }), []);

@@ -1,8 +1,8 @@
 /**
  * Readiness probe + LLM gateway shim at /llm/v1 (chat + voice STT).
  */
-import { sendJson } from "@lares/core/tools/http";
-import { healthPayload, proxyToRouter, SHIM_PATH } from "@lares/core/router/shim";
+import { sendJson } from "@olares/lares-core/tools/http";
+import { healthPayload, proxyToRouter, SHIM_PATH } from "@olares/lares-core/router/shim";
 
 export const name = "lares-llm-routes";
 export const inject = ["webServer"];

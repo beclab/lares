@@ -22,22 +22,25 @@ import {
   resolveWorkspaceFile,
   sendFileDownload,
   sendRawFile,
-} from "@lares/core/files/preview";
+} from "@olares/lares-core/files/preview";
+import { materializeFilesFile } from "@olares/lares-core/files/preview-cache";
 import {
   rewriteWorkspaceTargets,
   workspaceTargetPath,
-} from "@lares/core/files/markdown";
-import { producedForClosing } from "@lares/core/files/deliverables";
-import { filenameFromDisposition } from "@lares/core/files/disposition";
+} from "@olares/lares-core/files/markdown";
+import { producedForClosing } from "@olares/lares-core/files/deliverables";
+import { filenameFromDisposition } from "@olares/lares-core/files/disposition";
 import { downloadCurrentFile } from "../../packages/web/workspace-preview/src/client/download.js";
-import { partitionPreviews } from "@lares/core/files/preview-groups";
+import { partitionPreviews } from "@olares/lares-core/files/preview-groups";
+import { hostUrl, PC_TEST_PROXY } from "@olares/lares-core/larepass/host";
 import {
   FilePreviewWorkspace,
   interceptOpenPath,
   isPrimaryUnmodifiedClick,
   rawFileUrl,
+  rawUrlPath,
   workspaceLinkClickPath,
-} from "@lares/core/files/preview-workspace";
+} from "@olares/lares-core/files/preview-workspace";
 
 test("previewTypeForName classifies browser-safe preview formats", () => {
   assert.deepEqual(previewTypeForName("photo.webp"), { kind: "image", mediaType: "image/webp" });
@@ -108,6 +111,7 @@ test("turn media deduplicates absolute and relative reports by resolved workspac
     },
   );
 });
+
 
 test("parseRange accepts bounded, open, and suffix byte ranges", () => {
   assert.deepEqual(parseRange(undefined, 100), null);
@@ -244,7 +248,7 @@ test("download serves what inline preview refuses, as an attachment", async () =
       sent.headers?.["content-disposition"],
       `attachment; filename*=UTF-8''${encodeURIComponent("季度.pptx")}`,
     );
-    assert.throws(
+    await assert.rejects(
       () => sendRawFile({ method: "HEAD", headers: {} } as never, res as never, file),
       (error: { code?: string }) => error.code === "preview_unsupported",
     );
@@ -293,7 +297,7 @@ test("large range-streamed media stays previewable while whole documents stay bo
     assert.equal(sent.status, 200);
     assert.equal(sent.headers?.["cache-control"], "private, no-cache");
     const image = await resolveWorkspaceFile(root, "large.png");
-    assert.throws(
+    await assert.rejects(
       () => sendRawFile(
         { method: "HEAD", headers: {} } as never,
         res as never,
@@ -337,6 +341,7 @@ test("rewriteWorkspaceTargets rewrites prose targets and leaves code verbatim", 
     "[fenced](a.png)",
     "```",
     "[after](b.md)",
+    "[drive](drive/Home/Downloads/clip.webm)",
   ].join("\n");
 
   const rewritten = rewriteWorkspaceTargets(
@@ -345,6 +350,7 @@ test("rewriteWorkspaceTargets rewrites prose targets and leaves code verbatim", 
     (path: string) => `https://host/raw?p=${path}`,
   );
 
+  assert.match(rewritten, /\[drive\]\(https:\/\/host\/raw\?p=drive\/Home\/Downloads\/clip\.webm\)/);
   assert.match(rewritten, /\[tour\]\(https:\/\/host\/raw\?p=demo\/doc\/tour\.md\)/);
   assert.match(rewritten, /!\[card\]\(https:\/\/host\/raw\?p=demo\/image\/testcard\.png\)/);
   assert.match(rewritten, /\[out\]\(https:\/\/olares\.com\)/);
@@ -371,6 +377,23 @@ test("markdown preview clicks only intercept unmodified same-origin workspace li
       target: { closest: () => ({ getAttribute: () => "https://example.com" }) },
     }),
     null,
+  );
+});
+
+test("raw preview URLs stay Host-native so PC and LarePass share the same address", () => {
+  const href = hostUrl({
+    proxyPrefix: PC_TEST_PROXY,
+    path: rawFileUrl("s1", "notes.md"),
+  });
+  assert.equal(href, "/api/lares/file-preview/raw?sessionId=s1&path=notes.md");
+  assert.equal(rawUrlPath("s1", href), "notes.md");
+  assert.equal(rawUrlPath("s1", `${PC_TEST_PROXY}${href}`), "notes.md");
+  assert.equal(
+    workspaceLinkClickPath("s1", {
+      button: 0,
+      target: { closest: () => ({ getAttribute: () => href }) },
+    }),
+    "notes.md",
   );
 });
 
@@ -637,5 +660,168 @@ test("buildPreview truncates on a character boundary", async () => {
     assert.ok((preview.text ?? "").endsWith("中"));
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("workspaceTargetPath keeps Olares files paths as identity", () => {
+  const from = "preview-demo/index.md";
+  assert.equal(
+    workspaceTargetPath(from, "drive/Home/Downloads/clip.webm"),
+    "drive/Home/Downloads/clip.webm",
+  );
+  assert.equal(
+    workspaceTargetPath(from, "Home/Documents/clip.webm"),
+    "drive/Home/Documents/clip.webm",
+  );
+  assert.equal(
+    workspaceTargetPath("drive/Home/notes/index.md", "photo.png"),
+    "drive/Home/notes/photo.png",
+  );
+  assert.equal(workspaceTargetPath(from, "downloads/clip.webm"), "preview-demo/downloads/clip.webm");
+});
+
+test("fileFromPreviewRequest serves an Olares files path without the session workspace", async () => {
+  let workspaceCalled = false;
+  const file = await fileFromPreviewRequest(
+    "/preview?path=Home/Documents/clip.webm&sessionId=s1",
+    async () => {
+      workspaceCalled = true;
+      return { path: "/nope" };
+    },
+    {
+      stat: async (source: string) => ({
+        path: source,
+        name: "clip.webm",
+        size: 491_000_000,
+        modifiedAt: 1,
+      }),
+    },
+  );
+  assert.equal(workspaceCalled, false);
+  assert.equal(file.origin, "files");
+  assert.equal(file.path, "drive/Home/Documents/clip.webm");
+  assert.equal(file.kind, "video");
+  assert.equal(file.size, 491_000_000);
+  assert.equal(file.absolutePath, undefined);
+});
+
+test("files-path video metadata does not download bytes", async () => {
+  let materialized = false;
+  const preview = await buildPreview(
+    {
+      origin: "files",
+      path: "drive/Home/Downloads/clip.webm",
+      name: "clip.webm",
+      size: 491_000_000,
+      modifiedAt: 1,
+      kind: "video",
+      mediaType: "video/webm",
+    } as never,
+    {
+      materialize: async () => {
+        materialized = true;
+        throw new Error("should not materialize");
+      },
+    },
+  );
+  assert.equal(preview.kind, "video");
+  assert.equal(preview.size, 491_000_000);
+  assert.equal(materialized, false);
+});
+
+test("raw preview materializes a files path then range-streams the cache", async () => {
+  const cache = mkdtempSync(join(tmpdir(), "lares-preview-cache-"));
+  try {
+    const file = await fileFromPreviewRequest(
+      "/raw?path=drive/Home/Downloads/clip.webm&sessionId=s1",
+      async () => ({ path: "/nope" }),
+      {
+        stat: async (source: string) => ({
+          path: source,
+          name: "clip.webm",
+          size: 5,
+          modifiedAt: 1,
+        }),
+      },
+    );
+    const sent: { status?: number; headers?: Record<string, string> } = {};
+    const res = {
+      writeHead: (status: number, headers: Record<string, string>) => {
+        sent.status = status;
+        sent.headers = headers;
+      },
+      end: () => {},
+    };
+    await sendRawFile(
+      { method: "HEAD", headers: {} } as never,
+      res as never,
+      file,
+      {
+        cacheRoot: cache,
+        download: async (_source: string, dest: string) => {
+          writeFileSync(dest, "webm!");
+        },
+      },
+    );
+    assert.equal(sent.status, 200);
+    assert.equal(sent.headers?.["content-type"], "video/webm");
+    assert.equal(sent.headers?.["content-length"], "5");
+  } finally {
+    rmSync(cache, { recursive: true, force: true });
+  }
+});
+
+test("preview cache reuses a matching download and resumes a partial one", async () => {
+  const cache = mkdtempSync(join(tmpdir(), "lares-preview-cache-"));
+  const file = {
+    origin: "files",
+    path: "drive/Home/Downloads/reuse.webm",
+    name: "reuse.webm",
+    size: 6,
+    modifiedAt: 42,
+    kind: "video",
+    mediaType: "video/webm",
+  };
+  try {
+    let downloads = 0;
+    const first = await materializeFilesFile(file, {
+      cacheRoot: cache,
+      download: async (_source: string, dest: string) => {
+        downloads += 1;
+        writeFileSync(dest, "cached");
+      },
+    });
+    const second = await materializeFilesFile(file, {
+      cacheRoot: cache,
+      download: async () => {
+        downloads += 1;
+        throw new Error("should reuse the cache");
+      },
+    });
+    assert.equal(downloads, 1);
+    assert.equal(first.absolutePath, second.absolutePath);
+
+    writeFileSync(first.absolutePath, "part");
+    const flags: { overwrite?: boolean; resume?: boolean }[] = [];
+    await materializeFilesFile(file, {
+      cacheRoot: cache,
+      download: async (_source: string, dest: string, options: { overwrite?: boolean; resume?: boolean }) => {
+        flags.push({ overwrite: options.overwrite, resume: options.resume });
+        writeFileSync(dest, "cached");
+      },
+    });
+    await materializeFilesFile({ ...file, size: 10, modifiedAt: 99 }, {
+      cacheRoot: cache,
+      download: async (_source: string, dest: string, options: { overwrite?: boolean; resume?: boolean }) => {
+        flags.push({ overwrite: options.overwrite, resume: options.resume });
+        writeFileSync(dest, "1234567890");
+      },
+    });
+    assert.deepEqual(flags, [
+      { overwrite: false, resume: true },
+      { overwrite: true, resume: false },
+    ]);
+  } finally {
+    rmSync(cache, { recursive: true, force: true });
   }
 });

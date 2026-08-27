@@ -1,6 +1,6 @@
 /** Glyphs match dsh-client-ui-primitives leading icons (14px in a 16px box). */
 
-import { toolVariantIcon } from "@lares/core/larepass/tool-row";
+import { toolVariantIcon } from "@olares/lares-core/larepass/tool-row";
 
 export const GLYPHS = {
   "search": {

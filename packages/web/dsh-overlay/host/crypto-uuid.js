@@ -7,9 +7,9 @@
  * Injected into <head> ahead of the shell bundle so every client module, ours or
  * a community one, sees the same identity source.
  */
-import { injectUuidShim } from "@lares/core/tools/crypto-uuid";
+import { injectUuidShim } from "@olares/lares-core/tools/crypto-uuid";
 
-export { UUID_SHIM, injectUuidShim } from "@lares/core/tools/crypto-uuid";
+export { UUID_SHIM, injectUuidShim } from "@olares/lares-core/tools/crypto-uuid";
 
 export const name = "lares-crypto-uuid";
 export const inject = ["webServer"];

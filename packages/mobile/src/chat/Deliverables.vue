@@ -49,7 +49,7 @@
 </template>
 
 <script>
-import { fileName } from "@lares/core/files/preview-workspace";
+import { fileName } from "@olares/lares-core/files/preview-workspace";
 
 export default {
   name: "LaresDeliverables",

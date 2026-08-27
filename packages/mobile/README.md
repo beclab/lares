@@ -1,13 +1,13 @@
-# `@lares/mobile`
+# `@olares/lares-mobile`
 
-LarePass 只依赖这一个包。对话、Host、设置都在内部走 `@lares/core`，宿主不要再 import 或 link core。
+LarePass 只依赖这一个包。对话、Host、设置都在内部走 `@olares/lares-core`，宿主不要再 import 或 link core。
 
 ```vue
 <template>
   <LaresApp :locale="locale" :env="env" />
 </template>
 <script setup>
-import { LaresApp } from "@lares/mobile";
+import { LaresApp } from "@olares/lares-mobile";
 </script>
 ```
 
@@ -19,8 +19,8 @@ import { LaresApp } from "@lares/mobile";
 
 ```bash
 # dina
-npm link --workspace=@lares/mobile
+npm link --workspace=@olares/lares-mobile
 
 # TermiPass/packages/app
-npm link @lares/mobile
+npm link @olares/lares-mobile
 ```

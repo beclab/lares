@@ -3,7 +3,7 @@ import { ModelsSettings, settingsCss } from "./settings.js";
 import modelCss from "./styles/model.css";
 import { ModelSwitch, bindLocale, registerLocale, t, HideModelSeat } from "./model-switch.js";
 import { installPluginStyle } from "../../../shared/client/plugin-style.js";
-import { bindComposerModelDirectory, isComposerModelAvailable } from "@lares/core/router/session-model";
+import { bindComposerModelDirectory, isComposerModelAvailable } from "@olares/lares-core/router/session-model";
 
 export const inject = [];
 

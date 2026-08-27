@@ -6,6 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+const ROOT = resolve(HERE, "../..");
 const seedPath = resolve(HERE, "../../packages/service/dsh/agents-seed.ts");
 
 const {
@@ -14,18 +15,20 @@ const {
   identityPrompt,
   surfacePrompt,
   agentsMarkdown,
-  LEGACY_AGENTS_MARKDOWN,
-} = await import("@lares/core/brand/identity");
-const { MARK_PATH, MARK_SVG, MARK_DATA_URI } = await import("@lares/core/icons/mark");
-const { MANIFEST, MANIFEST_PATH } = await import("@lares/core/brand/manifest");
+  LEGACY_AGENTS_SEEDS,
+} = await import("@olares/lares-core/brand/identity");
+const { MARK_PATH, MARK_SVG, MARK_DATA_URI } = await import("@olares/lares-core/icons/mark");
+const { MANIFEST, MANIFEST_PATH } = await import("@olares/lares-core/brand/manifest");
 const { seedWorkspaceAgents } = await import(seedPath);
 
-test("identity prompt names the product and refuses DeepSeek Harness", () => {
+const UPSTREAM_COPY = /DeepSeek|Harness|\bdsh\b/i;
+
+test("identity prompt names the product and omits the upstream brand", () => {
   const text = identityPrompt();
   assert.match(text, new RegExp(`You are ${PRODUCT_NAME}`));
   assert.match(text, new RegExp(PLATFORM_NAME));
-  assert.match(text, /Do not identify yourself as DeepSeek Harness/);
-  assert.doesNotMatch(text, /powered by DeepSeek Harness/);
+  assert.match(text, new RegExp(`answer as ${PRODUCT_NAME} on ${PLATFORM_NAME}`));
+  assert.doesNotMatch(text, UPSTREAM_COPY);
 });
 
 test("identity prompt keeps read_image off attached images", () => {
@@ -35,19 +38,29 @@ test("identity prompt keeps read_image off attached images", () => {
 test("surface prompt is product-branded", () => {
   const text = surfacePrompt("http://127.0.0.1:8080");
   assert.match(text, new RegExp(PRODUCT_NAME));
+  assert.match(text, new RegExp(PLATFORM_NAME));
   assert.match(text, /http:\/\/127\.0\.0\.1:8080/);
-  assert.doesNotMatch(text, /DeepSeek Harness Web GUI/);
+  assert.doesNotMatch(text, UPSTREAM_COPY);
 });
 
-test("seedWorkspaceAgents writes and rewrites the legacy DeepSeek seed", () => {
+test("agents markdown names the product and omits the upstream brand", () => {
+  const text = agentsMarkdown();
+  assert.match(text, new RegExp(`via ${PRODUCT_NAME}`));
+  assert.match(text, new RegExp(`you are ${PRODUCT_NAME} on ${PLATFORM_NAME}\\.`));
+  assert.doesNotMatch(text, UPSTREAM_COPY);
+});
+
+test("seedWorkspaceAgents writes and rewrites previous official seeds", () => {
   const root = mkdtempSync(join(tmpdir(), "lares-agents-"));
   try {
     seedWorkspaceAgents(root);
     assert.equal(readFileSync(join(root, "AGENTS.md"), "utf8"), agentsMarkdown());
 
-    writeFileSync(join(root, "AGENTS.md"), LEGACY_AGENTS_MARKDOWN);
-    seedWorkspaceAgents(root);
-    assert.equal(readFileSync(join(root, "AGENTS.md"), "utf8"), agentsMarkdown());
+    for (const legacy of LEGACY_AGENTS_SEEDS) {
+      writeFileSync(join(root, "AGENTS.md"), legacy);
+      seedWorkspaceAgents(root);
+      assert.equal(readFileSync(join(root, "AGENTS.md"), "utf8"), agentsMarkdown());
+    }
 
     const custom = "# AGENTS.md\n\nCustom workspace rules.\n";
     writeFileSync(join(root, "AGENTS.md"), custom);
@@ -69,4 +82,21 @@ test("PWA manifest names the product and points at the mark", () => {
   assert.equal(MANIFEST.name, PRODUCT_NAME);
   assert.equal(MANIFEST.display, "fullscreen");
   assert.equal(MANIFEST.icons[0]?.src, MARK_PATH);
+});
+
+test("market listings name Lares and omit the upstream product", () => {
+  const files = [
+    "deploy/lares/OlaresManifest.yaml",
+    "deploy/lares/Chart.yaml",
+    "deploy/lares/README.md",
+    "deploy/lares/i18n/en-US/OlaresManifest.yaml",
+    "deploy/lares/i18n/zh-CN/OlaresManifest.yaml",
+  ];
+  for (const rel of files) {
+    const text = readFileSync(join(ROOT, rel), "utf8");
+    assert.match(text, /Lares/);
+    assert.doesNotMatch(text, /DeepSeek Harness/);
+    assert.doesNotMatch(text, /\bdsh web\b/);
+    assert.doesNotMatch(text, /官方 dsh/);
+  }
 });

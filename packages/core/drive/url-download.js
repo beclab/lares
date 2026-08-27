@@ -261,29 +261,6 @@ export async function downloadUrl(source, absolutePath, options = {}) {
   throw lastError;
 }
 
-const DATA_NAMES = new Map([
-  ["image/jpeg", "download.jpg"],
-  ["image/jpg", "download.jpg"],
-  ["image/png", "download.png"],
-  ["image/gif", "download.gif"],
-  ["image/webp", "download.webp"],
-  ["image/bmp", "download.bmp"],
-  ["video/mp4", "download.mp4"],
-  ["video/webm", "download.webm"],
-  ["video/quicktime", "download.mov"],
-  ["audio/mpeg", "download.mp3"],
-  ["audio/wav", "download.wav"],
-  ["audio/ogg", "download.ogg"],
-  ["audio/mp4", "download.m4a"],
-  ["audio/aac", "download.aac"],
-  ["audio/flac", "download.flac"],
-  ["application/pdf", "download.pdf"],
-]);
-
-export function dataUrlFilename(mediaType) {
-  return DATA_NAMES.get(String(mediaType ?? "").split(";", 1)[0].trim().toLowerCase()) ?? null;
-}
-
 /**
  * Decode a `data:` URL without touching the network. Router / FlowStudio image
  * payloads often arrive this way rather than as an HTTP URL.

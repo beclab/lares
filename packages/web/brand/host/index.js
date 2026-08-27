@@ -1,6 +1,6 @@
 /** Brand: index.html tap (splash before client plugins), mark/manifest, LLM identity. */
-import { PRODUCT_NAME, THEME_COLOR, identityPrompt, surfacePrompt } from "@lares/core/brand/identity";
-import { loopbackWebUrl } from "@lares/core/olares/entrance";
+import { PRODUCT_NAME, THEME_COLOR, identityPrompt, surfacePrompt } from "@olares/lares-core/brand/identity";
+import { loopbackWebUrl } from "@olares/lares-core/olares/entrance";
 import { BRAND_CSS } from "./stylesheet.js";
 import { MANIFEST, MANIFEST_PATH, MARK_PATH, MARK_SVG } from "./mark.js";
 

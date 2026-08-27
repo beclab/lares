@@ -31,9 +31,12 @@
       :remember-scroll="rememberScroll"
       :sticking="sticking"
       :session-id="sessionId"
+      :question="question"
+      :question-busy="questionBusy"
       :t="t"
       @open="openFile"
       @media="pinLog"
+      @answer="answerQuestion"
     />
     <LaresComposer
       :draft="draft"
@@ -89,14 +92,17 @@
     <LaresPreview
       v-if="preview.path"
       :path="preview.path"
+      :session-id="sessionId"
       :status="preview.status"
       :data="preview.data"
       :error="preview.error"
       :media-src="previewMediaSrc"
       :download-href="previewDownloadHref"
+      :href-for="previewHref"
       :t="t"
       @close="closePreview"
       @retry="openFile(preview.path)"
+      @open="openFile"
     />
   </div>
 </template>
@@ -106,11 +112,12 @@ import { connectChat } from "./runtime.js";
 import { createT } from "./i18n.js";
 import { failText, withPendingUser } from "./chat/format.js";
 import { createVoiceCapture } from "./chat/voice.js";
-import { appendDraftMentions } from "@lares/core/files/mention";
-import { FileIntake, partitionDocumentsBySize } from "@lares/core/files/intake";
-import { DEFAULT_MAX_UPLOAD_BYTES } from "@lares/core/files/limits";
-import { groupModelsByProvider, effortMenuRows, reasoningOfModel, currentEffortId, selectionKey } from "@lares/core/router/session-model";
-import { messageFromCode } from "@lares/core/i18n/t";
+import { appendDraftMentions } from "@olares/lares-core/files/mention";
+import { FileIntake, partitionDocumentsBySize } from "@olares/lares-core/files/intake";
+import { DEFAULT_MAX_UPLOAD_BYTES } from "@olares/lares-core/files/limits";
+import { groupModelsByProvider, effortMenuRows, reasoningOfModel, currentEffortId, selectionKey } from "@olares/lares-core/router/session-model";
+import { messageFromCode } from "@olares/lares-core/i18n/t";
+import { parseAskUserQuestions, singleSelectAnswer } from "@olares/lares-core/larepass/questions";
 import LaresChatBar from "./chat/ChatBar.vue";
 import LaresHistoryPanel from "./chat/HistoryPanel.vue";
 import LaresTranscript from "./chat/Transcript.vue";
@@ -160,6 +167,8 @@ export default {
       voiceError: "",
       voiceLanguage: "",
       intakeUnsub: null,
+      question: null,
+      questionBusy: false,
     };
   },
   computed: {
@@ -228,6 +237,16 @@ export default {
     previewDownloadHref() {
       if (!this.preview.path) return "";
       return this.runtime.downloadUrl(this.preview.path);
+    },
+    previewHref() {
+      return (path) => {
+        const href = this.runtime.mediaUrl(path);
+        try {
+          return new URL(href, globalThis.location?.origin || "http://localhost").href;
+        } catch {
+          return href;
+        }
+      };
     },
     filePaths() {
       return this.items.filter((row) => row.type === "files").flatMap((row) => row.paths);
@@ -331,6 +350,8 @@ export default {
       this.sessions = snap.sessions ?? this.sessions;
       this.sessionsReady = Boolean(snap.sessionsReady);
       this.historyLoading = Boolean(snap.historyLoading);
+      this.question = snap.question || null;
+      if (!this.question) this.questionBusy = false;
       if (this.pendingUser && snap.items.some((row) => row.type === "user" && row.text === this.pendingUser)) {
         this.pendingUser = "";
       }
@@ -349,6 +370,20 @@ export default {
       }));
       this.previews = next;
       this.pinLog();
+    },
+    async answerQuestion(label, row) {
+      const questions = this.question?.questions?.length
+        ? this.question.questions
+        : parseAskUserQuestions(row?.argsRaw);
+      const id = questions[0]?.id;
+      if (!id || this.questionBusy) return;
+      this.questionBusy = true;
+      try {
+        const result = await this.runtime.answerQuestion(singleSelectAnswer(id, label).answers);
+        if (!result?.ok) this.questionBusy = false;
+      } catch {
+        this.questionBusy = false;
+      }
     },
     async openFile(path) {
       this.preview = { path, status: "loading", data: null, error: "" };

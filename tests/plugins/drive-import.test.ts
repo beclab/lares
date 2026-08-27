@@ -18,30 +18,34 @@ import {
   createUrlFetchTool,
   createWorkspacePublishTool,
 } from "../../packages/web/workspace-artifacts/host/index.js";
-import { runOlaresDownload } from "@lares/core/drive/download";
+import { runOlaresDownload } from "@olares/lares-core/drive/download";
 import {
+  DRIVE_IMPORT_PROMPT,
   describeFetch,
   describeFfmpegEncode,
   describeUrlFetch,
   describeWorkspacePublish,
+  isFilesPath,
+  parseFilesPath,
   resolveFetch,
   resolveFfmpegEncode,
   resolveUrlFetch,
   resolveWorkspacePublish,
-} from "@lares/core/drive/paths";
+} from "@olares/lares-core/drive/paths";
+import { filesLsChildren, findFilesChild, runOlaresLs, statFilesFile } from "@olares/lares-core/drive/ls";
 import {
   assertPublicUrl,
   decodeDataUrl,
   downloadUrl,
   isPublicAddress,
   saveDataUrl,
-} from "@lares/core/drive/url-download";
+} from "@olares/lares-core/drive/url-download";
 import {
   driveFetchDefinition,
   ffmpegEncodeDefinition,
   urlFetchDefinition,
   workspacePublishDefinition,
-} from "@lares/core/drive/tools";
+} from "@olares/lares-core/drive/tools";
 
 test("agent tool definitions live in core, not the web host", () => {
   assert.equal(driveFetchDefinition().name, "drive_fetch");
@@ -57,14 +61,16 @@ function execContext(cwd: string) {
   } as any;
 }
 
-function fakeChild(exit: { code?: number; stderr?: string; error?: Error }) {
-  const child = new EventEmitter() as EventEmitter & { stderr: EventEmitter };
+function fakeChild(exit: { code?: number; stdout?: string; stderr?: string; error?: Error }) {
+  const child = new EventEmitter() as EventEmitter & { stdout: EventEmitter; stderr: EventEmitter };
+  child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
   queueMicrotask(() => {
     if (exit.error) {
       child.emit("error", exit.error);
       return;
     }
+    if (exit.stdout) child.stdout.emit("data", Buffer.from(exit.stdout));
     if (exit.stderr) child.stderr.emit("data", Buffer.from(exit.stderr));
     child.emit("close", exit.code ?? 0);
   });
@@ -95,6 +101,34 @@ test("resolveFetch rejects anything that is not one fetchable files path", () =>
 test("resolveFetch keeps the destination inside the workspace", () => {
   assert.throws(() => resolveFetch({ path: "drive/Home/a.webm", destination: "../a.webm" }), /inside the workspace/);
   assert.throws(() => resolveFetch({ path: "drive/Home/a.webm", destination: "/tmp/a.webm" }), /inside the workspace/);
+});
+
+test("parseFilesPath accepts downloadable Olares addresses and rejects the rest", () => {
+  assert.equal(parseFilesPath("drive/Home/Downloads/clip.webm"), "drive/Home/Downloads/clip.webm");
+  assert.equal(parseFilesPath("drive/Home/Documents/clip.webm"), "drive/Home/Documents/clip.webm");
+  assert.equal(parseFilesPath("Home/Pictures/a.jpg"), "drive/Home/Pictures/a.jpg");
+  assert.equal(parseFilesPath("/Home/Movies/a.mp4"), "drive/Home/Movies/a.mp4");
+  assert.equal(parseFilesPath("/drive/Home/Code/notes.md"), "drive/Home/Code/notes.md");
+  assert.equal(isFilesPath("drive/Home/Downloads/clip.webm"), true);
+  assert.equal(isFilesPath("sync/abc/notes/稿.md"), true);
+  assert.equal(isFilesPath("downloads/clip.webm"), false);
+  assert.equal(isFilesPath("drive/Home/Downloads/"), false);
+  assert.equal(isFilesPath("Home/"), false);
+});
+
+test("the import prompt treats Olares files paths as previewable in place", () => {
+  assert.match(DRIVE_IMPORT_PROMPT, /That is the default/);
+  assert.match(DRIVE_IMPORT_PROMPT, /Never reply with only a hyperlink/);
+  assert.match(DRIVE_IMPORT_PROMPT, /workspace_publish that files path immediately/);
+  assert.match(DRIVE_IMPORT_PROMPT, /not only Downloads/);
+  assert.match(DRIVE_IMPORT_PROMPT, /drive\/Home/);
+  assert.doesNotMatch(DRIVE_IMPORT_PROMPT, /cannot be read, edited, or previewed in place/);
+  assert.doesNotMatch(DRIVE_IMPORT_PROMPT, /always drive_fetch/);
+});
+
+test("url_fetch and workspace_publish descriptions treat preview as the default", () => {
+  assert.match(urlFetchDefinition().description, /default for a pasted or requested online file/);
+  assert.match(workspacePublishDefinition().description, /user does not need to request preview/);
 });
 
 test("describeFetch answers null instead of throwing for replayed arguments", () => {
@@ -140,12 +174,22 @@ test("resolveUrlFetch derives safe paths and requires an extension for opaque UR
   assert.equal(describeUrlFetch({ url: "not a url" }), null);
 });
 
-test("resolveWorkspacePublish accepts only one workspace-relative file path", () => {
+test("resolveWorkspacePublish accepts a workspace file or an Olares files path", () => {
   assert.deepEqual(resolveWorkspacePublish({ path: "outputs/movie.mp4" }), {
     path: "outputs/movie.mp4",
+    origin: "workspace",
   });
   assert.deepEqual(resolveWorkspacePublish({ path: "outputs\\voice.wav" }), {
     path: "outputs/voice.wav",
+    origin: "workspace",
+  });
+  assert.deepEqual(resolveWorkspacePublish({ path: "drive/Home/Downloads/clip.webm" }), {
+    path: "drive/Home/Downloads/clip.webm",
+    origin: "files",
+  });
+  assert.deepEqual(resolveWorkspacePublish({ path: "Home/Documents/clip.webm" }), {
+    path: "drive/Home/Documents/clip.webm",
+    origin: "files",
   });
   for (const path of ["", "/tmp/a.png", "../a.png", "outputs/", "a/./b.png"]) {
     assert.throws(() => resolveWorkspacePublish({ path }), /one existing file/);
@@ -300,6 +344,19 @@ test("workspace_publish validates and declares an existing generated file", asyn
   }
 });
 
+test("workspace_publish declares an Olares files path without copying it", async () => {
+  const tool = createWorkspacePublishTool(async (source: string) => {
+    assert.equal(source, "drive/Home/Downloads/clip.webm");
+    return { path: source, name: "clip.webm", size: 491, modifiedAt: 1 };
+  });
+  const view = tool.presentCall?.({ path: "drive/Home/Downloads/clip.webm" }) as any;
+  assert.deepEqual(view?.locations, [{ path: "drive/Home/Downloads/clip.webm" }]);
+  assert.deepEqual(
+    await tool.execute({ path: "drive/Home/Downloads/clip.webm" }, execContext("/tmp/unused")),
+    { path: "drive/Home/Downloads/clip.webm", bytes: 491 },
+  );
+});
+
 test("ffmpeg_encode publishes the output and reports encoder and speed", async () => {
   const root = mkdtempSync(join(tmpdir(), "lares-ffmpeg-encode-"));
   try {
@@ -432,6 +489,21 @@ test("runOlaresDownload passes the files path and target through to the CLI", as
   assert.deepEqual(call, {
     command: "olares-cli",
     args: ["files", "download", "drive/Home/a.webm", "/data/workspace/downloads/a.webm", "--overwrite"],
+  });
+});
+
+test("runOlaresDownload resumes a partial local file", async () => {
+  let call: { command: string; args: string[] } | null = null;
+  await runOlaresDownload("drive/Home/a.webm", "/data/workspace/downloads/a.webm", {
+    resume: true,
+    spawnFn: (command: string, args: string[]) => {
+      call = { command, args };
+      return fakeChild({ code: 0 });
+    },
+  });
+  assert.deepEqual(call, {
+    command: "olares-cli",
+    args: ["files", "download", "drive/Home/a.webm", "/data/workspace/downloads/a.webm", "--resume"],
   });
 });
 
@@ -582,4 +654,78 @@ test("saveDataUrl writes decoded bytes without touching the network", async () =
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("files ls JSON exposes drive items and cloud data children", () => {
+  const drive = {
+    code: 0,
+    data: {
+      items: [
+        { name: "clip.webm", size: 491, isDir: false, modified: "2026-08-27T09:00:00Z" },
+        { name: "folder/", size: 0, isDir: true },
+      ],
+    },
+  };
+  const cloud = {
+    data: [
+      { name: "notes.md", fileSize: 12 },
+      { name: "album/", fileSize: 0, type: "dir" },
+    ],
+  };
+  assert.equal(filesLsChildren(drive).length, 2);
+  assert.equal(findFilesChild(drive, "clip.webm")?.size, 491);
+  assert.equal(findFilesChild(cloud, "notes.md")?.fileSize, 12);
+  assert.equal(findFilesChild(drive, "missing"), null);
+});
+
+test("statFilesFile lists the parent and matches the leaf", async () => {
+  const info = await statFilesFile("drive/Home/Downloads/clip.webm", {
+    ls: async (parent: string) => {
+      assert.equal(parent, "drive/Home/Downloads");
+      return {
+        data: {
+          items: [
+            { name: "clip.webm", size: 491, modified: "2026-08-27T09:00:00.000Z" },
+            { name: "other.mp4", size: 8 },
+          ],
+        },
+      };
+    },
+  });
+  assert.deepEqual(info, {
+    path: "drive/Home/Downloads/clip.webm",
+    name: "clip.webm",
+    size: 491,
+    modifiedAt: Date.parse("2026-08-27T09:00:00.000Z"),
+  });
+  await assert.rejects(
+    () => statFilesFile("drive/Home/Downloads/missing.webm", {
+      ls: async () => ({ data: { items: [{ name: "clip.webm", size: 1 }] } }),
+    }),
+    (error: { code?: string }) => error.code === "file_not_found",
+  );
+  await assert.rejects(
+    () => statFilesFile("drive/Home/Downloads/folder", {
+      ls: async () => ({ data: { items: [{ name: "folder/", isDir: true }] } }),
+    }),
+    (error: { code?: string }) => error.code === "path_not_file",
+  );
+});
+
+test("runOlaresLs asks the CLI for JSON and parses stdout", async () => {
+  let call: { command: string; args: string[] } | null = null;
+  const envelope = await runOlaresLs("drive/Home/Downloads", {
+    spawnFn: (command: string, args: string[]) => {
+      call = { command, args };
+      return fakeChild({
+        code: 0,
+        stdout: JSON.stringify({ data: { items: [{ name: "a.webm", size: 1 }] } }),
+      });
+    },
+  });
+  assert.deepEqual(call, {
+    command: "olares-cli",
+    args: ["files", "ls", "drive/Home/Downloads", "--json"],
+  });
+  assert.equal(findFilesChild(envelope, "a.webm")?.size, 1);
 });

@@ -9,7 +9,7 @@ import {
   ffmpegEncodeArgv,
   parseFfmpegReport,
   subtitleFilter,
-} from "@lares/core/media/ffmpeg-run";
+} from "@olares/lares-core/media/ffmpeg-run";
 
 test("ffmpegEncodeArgv encodes lavfi with libx264", () => {
   const args = ffmpegEncodeArgv({

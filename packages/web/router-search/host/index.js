@@ -1,10 +1,10 @@
 /** Lares web-search Host: Router-backed ctx.web provider and settings routes. */
-import { createRouteHandler, readJsonObject, sendJson } from "@lares/core/tools/http";
+import { createRouteHandler, readJsonObject, sendJson } from "@olares/lares-core/tools/http";
 import {
   currentSearchConfig,
   defaultSearchModelFromBody,
   setDefaultSearchFromRequest,
-} from "@lares/core/search/config";
+} from "@olares/lares-core/search/config";
 import { createLaresSearchProvider } from "./provider.js";
 
 export const name = "lares-router-search";

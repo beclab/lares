@@ -3,7 +3,7 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "yaml";
-import { identityPrompt } from "@lares/core/brand/identity";
+import { identityPrompt } from "@olares/lares-core/brand/identity";
 
 const root = process.cwd();
 

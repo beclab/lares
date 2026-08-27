@@ -32,13 +32,54 @@ export function sseData(block) {
     .join("");
 }
 
+export function muxPayload(envelope) {
+  if (!envelope || typeof envelope !== "object") return null;
+  return envelope.type === "server-request" ? envelope.payload : envelope;
+}
+
 export function muxEventFrame(envelope) {
-  const frame = envelope?.type === "server-request" ? envelope.payload : envelope;
+  const frame = muxPayload(envelope);
   if (frame?.type !== "session/event" || !frame.event) return null;
   return {
     sessionId: frame.sessionId || "",
     event: frame.view ? { ...frame.event, view: frame.view } : frame.event,
   };
+}
+
+/**
+ * Mux carries session events and answerable waits on the same stream.
+ * `question/requested` is replayed on every open; dropping it leaves the turn
+ * running with no way to answer.
+ */
+export function classifyMuxEnvelope(envelope) {
+  const frame = muxPayload(envelope);
+  if (!frame || typeof frame !== "object") return null;
+  const sessionId = frame.sessionId || "";
+  const rpcId = typeof envelope?.rpcId === "string" ? envelope.rpcId : "";
+  if (frame.type === "session/event" && frame.event) {
+    return {
+      kind: "event",
+      sessionId,
+      event: frame.view ? { ...frame.event, view: frame.view } : frame.event,
+    };
+  }
+  if (frame.type === "question/requested") {
+    return {
+      kind: "question",
+      sessionId,
+      rpcId,
+      questions: Array.isArray(frame.questions) ? frame.questions : [],
+    };
+  }
+  if (frame.type === "question/resolved") {
+    return {
+      kind: "question-resolved",
+      sessionId,
+      rpcId: frame.questionRpcId || rpcId,
+      outcome: frame.outcome,
+    };
+  }
+  return null;
 }
 
 export function muxSessionEvent(envelope, sessionId) {
@@ -127,13 +168,19 @@ export async function* iterateWsJson(socket) {
   }
 }
 
-export async function* consumeMuxFrames(source) {
+export async function* consumeMuxInbox(source) {
   const envelopes = typeof source?.getReader === "function"
     ? iterateSseJson(bytesOf(source))
     : iterateWsJson(source);
   for await (const envelope of envelopes) {
-    const frame = muxEventFrame(envelope);
-    if (frame) yield frame;
+    const item = classifyMuxEnvelope(envelope);
+    if (item) yield item;
+  }
+}
+
+export async function* consumeMuxFrames(source) {
+  for await (const item of consumeMuxInbox(source)) {
+    if (item.kind === "event") yield { sessionId: item.sessionId, event: item.event };
   }
 }
 

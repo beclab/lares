@@ -1,6 +1,15 @@
 export const APP_ID = "lares";
-export const MODELS_PATH = "/api/lares/models";
+export const LARES_API_PREFIX = "/api/lares";
+export const MODELS_PATH = `${LARES_API_PREFIX}/models`;
 export const PC_TEST_PROXY = "/laresHost";
+
+/** Host plugin routes (`file-preview`, models, voice, …). Same path on PC and LarePass. */
+export function isLaresPluginPath(path) {
+  const suffix = String(path ?? "").startsWith("/") ? path : `/${path}`;
+  return suffix === LARES_API_PREFIX
+    || suffix.startsWith(`${LARES_API_PREFIX}/`)
+    || suffix.startsWith(`${LARES_API_PREFIX}?`);
+}
 
 export function originOf(url) {
   if (!url) return "";
@@ -38,7 +47,13 @@ export function hostConfigFromEnv(env = {}) {
 
 export function hostUrl({ baseUrl = "", proxyPrefix = "", path }) {
   const suffix = path.startsWith("/") ? path : `/${path}`;
-  if (proxyPrefix) return `${proxyPrefix.replace(/\/$/, "")}${suffix}`;
+  if (proxyPrefix) {
+    // Plugin routes are same-origin Host URLs. Prefixing them with /laresHost
+    // would make the same conversation emit different img/src on LarePass vs PC.
+    // RPC (`/api/session.list`) still needs the proxy: `/api` is Files.
+    if (isLaresPluginPath(suffix)) return suffix;
+    return `${proxyPrefix.replace(/\/$/, "")}${suffix}`;
+  }
   const origin = String(baseUrl).replace(/\/$/, "");
   return origin ? `${origin}${suffix}` : suffix;
 }

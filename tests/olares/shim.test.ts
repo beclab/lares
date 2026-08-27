@@ -10,8 +10,8 @@ import {
   SHIM_AUDIO_TIMEOUT_MS,
   SHIM_CHAT_MAX_BYTES,
   SHIM_CHAT_TIMEOUT_MS,
-} from "@lares/core/router/shim";
-import { STT_MAX_AUDIO_BYTES } from "@lares/core/router/stt";
+} from "@olares/lares-core/router/shim";
+import { STT_MAX_AUDIO_BYTES } from "@olares/lares-core/router/stt";
 
 test("llmShimSuffix strips the Host prefix and query stays with the caller", () => {
   assert.equal(llmShimSuffix("/llm/v1/models"), "models");

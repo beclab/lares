@@ -17,7 +17,7 @@ import {
   reasoningOfModel,
   selectionKey,
   sessionModelLabel,
-} from "@lares/core/router/session-model";
+} from "@olares/lares-core/router/session-model";
 
 test("Router catalog effort dict becomes the switcher menu shape", () => {
   assert.deepEqual(reasoningFromEfforts({ low: "low", high: "high" }), {

@@ -18,8 +18,8 @@ import {
   numberedName,
   saveUpload,
   sanitizeFilename,
-} from "@lares/core/files/upload";
-import { uploadFile } from "@lares/core/files/upload-client";
+} from "@olares/lares-core/files/upload";
+import { uploadFile } from "@olares/lares-core/files/upload-client";
 import {
   FileIntake,
   claimComposerBlock,
@@ -29,8 +29,8 @@ import {
   documentPasteFiles,
   partitionDocumentsBySize,
   splitComposerFiles,
-} from "@lares/core/files/intake";
-import { appendDraftMentions, createUploadCommit, insertUploadReferences, uploadReference } from "@lares/core/files/mention";
+} from "@olares/lares-core/files/intake";
+import { appendDraftMentions, createUploadCommit, insertUploadReferences, uploadReference } from "@olares/lares-core/files/mention";
 import { createPreviewHandler } from "../../packages/web/workspace-preview/host/index.js";
 
 type FakeRequest = Readable & { headers: Record<string, string> };

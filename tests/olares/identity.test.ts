@@ -3,8 +3,8 @@ import test from "node:test";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ensureCliProfile, identityFromHeaders } from "@lares/core/olares/identity";
-import { rememberSessionIdentity, getSessionIdentity } from "@lares/core/olares/session-identity";
+import { ensureCliProfile, identityFromHeaders } from "@olares/lares-core/olares/identity";
+import { rememberSessionIdentity, getSessionIdentity } from "@olares/lares-core/olares/session-identity";
 
 test("identityFromHeaders reads edge cookie and user", () => {
   const identity = identityFromHeaders(new Headers({

@@ -28,8 +28,17 @@
       <LaresStageRow
         v-else-if="row.type === 'reasoning'"
         kind="think"
-        :title="thinkLabel(row, index)"
+        :title="stageCopy.think"
+        :summary="thinkSummary(row)"
         :body="row.text"
+      />
+      <LaresQuestionCard
+        v-else-if="row.type === 'tool' && row.name === 'ask_user_question' && row.status === 'running'"
+        :questions="questionItems(row)"
+        :rpc-id="question?.rpcId || ''"
+        :busy="questionBusy"
+        :t="t"
+        @pick="$emit('answer', $event, row)"
       />
       <LaresStageRow
         v-else-if="row.type === 'tool'"
@@ -72,17 +81,19 @@
 </template>
 
 <script>
-import { partitionPreviews } from "@lares/core/files/preview-groups";
-import { STAGE_COPY } from "@lares/core/larepass/stage-copy";
-import { lastIndexOfType, retryStatus as formatRetry, thinkTitle } from "./format.js";
+import { partitionPreviews } from "@olares/lares-core/files/preview-groups";
+import { parseAskUserQuestions } from "@olares/lares-core/larepass/questions";
+import { STAGE_COPY } from "@olares/lares-core/larepass/stage-copy";
+import { retryStatus as formatRetry, thinkSummary } from "./format.js";
 import { renderMarkdown } from "./markdown.js";
 import LaresDeliverables from "./Deliverables.vue";
+import LaresQuestionCard from "./QuestionCard.vue";
 import LaresMessageActions from "./MessageActions.vue";
 import LaresStageRow from "./StageRow.vue";
 
 export default {
   name: "LaresTranscript",
-  components: { LaresDeliverables, LaresMessageActions, LaresStageRow },
+  components: { LaresDeliverables, LaresQuestionCard, LaresMessageActions, LaresStageRow },
   props: {
     items: { type: Array, default: () => [] },
     running: { type: Boolean, default: false },
@@ -93,9 +104,11 @@ export default {
     rememberScroll: { type: Function, required: true },
     sticking: { type: Function, required: true },
     sessionId: { type: String, default: "" },
+    question: { type: Object, default: null },
+    questionBusy: { type: Boolean, default: false },
     t: { type: Function, required: true },
   },
-  emits: ["open", "media"],
+  emits: ["open", "media", "answer"],
   data() {
     return {
       applyingScroll: false,
@@ -103,20 +116,11 @@ export default {
       logPin: 0,
       stageCopy: STAGE_COPY,
       reactions: {},
-      thinkStartedAt: 0,
-      thinkElapsedMs: 0,
     };
   },
   watch: {
     sessionId() {
       this.reactions = {};
-      this.resetThinkClock();
-    },
-    items: {
-      immediate: true,
-      handler() {
-        this.syncThinkClock();
-      },
     },
   },
   mounted() {
@@ -130,33 +134,10 @@ export default {
   },
   methods: {
     renderMarkdown,
-    thinkLabel(row, index) {
-      const latest = lastIndexOfType(this.items, "reasoning");
-      if (index !== latest) return this.t("think.doneUnknown");
-      const ms = this.thinkStartedAt ? Date.now() - this.thinkStartedAt : this.thinkElapsedMs;
-      return thinkTitle(Boolean(row.running), ms, this.t);
-    },
-    latestReasoning() {
-      const index = lastIndexOfType(this.items, "reasoning");
-      return index >= 0 ? this.items[index] : null;
-    },
-    syncThinkClock() {
-      const row = this.latestReasoning();
-      if (row?.running) {
-        if (!this.thinkStartedAt) {
-          this.thinkStartedAt = Date.now();
-          this.thinkElapsedMs = 0;
-        }
-        return;
-      }
-      if (this.thinkStartedAt) {
-        this.thinkElapsedMs = Date.now() - this.thinkStartedAt;
-        this.thinkStartedAt = 0;
-      }
-    },
-    resetThinkClock() {
-      this.thinkStartedAt = 0;
-      this.thinkElapsedMs = 0;
+    thinkSummary,
+    questionItems(row) {
+      if (this.question?.questions?.length) return this.question.questions;
+      return parseAskUserQuestions(row.argsRaw);
     },
     retryLabel(row) {
       return formatRetry(row);
@@ -237,7 +218,8 @@ export default {
   padding: 8px 20px 12px;
   min-height: 0;
   flex: 1;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   list-style: none;
 }
 
@@ -294,6 +276,8 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .lares-log__item[data-type="user"],
@@ -318,7 +302,9 @@ export default {
 
 .lares-md {
   align-self: stretch;
+  min-width: 0;
   max-width: 100%;
+  overflow-x: hidden;
   font-size: 15px;
   line-height: 1.55;
   word-break: break-word;
@@ -331,13 +317,31 @@ export default {
 }
 
 .lares-md :deep(p),
-.lares-md :deep(ul),
 .lares-md :deep(pre) {
   margin: 0 0 10px;
 }
 
+.lares-md :deep(ul),
+.lares-md :deep(ol) {
+  margin: 4px 0 12px;
+  padding: 0 0 0 1.35em;
+}
+
+.lares-md :deep(ul) {
+  list-style: disc outside;
+}
+
+.lares-md :deep(ol) {
+  list-style: decimal outside;
+}
+
+.lares-md :deep(li + li) {
+  margin-top: 6px;
+}
+
 .lares-md :deep(p:last-child),
 .lares-md :deep(ul:last-child),
+.lares-md :deep(ol:last-child),
 .lares-md :deep(pre:last-child) {
   margin-bottom: 0;
 }
@@ -358,7 +362,9 @@ export default {
 }
 
 .lares-md :deep(pre) {
-  overflow: auto;
+  box-sizing: border-box;
+  max-width: 100%;
+  overflow-x: auto;
   border-radius: 10px;
   padding: 10px 12px;
   background: var(--q-background-3);
@@ -367,6 +373,11 @@ export default {
 .lares-md :deep(pre code) {
   padding: 0;
   background: transparent;
+}
+
+.lares-md :deep(img) {
+  max-width: 100%;
+  height: auto;
 }
 
 .lares-md :deep(a) {

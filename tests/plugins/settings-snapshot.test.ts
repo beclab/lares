@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createSnapshotStore } from "@lares/core/tools/async";
+import { createSnapshotStore } from "@olares/lares-core/tools/async";
 
 test("settings snapshot reuses the last payload until force", async () => {
   const store = createSnapshotStore();

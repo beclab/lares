@@ -1,7 +1,7 @@
 import React from "react";
 import { Button, IconLoadingOutline16 } from "@deepseek-ai/dsh-client-ui-primitives";
-import { partitionPreviews } from "@lares/core/files/preview-groups";
-import { fetchPreviewMap, fileName, rawFileUrl } from "@lares/core/files/preview-workspace";
+import { partitionPreviews } from "@olares/lares-core/files/preview-groups";
+import { fetchPreviewMap, fileName, rawFileUrl } from "@olares/lares-core/files/preview-workspace";
 
 const h = React.createElement;
 const { useEffect, useMemo, useState } = React;

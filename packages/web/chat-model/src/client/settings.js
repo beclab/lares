@@ -11,7 +11,7 @@ import {
 import { useLatest, useMountedRef } from "../../../shared/client/react-lifecycle.js";
 import { loadModelSettings, rememberedModelSettings, refreshModels, setDefaultModel } from "./api.js";
 import { useT } from "./locale.js";
-import { catalogDefaultReady, groupModelsByProvider, selectionKey } from "@lares/core/router/session-model";
+import { catalogDefaultReady, groupModelsByProvider, selectionKey } from "@olares/lares-core/router/session-model";
 import localSettingsCss from "./styles/settings.css";
 
 const { useCallback, useEffect, useState } = React;

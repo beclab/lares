@@ -1,5 +1,5 @@
-import { interpolate } from "@lares/core/i18n/t";
-import { STAGE_COPY } from "@lares/core/larepass/stage-copy";
+import { interpolate } from "@olares/lares-core/i18n/t";
+import { STAGE_COPY } from "@olares/lares-core/larepass/stage-copy";
 
 export function withPendingUser(items, pendingUser) {
   if (!pendingUser) return items;
@@ -26,11 +26,20 @@ export function lastUserText(items) {
   return "";
 }
 
-export function thinkTitle(running, ms, t) {
-  if (running) return t("think.running");
-  const elapsed = Number(ms) || 0;
-  if (elapsed <= 0) return t("think.doneUnknown");
-  return t("think.done", { seconds: Math.max(1, Math.round(elapsed / 1000)) });
+export function firstLine(text) {
+  const value = String(text ?? "");
+  const newline = value.indexOf("\n");
+  return newline === -1 ? value : value.slice(0, newline);
+}
+
+export function latestLine(text) {
+  const visible = String(text ?? "").trimEnd();
+  const newline = visible.lastIndexOf("\n");
+  return newline === -1 ? visible : visible.slice(newline + 1);
+}
+
+export function thinkSummary(row) {
+  return row?.running ? latestLine(row.text) : firstLine(row.text);
 }
 
 export function failText(t, failed, error) {

@@ -1,6 +1,6 @@
-import { preflightDownload } from "@lares/core/files/disposition";
+import { preflightDownload } from "@olares/lares-core/files/disposition";
 
-export { filenameFromDisposition } from "@lares/core/files/disposition";
+export { filenameFromDisposition } from "@olares/lares-core/files/disposition";
 
 const FRAME_NAME = "lares-file-preview-download";
 

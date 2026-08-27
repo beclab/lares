@@ -1,6 +1,6 @@
 import React from "react";
 import { Tooltip } from "@deepseek-ai/dsh-client-ui-primitives";
-import { postTranscribe, TranscriptQueue } from "@lares/core/voice/client";
+import { postTranscribe, TranscriptQueue } from "@olares/lares-core/voice/client";
 import { MicGlyph, Spinner } from "./icons.js";
 import { messageFor, useT } from "./locale.js";
 import {
@@ -9,7 +9,7 @@ import {
   isRecordingTooShort,
   pickRecordingMime,
   RECORDING_AUDIO,
-} from "@lares/core/voice/recorder";
+} from "@olares/lares-core/voice/recorder";
 import micCss from "./styles/mic.css";
 
 const { useCallback, useEffect, useRef, useState } = React;

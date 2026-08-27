@@ -1,6 +1,7 @@
 import { isAuthFailure } from "./host.js";
 import { listRootSessions, summarizeSession } from "./chat.js";
-import { consumeMuxFrames } from "./mux.js";
+import { consumeMuxInbox } from "./mux.js";
+import { wrapClientResponse } from "./rpc.js";
 import { createSessionCache } from "./session-cache.js";
 import { foldTranscript } from "./transcript.js";
 
@@ -10,7 +11,7 @@ function isDraft(sessionId) {
   return sessionId === DRAFT_SESSION;
 }
 
-function viewOf(state, cache) {
+function viewOf(state, cache, pendingQuestions) {
   const page = cache.peek(state.sessionId);
   const events = page?.events ?? [];
   const snap = foldTranscript(events);
@@ -25,6 +26,7 @@ function viewOf(state, cache) {
     sessions: state.sessions,
     sessionsReady: state.sessionsReady,
     historyLoading: Boolean(state.sessionId) && !page?.ready && events.length === 0,
+    question: pendingQuestions.get(state.sessionId) ?? null,
   };
 }
 
@@ -41,6 +43,7 @@ export function restoreScroll(saved, height, view) {
 export function createChatRuntime(client) {
   const listeners = new Set();
   const cache = createSessionCache();
+  const pendingQuestions = new Map();
   const state = {
     sessionId: "",
     error: "",
@@ -57,7 +60,7 @@ export function createChatRuntime(client) {
   let creating = null;
 
   const emit = () => {
-    const view = viewOf(state, cache);
+    const view = viewOf(state, cache, pendingQuestions);
     for (const listener of listeners) listener(view);
   };
 
@@ -116,9 +119,27 @@ export function createChatRuntime(client) {
     state.failed = "";
     emit();
     try {
-      for await (const frame of consumeMuxFrames(opened.body)) {
+      for await (const item of consumeMuxInbox(opened.body)) {
         if (dead) return "stop";
-        ingest(frame.sessionId, [frame.event]);
+        if (item.kind === "event") {
+          ingest(item.sessionId, [item.event]);
+          continue;
+        }
+        if (item.kind === "question") {
+          pendingQuestions.set(item.sessionId, {
+            rpcId: item.rpcId,
+            questions: item.questions,
+          });
+          emit();
+          continue;
+        }
+        if (item.kind === "question-resolved") {
+          const current = pendingQuestions.get(item.sessionId);
+          if (!current || !item.rpcId || current.rpcId === item.rpcId) {
+            pendingQuestions.delete(item.sessionId);
+            emit();
+          }
+        }
       }
     } catch (err) {
       if (dead || err?.name === "AbortError") return "stop";
@@ -246,10 +267,10 @@ export function createChatRuntime(client) {
   }
 
   return {
-    snapshot: () => viewOf(state, cache),
+    snapshot: () => viewOf(state, cache, pendingQuestions),
     subscribe(listener) {
       listeners.add(listener);
-      listener(viewOf(state, cache));
+      listener(viewOf(state, cache, pendingQuestions));
       return () => listeners.delete(listener);
     },
     async start() {
@@ -303,6 +324,20 @@ export function createChatRuntime(client) {
       }
       return client.prompt(state.sessionId, text);
     },
+    async answerQuestion(answers) {
+      const pending = pendingQuestions.get(state.sessionId);
+      if (!pending?.rpcId || typeof client.respond !== "function") {
+        return { ok: false, error: { message: "no question" } };
+      }
+      const receipt = await client.respond(wrapClientResponse(pending.rpcId, {
+        ok: true,
+        value: { sessionId: state.sessionId, answer: { answers } },
+      }));
+      if (!receipt?.accepted) {
+        return { ok: false, error: { message: receipt?.reason || "not-pending" } };
+      }
+      return { ok: true };
+    },
     preview(path) {
       if (!state.sessionId || typeof client.preview !== "function") {
         return Promise.reject(new Error("file_preview_failed"));
@@ -353,6 +388,7 @@ export function createChatRuntime(client) {
       listing = null;
       creating = null;
       cache.clear();
+      pendingQuestions.clear();
       listeners.clear();
     },
   };

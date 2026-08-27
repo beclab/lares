@@ -82,13 +82,18 @@ function deriveSummary(variant, argsRaw) {
   return firstLine(argsRaw);
 }
 
+const BODY_KEYS = {
+  write: ["contents", "content", "code"],
+  edit: ["new_string", "newString", "contents", "content"],
+  code: ["code"],
+};
+
 function deriveBody(variant, argsRaw) {
   if (!argsRaw) return "";
   const parsed = parseArgs(argsRaw);
   if (parsed === undefined) return argsRaw;
-  if (variant === "code" && parsed && typeof parsed === "object" && typeof parsed.code === "string") {
-    return parsed.code;
-  }
+  const text = pickString(parsed, BODY_KEYS[variant] ?? []);
+  if (text !== undefined) return text;
   return JSON.stringify(parsed, null, 2);
 }
 

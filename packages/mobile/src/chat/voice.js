@@ -1,10 +1,10 @@
-import { TranscriptQueue } from "@lares/core/voice/client";
+import { TranscriptQueue } from "@olares/lares-core/voice/client";
 import {
   formatElapsed,
   isRecordingTooShort,
   pickRecordingMime,
   RECORDING_AUDIO,
-} from "@lares/core/voice/recorder";
+} from "@olares/lares-core/voice/recorder";
 
 export { formatElapsed };
 

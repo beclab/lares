@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createSessionCache, eventsUpdated } from "@lares/core/larepass/session-cache";
+import { createSessionCache, eventsUpdated } from "@olares/lares-core/larepass/session-cache";
 
 const user = (seq, text) => ({
   type: "user/message",

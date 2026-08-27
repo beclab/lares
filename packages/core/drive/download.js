@@ -12,10 +12,11 @@ const STDERR_LIMIT = 2000;
  * @param spawnFn - seam for tests; the real spawn otherwise.
  */
 export function runOlaresDownload(source, absolutePath, options = {}) {
-  const { signal, overwrite = false, spawnFn = spawn } = options;
+  const { signal, overwrite = false, resume = false, spawnFn = spawn } = options;
   return new Promise((resolve, reject) => {
     const args = ["files", "download", source, absolutePath];
     if (overwrite) args.push("--overwrite");
+    else if (resume) args.push("--resume");
     const child = spawnFn("olares-cli", args, {
       env: process.env,
       stdio: ["ignore", "ignore", "pipe"],

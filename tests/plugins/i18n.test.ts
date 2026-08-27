@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { interpolate, messageFromCode, t } from "@lares/core/i18n/t";
-import { EN, ZH } from "@lares/core/i18n/chat-model";
+import { interpolate, messageFromCode, t } from "@olares/lares-core/i18n/t";
+import { EN, ZH } from "@olares/lares-core/i18n/chat-model";
 
 const catalog = { zh: ZH, en: EN };
 

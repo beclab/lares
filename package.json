@@ -20,7 +20,7 @@
     "dump-config": "tsx packages/service/dsh-web/dump-config.ts"
   },
   "dependencies": {
-    "@lares/core": "*",
+    "@olares/lares-core": "*",
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-app-boot": "^0.1.1-rc.2",

@@ -1,77 +1,80 @@
 /**
- * An Olares files path (`<fileType>/<extend>/<subPath…>`) names the user's
- * files backend, which this pod does not mount: nothing under it can be read,
- * edited, or previewed in place. The fetch destination is workspace-relative,
- * and it must be derivable from the call arguments alone — the produced-file
- * chip that opens the result is rendered from `presentCall`, before the
- * download runs — so a colliding name is refused rather than numbered.
+ * An Olares files path (`<fileType>/<extend>/<subPath…>`) names one object on
+ * the user's files backend. Preview serves it in place; drive_fetch copies it
+ * into the session workspace only when a later edit or transcode needs a local
+ * file. A produced-file chip is rendered from `presentCall` before the tool
+ * runs, so the path in the arguments is the path the UI opens.
  */
-import { basename, extname } from "node:path/posix";
-import { sanitizeFilename } from "../files/upload.js";
-import { dataUrlFilename } from "./url-download.js";
+import { posixBasename as basename, posixExtname as extname, sanitizeFilename } from "../files/filename.js";
+import { isFilesPath, parseFilesPath } from "./files-path.js";
 
-/** Namespaces `olares-cli files download` serves. */
-const DOWNLOADABLE = new Set([
-  "drive", "cache", "sync", "external", "awss3", "google", "dropbox", "tencent",
-]);
+export { isFilesPath, parseFilesPath } from "./files-path.js";
+
 const DEFAULT_DIRECTORY = "downloads";
+
+const DATA_NAMES = new Map([
+  ["image/jpeg", "download.jpg"],
+  ["image/jpg", "download.jpg"],
+  ["image/png", "download.png"],
+  ["image/gif", "download.gif"],
+  ["image/webp", "download.webp"],
+  ["image/bmp", "download.bmp"],
+  ["video/mp4", "download.mp4"],
+  ["video/webm", "download.webm"],
+  ["video/quicktime", "download.mov"],
+  ["audio/mpeg", "download.mp3"],
+  ["audio/wav", "download.wav"],
+  ["audio/ogg", "download.ogg"],
+  ["audio/mp4", "download.m4a"],
+  ["audio/aac", "download.aac"],
+  ["audio/flac", "download.flac"],
+  ["application/pdf", "download.pdf"],
+]);
+
+function dataUrlFilename(mediaType) {
+  return DATA_NAMES.get(String(mediaType ?? "").split(";", 1)[0].trim().toLowerCase()) ?? null;
+}
 
 export const DRIVE_TRANSFER_TIMEOUT_MS = 30 * 60 * 1000;
 
+/**
+ * Default media-loading contract. A pasted or requested file must land on the
+ * conversation preview without extra user wording. Knowledge / Wise / yt-dlp
+ * may land in Olares Files; that path is previewable as-is. Copying into the
+ * workspace is only for edit or transcode.
+ */
 export const DRIVE_IMPORT_PROMPT = [
-  "Olares files paths (drive/…, sync/…, external/…, and the cloud-account namespaces) live in the",
-  "user's files backend, not in this workspace: they cannot be read, edited, or previewed in place,",
-  "and a download task started through olares-cli knowledge lands there too.",
-  "Use drive_fetch to copy one such file into the workspace whenever the user wants to open, preview,",
-  "or work on it.",
-  "When the user asks to find or download an online image, video, audio, document, or other URL, use",
-  "web search to find a direct public HTTP(S) URL, then use url_fetch to copy it into the workspace;",
-  "do not use curl, wget, or shell for that download. Give destination a meaningful filename with the",
-  "correct extension whenever the URL path lacks one.",
+  "When the user pastes, shares, or asks to find, download, show, or play an image, video, audio,",
+  "document, or other file, load it into this conversation so it previews under the reply. That is",
+  "the default: they do not need to say preview in chat, don't just give a link, or don't open Files.",
+  "Never reply with only a hyperlink, and never tell them to open Olares Files instead. Size is never",
+  "a reason to skip preview.",
+  "Olares files paths (drive/…, sync/…, cache/…, external/…, and the cloud-account namespaces)",
+  "are previewable in this app. Any file under drive/Home is included — Documents, Pictures, Music,",
+  "Movies, Downloads, Code, and the rest — not only Downloads. After knowledge / Wise / yt-dlp /",
+  "torrent lands a file there, workspace_publish that files path immediately and name it in",
+  "markdown inline code. Do not copy it into the workspace only to preview it.",
+  "Direct public HTTP(S) file URLs and data: URLs use url_fetch; never curl, wget, or shell.",
+  "Give destination a meaningful filename with the correct extension whenever the URL path lacks one.",
+  "drive_fetch copies one files-backend file into the workspace when a later edit or transcode",
+  "(for example ffmpeg_encode) needs it there. url_fetch and ffmpeg_encode already publish their",
+  "workspace output. workspace_publish is for a file that already exists in the workspace or on",
+  "the files backend that those tools did not produce. Do not call it after drive_fetch, url_fetch,",
+  "or ffmpeg_encode. A subagent's own tool calls belong to its child turn: when a subagent reports",
+  "a final path, the parent must call workspace_publish on that path before replying.",
   "Never bypass a url_fetch rejection or failure with curl, wget, shell, Python, Node, a browser, or",
-  "another network client. In particular, a non-public host refusal is a security boundary: report that",
-  "the URL cannot be fetched and ask for a public URL or Olares Files path instead of trying it directly.",
-  "When olares-cli router, FlowStudio, a skill, or another workflow generates media, normalize its final",
-  "output before replying: use url_fetch for a returned HTTP(S) URL or a data: URL / base64 payload",
-  "(wrap raw base64 as data:<mediaType>;base64,...), drive_fetch for an Olares Files path, or",
-  "workspace_publish when the output is already a file in this session workspace. Do not stop at a task",
-  "id, expiring URL, or unregistered shell-created path. After a skill or another shell command creates",
-  "or transforms a file that ffmpeg_encode does not cover, call workspace_publish for each final output,",
-  "not temporary intermediates. A subagent's own tool calls belong to its child turn and do not publish",
-  "a file in the parent conversation: when a subagent reports a final workspace path, the parent must",
-  "call workspace_publish on that path before replying.",
+  "another network client. A non-public host refusal is a security boundary: report that the URL",
+  "cannot be fetched and ask for a public URL or Olares Files path instead of trying it directly.",
   "Use ffmpeg_encode to generate or transcode H.264 video, including burning SRT, VTT, ASS, or SSA",
-  "subtitles into an input video. It writes the file with libx264 and publishes it for preview.",
-  "Do not run ffmpeg or ffprobe in the shell for those jobs, and do not call workspace_publish",
-  "afterwards. Report the encoder and speed from the tool result.",
-  "Name every returned workspace path in markdown inline code so the UI can open it. The conversation",
-  "renders produced images, video, and audio right below the reply, so put those mentions in the closing",
-  "sentences and end the reply there: never name a produced file mid-reply and then continue with more",
-  "prose, alternatives, or follow-up questions, which would strand the player far below the path.",
+  "subtitles into an input video. Do not transcode merely so a file can be previewed: webm, mp4,",
+  "images, and audio preview as-is from a files path or after url_fetch. Do not run ffmpeg or ffprobe",
+  "in the shell for those jobs. Report the encoder and speed from the tool result.",
+  "Name every returned workspace or Olares files path in markdown inline code so the UI can open it.",
+  "The conversation renders produced images, video, and audio right below the reply, so put those",
+  "mentions in the closing sentences and end the reply there: never name a produced file mid-reply",
+  "and then continue with more prose, alternatives, or follow-up questions, which would strand the",
+  "player far below the path.",
 ].join(" ");
-
-function parseSource(value) {
-  const source = String(value ?? "").trim();
-  if (source === "" || source.includes("\0")) {
-    throw new Error("path is required, e.g. drive/Home/Downloads/clip.webm");
-  }
-  if (source.startsWith("/") || /^[a-z]+:/i.test(source)) {
-    throw new Error(`"${source}" is not an Olares files path; expected <fileType>/<extend>/<subPath>`);
-  }
-  if (source.endsWith("/")) {
-    throw new Error(`"${source}" names a directory; drive_fetch fetches a single file`);
-  }
-  const segments = source.split("/");
-  if (!DOWNLOADABLE.has(segments[0])) {
-    throw new Error(
-      `"${segments[0]}" is not a downloadable namespace; expected one of ${[...DOWNLOADABLE].join(", ")}`,
-    );
-  }
-  if (segments.length < 3 || segments.some((part) => part === "" || part === "." || part === "..")) {
-    throw new Error(`"${source}" is malformed; expected <fileType>/<extend>/<subPath>`);
-  }
-  return source;
-}
 
 function parseDestination(value, source) {
   const name = sanitizeFilename(basename(source));
@@ -91,7 +94,7 @@ function parseDestination(value, source) {
  * @throws when either argument cannot name one fetchable file.
  */
 export function resolveFetch(args) {
-  const source = parseSource(args?.path);
+  const source = parseFilesPath(args?.path);
   return { source, destination: parseDestination(args?.destination, source) };
 }
 
@@ -187,6 +190,9 @@ export function describeUrlFetch(args) {
 
 export function resolveWorkspacePublish(args) {
   const raw = String(args?.path ?? "").trim().replace(/\\/g, "/");
+  if (isFilesPath(raw)) {
+    return { path: parseFilesPath(raw), origin: "files" };
+  }
   const segments = raw.split("/");
   if (
     raw === ""
@@ -197,7 +203,7 @@ export function resolveWorkspacePublish(args) {
   ) {
     throw new Error("path must name one existing file inside the workspace");
   }
-  return { path: segments.join("/") };
+  return { path: segments.join("/"), origin: "workspace" };
 }
 
 export function describeWorkspacePublish(args) {

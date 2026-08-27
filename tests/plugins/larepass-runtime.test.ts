@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { consumeMux } from "@lares/core/larepass/mux";
-import { createChatRuntime, pinnedScroll, restoreScroll } from "@lares/core/larepass/runtime";
+import { consumeMux } from "@olares/lares-core/larepass/mux";
+import { createChatRuntime, pinnedScroll, restoreScroll } from "@olares/lares-core/larepass/runtime";
 
 function sseFrame(payload) {
   return `data: ${JSON.stringify({
@@ -18,6 +18,7 @@ function mockClient({ events = [], eventsById, sessionId = "s1" } = {}) {
   let muxes = 0;
   let encoder;
   let controller;
+  const responds = [];
   const byId = eventsById ?? { [sessionId]: events };
   const body = new ReadableStream({
     start(c) {
@@ -26,7 +27,7 @@ function mockClient({ events = [], eventsById, sessionId = "s1" } = {}) {
     },
   });
   return {
-    stats: () => ({ probes, histories, muxes }),
+    stats: () => ({ probes, histories, muxes, responds }),
     push(payload) {
       controller.enqueue(encoder.encode(sseFrame(payload)));
     },
@@ -60,6 +61,10 @@ function mockClient({ events = [], eventsById, sessionId = "s1" } = {}) {
       throw new Error(method);
     },
     prompt: async () => ({ ok: true, value: { accepted: true } }),
+    respond: async (message) => {
+      responds.push(message);
+      return { accepted: true };
+    },
     openMux: async () => {
       muxes += 1;
       return { ok: true, http: 200, body };
@@ -479,6 +484,46 @@ test("createSession does not steal the view if another chat was opened while cre
   await pending;
   assert.equal(runtime.snapshot().sessionId, "s2");
   assert.deepEqual(runtime.snapshot().messages, [{ role: "user", text: "two" }]);
+  runtime.dispose();
+  client.close();
+});
+
+test("mux question waits surface on the snapshot and answer through respond", async () => {
+  const client = mockClient();
+  const runtime = createChatRuntime(client);
+  await runtime.start();
+  client.push({
+    type: "question/requested",
+    sessionId: "s1",
+    questions: [{ id: "bg-style", question: "style?", options: [{ label: "nature" }] }],
+  });
+  let snap;
+  for (let i = 0; i < 20; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    snap = runtime.snapshot();
+    if (snap.question?.rpcId === "r1") break;
+  }
+  assert.equal(snap.question.rpcId, "r1");
+  assert.equal(snap.question.questions[0].id, "bg-style");
+  const answered = await runtime.answerQuestion([{ id: "bg-style", selected: ["nature"] }]);
+  assert.equal(answered.ok, true);
+  assert.equal(client.stats().responds.length, 1);
+  assert.equal(client.stats().responds[0].type, "client-response");
+  assert.equal(client.stats().responds[0].rpcId, "r1");
+  assert.deepEqual(client.stats().responds[0].result.value.answer.answers, [
+    { id: "bg-style", selected: ["nature"] },
+  ]);
+  client.push({
+    type: "question/resolved",
+    sessionId: "s1",
+    questionRpcId: "r1",
+    outcome: "answered",
+  });
+  for (let i = 0; i < 20; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    if (!runtime.snapshot().question) break;
+  }
+  assert.equal(runtime.snapshot().question, null);
   runtime.dispose();
   client.close();
 });

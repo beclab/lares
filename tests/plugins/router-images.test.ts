@@ -4,7 +4,7 @@ import sharp from "sharp";
 import {
   carriesWebpImage,
   transcodeWebpImages,
-} from "@lares/core/media/router-images";
+} from "@olares/lares-core/media/router-images";
 
 function square(alpha: boolean): sharp.Sharp {
   return sharp({

@@ -1,6 +1,6 @@
 import React from "react";
-import { PRODUCT_NAME, replaceProductTitle } from "@lares/core/brand/identity";
-import { MARK_PATH } from "@lares/core/icons/mark";
+import { PRODUCT_NAME, replaceProductTitle } from "@olares/lares-core/brand/identity";
+import { MARK_PATH } from "@olares/lares-core/icons/mark";
 
 const h = React.createElement;
 

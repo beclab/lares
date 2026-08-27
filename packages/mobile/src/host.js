@@ -1,10 +1,11 @@
-import { hostConfigFromEnv, hostUrl, MODELS_PATH, probeHost } from "@lares/core/larepass/host";
-import { callRpc, consumeMux, ensureSession, loadTranscript, MUX_PATH, sendPrompt } from "@lares/core/larepass/chat";
-import { muxWsUrl } from "@lares/core/larepass/mux";
-import { createHostSettings } from "@lares/core/larepass/settings";
-import { downloadFileUrl, previewMetaUrl, rawFileUrl } from "@lares/core/files/preview-workspace";
-import { FILES_UPLOAD_PATH, uploadFile } from "@lares/core/files/upload-client";
-import { API as VOICE_API, postTranscribe } from "@lares/core/voice/client";
+import { hostConfigFromEnv, hostUrl, MODELS_PATH, probeHost } from "@olares/lares-core/larepass/host";
+import { callRpc, consumeMux, ensureSession, loadTranscript, MUX_PATH, sendPrompt } from "@olares/lares-core/larepass/chat";
+import { muxWsUrl } from "@olares/lares-core/larepass/mux";
+import { RESPOND_PATH } from "@olares/lares-core/larepass/rpc";
+import { createHostSettings } from "@olares/lares-core/larepass/settings";
+import { downloadFileUrl, previewMetaUrl, rawFileUrl } from "@olares/lares-core/files/preview-workspace";
+import { FILES_UPLOAD_PATH, uploadFile } from "@olares/lares-core/files/upload-client";
+import { API as VOICE_API, postTranscribe } from "@olares/lares-core/voice/client";
 
 function pageOrigin() {
   try {
@@ -115,6 +116,12 @@ export function createHostClient(ports = {}) {
     },
     prompt(sessionId, text) {
       return sendPrompt(rpc, sessionId, text);
+    },
+    async respond(message) {
+      const res = await request(RESPOND_PATH, { method: "POST", body: message });
+      const body = res?.body;
+      if (body && typeof body === "object" && typeof body.accepted === "boolean") return body;
+      return { accepted: Boolean(res?.ok), reason: res?.ok ? undefined : "bad-response" };
     },
     async preview(sessionId, path) {
       const res = await request(previewMetaUrl(sessionId, path));

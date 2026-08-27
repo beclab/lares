@@ -8,9 +8,10 @@ import {
   findLaresEntrance,
   hostConfigFromEnv,
   hostUrl,
+  isLaresPluginPath,
   originOf,
   probeHost,
-} from "@lares/core/larepass/host";
+} from "@olares/lares-core/larepass/host";
 
 test("findLaresEntrance reads origin from myApps", () => {
   assert.equal(findLaresEntrance(undefined), "");
@@ -65,10 +66,20 @@ test("hostUrl prefers the PC-test proxy over the absolute origin", () => {
     hostUrl({
       baseUrl: "https://489966aa.luolong01.olares.com",
       proxyPrefix: PC_TEST_PROXY,
+      path: "/api/session.list",
+    }),
+    "/laresHost/api/session.list",
+  );
+  assert.equal(
+    hostUrl({
+      baseUrl: "https://489966aa.luolong01.olares.com",
+      proxyPrefix: PC_TEST_PROXY,
       path: MODELS_PATH,
     }),
-    "/laresHost/api/lares/models",
+    MODELS_PATH,
   );
+  assert.equal(isLaresPluginPath("/api/lares/file-preview/raw?sessionId=s1&path=a.png"), true);
+  assert.equal(isLaresPluginPath("/api/session.list"), false);
   assert.equal(originOf("not a url"), "");
 });
 

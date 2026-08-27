@@ -1,6 +1,6 @@
 # Lares
 
-Chat shell on Olares: DeepSeek Harness (dsh web) UI wired to Olares Router.
+Chat on Olares, wired to Router.
 
 Current Chart version: **0.24.0** (must match `Chart.yaml` / `OlaresManifest.yaml`).
 

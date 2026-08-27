@@ -3,8 +3,8 @@ import test from "node:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { workspaceRootFromEnv, workspaceRootFromSession } from "@lares/core/workspace/env";
-import { DEFAULT_WORKSPACE_TITLE, seedDefaultWorkspace } from "@lares/core/workspace/seed";
+import { workspaceRootFromEnv, workspaceRootFromSession } from "@olares/lares-core/workspace/env";
+import { DEFAULT_WORKSPACE_TITLE, seedDefaultWorkspace } from "@olares/lares-core/workspace/seed";
 
 test("workspaceRootFromEnv prefers DSH_CWD then LARES_WORKSPACE", () => {
   assert.equal(workspaceRootFromEnv({}), null);

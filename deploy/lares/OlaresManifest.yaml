@@ -5,7 +5,7 @@ metadata:
   name: lares
   appid: lares
   title: Lares
-  description: Chat shell on DeepSeek Harness, wired to Olares Router
+  description: Chat on Olares, wired to Router
   icon: https://raw.githubusercontent.com/ffkijjkokok/lares/main/icon.png
   version: 0.24.0
   categories:
@@ -16,11 +16,11 @@ spec:
   runAsUser: true
   fullDescription: |
     ## Overview
-    Lares is a chat app on Olares built on DeepSeek Harness (dsh web).
-    It uses the official dsh UI shell and talks to Olares Router for LLM access.
+    Lares is a chat app on Olares.
+    It talks to Olares Router for LLM access.
 
     ## Highlights
-    - Official dsh web UI (three-column layout) with Lares product profile
+    - Three-column chat UI with the Lares product profile
     - Zero-config Router auth via in-cluster app identity (`x-caller-appid`)
     - Bundled client plugins (voice input, web search) when enabled in the build
     - Optional Docker-in-Docker sidecar (`ENABLE_DIND`, default on) so the agent can run `docker` against a pod-local daemon

@@ -15,6 +15,16 @@ export function rpcPath(method) {
   return `/api/${method}`;
 }
 
+export const RESPOND_PATH = "/api/respond";
+
+export function wrapClientResponse(rpcId, result) {
+  return {
+    type: "client-response",
+    rpcId,
+    result,
+  };
+}
+
 export function wrapClientRequest(method, payload = {}) {
   return {
     type: "client-request",

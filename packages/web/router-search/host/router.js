@@ -6,7 +6,7 @@ import {
   searchModelsFromRouterCatalog,
   searchSourcesFromRouter,
   searchWebErrorCode,
-} from "@lares/core/router/search";
+} from "@olares/lares-core/router/search";
 
 export { fetchRouterSearchModels, searchModelsFromRouterCatalog, searchSourcesFromRouter };
 

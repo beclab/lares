@@ -1,4 +1,4 @@
-import { createChatRuntime } from "@lares/core/larepass/runtime";
+import { createChatRuntime } from "@olares/lares-core/larepass/runtime";
 import { createHostClient } from "./host.js";
 
 let current = null;

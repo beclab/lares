@@ -45,7 +45,7 @@
 </template>
 
 <script>
-import { groupSessionsByRecency, visibleHistorySessions } from "@lares/core/larepass/chat";
+import { groupSessionsByRecency, visibleHistorySessions } from "@olares/lares-core/larepass/chat";
 
 export default {
   name: "LaresHistoryPanel",

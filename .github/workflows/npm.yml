@@ -1,0 +1,74 @@
+# Publish @olares/lares-core then @olares/lares-mobile to registry.npmjs.org.
+#
+# Manual dispatch only. Chart tags (v*) publish the Docker image, not these
+# packages — npm versions live in packages/*/package.json and can lag the chart.
+#
+# Required repository secret:
+#   NPM_OLARES_PUBLISH_TOKEN  org-scoped npm token with publish rights on @olares
+
+name: npm
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: 'https://registry.npmjs.org'
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+      - name: Assert workspace versions and pack
+        run: |
+          set -euo pipefail
+          core=$(node -p "require('./packages/core/package.json').version")
+          mobile=$(node -p "require('./packages/mobile/package.json').version")
+          if [ "$core" != "$mobile" ]; then
+            echo "::error::@olares/lares-core@$core and @olares/lares-mobile@$mobile must share a version"
+            exit 1
+          fi
+          npm pack -w @olares/lares-core
+          npm pack -w @olares/lares-mobile
+          echo "packed @olares/lares-core@$core @olares/lares-mobile@$mobile"
+
+      - name: Refuse a version that is already on npm
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./packages/core/package.json').version")
+          for pkg in @olares/lares-core @olares/lares-mobile; do
+            if npm view "${pkg}@${version}" version >/dev/null 2>&1; then
+              echo "::error::${pkg}@${version} is already on npm; bump package.json first"
+              exit 1
+            fi
+            echo "${pkg}@${version} is not on npm yet"
+          done
+
+      - name: Publish @olares/lares-core then @olares/lares-mobile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_OLARES_PUBLISH_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NODE_AUTH_TOKEN}" ]; then
+            echo "::error::NPM_OLARES_PUBLISH_TOKEN is not set on this repository"
+            exit 1
+          fi
+          npm publish -w @olares/lares-core --access public
+          npm publish -w @olares/lares-mobile --access public
+          npm view @olares/lares-core version
+          npm view @olares/lares-mobile version

@@ -1,9 +1,11 @@
 /**
  * dsh's MarkdownText keeps only http / https / mailto targets: a workspace-relative
- * link or image renders as inert text. Rewriting those targets to the plugin's own
- * same-origin raw URL is what makes them render at all; the view maps the URL back
- * to a workspace path when a click lands on one.
+ * or Olares files-path link or image renders as inert text. Rewriting those targets
+ * to the plugin's own same-origin raw URL is what makes them render at all; the view
+ * maps the URL back to a path when a click lands on one.
  */
+
+import { isFilesPath, parseFilesPath } from "../drive/files-path.js";
 
 const FENCE = /^[ \t]{0,3}(`{3,}|~{3,})/;
 const INLINE_CODE = /(`+).*?\1/g;
@@ -18,8 +20,8 @@ function directorySegments(path) {
 
 /**
  * Resolve a markdown link or image target against the previewed file.
- * @returns the workspace-relative path, or null when the target is external,
- * empty, or climbs out of the workspace.
+ * @returns the workspace-relative or Olares files path, or null when the target
+ * is external, empty, or climbs out of the workspace.
  */
 export function workspaceTargetPath(fromPath, target) {
   const raw = String(target ?? "").trim().replace(/^<|>$/g, "");
@@ -32,6 +34,7 @@ export function workspaceTargetPath(fromPath, target) {
   } catch {
     // A malformed escape is a literal path; the host validates it either way.
   }
+  if (isFilesPath(decoded)) return parseFilesPath(decoded);
   const segments = decoded.startsWith("/") ? [] : directorySegments(fromPath);
   for (const part of decoded.split("/")) {
     if (part === "" || part === ".") continue;
@@ -53,9 +56,10 @@ function rewriteSpan(span, fromPath, hrefFor) {
 }
 
 /**
- * Rewrite every workspace-relative link and image target in `text` to an absolute
- * URL. Fenced blocks and inline code keep their source verbatim.
- * @param hrefFor - workspace path → absolute URL the renderer accepts.
+ * Rewrite every workspace-relative or Olares files-path link and image target
+ * in `text` to an absolute URL. Fenced blocks and inline code keep their source
+ * verbatim.
+ * @param hrefFor - path → absolute URL the renderer accepts.
  */
 export function rewriteWorkspaceTargets(text, fromPath, hrefFor) {
   const lines = String(text ?? "").split("\n");

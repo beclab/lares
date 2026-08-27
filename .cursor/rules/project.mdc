@@ -21,7 +21,7 @@ alwaysApply: true
 ```text
 packages/
   service/          启动与 Olares 编排（dsh web boot、profile、env）
-  core/             `@lares/core` 业务逻辑子包（PC / 移动端共用）
+  core/             `@olares/lares-core` 业务逻辑子包（PC / 移动端共用）
   web/              PC 端 UI（dsh slots、样式、浏览器交互）
   mobile/           移动端 UI
   skills/           ha-* agent skills（olares-* 由构建期导出，不入仓）
@@ -33,8 +33,8 @@ _参考/              外部参考（默认忽略；勿当本仓业务）
 
 - `packages/` 只含 `service` / `core` / `web` / `mobile` / `skills`；npm 根在仓库根，`node_modules/` 与 `dist/` 不进源码树（gitignore）。
 - `packages/skills/` 里只有 `ha-*` 是源码。`olares-*` 由应用镜像构建时 `olares-cli skills export` 从底座二进制导出，**禁止**手抄回仓库：技能与二进制必须同一 release。升级 olares 技能 = 改 `Dockerfile.base` 的 `@olares/cli` 版本。`scripts/dev-sync/sync.sh` 必须继续排除 `packages/skills/olares-*`，否则 `rsync --delete` 会把镜像里的技能抹掉。
-- **分层**：`web/` 与 `mobile/` 只关注各自平台的 UI；规则、校验、Router/文件/媒体/身份等业务只在 `@lares/core`（`packages/core`）。core 禁止依赖 web、mobile、React 或浏览器 UI。依赖方向 `service → @lares/core ← web|mobile`。业务 import 用 `@lares/core/<surface>`，禁止再抄一份实现。
-- `packages/web/shared` 只放多个 PC 插件共用的 **UI** 基建（dsh locale 绑定、React 生命周期、dsh 设置控件）。文案、工具契约、引用插入、录音/搜索/模型规则在 `@lares/core`。禁止在 web/mobile 新增第二套业务实现。
+- **分层**：`web/` 与 `mobile/` 只关注各自平台的 UI；规则、校验、Router/文件/媒体/身份等业务只在 `@olares/lares-core`（`packages/core`）。core 禁止依赖 web、mobile、React 或浏览器 UI。依赖方向 `service → @olares/lares-core ← web|mobile`。业务 import 用 `@olares/lares-core/<surface>`，禁止再抄一份实现。
+- `packages/web/shared` 只放多个 PC 插件共用的 **UI** 基建（dsh locale 绑定、React 生命周期、dsh 设置控件）。文案、工具契约、引用插入、录音/搜索/模型规则在 `@olares/lares-core`。禁止在 web/mobile 新增第二套业务实现。
 - `packages/web/*/host` 只允许 Cordis/dsh 接入（`apply`、路由注册、错误映射），必须调用 core；禁止在 host 里写新的业务规则。
 - 单文件职责过多时，按**功能**拆成文件夹/子模块；依赖单向，禁止循环依赖。
 - 同一能力只有一处权威实现；先复用已有模块，禁止平行旁路与过度设计。

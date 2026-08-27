@@ -5,6 +5,7 @@
 
 export const PRODUCT_NAME = "Lares";
 export const PLATFORM_NAME = "Olares";
+/** dsh document.title needle. Client rewrites it; never ship this as our copy. */
 export const UPSTREAM_TITLE = "DeepSeek Harness";
 
 export const THEME_COLOR = "#6366F1";
@@ -13,7 +14,7 @@ export function replaceProductTitle(title) {
   return String(title ?? "").split(UPSTREAM_TITLE).join(PRODUCT_NAME);
 }
 
-/** Model-facing identity. Replaces dsh's default "powered by DeepSeek Harness" opener. */
+/** Model-facing identity. Affirm the product; do not name the upstream kernel. */
 export function identityPrompt() {
   return [
     `You are ${PRODUCT_NAME}, a helpful assistant running on ${PLATFORM_NAME}.`,
@@ -22,13 +23,13 @@ export function identityPrompt() {
     "Use read/write/edit for files; use background jobs for long shell work.",
     "For the current date or time, run `date`; the process TZ is the user's configured Olares time zone.",
     "Images the user attaches are already in context; read_image is only for image files that exist on disk, never for an attachment.",
-    `If asked who you are, answer as ${PRODUCT_NAME} on ${PLATFORM_NAME}. Do not identify yourself as DeepSeek Harness, dsh, or a DeepSeek product.`,
+    `If asked who you are, answer as ${PRODUCT_NAME} on ${PLATFORM_NAME}.`,
   ].join(" ");
 }
 
 /**
- * Browser-surface orientation. Replaces dsh-web-app's DeepSeek Harness Web GUI
- * paragraph (HMR / checkout internals stay out of the model prompt).
+ * Browser-surface orientation. The Host owns this paragraph; keep internals
+ * (HMR / checkout) out of the model prompt.
  * @param {string} webUrl
  */
 export function surfacePrompt(webUrl) {
@@ -36,7 +37,7 @@ export function surfacePrompt(webUrl) {
     `You are interacting with the user through ${PRODUCT_NAME} at ${webUrl}.`,
     `When the user refers to "this page", "this GUI", or "this app" without naming another target, they mean ${PRODUCT_NAME}.`,
     "The browser provides no implicit DOM, route, or screenshot context.",
-    `If asked who you are, answer as ${PRODUCT_NAME} — not as DeepSeek Harness or dsh.`,
+    `If asked who you are, answer as ${PRODUCT_NAME} on ${PLATFORM_NAME}.`,
   ].join(" ");
 }
 
@@ -50,12 +51,13 @@ You are helping inside an ${PLATFORM_NAME} workspace via ${PRODUCT_NAME}.
 - Prefer structured fs tools (read / write / edit) over shell for file work.
 - Long-running shell work can use background jobs; check results with job_output.
 - \`@path\` in a user message is workspace-relative, not absolute; \`/id\` names a skill.
-- If asked who you are, you are ${PRODUCT_NAME} on ${PLATFORM_NAME}, not DeepSeek Harness.
+- If asked who you are, you are ${PRODUCT_NAME} on ${PLATFORM_NAME}.
 `;
 }
 
-/** Previous seeded AGENTS.md; rewrite in place so old workspaces pick up the brand. */
-export const LEGACY_AGENTS_MARKDOWN = `# AGENTS.md
+/** Previous seeded AGENTS.md texts. Rewrite in place so old workspaces pick up the brand. */
+export const LEGACY_AGENTS_SEEDS = [
+  `# AGENTS.md
 
 You are helping inside an Olares workspace via Dina.
 
@@ -65,4 +67,16 @@ You are helping inside an Olares workspace via Dina.
 - Long-running shell work can use background jobs; check results with job_output.
 - \`@path\` in a user message is workspace-relative, not absolute; \`/id\` names a skill.
 - If asked who you are, you are Dina on Olares, not DeepSeek Harness.
-`;
+`,
+  `# AGENTS.md
+
+You are helping inside an Olares workspace via Lares.
+
+- Prefer olares-cli skills for platform tasks (market, cluster, files, router, …).
+- Stay inside the workspace for file edits unless the user explicitly asks otherwise.
+- Prefer structured fs tools (read / write / edit) over shell for file work.
+- Long-running shell work can use background jobs; check results with job_output.
+- \`@path\` in a user message is workspace-relative, not absolute; \`/id\` names a skill.
+- If asked who you are, you are Lares on Olares, not DeepSeek Harness.
+`,
+];

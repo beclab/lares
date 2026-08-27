@@ -1,5 +1,5 @@
 import { WebError } from "@deepseek-ai/dsh-web";
-import { configuredSearchModel, LARES_PROVIDER_ID } from "@lares/core/search/config";
+import { configuredSearchModel, LARES_PROVIDER_ID } from "@olares/lares-core/search/config";
 import { routerSearch } from "./router.js";
 
 export { LARES_PROVIDER_ID };

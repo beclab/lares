@@ -2,14 +2,14 @@
  * Edge identity → olares-cli profile + treat authenticated /api as loopback.
  * dsh locks config/LLM discover to loopback; Olares entrance (Authelia) is that auth layer.
  */
-import { identityFromHeaders } from "@lares/core/olares/identity";
-import { rememberRequestIdentity } from "@lares/core/olares/session-identity";
+import { identityFromHeaders } from "@olares/lares-core/olares/identity";
+import { rememberRequestIdentity } from "@olares/lares-core/olares/session-identity";
 import {
   applyLoopbackHeaders,
   loopbackAuthority,
   shouldRewriteApiLoopback,
   trustedEntranceHosts,
-} from "@lares/core/olares/trusted-host";
+} from "@olares/lares-core/olares/trusted-host";
 
 export const name = "lares-olares-identity";
 export const inject = ["webServer"];

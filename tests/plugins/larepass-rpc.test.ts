@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { callRpc, ensureSession, groupSessionsByRecency, loadTranscript, rootSessions, sendPrompt, summarizeSession, visibleHistorySessions } from "@lares/core/larepass/chat";
-import { promptPayload, rpcPath, unwrapServerResponse, wrapClientRequest } from "@lares/core/larepass/rpc";
-import { STAGE_COPY } from "@lares/core/larepass/stage-copy";
-import { foldTranscript, textFromBlocks } from "@lares/core/larepass/transcript";
-import { toolVariantIcon } from "@lares/core/larepass/tool-row";
+import { callRpc, ensureSession, groupSessionsByRecency, loadTranscript, rootSessions, sendPrompt, summarizeSession, visibleHistorySessions } from "@olares/lares-core/larepass/chat";
+import { promptPayload, RESPOND_PATH, rpcPath, unwrapServerResponse, wrapClientRequest, wrapClientResponse } from "@olares/lares-core/larepass/rpc";
+import { parseAskUserQuestions, singleSelectAnswer } from "@olares/lares-core/larepass/questions";
+import { STAGE_COPY } from "@olares/lares-core/larepass/stage-copy";
+import { foldTranscript, textFromBlocks } from "@olares/lares-core/larepass/transcript";
+import { toolRowModel, toolVariantIcon } from "@olares/lares-core/larepass/tool-row";
 
 test("rpc envelope wraps POST /api/<method> and unwraps server-response", () => {
   const req = wrapClientRequest("session.prompt", { sessionId: "s1" });
@@ -30,6 +31,20 @@ test("rpc envelope wraps POST /api/<method> and unwraps server-response", () => 
     }).error.code,
     "session-not-found",
   );
+});
+
+test("question answers ride POST /api/respond, not a new client-request id", () => {
+  assert.equal(RESPOND_PATH, "/api/respond");
+  const message = wrapClientResponse("q1", {
+    ok: true,
+    value: { sessionId: "s1", answer: singleSelectAnswer("bg-style", "自然风景 (Recommended)") },
+  });
+  assert.equal(message.type, "client-response");
+  assert.equal(message.rpcId, "q1");
+  assert.deepEqual(parseAskUserQuestions('{"questions":[{"id":"bg-style","question":"风格？"}]}'), [
+    { id: "bg-style", question: "风格？" },
+  ]);
+  assert.deepEqual(parseAskUserQuestions("not-json"), []);
 });
 
 test("promptPayload is a queued text turn", () => {
@@ -276,4 +291,14 @@ test("toolVariantIcon follows dsh VARIANT_ICONS and stage copy stays English", (
   assert.equal(STAGE_COPY.think, "Think");
   assert.equal(STAGE_COPY.contextInjection, "Context injection");
   assert.equal(STAGE_COPY.retry.started, "Retried model request");
+});
+
+test("write tool body is the file contents, not stringified args", () => {
+  const row = toolRowModel("write", JSON.stringify({
+    path: "notes.md",
+    contents: "# title\n- item",
+  }));
+  assert.equal(row.title, "Write");
+  assert.equal(row.summary, "notes.md");
+  assert.equal(row.body, "# title\n- item");
 });

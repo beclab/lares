@@ -6,9 +6,9 @@ import {
   MarkdownText,
 } from "@deepseek-ai/dsh-client-ui-primitives";
 import { errorMessage } from "./locale.js";
-import { rewriteWorkspaceTargets } from "@lares/core/files/markdown";
+import { rewriteWorkspaceTargets } from "@olares/lares-core/files/markdown";
 import { downloadCurrentFile } from "./download.js";
-import { downloadFileUrl, rawFileHref, rawFileUrl, workspaceLinkClickPath } from "@lares/core/files/preview-workspace";
+import { downloadFileUrl, rawFileHref, rawFileUrl, workspaceLinkClickPath } from "@olares/lares-core/files/preview-workspace";
 
 const h = React.createElement;
 const { useCallback, useLayoutEffect, useRef, useState, useSyncExternalStore } = React;

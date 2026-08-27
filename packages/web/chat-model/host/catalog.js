@@ -5,12 +5,12 @@ import {
   listCatalog as listCatalogCore,
   refreshCatalog as refreshCatalogCore,
   saveDefault as saveDefaultCore,
-} from "@lares/core/router/catalog-sync";
+} from "@olares/lares-core/router/catalog-sync";
 
 export {
   chatModelsFromRouterCatalog,
   pickDefaultModel,
-} from "@lares/core/router/models";
+} from "@olares/lares-core/router/models";
 
 /** @param {import('@deepseek-ai/cordis').Context} ctx */
 function catalogPorts(ctx) {

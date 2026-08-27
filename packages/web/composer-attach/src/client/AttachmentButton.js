@@ -1,6 +1,6 @@
 import React from "react";
 import { IconLoadingOutline16, Tooltip } from "@deepseek-ai/dsh-client-ui-primitives";
-import { DEFAULT_MAX_UPLOAD_BYTES } from "@lares/core/files/limits";
+import { DEFAULT_MAX_UPLOAD_BYTES } from "@olares/lares-core/files/limits";
 import {
   claimComposerBlock,
   commitComposerImages,
@@ -9,7 +9,7 @@ import {
   composerPasteInCard,
   documentPasteFiles,
   processComposerFiles,
-} from "@lares/core/files/intake";
+} from "@olares/lares-core/files/intake";
 import { useT } from "./locale.js";
 
 const h = React.createElement;

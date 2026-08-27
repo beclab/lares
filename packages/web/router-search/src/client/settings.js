@@ -15,7 +15,7 @@ import {
   searchMenuValue,
   searchSelectorItems,
   searchValueFromMenu,
-} from "@lares/core/search/menu";
+} from "@olares/lares-core/search/menu";
 import { useT } from "./locale.js";
 import localSettingsCss from "./styles/settings.css";
 

@@ -1,7 +1,7 @@
-import { createRouteHandler, sendJson } from "@lares/core/tools/http";
-import { resolveSessionWorkspace } from "@lares/core/workspace/session";
-import { saveUpload } from "@lares/core/files/upload";
-import { parseUploadHeaders, uploadSuccessBody } from "@lares/core/files/upload-http";
+import { createRouteHandler, sendJson } from "@olares/lares-core/tools/http";
+import { resolveSessionWorkspace } from "@olares/lares-core/workspace/session";
+import { saveUpload } from "@olares/lares-core/files/upload";
+import { parseUploadHeaders, uploadSuccessBody } from "@olares/lares-core/files/upload-http";
 
 export const name = "lares-composer-attach";
 export const inject = ["webServer", "workspaceRegistry", "sessionPersistence"];

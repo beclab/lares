@@ -7,7 +7,7 @@ import {
   Menu,
   StateDot,
 } from "@deepseek-ai/dsh-client-ui-primitives";
-import { openRouterConsole, routerConsoleUrl } from "@lares/core/olares/entrance";
+import { openRouterConsole, routerConsoleUrl } from "@olares/lares-core/olares/entrance";
 import controlsCss from "./settings-controls.css";
 
 const { useState } = React;

@@ -1,5 +1,5 @@
-import { PRODUCT_NAME } from "@lares/core/brand/identity";
-import { MARK_DATA_URI } from "@lares/core/icons/mark";
+import { PRODUCT_NAME } from "@olares/lares-core/brand/identity";
+import { MARK_DATA_URI } from "@olares/lares-core/icons/mark";
 
 /**
  * Brand CSS for the surfaces dsh exposes no slot for: the boot splash (painted
