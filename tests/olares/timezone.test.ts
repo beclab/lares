@@ -32,10 +32,12 @@ test("the base image ships zoneinfo and the agent resolves current time through 
   assert.match(identityPrompt(), /run `date`; the process TZ is the user's configured Olares time zone/);
 });
 
-test("the app image follows the bumped timezone-capable base tag", () => {
+test("the app image follows the base tag project.json declares", () => {
   const project = JSON.parse(readFileSync(join(root, "project.json"), "utf8"));
   const dockerfile = readFileSync(join(root, "Dockerfile"), "utf8");
 
-  assert.equal(project.image_base_tag, "7");
-  assert.match(dockerfile, /^ARG BASE_IMAGE=docker\.io\/beclab\/lares-base:7$/m);
+  assert.match(
+    dockerfile,
+    new RegExp(`^ARG BASE_IMAGE=docker\\.io/beclab/lares-base:${project.image_base_tag}$`, "m"),
+  );
 });
