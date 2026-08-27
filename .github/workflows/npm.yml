@@ -63,19 +63,7 @@ jobs:
 
       - run: npm ci
 
-      - name: Refuse a version that is already on npm
-        run: |
-          set -euo pipefail
-          version=$(node -p "require('./packages/core/package.json').version")
-          for pkg in @olares/lares-core @olares/lares-mobile; do
-            if npm view "${pkg}@${version}" version >/dev/null 2>&1; then
-              echo "::error::${pkg}@${version} is already on npm; bump package.json first"
-              exit 1
-            fi
-            echo "${pkg}@${version} is not on npm yet"
-          done
-
-      - name: Publish @olares/lares-core then @olares/lares-mobile
+      - name: Publish if needed, then make the packages public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_OLARES_PUBLISH_TOKEN }}
         run: |
@@ -84,7 +72,22 @@ jobs:
             echo "::error::NPM_OLARES_PUBLISH_TOKEN is not set on this repository"
             exit 1
           fi
-          npm publish -w @olares/lares-core --access public
-          npm publish -w @olares/lares-mobile --access public
-          npm view @olares/lares-core version
-          npm view @olares/lares-mobile version
+          version=$(node -p "require('./packages/core/package.json').version")
+          for pkg in @olares/lares-core @olares/lares-mobile; do
+            if npm view "${pkg}@${version}" version >/dev/null 2>&1; then
+              echo "${pkg}@${version} already on npm"
+            else
+              npm publish -w "${pkg}" --access public
+            fi
+            npm access public "${pkg}"
+          done
+          for attempt in 1 2 3 4 5 6; do
+            if curl -sfS "https://registry.npmjs.org/@olares%2flares-core/${version}" >/dev/null \
+              && curl -sfS "https://registry.npmjs.org/@olares%2flares-mobile/${version}" >/dev/null; then
+              echo "public registry has ${version}"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::packages published but public npm view still fails; check access"
+          exit 1
