@@ -1,6 +1,7 @@
 ---
-description: Lares 项目核心约束（绿场、dsh 内核、dsh UI 主壳）
-alwaysApply: true
+description: Lares 项目核心约束：产品面已锁定 dsh 内核与 dsh web 主壳（禁 pi / pi-web、禁自研 Chat 壳）、仓库结构与单一权威实现、olares-* skills 由构建期导出不入仓、注释与安全约定。改本仓任何代码之前读。
+globs: **/*
+alwaysApply: false
 ---
 
 # 项目核心约束
@@ -36,7 +37,7 @@ _参考/              外部参考（默认忽略；勿当本仓业务）
 - 同一能力只有一处权威实现；先复用已有模块，禁止平行旁路与过度设计。
 - 本仓库是**全新项目**：禁止兼容旧版/迁移过渡分支；删除无关代码与死路径。
 - 浏览器只打本服务 Host（dsh webserver `/api`）；LLM 经 Host shim / 适配器，禁止直连 Router。
-- **测试分发**见 `.cursor/rules/dev-machines.mdc`：不重装则热更新；chart 走 upload 源；镜像 save+ssh；仅明确发版才上市场 / push。
+- **发版与 chart 版本号**见 `.cursor/rules/release-and-chart-versioning.mdc`：镜像只由 CI 推送，版本来源是 `Chart.yaml`；dev 包版本受 app-service 与 market 两条硬限制。
 
 ## 注释
 
