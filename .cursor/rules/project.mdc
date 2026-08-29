@@ -1,6 +1,6 @@
 ---
 description: Lares 项目核心约束：产品面已锁定 dsh 内核与 dsh web 主壳（禁 pi / pi-web、禁自研 Chat 壳）、仓库结构与单一权威实现、olares-* skills 由构建期导出不入仓、注释与安全约定。改本仓任何代码之前读。
-globs: **/*
+globs: packages/**, tests/**, scripts/**, deploy/**, Dockerfile, Dockerfile.base, project.json, package.json
 alwaysApply: false
 ---
 
