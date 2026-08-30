@@ -280,6 +280,10 @@ jobs:
 
   app_merge:
     name: app manifest
+    if: >-
+      !cancelled()
+      && needs.resolve.result == 'success'
+      && needs.app.result == 'success'
     needs: [resolve, app]
     runs-on: ubuntu-latest
     steps:
