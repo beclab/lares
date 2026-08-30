@@ -5,6 +5,7 @@ import {
   SettingsSelector,
   SettingsStatus,
 } from "../../../shared/client/settings-controls.js";
+import { watchCatalogRevision } from "../../../shared/client/catalog-events.js";
 import { useLatest, useMountedRef } from "../../../shared/client/react-lifecycle.js";
 import { API, getJson } from "./api.js";
 import { MicGlyph } from "./icons.js";
@@ -97,8 +98,12 @@ export function VoiceSettings() {
       setConfig(cfg);
       if (mounted.current) await refresh();
     })();
+    const stop = watchCatalogRevision(() => {
+      if (alive) void refresh();
+    });
     return () => {
       alive = false;
+      stop();
     };
   }, [refresh]);
 

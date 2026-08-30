@@ -65,6 +65,8 @@ test("reading a temporarily incomplete Router catalog does not erase the saved d
       status: 200,
       headers: { "content-type": "application/json" },
     });
+  const { catalogCache } = await import("../../packages/plugins/shared/host/catalog-cache.js");
+  catalogCache.reset();
   try {
     const { setDefaultSearchModel, readConfig } = await import(
       `../../packages/plugins/web-search/host/config.js?read=${Date.now()}`
@@ -80,6 +82,7 @@ test("reading a temporarily incomplete Router catalog does not erase the saved d
     assert.equal(readConfig().defaultSearchModel, "tavily/search");
   } finally {
     globalThis.fetch = originalFetch;
+    catalogCache.reset();
     if (previousHome === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = previousHome;
     rmSync(home, { recursive: true, force: true });
@@ -96,11 +99,14 @@ test("Router list and search use the same gateway identity as LLM calls", async 
   process.env.OLARES_APP_ID = "lares";
   delete process.env.LARES_ROUTER_API_KEY;
 
+  const { catalogCache } = await import("../../packages/plugins/shared/host/catalog-cache.js");
+  catalogCache.reset();
+
   const originalFetch = globalThis.fetch;
   const calls: { url: string; init: RequestInit }[] = [];
   globalThis.fetch = async (input, init = {}) => {
     calls.push({ url: String(input), init });
-    if (String(input).endsWith("/models")) {
+    if (String(input).includes("/models")) {
       return new Response(
         JSON.stringify({
           data: [
@@ -140,7 +146,7 @@ test("Router list and search use the same gateway identity as LLM calls", async 
       truncated: false,
     });
 
-    assert.equal(calls[0].url, "http://router.test/v1/models");
+    assert.equal(calls[0].url, "http://router.test/v1/models?include_not_ready=true");
     assert.equal((calls[0].init.headers as Record<string, string>)["x-caller-appid"], "lares");
     assert.equal(calls[1].url, "http://router.test/v1/search");
     assert.deepEqual(JSON.parse(String(calls[1].init.body)), {
@@ -150,6 +156,7 @@ test("Router list and search use the same gateway identity as LLM calls", async 
     });
   } finally {
     globalThis.fetch = originalFetch;
+    catalogCache.reset();
     restoreEnv("LLM_GATEWAY_URL", previous.url);
     restoreEnv("OLARES_APP_ID", previous.appId);
     restoreEnv("LARES_ROUTER_API_KEY", previous.key);

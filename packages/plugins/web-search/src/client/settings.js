@@ -8,6 +8,7 @@ import {
   SettingsSelector,
   SettingsStatus,
 } from "../../../shared/client/settings-controls.js";
+import { watchCatalogRevision } from "../../../shared/client/catalog-events.js";
 import { useLatest, useMountedRef } from "../../../shared/client/react-lifecycle.js";
 import { getJson, postJson } from "./api.js";
 import { useT } from "./locale.js";
@@ -41,8 +42,16 @@ export function WebSearchSettings() {
           }));
         }
       });
+    const stop = watchCatalogRevision(() => {
+      getJson("/config")
+        .then((next) => {
+          if (alive) setConfig(next);
+        })
+        .catch(() => {});
+    });
     return () => {
       alive = false;
+      stop();
     };
   }, []);
 

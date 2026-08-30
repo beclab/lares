@@ -1,4 +1,5 @@
 import { WebError } from "@deepseek-ai/dsh-web";
+import { catalogCache } from "../../shared/host/catalog-cache.js";
 import { routerCatalogRows } from "../../shared/host/router-catalog.js";
 
 const DEFAULT_TIMEOUT_MS = 20_000;
@@ -29,18 +30,8 @@ export function searchModelsFromRouterCatalog(payload) {
 
 /** List the search services Router currently offers to Lares. */
 export async function fetchRouterSearchModels() {
-  const response = await fetch(`${routerUrl()}/models`, {
-    method: "GET",
-    headers: routerHeaders(),
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!response.ok) {
-    throw Object.assign(new Error(`Router /models returned ${response.status}`), {
-      code: "router_unavailable",
-      status: 503,
-    });
-  }
-  return searchModelsFromRouterCatalog(await response.json());
+  const { payload } = await catalogCache.get();
+  return searchModelsFromRouterCatalog(payload);
 }
 
 /**

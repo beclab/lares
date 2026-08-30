@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { catalogCache } from "../../packages/plugins/shared/host/catalog-cache.js";
 
 type Ctx = {
   llm: {
@@ -96,10 +97,14 @@ test("Router refresh declares the sizes Router states and omits the ones it does
 });
 
 test("Router refresh replaces the routable catalog and repairs a stale default", async () => {
-  const { refreshCatalog } = await catalogModule();
+  const { refreshCatalog, catalogRevision, onCatalogRevision } = await catalogModule();
   const previousFetch = globalThis.fetch;
   const saved: unknown[] = [];
   const mutations: unknown[] = [];
+  const revisions: number[] = [];
+  catalogCache.reset();
+  const stop = onCatalogRevision((revision) => revisions.push(revision));
+  const before = catalogRevision();
   globalThis.fetch = async () =>
     new Response(JSON.stringify({ data: [{ id: "Qwen/new", mode: "chat" }] }), {
       status: 200,
@@ -121,8 +126,12 @@ test("Router refresh replaces the routable catalog and repairs a stale default",
       },
     ]);
     assert.deepEqual(saved, [{ provider: "olares-router", model: "Qwen/new" }]);
+    assert.equal(catalogRevision(), before + 1);
+    assert.deepEqual(revisions, [before + 1]);
   } finally {
+    stop();
     globalThis.fetch = previousFetch;
+    catalogCache.reset();
   }
 });
 
@@ -130,6 +139,7 @@ test("Router refresh repairs a stale default with the preferred MTP build", asyn
   const { refreshCatalog } = await catalogModule();
   const previousFetch = globalThis.fetch;
   const saved: unknown[] = [];
+  catalogCache.reset();
   globalThis.fetch = async () =>
     new Response(
       JSON.stringify({
@@ -145,12 +155,14 @@ test("Router refresh repairs a stale default with the preferred MTP build", asyn
     assert.deepEqual(saved, [{ provider: "olares-router", model: "Qwen/MTP-fast" }]);
   } finally {
     globalThis.fetch = previousFetch;
+    catalogCache.reset();
   }
 });
 
 test("concurrent Router refresh requests share one catalog update", async () => {
   const { refreshCatalog } = await catalogModule();
   const previousFetch = globalThis.fetch;
+  catalogCache.reset();
   let calls = 0;
   globalThis.fetch = async () => {
     calls += 1;
@@ -166,6 +178,7 @@ test("concurrent Router refresh requests share one catalog update", async () => 
     assert.equal(calls, 1);
   } finally {
     globalThis.fetch = previousFetch;
+    catalogCache.reset();
   }
 });
 

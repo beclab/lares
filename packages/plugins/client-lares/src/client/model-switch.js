@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
+import { watchCatalogRevision } from "../../../shared/client/catalog-events.js";
 import { createLocaleBinding } from "../../../shared/client/locale-binding.js";
 
 const h = React.createElement;
@@ -154,6 +155,11 @@ export function ModelSwitch({ available, directory, load, select, locked }) {
 
   useEffect(() => {
     if (available) load();
+  }, [available, load]);
+
+  useEffect(() => {
+    if (!available) return undefined;
+    return watchCatalogRevision(() => load());
   }, [available, load]);
 
   useEffect(() => {

@@ -2,7 +2,7 @@
  * STT via Lares /llm/v1 → Router POST /audio/transcriptions (one-shot multipart).
  */
 import { randomBytes } from "node:crypto";
-import { routerCatalogRows } from "../../shared/host/router-catalog.js";
+import { catalogCache } from "../../shared/host/catalog-cache.js";
 
 const STT_HINTS = /whisper|\bstt\b|\basr\b|transcri/i;
 
@@ -15,7 +15,6 @@ export function sttModelIds(models) {
 
 // Cold STT engine / stopped app resume; matches Ashia's audio hop budget.
 const REQUEST_TIMEOUT_MS = 180_000;
-const CATALOG_TIMEOUT_MS = 15_000;
 
 const RETRY_BACKOFF_MS = [1_000, 3_000];
 const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
@@ -77,12 +76,13 @@ export function retryable(status) {
 
 /** @returns {Promise<{ id: string, mode: string | null }[]>} */
 export async function listModels() {
-  const res = await fetch(`${shimBaseUrl()}/models`, {
-    headers: { accept: "application/json" },
-    signal: AbortSignal.timeout(CATALOG_TIMEOUT_MS),
-  });
-  if (!res.ok) throw new VoiceError("voice_model_unavailable", 503, `Router /models returned ${res.status}`);
-  return routerCatalogRows(await res.json()).map(({ id, mode }) => ({ id, mode }));
+  try {
+    const { rows } = await catalogCache.get();
+    return rows.map(({ id, mode }) => ({ id, mode }));
+  } catch (err) {
+    const status = err && typeof err === "object" && "status" in err ? Number(err.status) : 503;
+    throw new VoiceError("voice_model_unavailable", status || 503, err instanceof Error ? err.message : String(err));
+  }
 }
 
 /** @returns {Promise<string[]>} */

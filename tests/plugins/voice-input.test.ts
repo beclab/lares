@@ -32,6 +32,8 @@ test("retryable covers cold-start / restart statuses only", () => {
 
 test("resolved STT cache is keyed by the configured preference", async () => {
   const originalFetch = globalThis.fetch;
+  const { catalogCache } = await import("../../packages/plugins/shared/host/catalog-cache.js");
+  catalogCache.reset();
   globalThis.fetch = async () =>
     new Response(
       JSON.stringify({
@@ -51,6 +53,7 @@ test("resolved STT cache is keyed by the configured preference", async () => {
     assert.equal(await resolveSttModel("whisper-b"), "whisper-b");
   } finally {
     globalThis.fetch = originalFetch;
+    catalogCache.reset();
   }
 });
 

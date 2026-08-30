@@ -9,6 +9,7 @@ import {
   SettingsStatus,
 } from "../../../shared/client/settings-controls.js";
 import { useLatest, useMountedRef } from "../../../shared/client/react-lifecycle.js";
+import { watchCatalogRevision } from "../../../shared/client/catalog-events.js";
 import { fetchState, refreshModels, setDefaultModel } from "./api.js";
 import { useT } from "./locale.js";
 import localSettingsCss from "./styles/settings.css";
@@ -91,8 +92,16 @@ export function ModelsSettings() {
           }));
         }
       });
+    const stop = watchCatalogRevision(() => {
+      fetchState()
+        .then((next) => {
+          if (alive) setState(next);
+        })
+        .catch(() => {});
+    });
     return () => {
       alive = false;
+      stop();
     };
   }, []);
 

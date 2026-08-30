@@ -4,7 +4,8 @@
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { URL } from "node:url";
-import { readBody, sendError } from "../../shared/host/http.js";
+import { catalogCache } from "../../shared/host/catalog-cache.js";
+import { readBody, sendError, sendJson } from "../../shared/host/http.js";
 import { carriesWebpImage, transcodeWebpImages } from "./router-images.js";
 
 export const name = "lares-llm-routes";
@@ -27,6 +28,34 @@ const DROPPED_RES = new Set(["connection", "content-encoding", "content-length",
 function routerAuthHeaders(apiKey, olaresAppId) {
   if (apiKey) return { authorization: `Bearer ${apiKey}` };
   return { "x-caller-appid": olaresAppId };
+}
+
+function isModelsGet(req) {
+  const method = (req.method ?? "GET").toUpperCase();
+  if (method !== "GET" && method !== "HEAD") return false;
+  const u = new URL(req.url ?? "/", "http://x");
+  const suffix = u.pathname.replace(/^\/llm\/v1\/?/, "").replace(/^\/+/, "").replace(/\/+$/, "");
+  return suffix === "models";
+}
+
+function serveCachedModels(req, res) {
+  void catalogCache.get().then(
+    ({ payload }) => {
+      if ((req.method ?? "GET").toUpperCase() === "HEAD") {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end();
+        return;
+      }
+      sendJson(res, 200, payload);
+    },
+    (err) => {
+      if (res.headersSent) {
+        res.destroy();
+        return;
+      }
+      sendError(res, err, "llm_proxy_failed");
+    },
+  );
 }
 
 function proxyToRouter(req, res) {
@@ -137,7 +166,13 @@ export function apply(ctx) {
       ctx.webServer.register({
         kind: "prefix",
         path: "/llm/v1",
-        handler: proxyToRouter,
+        handler: (req, res) => {
+          if (isModelsGet(req)) {
+            serveCachedModels(req, res);
+            return;
+          }
+          proxyToRouter(req, res);
+        },
       }),
     "lares-llm-proxy",
   );

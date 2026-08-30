@@ -1,8 +1,9 @@
-import type { LaresEnv } from "../config/env.js";
+import { writeCatalogSeed } from "../../../packages/plugins/shared/host/catalog-cache.js";
 import {
   routerCatalogRows,
   type RouterCatalogRow,
 } from "../../../packages/plugins/shared/host/router-catalog.js";
+import type { LaresEnv } from "../config/env.js";
 
 export type RouterModelEntry = RouterCatalogRow;
 
@@ -40,12 +41,14 @@ function routerAuthHeaders(apiKey: string | null, olaresAppId: string): Record<s
 }
 
 /** GET ${LLM_GATEWAY_URL}/models with in-cluster app identity. */
-export async function fetchRouterModels(env: Pick<LaresEnv, "routerUrl" | "routerApiKey" | "olaresAppId">): Promise<RouterModelEntry[]> {
+export async function fetchRouterModels(
+  env: Pick<LaresEnv, "routerUrl" | "routerApiKey" | "olaresAppId" | "dataDir">,
+): Promise<RouterModelEntry[]> {
   const headers = {
     ...routerAuthHeaders(env.routerApiKey, env.olaresAppId),
     accept: "application/json",
   };
-  const res = await fetch(`${env.routerUrl}/models`, {
+  const res = await fetch(`${env.routerUrl}/models?include_not_ready=true`, {
     method: "GET",
     headers,
     signal: AbortSignal.timeout(15_000),
@@ -53,7 +56,9 @@ export async function fetchRouterModels(env: Pick<LaresEnv, "routerUrl" | "route
   if (!res.ok) {
     throw new Error(`Router /models returned ${res.status}`);
   }
-  return modelsFromRouterCatalog(await res.json());
+  const payload = await res.json();
+  writeCatalogSeed(payload, env.dataDir);
+  return modelsFromRouterCatalog(payload);
 }
 
 /** Model ids that are placeholders / dsh factory defaults — not Router catalog. */

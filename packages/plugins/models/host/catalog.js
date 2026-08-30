@@ -1,4 +1,5 @@
 /** The model facts Lares's settings panel reads and writes. */
+import { catalogCache } from "../../shared/host/catalog-cache.js";
 import { routerCatalogRows } from "../../shared/host/router-catalog.js";
 
 const PROVIDER = "olares-router";
@@ -14,12 +15,6 @@ function messageOf(err) {
 /** @param {string} code @param {number} status @param {string} message */
 function failure(code, status, message) {
   return Object.assign(new Error(message), { code, status });
-}
-
-function shimBaseUrl() {
-  const configured = process.env.LARES_LLM_BASE_URL?.trim();
-  if (configured) return configured.replace(/\/+$/, "");
-  return `http://127.0.0.1:${process.env.PORT ?? 8080}/llm/v1`;
 }
 
 /**
@@ -50,6 +45,25 @@ export function chatModelsFromRouterCatalog(payload) {
     }));
 }
 
+let adapterRevision = 0;
+/** @type {Set<(revision: number) => void>} */
+const revisionListeners = new Set();
+
+export function catalogRevision() {
+  return adapterRevision;
+}
+
+/** @param {(revision: number) => void} listener */
+export function onCatalogRevision(listener) {
+  revisionListeners.add(listener);
+  return () => revisionListeners.delete(listener);
+}
+
+function bumpRevision() {
+  adapterRevision += 1;
+  for (const listener of revisionListeners) listener(adapterRevision);
+}
+
 /**
  * Pull Router's live catalog into the llm-pi-ai route. The settings write
  * re-registers the adapter, so the returned panel and the next LLM call see the
@@ -57,14 +71,9 @@ export function chatModelsFromRouterCatalog(payload) {
  * @param {import('@deepseek-ai/cordis').Context} ctx
  */
 async function performRefresh(ctx) {
-  const response = await fetch(`${shimBaseUrl()}/models`, {
-    headers: { accept: "application/json" },
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!response.ok) {
-    throw failure("router_unavailable", 503, `Router /models returned ${response.status}`);
-  }
-  const models = chatModelsFromRouterCatalog(await response.json());
+  catalogCache.invalidate();
+  const { payload } = await catalogCache.get();
+  const models = chatModelsFromRouterCatalog(payload);
   await ctx.settings.mutate(SETTINGS_NS, [
     { op: "set", path: ["providers", PROVIDER, "models"], value: models },
   ]);
@@ -73,6 +82,7 @@ async function performRefresh(ctx) {
   if (models.length > 0 && (current.provider !== PROVIDER || !models.some((model) => model.id === current.model))) {
     await ctx.agentDefaultModel.saveSelection({ provider: PROVIDER, model: pickDefaultModel(models).id });
   }
+  bumpRevision();
   return models;
 }
 

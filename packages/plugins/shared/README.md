@@ -2,8 +2,8 @@
 
 Only infrastructure used by multiple Lares plugins belongs here.
 
-- `client/`: dsh primitive compositions, locale/lifecycle helpers, and shared settings CSS.
-- `host/`: bounded HTTP handling, atomic JSON files, and normalized Router catalog rows.
+- `client/`: dsh primitive compositions, locale/lifecycle helpers, shared settings CSS, and catalog revision SSE.
+- `host/`: bounded HTTP handling, atomic JSON files, normalized Router catalog rows, and the in-process Router catalog cache.
 
 Feature rules stay with their owner:
 
