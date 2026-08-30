@@ -71,7 +71,12 @@ export function ensureLaresWebProfile(dataDir: string): { dshHome: string; profi
     }
   }
 
-  const extraBundles = (previous.dsh?.profile?.bundles ?? []).filter((name) => !OWNED_BUNDLES.includes(name));
+  const externalDependencies = Object.fromEntries(
+    Object.entries(previous.dependencies ?? {}).filter(([name]) => !name.startsWith("@lares/")),
+  );
+  const extraBundles = (previous.dsh?.profile?.bundles ?? []).filter(
+    (name) => !OWNED_BUNDLES.includes(name) && !name.startsWith("@lares/"),
+  );
   const bundles = [...SHELL_BUNDLES, ...extraBundles, LARES_BUNDLE];
 
   const manifest = {
@@ -79,7 +84,7 @@ export function ensureLaresWebProfile(dataDir: string): { dshHome: string; profi
     private: true,
     type: "module",
     dependencies: {
-      ...(previous.dependencies ?? {}),
+      ...externalDependencies,
       "@lares/bundle-web": `file:${BUNDLE_WEB}`,
       "@lares/client-lares": `file:${CLIENT_LARES}`,
       "@lares/voice-input": `file:${VOICE_INPUT}`,
