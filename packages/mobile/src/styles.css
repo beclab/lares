@@ -7,6 +7,21 @@
   color: var(--q-ink-1);
 }
 
+.lares-shell__conversation {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  width: 100%;
+}
+
+.lares-shell[data-device="desktop"] .lares-shell__conversation {
+  width: 748px;
+  max-width: 100%;
+  margin-inline: auto;
+}
+
 .lares-shell button,
 .lares-shell textarea,
 .lares-shell select {

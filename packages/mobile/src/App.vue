@@ -1,5 +1,5 @@
 <template>
-  <div class="lares-shell">
+  <div class="lares-shell" :data-device="chatDevice">
     <LaresChatBar
       :t="t"
       :title="sessionTitle"
@@ -16,52 +16,54 @@
       @close="panel = ''"
       @pick="pickSession"
     />
-    <p v-if="failed" class="lares-shell__status">{{ failText }}</p>
-    <button v-if="failed" type="button" class="lares-shell__retry" :disabled="starting" @click="retry">
-      {{ t("probe.retry") }}
-    </button>
-    <LaresTranscript
-      ref="transcript"
-      :items="viewItems"
-      :running="running"
-      :loading="historyLoading || starting"
-      :previews="previews"
-      :media-url="mediaUrl"
-      :scroll-top="scrollTop"
-      :remember-scroll="rememberScroll"
-      :sticking="sticking"
-      :session-id="sessionId"
-      :question="question"
-      :question-busy="questionBusy"
-      :t="t"
-      @open="openFile"
-      @media="pinLog"
-      @answer="answerQuestion"
-    />
-    <LaresComposer
-      :draft="draft"
-      :sending="sending"
-      :can-send="canSend"
-      :model-label="modelLabel"
-      :model-busy="modelBusy"
-      :effort-label="effortLabel"
-      :effort-disabled="effortDisabled"
-      :attach-pending="upload.pending > 0"
-      :attach-disabled="!sessionId || historyLoading || starting"
-      :voice-phase="voicePhase"
-      :voice-elapsed="voiceElapsed"
-      :voice-error="voiceErrorText"
-      :failures="upload.failures"
-      :t="t"
-      @update:draft="draft = $event"
-      @send="send"
-      @model="openModelSheet"
-      @effort="openEffortSheet"
-      @files="attachFiles"
-      @voice="toggleVoice"
-      @hold-start="onHoldStart"
-      @hold-end="onHoldEnd"
-    />
+    <div class="lares-shell__conversation">
+      <p v-if="failed" class="lares-shell__status">{{ failText }}</p>
+      <button v-if="failed" type="button" class="lares-shell__retry" :disabled="starting" @click="retry">
+        {{ t("probe.retry") }}
+      </button>
+      <LaresTranscript
+        ref="transcript"
+        :items="viewItems"
+        :running="running"
+        :loading="historyLoading || starting"
+        :previews="previews"
+        :media-url="mediaUrl"
+        :scroll-top="scrollTop"
+        :remember-scroll="rememberScroll"
+        :sticking="sticking"
+        :session-id="sessionId"
+        :question="question"
+        :question-busy="questionBusy"
+        :t="t"
+        @open="openFile"
+        @media="pinLog"
+        @answer="answerQuestion"
+      />
+      <LaresComposer
+        :draft="draft"
+        :sending="sending"
+        :can-send="canSend"
+        :model-label="modelLabel"
+        :model-busy="modelBusy"
+        :effort-label="effortLabel"
+        :effort-disabled="effortDisabled"
+        :attach-pending="upload.pending > 0"
+        :attach-disabled="!sessionId || historyLoading || starting"
+        :voice-phase="voicePhase"
+        :voice-elapsed="voiceElapsed"
+        :voice-error="voiceErrorText"
+        :failures="upload.failures"
+        :t="t"
+        @update:draft="draft = $event"
+        @send="send"
+        @model="openModelSheet"
+        @effort="openEffortSheet"
+        @files="attachFiles"
+        @voice="toggleVoice"
+        @hold-start="onHoldStart"
+        @hold-end="onHoldEnd"
+      />
+    </div>
     <LaresSheet :open="modelSheet" :title="t('model.menuAria')" @close="modelSheet = false">
       <p v-if="modelError" class="lares-shell__status">{{ modelError }}</p>
       <p v-else-if="!models" class="lares-shell__hint">{{ t("agent.loading") }}</p>
@@ -118,6 +120,7 @@ import { DEFAULT_MAX_UPLOAD_BYTES } from "@olares/lares-core/files/limits";
 import { groupModelsByProvider, effortMenuRows, reasoningOfModel, currentEffortId, selectionKey } from "@olares/lares-core/router/session-model";
 import { messageFromCode } from "@olares/lares-core/i18n/t";
 import { parseAskUserQuestions, singleSelectAnswer } from "@olares/lares-core/larepass/questions";
+import { chatDevice as resolveChatDevice } from "./layout.js";
 import LaresChatBar from "./chat/ChatBar.vue";
 import LaresHistoryPanel from "./chat/HistoryPanel.vue";
 import LaresTranscript from "./chat/Transcript.vue";
@@ -132,6 +135,7 @@ export default {
   components: { LaresChatBar, LaresHistoryPanel, LaresTranscript, LaresComposer, LaresPreview, LaresSheet, LaresSettingRow },
   props: {
     locale: { type: String, default: "en" },
+    device: { type: String, default: "mobile" },
     baseUrl: { type: String, default: undefined },
     proxyPrefix: { type: String, default: undefined },
     request: { type: Function, default: undefined },
@@ -189,6 +193,9 @@ export default {
     },
     t() {
       return createT(this.locale);
+    },
+    chatDevice() {
+      return resolveChatDevice(this.device);
     },
     canSend() {
       return Boolean(this.draft.trim()) && Boolean(this.sessionId) && !this.running && !this.historyLoading && this.upload.pending === 0;

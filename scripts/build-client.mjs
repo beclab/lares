@@ -34,6 +34,9 @@ const PLATFORM_EXTERNALS = [
   "@deepseek-ai/dsh-client-schema-form",
 ];
 
+/** Bundled into the plugin factory — not a dsh platform seed. */
+const BUNDLED_BARE = /^(?:three|three\/)/;
+
 function laresCorePlugin() {
   return {
     name: "lares-core",
@@ -54,6 +57,7 @@ function platformExternalsPlugin() {
       build.onResolve({ filter: /^[^./]|^@/ }, (args) => {
         if (args.path.startsWith("@olares/lares-core/")) return;
         if (allowed.has(args.path)) return { path: args.path, external: true };
+        if (BUNDLED_BARE.test(args.path)) return;
         return {
           errors: [
             {

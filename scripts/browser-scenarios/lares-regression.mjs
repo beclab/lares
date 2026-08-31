@@ -105,7 +105,7 @@ export default async function (page, session) {
 
     try {
       await page.waitFor(
-        () => Boolean(document.querySelector("[data-phase]") && document.querySelector(".lares-voice-mic")),
+        () => Boolean(document.querySelector("[data-phase]")),
         { timeout: 30_000 },
       );
     } catch {
@@ -114,7 +114,6 @@ export default async function (page, session) {
         title: document.title,
         readyState: document.readyState,
         phase: document.querySelector("[data-phase]")?.getAttribute("data-phase") || null,
-        mic: Boolean(document.querySelector(".lares-voice-mic")),
         text: document.body?.textContent?.trim().slice(0, 500) || "",
       }));
       await page.screenshot("/tmp/lares-machine1-app-failed.png");
@@ -130,23 +129,17 @@ export default async function (page, session) {
       return {
         title: document.title,
         phase: document.querySelector("[data-phase]")?.getAttribute("data-phase"),
-        micLabel: document.querySelector(".lares-voice-mic")?.getAttribute("aria-label"),
         pluginStyles: [...document.querySelectorAll("style[data-plugin-css]")].map(
           (tag) => tag.getAttribute("data-plugin-css"),
         ),
         api: await Promise.all([
           request("/api/health"),
-          request("/api/lares/voice/config"),
-          request("/api/lares/voice/status"),
-          request("/api/lares/voice/models"),
           request("/llm/v1/models"),
         ]),
       };
     });
     assert(shell.title, "document title is empty");
-    assert(shell.micLabel, "voice microphone is not mounted");
     assert(shell.pluginStyles.includes("@lares/brand"), "brand stylesheet is missing");
-    assert(shell.pluginStyles.includes("@lares/composer-voice"), "composer-voice stylesheet is missing");
     assert(shell.api.every((item) => item.ok), `API regression failed: ${JSON.stringify(shell.api)}`);
 
     const modelTrigger = await page.evaluate(() => Boolean(document.querySelector(".lares-model-trigger")));
@@ -170,7 +163,6 @@ export default async function (page, session) {
         if (/^(通用设置|general)$/i.test(text)) return "general";
         if (/^(模型配置|model configuration)$/i.test(text)) return "models";
         if (/^(网络搜索|web search)$/i.test(text)) return "web-search";
-        if (/^(语音输入|voice input)$/i.test(text)) return "voice";
         if (/^(插件|plugins)$/i.test(text)) return "plugins";
         return null;
       };
@@ -179,7 +171,7 @@ export default async function (page, session) {
         .filter(Boolean);
     });
     assert(
-      JSON.stringify(settingsOrder) === JSON.stringify(["general", "models", "web-search", "voice", "plugins"]),
+      JSON.stringify(settingsOrder) === JSON.stringify(["general", "models", "web-search", "plugins"]),
       `unexpected settings order: ${JSON.stringify(settingsOrder)}`,
     );
 
@@ -220,39 +212,6 @@ export default async function (page, session) {
     );
     await assertRouterRoute(page, ".lares-websearch", "tools");
 
-    const voiceNav = await markByText(page, "voice-settings", /语音输入|voice input/);
-    assert(voiceNav, "voice settings navigation item was not found");
-    await page.click('[data-regression-target="voice-settings"]');
-    await page.waitFor(() => Boolean(document.querySelector(".lares-voice .lares-settings-title")), { timeout: 10_000 });
-
-    const settings = await page.evaluate(() => {
-      const root = document.querySelector(".lares-voice");
-      const selector = root?.querySelector(".lares-settings-selector");
-      return {
-        title: root?.querySelector(".lares-settings-title")?.textContent,
-        status: root?.querySelector(".lares-settings-status")?.textContent?.trim(),
-        selectors: root?.querySelectorAll(".lares-settings-selector").length || 0,
-        actions: [...(root?.querySelectorAll(".lares-settings-actions button") ?? [])].map((button) =>
-          button.textContent?.trim(),
-        ),
-        saveButtons: [...(root?.querySelectorAll("button") ?? [])].filter((button) =>
-          /^(保存|save)$/i.test(button.textContent?.trim() || ""),
-        ).length,
-        selectorHeight: selector ? getComputedStyle(selector).height : null,
-        color: root ? getComputedStyle(root).color : null,
-      };
-    });
-    assert(settings.title, "voice settings title is missing");
-    assert(settings.status, "voice status is missing");
-    assert(settings.selectors === 2, `expected 2 voice selectors, got ${settings.selectors}`);
-    assert(
-      settings.actions.length === 2 && /Router/i.test(settings.actions[1] ?? ""),
-      `unexpected voice header actions: ${JSON.stringify(settings.actions)}`,
-    );
-    assert(settings.saveButtons === 0, `expected no voice save button, got ${settings.saveButtons}`);
-    assert(settings.selectorHeight === "36px", `unexpected selector height ${settings.selectorHeight}`);
-    await assertRouterRoute(page, ".lares-voice", "audio");
-
     const lightShot = "/tmp/lares-machine1-light.png";
     const darkShot = "/tmp/lares-machine1-dark.png";
     await page.screenshot(lightShot, { fullPage: true });
@@ -267,15 +226,6 @@ export default async function (page, session) {
       delete document.body.dataset.regressionHadDark;
     });
 
-    // Selectors stay disabled while the panel refreshes its Router catalog.
-    await page.waitFor(() => document.querySelector(".lares-voice .lares-settings-selector")?.disabled === false, {
-      timeout: 20_000,
-    });
-    await page.click(".lares-voice .lares-settings-selector");
-    await page.waitFor(() => Boolean(document.querySelector('[role="menu"]')), { timeout: 5_000 });
-    const menuItems = await page.evaluate(() => document.querySelectorAll('[role="menu"] [role^="menuitem"]').length);
-    assert(menuItems > 0, "voice selector menu has no options");
-
     const ignoredErrors = [/favicon/i];
     const actionableErrors = errors.filter((message) => !ignoredErrors.some((pattern) => pattern.test(message)));
     assert(actionableErrors.length === 0, `browser errors: ${actionableErrors.join(" | ")}`);
@@ -285,7 +235,6 @@ export default async function (page, session) {
       modelMenu,
       modelSettings,
       searchSettings,
-      settings,
       modelsShot,
       lightShot,
       darkShot,

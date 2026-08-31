@@ -4,12 +4,14 @@ LarePass 只依赖这一个包。对话、Host、设置都在内部走 `@olares/
 
 ```vue
 <template>
-  <LaresApp :locale="locale" v-bind="ports" />
+  <LaresApp :locale="locale" :device="device" v-bind="ports" />
 </template>
 <script setup>
 import { LaresApp, laresPortsFromAccount, findLaresEntrance } from "@olares/lares-mobile";
 </script>
 ```
+
+`device` 为 `desktop` 时对话列居中、宽 748px；`mobile`（默认）保持全宽。
 
 设置页同样只挂 `LaresAgentSettings`。
 

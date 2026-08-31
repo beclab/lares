@@ -36,6 +36,11 @@ const AUDIO_TYPES = new Map([
   [".aac", "audio/aac"],
   [".flac", "audio/flac"],
 ]);
+const MODEL3D_TYPES = new Map([
+  [".glb", "model/gltf-binary"],
+  [".gltf", "model/gltf+json"],
+  [".obj", "model/obj"],
+]);
 const TEXT_EXTENSIONS = new Set([
   "",
   ".txt", ".log", ".json", ".csv", ".tsv", ".yaml", ".yml", ".toml", ".xml",
@@ -109,6 +114,7 @@ export function previewTypeForName(name) {
   if (IMAGE_TYPES.has(extension)) return { kind: "image", mediaType: IMAGE_TYPES.get(extension) };
   if (VIDEO_TYPES.has(extension)) return { kind: "video", mediaType: VIDEO_TYPES.get(extension) };
   if (AUDIO_TYPES.has(extension)) return { kind: "audio", mediaType: AUDIO_TYPES.get(extension) };
+  if (MODEL3D_TYPES.has(extension)) return { kind: "model3d", mediaType: MODEL3D_TYPES.get(extension) };
   if (extension === ".pdf") return { kind: "pdf", mediaType: "application/pdf" };
   if (extension === ".md" || extension === ".markdown") {
     return { kind: "markdown", mediaType: "text/markdown; charset=utf-8" };
@@ -284,12 +290,12 @@ async function sendFile(req, res, file, disposition) {
 }
 
 export async function sendRawFile(req, res, file, deps) {
-  if (!["image", "video", "audio", "pdf"].includes(file.kind)) {
+  if (!["image", "video", "audio", "pdf", "model3d"].includes(file.kind)) {
     throw new HttpError("preview_unsupported", 415, "raw preview is not supported for this file");
   }
   // Video and audio are range-streamed, so their total size is not browser
-  // memory pressure. Images and PDFs are consumed as whole documents.
-  if (["image", "pdf"].includes(file.kind) && file.size > MAX_RAW_BYTES) {
+  // memory pressure. Images, PDFs, and 3D meshes are consumed as whole documents.
+  if (["image", "pdf", "model3d"].includes(file.kind) && file.size > MAX_RAW_BYTES) {
     throw new HttpError("file_too_large", 413, `file exceeds ${MAX_RAW_BYTES} bytes`);
   }
   return sendFile(req, res, await ensurePreviewBytes(file, deps), "inline");

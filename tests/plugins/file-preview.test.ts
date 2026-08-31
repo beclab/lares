@@ -46,6 +46,9 @@ test("previewTypeForName classifies browser-safe preview formats", () => {
   assert.deepEqual(previewTypeForName("photo.webp"), { kind: "image", mediaType: "image/webp" });
   assert.deepEqual(previewTypeForName("movie.MP4"), { kind: "video", mediaType: "video/mp4" });
   assert.deepEqual(previewTypeForName("voice.mp3"), { kind: "audio", mediaType: "audio/mpeg" });
+  assert.deepEqual(previewTypeForName("mesh.glb"), { kind: "model3d", mediaType: "model/gltf-binary" });
+  assert.deepEqual(previewTypeForName("scene.GLTF"), { kind: "model3d", mediaType: "model/gltf+json" });
+  assert.deepEqual(previewTypeForName("cad.obj"), { kind: "model3d", mediaType: "model/obj" });
   assert.deepEqual(previewTypeForName("report.pdf"), { kind: "pdf", mediaType: "application/pdf" });
   assert.equal(previewTypeForName("notes.md").kind, "markdown");
   assert.equal(previewTypeForName("main.ts").kind, "text");
@@ -109,6 +112,20 @@ test("turn media deduplicates absolute and relative reports by resolved workspac
       files: [relative],
       loading: false,
     },
+  );
+});
+
+test("turn media treats produced glb as inline media", () => {
+  const item = {
+    path: "outputs/mesh.glb",
+    name: "mesh.glb",
+    kind: "model3d",
+    mediaType: "model/gltf-binary",
+    size: 12,
+  };
+  assert.deepEqual(
+    partitionPreviews(["outputs/mesh.glb"], new Map([["outputs/mesh.glb", item]])),
+    { media: [item], files: [], loading: false },
   );
 });
 
@@ -279,8 +296,10 @@ test("large range-streamed media stays previewable while whole documents stay bo
   try {
     writeFileSync(join(root, "large.mp4"), "");
     writeFileSync(join(root, "large.png"), "");
+    writeFileSync(join(root, "large.glb"), "");
     truncateSync(join(root, "large.mp4"), MAX_RAW_BYTES + 1);
     truncateSync(join(root, "large.png"), MAX_RAW_BYTES + 1);
+    truncateSync(join(root, "large.glb"), MAX_RAW_BYTES + 1);
     const sent: { status?: number; headers?: Record<string, string> } = {};
     const res = {
       writeHead: (status: number, headers: Record<string, string>) => {
@@ -297,11 +316,20 @@ test("large range-streamed media stays previewable while whole documents stay bo
     assert.equal(sent.status, 200);
     assert.equal(sent.headers?.["cache-control"], "private, no-cache");
     const image = await resolveWorkspaceFile(root, "large.png");
+    const mesh = await resolveWorkspaceFile(root, "large.glb");
     await assert.rejects(
       () => sendRawFile(
         { method: "HEAD", headers: {} } as never,
         res as never,
         image,
+      ),
+      (error: { code?: string }) => error.code === "file_too_large",
+    );
+    await assert.rejects(
+      () => sendRawFile(
+        { method: "HEAD", headers: {} } as never,
+        res as never,
+        mesh,
       ),
       (error: { code?: string }) => error.code === "file_too_large",
     );

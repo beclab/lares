@@ -23,11 +23,15 @@
           playsinline
         />
         <audio
-          v-else
+          v-else-if="item.kind === 'audio'"
           class="lares-turn-media-audio"
           :src="mediaUrl(item)"
           controls
         />
+        <div
+          v-else-if="item.kind === 'model3d'"
+          class="lares-turn-media-model3d"
+        >{{ t("model3dHint") }}</div>
       </figure>
     </div>
     <div v-if="group.files.length" class="lares-turn-files">
@@ -134,6 +138,14 @@ export default {
 .lares-turn-media-audio {
   display: block;
   width: min(520px, 100%);
+}
+
+.lares-turn-media-model3d {
+  width: min(520px, 100%);
+  padding: 16px;
+  color: var(--q-ink-3);
+  font-size: 13px;
+  line-height: 20px;
 }
 
 .lares-turn-files {

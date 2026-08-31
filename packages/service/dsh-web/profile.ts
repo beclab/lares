@@ -16,6 +16,7 @@ const BRAND = join(APP_ROOT, "packages", "web", "brand");
 const COMPOSER_VOICE = join(APP_ROOT, "packages", "web", "composer-voice");
 const COMPOSER_ATTACH = join(APP_ROOT, "packages", "web", "composer-attach");
 const WORKSPACE_PREVIEW = join(APP_ROOT, "packages", "web", "workspace-preview");
+const WORKSPACE_PREVIEW_3D = join(APP_ROOT, "packages", "web", "workspace-preview-3d");
 const WORKSPACE_ARTIFACTS = join(APP_ROOT, "packages", "web", "workspace-artifacts");
 const ROUTER_SEARCH = join(APP_ROOT, "packages", "web", "router-search");
 const CHAT_MODEL = join(APP_ROOT, "packages", "web", "chat-model");
@@ -25,6 +26,7 @@ const LOCAL_PROFILE_PACKAGES = [
   ["@lares/composer-voice", COMPOSER_VOICE],
   ["@lares/composer-attach", COMPOSER_ATTACH],
   ["@lares/workspace-preview", WORKSPACE_PREVIEW],
+  ["@lares/workspace-preview-3d", WORKSPACE_PREVIEW_3D],
   ["@lares/workspace-artifacts", WORKSPACE_ARTIFACTS],
   ["@lares/router-search", ROUTER_SEARCH],
   ["@lares/chat-model", CHAT_MODEL],
@@ -99,6 +101,7 @@ export function ensureLaresWebProfile(dataDir: string): { dshHome: string; profi
       "@lares/composer-voice": `file:${COMPOSER_VOICE}`,
       "@lares/composer-attach": `file:${COMPOSER_ATTACH}`,
       "@lares/workspace-preview": `file:${WORKSPACE_PREVIEW}`,
+      "@lares/workspace-preview-3d": `file:${WORKSPACE_PREVIEW_3D}`,
       "@lares/workspace-artifacts": `file:${WORKSPACE_ARTIFACTS}`,
       "@lares/router-search": `file:${ROUTER_SEARCH}`,
       "@lares/chat-model": `file:${CHAT_MODEL}`,

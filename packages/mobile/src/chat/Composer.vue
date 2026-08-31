@@ -68,7 +68,6 @@
             </svg>
           </button>
           <button
-            v-if="showSend"
             type="submit"
             class="lares-composer__icon"
             data-kind="send"
@@ -79,8 +78,9 @@
               <path d="M12 19V7M6.5 12.5 12 7l5.5 5.5" />
             </svg>
           </button>
+          <!-- Voice input parked.
           <button
-            v-else
+            v-if="!showSend"
             type="button"
             class="lares-composer__icon"
             data-kind="voice"
@@ -99,10 +99,11 @@
               <path d="M17.5 9v6" />
             </svg>
           </button>
+          -->
         </div>
       </div>
     </div>
-    <p v-if="voiceError" class="lares-composer__hint" data-status="error">{{ voiceError }}</p>
+    <!-- <p v-if="voiceError" class="lares-composer__hint" data-status="error">{{ voiceError }}</p> -->
     <p v-for="item in failures" :key="item.id" class="lares-composer__hint" data-status="error">
       {{ t("upload.failed", { name: item.name, reason: t(`error.${item.code}`) }) }}
     </p>
@@ -187,6 +188,8 @@ export default {
       this.onSend();
     },
     canHold(event) {
+      // Voice input parked (hold-to-record).
+      return false;
       if (this.draft.trim() || this.sending || this.voiceBlocked) return false;
       if (event.pointerType === "mouse") return false;
       return true;

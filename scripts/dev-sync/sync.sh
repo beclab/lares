@@ -342,6 +342,9 @@ ensure_dest_dir() {
 APP_ROOT="${REPO_ROOT}"
 
 RSYNC_EXCLUDES=(
+  # Skills are Markdown source. macOS stock rsync has no `**`, so spell the depths.
+  --include 'packages/skills/*/*.md'
+  --include 'packages/skills/*/*/*.md'
   --exclude 'node_modules/'
   --exclude '.next/'
   --exclude '.git/'

@@ -2,6 +2,7 @@ import React from "react";
 import { Button, IconLoadingOutline16 } from "@deepseek-ai/dsh-client-ui-primitives";
 import { partitionPreviews } from "@olares/lares-core/files/preview-groups";
 import { fetchPreviewMap, fileName, rawFileUrl } from "@olares/lares-core/files/preview-workspace";
+import { Model3dHost } from "./Model3dHost.js";
 
 const h = React.createElement;
 const { useEffect, useMemo, useState } = React;
@@ -28,12 +29,18 @@ function MediaBody({ item, sessionId }) {
       preload: "metadata",
     });
   }
-  return h("audio", {
-    ...common,
-    className: "lares-turn-media-audio",
-    controls: true,
-    preload: "metadata",
-  });
+  if (item.kind === "model3d") {
+    return h(Model3dHost, { item, sessionId, compact: true });
+  }
+  if (item.kind === "audio") {
+    return h("audio", {
+      ...common,
+      className: "lares-turn-media-audio",
+      controls: true,
+      preload: "metadata",
+    });
+  }
+  return null;
 }
 
 export function createTurnMedia(t) {

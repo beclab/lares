@@ -16,22 +16,23 @@
     "start": "node dist/service/index.js",
     "start:watch": "node dist/service/dev-supervisor.js",
     "typecheck": "tsc -p tsconfig.server.json --noEmit",
-    "test": "sh -c 'tsx --test tests/olares/*.test.ts tests/plugins/*.test.ts'",
+    "test": "sh -c 'tsx --test tests/olares/*.test.ts tests/plugins/*.test.ts tests/skills/*.test.ts'",
     "dump-config": "tsx packages/service/dsh-web/dump-config.ts"
   },
   "dependencies": {
-    "@olares/lares-core": "*",
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-app-boot": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-base": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-web-app": "^0.1.1-rc.2",
+    "@olares/lares-core": "*",
     "sharp": "^0.35.3",
     "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@types/node": "^22.15.21",
     "esbuild": "^0.28.2",
+    "three": "^0.181.2",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3"
   }

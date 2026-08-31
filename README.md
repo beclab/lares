@@ -8,7 +8,7 @@ packages/
   core/             `@olares/lares-core` 业务逻辑子包（PC / 移动端共用）
   web/              PC 端 UI
   mobile/           移动端 UI
-  skills/           ha-* agent skills（olares-* 由构建期导出，不入仓）
+  skills/           ha-* / lares-* agent skills（olares-* 由构建期导出，不入仓）
 tests/              单元测试（与源码分离）
 deploy/lares/        Olares chart（可选热更新）
 scripts/            镜像、chart 打包、dev-sync、better-sidebar、无头浏览器验证
@@ -62,12 +62,12 @@ manifest list。触发只有推 `v<Chart.yaml 版本>` 标签或手动 dispatch 
 
 ## Agent skills
 
-`packages/skills/ha-*` 是本仓源码；`packages/skills/olares-*` 不入仓，由应用镜像
+`packages/skills/ha-*` 与 `lares-*` 是本仓源码；`packages/skills/olares-*` 不入仓，由应用镜像
 构建时 `olares-cli skills export packages/skills` 从底座里的 olares-cli 导出——技能
 描述的动词必须与手上那个二进制同一个 release，手抄的快照做不到这件事。
 
 升级 olares 技能 = 改 `Dockerfile.base` 里 `@olares/cli` 的版本，再
-`scripts/build-image.sh --base`。启动时 `seedOlaresSkills` 把两类技能一起复制到
+`scripts/build-image.sh --base`。启动时 `seedOlaresSkills` 把源码技能与导出的 olares 技能一起复制到
 `$LARES_DATA_DIR/skills`，经 `DSH_BUNDLED_SKILL_DIR` 交给 dsh。
 
 本地跑（非容器）需要这些技能时，自己执行一次

@@ -128,9 +128,10 @@
       name: '@lares/brand'
       inject: [webServer]
 
-    - id: lares-composer-voice
-      name: '@lares/composer-voice'
-      inject: [webServer]
+    # Voice input parked: mic in composer + Settings → 语音输入.
+    # - id: lares-composer-voice
+    #   name: '@lares/composer-voice'
+    #   inject: [webServer]
 
     - id: lares-composer-attach
       name: '@lares/composer-attach'
@@ -139,6 +140,9 @@
     - id: lares-workspace-preview
       name: '@lares/workspace-preview'
       inject: [webServer, workspaceRegistry, sessionPersistence]
+
+    - id: lares-workspace-preview-3d
+      name: '@lares/workspace-preview-3d'
 
     - id: lares-workspace-artifacts
       name: '@lares/workspace-artifacts'

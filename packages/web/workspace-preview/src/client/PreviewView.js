@@ -9,6 +9,7 @@ import { errorMessage } from "./locale.js";
 import { rewriteWorkspaceTargets } from "@olares/lares-core/files/markdown";
 import { downloadCurrentFile } from "./download.js";
 import { downloadFileUrl, rawFileHref, rawFileUrl, workspaceLinkClickPath } from "@olares/lares-core/files/preview-workspace";
+import { Model3dHost } from "./Model3dHost.js";
 
 const h = React.createElement;
 const { useCallback, useLayoutEffect, useRef, useState, useSyncExternalStore } = React;
@@ -48,6 +49,9 @@ function PreviewBody({ data, sessionId, openPath, scroll, t }) {
         controls: true,
       }),
     );
+  }
+  if (data.kind === "model3d") {
+    return h(Model3dHost, { item: data, sessionId, compact: false });
   }
   if (data.kind === "pdf") {
     return h("iframe", {

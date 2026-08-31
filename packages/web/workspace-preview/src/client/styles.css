@@ -408,6 +408,23 @@
   max-width: 100%;
 }
 
+.lares-turn-media-model3d {
+  position: relative;
+  width: min(640px, 100%);
+  height: 360px;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-base);
+}
+
+.lares-preview-model3d {
+  position: relative;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+  background: var(--dsw-alias-bg-base);
+}
+
 .lares-turn-files {
   display: grid;
   min-width: 0;

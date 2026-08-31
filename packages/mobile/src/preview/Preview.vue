@@ -38,6 +38,9 @@
         @click="onMarkdownClick"
       />
       <pre v-else-if="data?.kind === 'text'" class="lares-preview__text">{{ data.text }}</pre>
+      <div v-else-if="data?.kind === 'model3d'" class="lares-preview__hint">
+        <p>{{ t("model3dHint") }}</p>
+      </div>
       <div v-else class="lares-preview__hint">
         <p>{{ t("unsupportedTitle") }}</p>
         <p>{{ t("unsupported") }}</p>

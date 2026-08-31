@@ -1,4 +1,4 @@
-const MEDIA_KINDS = new Set(["image", "video", "audio"]);
+const MEDIA_KINDS = new Set(["image", "video", "audio", "model3d"]);
 
 export function partitionPreviews(paths, previews) {
   const media = [];

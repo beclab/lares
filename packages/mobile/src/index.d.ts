@@ -57,8 +57,11 @@ export function createHostClient(ports?: HostPorts): {
   prompt: (sessionId: string, text: string) => Promise<{ ok: boolean }>;
 };
 
+export type ChatDevice = "desktop" | "mobile";
+
 export const LaresApp: DefineComponent<{
   locale?: string;
+  device?: ChatDevice;
   baseUrl?: string;
   proxyPrefix?: string;
   env?: HostEnv;

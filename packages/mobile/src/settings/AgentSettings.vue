@@ -22,6 +22,7 @@
       </p>
       <p v-if="modelError" class="lares-agent__hint" data-status="error">{{ modelError }}</p>
     </section>
+    <!-- Voice input parked.
     <section class="lares-agent__group">
       <h2>{{ tVoice("settings.title") }}</h2>
       <div class="lares-agent__list">
@@ -44,6 +45,7 @@
       </div>
       <p v-if="voiceError" class="lares-agent__hint" data-status="error">{{ voiceError }}</p>
     </section>
+    -->
     <section class="lares-agent__group">
       <h2>{{ tSearch("settings.title") }}</h2>
       <div class="lares-agent__list">

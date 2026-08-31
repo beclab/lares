@@ -35,6 +35,10 @@ test("identity prompt keeps read_image off attached images", () => {
   assert.match(identityPrompt(), /attaches are already in context; read_image is only for image files that exist on disk/);
 });
 
+test("identity prompt points media creation at the dedicated skill", () => {
+  assert.match(identityPrompt(), /lares-media-create skill/);
+});
+
 test("surface prompt is product-branded", () => {
   const text = surfacePrompt("http://127.0.0.1:8080");
   assert.match(text, new RegExp(PRODUCT_NAME));
@@ -47,6 +51,7 @@ test("agents markdown names the product and omits the upstream brand", () => {
   const text = agentsMarkdown();
   assert.match(text, new RegExp(`via ${PRODUCT_NAME}`));
   assert.match(text, new RegExp(`you are ${PRODUCT_NAME} on ${PLATFORM_NAME}\\.`));
+  assert.match(text, /lares-media-create skill/);
   assert.doesNotMatch(text, UPSTREAM_COPY);
 });
 

@@ -49,7 +49,7 @@ deploy/files/
 artifacts/
 
 # olares-* 技能由镜像构建期 `olares-cli skills export` 写入（见 Dockerfile）；
-# ha-* 是本仓源码。.olares-cli-suite 是 export 留下的内容指纹。
+# ha-* / lares-* 是本仓源码。.olares-cli-suite 是 export 留下的内容指纹。
 packages/skills/olares-*/
 packages/skills/.olares-cli-suite
 

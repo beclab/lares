@@ -29,6 +29,9 @@ const DATA_NAMES = new Map([
   ["audio/aac", "download.aac"],
   ["audio/flac", "download.flac"],
   ["application/pdf", "download.pdf"],
+  ["model/gltf-binary", "download.glb"],
+  ["model/gltf+json", "download.gltf"],
+  ["model/obj", "download.obj"],
 ]);
 
 function dataUrlFilename(mediaType) {
