@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
+import { createServer, request as httpRequest } from "node:http";
+import { once } from "node:events";
 import test from "node:test";
 import {
   healthPayload,
   isAudioShimPath,
   llmShimSuffix,
+  proxyToRouter,
   shimBudget,
   shimRequestHeaders,
   shimResponseHeaders,
@@ -75,4 +78,57 @@ test("health payload reports the Router URL without exposing the key", () => {
   assert.equal(payload.routerUrl, "http://router.test/v1");
   assert.equal(payload.hasRouterKey, true);
   assert.equal(JSON.stringify(payload).includes("sk-secret"), false);
+});
+
+test("closing a streaming client cancels the in-flight Router request", { timeout: 3_000 }, async () => {
+  let routerResponseClosed!: () => void;
+  const routerClosed = new Promise<void>((resolve) => {
+    routerResponseClosed = resolve;
+  });
+  const router = createServer((_req, res) => {
+    res.once("close", routerResponseClosed);
+    res.writeHead(200, { "content-type": "text/event-stream" });
+    res.write('data: {"choices":[{"delta":{"content":"token"}}]}\n\n');
+  });
+  const proxy = createServer((req, res) => {
+    proxyToRouter(req, res, {
+      LLM_GATEWAY_URL: `http://127.0.0.1:${(router.address() as { port: number }).port}/v1`,
+      OLARES_APP_ID: "lares",
+    });
+  });
+
+  try {
+    router.listen(0, "127.0.0.1");
+    await once(router, "listening");
+    proxy.listen(0, "127.0.0.1");
+    await once(proxy, "listening");
+
+    await new Promise<void>((resolve, reject) => {
+      const client = httpRequest({
+        host: "127.0.0.1",
+        port: (proxy.address() as { port: number }).port,
+        path: "/llm/v1/chat/completions",
+        method: "POST",
+        headers: { "content-type": "application/json" },
+      });
+      client.once("error", reject);
+      client.once("response", (response) => {
+        response.once("error", () => {});
+        response.once("data", () => {
+          response.destroy();
+          resolve();
+        });
+      });
+      client.end('{"stream":true,"messages":[]}');
+    });
+
+    await routerClosed;
+  } finally {
+    proxy.closeAllConnections();
+    router.closeAllConnections();
+    await Promise.all([
+      new Promise<void>((resolve) => proxy.close(() => resolve())),
+      new Promise<void>((resolve) => router.close(() => resolve())),
+    ]);
+  }
 });
