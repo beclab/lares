@@ -70,7 +70,26 @@ export class CatalogCache {
   }
 
   snapshot() {
-    return { payload: this.payload, rows: this.rows };
+    return { payload: this.payload, rows: this.rows, fetchedAt: this.fetchedAt };
+  }
+
+  /**
+   * Revert to a prior snapshot after a later consumer (settings, default
+   * selection) failed so search / STT / chat keep one catalog.
+   * @param {{ payload: unknown, rows?: unknown[], fetchedAt?: number } | null} snap
+   */
+  restore(snap) {
+    if (snap?.payload == null) {
+      this.payload = null;
+      this.rows = [];
+      this.fetchedAt = 0;
+      return;
+    }
+    this.payload = snap.payload;
+    this.rows = Array.isArray(snap.rows) ? snap.rows : routerCatalogRows(snap.payload);
+    this.fetchedAt = Number.isFinite(snap.fetchedAt) ? snap.fetchedAt : 0;
+    this.primed = true;
+    writeCatalogSeed(snap.payload, this.dataDir);
   }
 
   async get() {

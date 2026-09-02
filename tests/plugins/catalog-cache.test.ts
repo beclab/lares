@@ -109,3 +109,27 @@ test("an unreadable seed file is ignored and the cache fetches", async () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("restore reverts memory and the seed file after a later consumer failed", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "lares-catalog-restore-"));
+  try {
+    const first = { data: [{ id: "Qwen/old", mode: "chat" }] };
+    const next = { data: [{ id: "Qwen/new", mode: "chat" }] };
+    const cache = new CatalogCache({
+      ttlMs: 1_000,
+      dataDir: dir,
+      fetch: async () => new Response(JSON.stringify(next), { status: 200 }),
+      now: () => 1,
+    });
+    cache.seed(first);
+    const previous = cache.snapshot();
+    cache.invalidate();
+    await cache.get();
+    assert.equal(cache.snapshot().rows[0].id, "Qwen/new");
+    cache.restore(previous);
+    assert.equal(cache.snapshot().rows[0].id, "Qwen/old");
+    assert.equal(JSON.parse(readFileSync(join(dir, "router-catalog.json"), "utf8")).data[0].id, "Qwen/old");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

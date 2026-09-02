@@ -172,6 +172,8 @@ test("resolveWorkspaceFile confines real files and symlinks to the workspace", a
     writeFileSync(join(root, "notes.md"), "# hi\n");
     assert.equal(workspaceFileAlias(root, "/app/notes.md"), "notes.md");
     assert.equal(workspaceFileAlias(root, "/app/packages/notes.md"), null);
+    assert.equal(workspaceFileAlias(root, "/tmp/notes.md"), null);
+    assert.equal(workspaceFileAlias(root, "/etc/notes.md"), null);
     const aliased = await resolveWorkspaceFile(root, "/app/notes.md");
     assert.equal(aliased.path, "notes.md");
     await assert.rejects(
@@ -180,6 +182,10 @@ test("resolveWorkspaceFile confines real files and symlinks to the workspace", a
     );
     await assert.rejects(
       () => resolveWorkspaceFile(root, "/app/absent.md"),
+      (error: { code?: string }) => error.code === "path_forbidden",
+    );
+    await assert.rejects(
+      () => resolveWorkspaceFile(root, "/tmp/notes.md"),
       (error: { code?: string }) => error.code === "path_forbidden",
     );
     const fromRequest = await fileFromPreviewRequest(

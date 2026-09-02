@@ -182,6 +182,31 @@ test("concurrent Router refresh requests share one catalog update", async () => 
   }
 });
 
+test("a failed settings write leaves the catalog cache on the previous snapshot", async () => {
+  const { refreshCatalog, catalogRevision } = await catalogModule();
+  const previousFetch = globalThis.fetch;
+  catalogCache.reset();
+  catalogCache.seed({ data: [{ id: "Qwen/old", mode: "chat" }] });
+  const before = catalogRevision();
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ data: [{ id: "Qwen/new", mode: "chat" }] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  try {
+    const ctx = stubCtx();
+    ctx.settings.mutate = async () => {
+      throw new Error("settings locked");
+    };
+    await assert.rejects(() => refreshCatalog(ctx), /settings locked/);
+    assert.equal(catalogCache.snapshot().rows[0].id, "Qwen/old");
+    assert.equal(catalogRevision(), before);
+  } finally {
+    globalThis.fetch = previousFetch;
+    catalogCache.reset();
+  }
+});
+
 test("catalog lists only Router models even when community providers are registered", async () => {
   const { listCatalog } = await catalogModule();
   const asked: string[] = [];

@@ -15,18 +15,17 @@ export async function resolveWorkspaceRoot(workspacePath) {
 }
 
 /**
- * An absolute path outside the session workspace is not previewable. Writes
- * sometimes land as `/app/name.ext` (application root) while the open chip
- * still points there. A single filename under a filesystem root may alias the
- * same name in the workspace — never a nested path (`/app/packages/x`).
+ * Preview only serves the session workspace. Agents sometimes write
+ * `/app/name.ext` (the application overlay) while the open chip still points
+ * there; alias that basename into the workspace. Nested overlay paths
+ * (`/app/packages/x`) and any other filesystem root (`/tmp/x`) stay forbidden.
  */
 export function workspaceFileAlias(root, requestedPath) {
   if (typeof requestedPath !== "string" || !isAbsolute(requestedPath)) return null;
   if (isInsideWorkspace(root, requestedPath)) return null;
+  if (dirname(requestedPath) !== "/app") return null;
   const base = basename(requestedPath);
   if (!base || base === "." || base === "..") return null;
-  const parentRel = relative("/", dirname(requestedPath));
-  if (parentRel === "" || parentRel.includes("/") || parentRel.startsWith("..")) return null;
   return base;
 }
 

@@ -11,6 +11,7 @@ import {
   pickDefaultModel,
   unregisteredRouterFailure,
 } from "./models.js";
+import { forgetSttModel } from "./stt.js";
 
 function messageOf(err) {
   return err instanceof Error ? err.message : String(err);
@@ -43,16 +44,23 @@ function bumpRevision() {
  * }} ports
  */
 async function performRefresh(ports) {
+  const previous = catalogCache.snapshot();
   catalogCache.invalidate();
-  const { payload } = await catalogCache.get();
-  const models = chatModelsFromRouterCatalog(payload);
-  await ports.mutateSettings(LLM_SETTINGS_NS, catalogSettingsOps(models));
-  const current = ports.currentSelection();
-  if (defaultNeedsRepair(current, models)) {
-    await ports.saveSelection({ provider: ROUTER_PROVIDER_ID, model: pickDefaultModel(models).id });
+  try {
+    const { payload } = await catalogCache.get();
+    const models = chatModelsFromRouterCatalog(payload);
+    await ports.mutateSettings(LLM_SETTINGS_NS, catalogSettingsOps(models));
+    const current = ports.currentSelection();
+    if (defaultNeedsRepair(current, models)) {
+      await ports.saveSelection({ provider: ROUTER_PROVIDER_ID, model: pickDefaultModel(models).id });
+    }
+    forgetSttModel();
+    bumpRevision();
+    return models;
+  } catch (err) {
+    catalogCache.restore(previous);
+    throw err;
   }
-  bumpRevision();
-  return models;
 }
 
 const coalesceRefresh = createInFlightCoalescer();

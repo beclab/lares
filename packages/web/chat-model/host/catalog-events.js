@@ -30,7 +30,10 @@ export async function watchRouterCatalog(onSignal, options = {}) {
       onSignal();
     }
   })();
-  consume.catch(() => {});
+  consume.catch((err) => {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`[lares] router catalog subscription ended: ${message}`);
+  });
 
   return {
     close() {

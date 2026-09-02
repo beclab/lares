@@ -86,6 +86,10 @@ function isModelsGet(req) {
 function serveCachedModels(req, res) {
   void catalogCache.get().then(
     ({ payload }) => {
+      if (res.headersSent) {
+        res.destroy();
+        return;
+      }
       if ((req.method ?? "GET").toUpperCase() === "HEAD") {
         res.writeHead(200, { "content-type": "application/json" });
         res.end();
@@ -93,7 +97,13 @@ function serveCachedModels(req, res) {
       }
       sendJson(res, 200, payload);
     },
-    (err) => sendError(res, err, "llm_proxy_failed"),
+    (err) => {
+      if (res.headersSent) {
+        res.destroy();
+        return;
+      }
+      sendError(res, err, "llm_proxy_failed");
+    },
   );
 }
 

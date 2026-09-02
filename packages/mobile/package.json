@@ -1,6 +1,6 @@
 {
   "name": "@olares/lares-mobile",
-  "version": "0.15.1",
+  "version": "0.15.2",
   "description": "Lares chat component for LarePass",
   "type": "module",
   "repository": {
@@ -28,7 +28,7 @@
     "vue": "^3.2.0"
   },
   "dependencies": {
-    "@olares/lares-core": "0.15.1",
+    "@olares/lares-core": "0.15.2",
     "markdown-it": "^14.3.0"
   }
 }
