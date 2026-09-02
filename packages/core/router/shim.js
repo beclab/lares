@@ -43,7 +43,9 @@ export function shimBudget(suffix) {
   };
 }
 
+/** @returns {Record<string, string>} */
 export function shimRequestHeaders(incoming, env = process.env) {
+  /** @type {Record<string, string>} */
   const headers = {};
   for (const [key, value] of Object.entries(incoming)) {
     if (value == null || DROPPED_REQ.has(key.toLowerCase())) continue;
@@ -107,6 +109,36 @@ function serveCachedModels(req, res) {
   );
 }
 
+function downstreamCancellation(req, res) {
+  const controller = new AbortController();
+  let finished = false;
+
+  const cleanup = () => {
+    req.off("aborted", cancel);
+    res.off("finish", finish);
+    res.off("close", close);
+  };
+  const cancel = () => {
+    if (!controller.signal.aborted) {
+      controller.abort(new Error("LLM downstream disconnected"));
+    }
+    cleanup();
+  };
+  const finish = () => {
+    finished = true;
+    cleanup();
+  };
+  const close = () => {
+    if (!finished) cancel();
+    else cleanup();
+  };
+
+  req.once("aborted", cancel);
+  res.once("finish", finish);
+  res.once("close", close);
+  return controller;
+}
+
 export function proxyToRouter(req, res, env = process.env) {
   if (isModelsGet(req)) {
     serveCachedModels(req, res);
@@ -121,6 +153,7 @@ export function proxyToRouter(req, res, env = process.env) {
   const headers = shimRequestHeaders(req.headers, env);
   const transport = target.protocol === "https:" ? httpsRequest : httpRequest;
   const method = (req.method ?? "GET").toUpperCase();
+  const cancellation = downstreamCancellation(req, res);
 
   const run = async () => {
     let body;
@@ -132,16 +165,22 @@ export function proxyToRouter(req, res, env = process.env) {
       if (!budget.audio && carriesWebpImage(body)) body = await transcodeWebpImages(body);
       headers["content-length"] = String(body.length);
     }
+    if (cancellation.signal.aborted) return;
 
     const upstream = transport(
       target,
-      { method, headers, timeout: budget.timeoutMs },
+      { method, headers, timeout: budget.timeoutMs, signal: cancellation.signal },
       (up) => {
+        if (cancellation.signal.aborted) {
+          up.destroy();
+          return;
+        }
         res.writeHead(up.statusCode ?? 502, shimResponseHeaders(up.headers));
         up.pipe(res);
       },
     );
     upstream.on("error", (err) => {
+      if (cancellation.signal.aborted) return;
       if (res.headersSent) {
         res.destroy();
         return;
@@ -161,6 +200,7 @@ export function proxyToRouter(req, res, env = process.env) {
   };
 
   void run().catch((err) => {
+    if (cancellation.signal.aborted) return;
     if (res.headersSent) {
       res.destroy();
       return;
