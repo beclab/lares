@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Bundle every dsh client half under packages/plugins/<name>/src/client
+ * Bundle every dsh client half under packages/web/<name>/src/client
  * into the repo-root dist/plugins/<name>/client.js (alongside tsc server output).
  *
  * Delivery shape: window.__ModuleLoader__.load({ id, factory(require){...} }).
@@ -16,8 +16,9 @@ import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const PLUGINS = join(ROOT, "packages", "plugins");
+const PLUGINS = join(ROOT, "packages", "web");
 const DIST_PLUGINS = join(ROOT, "dist", "plugins");
+const CORE = join(ROOT, "packages", "core");
 
 /** Frozen module table seeds — must stay external (browser require). */
 const PLATFORM_EXTERNALS = [
@@ -33,17 +34,34 @@ const PLATFORM_EXTERNALS = [
   "@deepseek-ai/dsh-client-schema-form",
 ];
 
+/** Bundled into the plugin factory — not a dsh platform seed. */
+const BUNDLED_BARE = /^(?:three|three\/)/;
+
+function laresCorePlugin() {
+  return {
+    name: "lares-core",
+    setup(build) {
+      build.onResolve({ filter: /^@olares\/lares-core\// }, (args) => {
+        const subpath = args.path.slice("@olares/lares-core/".length);
+        return { path: join(CORE, `${subpath}.js`) };
+      });
+    },
+  };
+}
+
 function platformExternalsPlugin() {
   const allowed = new Set(PLATFORM_EXTERNALS);
   return {
     name: "dsh-platform-externals",
     setup(build) {
       build.onResolve({ filter: /^[^./]|^@/ }, (args) => {
+        if (args.path.startsWith("@olares/lares-core/")) return;
         if (allowed.has(args.path)) return { path: args.path, external: true };
+        if (BUNDLED_BARE.test(args.path)) return;
         return {
           errors: [
             {
-              text: `Unsupported bare client import ${JSON.stringify(args.path)}; use a relative source import or a dsh platform seed`,
+              text: `Unsupported bare client import ${JSON.stringify(args.path)}; use a relative source import, @olares/lares-core/*, or a dsh platform seed`,
             },
           ],
         };
@@ -132,7 +150,7 @@ async function buildOne(target) {
     platform: "browser",
     target: ["es2020"],
     logLevel: "silent",
-    plugins: [platformExternalsPlugin(), cssTextPlugin()],
+    plugins: [laresCorePlugin(), platformExternalsPlugin(), cssTextPlugin()],
     minify: false,
     legalComments: "none",
     sourcemap: true,
@@ -144,7 +162,7 @@ async function buildOne(target) {
 
 const targets = await discoverTargets();
 if (targets.length === 0) {
-  console.log("build-client: no packages/plugins/*/src/client/index.js targets");
+  console.log("build-client: no packages/web/*/src/client/index.js targets");
   process.exit(0);
 }
 

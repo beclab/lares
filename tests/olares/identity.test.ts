@@ -2,15 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-const identityPath = resolve(HERE, "../../packages/plugins/bundle-web/host/olares/identity.js");
-const sessionPath = resolve(HERE, "../../packages/plugins/bundle-web/host/olares/session-identity.js");
-
-const { ensureCliProfile, identityFromHeaders } = await import(identityPath);
-const { rememberSessionIdentity, getSessionIdentity } = await import(sessionPath);
+import { join } from "node:path";
+import { ensureCliProfile, identityFromHeaders } from "@olares/lares-core/olares/identity";
+import { rememberSessionIdentity, getSessionIdentity } from "@olares/lares-core/olares/session-identity";
 
 test("identityFromHeaders reads edge cookie and user", () => {
   const identity = identityFromHeaders(new Headers({

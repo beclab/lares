@@ -8,8 +8,8 @@ import {
   createRouteHandler,
   readJsonObject,
   sendJson,
-} from "../../packages/plugins/shared/host/http.js";
-import { resolveSessionWorkspace } from "../../packages/plugins/shared/host/session-workspace.js";
+} from "@olares/lares-core/tools/http";
+import { resolveSessionWorkspace } from "@olares/lares-core/workspace/session";
 
 function request(method: string, url: string, body = "") {
   const req = Object.assign(new EventEmitter(), { method, url });

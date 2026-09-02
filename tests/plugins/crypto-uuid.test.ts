@@ -8,7 +8,7 @@ import { webcrypto } from "node:crypto";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
-const pluginPath = resolve(HERE, "../../packages/plugins/bundle-web/host/crypto-uuid.js");
+const pluginPath = resolve(HERE, "../../packages/web/dsh-overlay/host/crypto-uuid.js");
 
 const { UUID_SHIM, injectUuidShim } = await import(pluginPath);
 

@@ -338,10 +338,13 @@ ensure_dest_dir() {
   fi
 }
 
-# App root layout at DEST_DIR (/app): package.json, dist/, packages/{service,plugins,skills}
+# App root layout at DEST_DIR (/app): package.json, dist/, packages/{service,core,web,mobile,skills}
 APP_ROOT="${REPO_ROOT}"
 
 RSYNC_EXCLUDES=(
+  # Skills are Markdown source. macOS stock rsync has no `**`, so spell the depths.
+  --include 'packages/skills/*/*.md'
+  --include 'packages/skills/*/*/*.md'
   --exclude 'node_modules/'
   --exclude '.next/'
   --exclude '.git/'

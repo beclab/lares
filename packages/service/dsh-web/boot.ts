@@ -11,10 +11,7 @@ import {
 } from "../olares/router-models.js";
 import { seedOlaresSkills } from "../olares/skills-seed.js";
 import { seedWorkspaceAgents } from "../dsh/agents-seed.js";
-// Plugin Host halves ship as source under packages/ and are never compiled into
-// dist/, so the specifier must climb out of the emit tree (dist/ and packages/
-// sit at the same depth under the app root).
-import { identityPrompt } from "../../../packages/plugins/bundle-web/host/brand/identity.js";
+import { identityPrompt } from "@olares/lares-core/brand/identity";
 import {
   ensureLaresWebProfile,
   installProfileDeps,
@@ -70,7 +67,7 @@ export async function bootLaresWeb(): Promise<void> {
     ?? process.env.DSH_MODEL?.trim()
     ?? null;
   // dsh CLI rejects --host 0.0.0.0; actual bind is forced to 0.0.0.0 in
-  // @lares/bundle-web webserver patch for K8s probes / mesh.
+  // @lares/dsh-overlay webserver patch for K8s probes / mesh.
   const cliHost = "127.0.0.1";
   const bindHost = "0.0.0.0";
   const dshBin = resolveDshBin();

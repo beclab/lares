@@ -11,23 +11,25 @@ const require = createRequire(import.meta.url);
 const HERE = dirname(fileURLToPath(import.meta.url));
 /** Repo root / container `/app` (sibling of `packages/` or `dist/`). */
 const APP_ROOT = join(HERE, "../../..");
-const BUNDLE_WEB = join(APP_ROOT, "packages", "plugins", "bundle-web");
-const CLIENT_LARES = join(APP_ROOT, "packages", "plugins", "client-lares");
-const VOICE_INPUT = join(APP_ROOT, "packages", "plugins", "voice-input");
-const FILE_INPUT = join(APP_ROOT, "packages", "plugins", "file-input");
-const FILE_PREVIEW = join(APP_ROOT, "packages", "plugins", "file-preview");
-const DRIVE_IMPORT = join(APP_ROOT, "packages", "plugins", "drive-import");
-const WEB_SEARCH = join(APP_ROOT, "packages", "plugins", "web-search");
-const MODELS = join(APP_ROOT, "packages", "plugins", "models");
+const DSH_OVERLAY = join(APP_ROOT, "packages", "web", "dsh-overlay");
+const BRAND = join(APP_ROOT, "packages", "web", "brand");
+const COMPOSER_VOICE = join(APP_ROOT, "packages", "web", "composer-voice");
+const COMPOSER_ATTACH = join(APP_ROOT, "packages", "web", "composer-attach");
+const WORKSPACE_PREVIEW = join(APP_ROOT, "packages", "web", "workspace-preview");
+const WORKSPACE_PREVIEW_3D = join(APP_ROOT, "packages", "web", "workspace-preview-3d");
+const WORKSPACE_ARTIFACTS = join(APP_ROOT, "packages", "web", "workspace-artifacts");
+const ROUTER_SEARCH = join(APP_ROOT, "packages", "web", "router-search");
+const CHAT_MODEL = join(APP_ROOT, "packages", "web", "chat-model");
 const LOCAL_PROFILE_PACKAGES = [
-  ["@lares/bundle-web", BUNDLE_WEB],
-  ["@lares/client-lares", CLIENT_LARES],
-  ["@lares/voice-input", VOICE_INPUT],
-  ["@lares/file-input", FILE_INPUT],
-  ["@lares/file-preview", FILE_PREVIEW],
-  ["@lares/drive-import", DRIVE_IMPORT],
-  ["@lares/web-search", WEB_SEARCH],
-  ["@lares/models", MODELS],
+  ["@lares/dsh-overlay", DSH_OVERLAY],
+  ["@lares/brand", BRAND],
+  ["@lares/composer-voice", COMPOSER_VOICE],
+  ["@lares/composer-attach", COMPOSER_ATTACH],
+  ["@lares/workspace-preview", WORKSPACE_PREVIEW],
+  ["@lares/workspace-preview-3d", WORKSPACE_PREVIEW_3D],
+  ["@lares/workspace-artifacts", WORKSPACE_ARTIFACTS],
+  ["@lares/router-search", ROUTER_SEARCH],
+  ["@lares/chat-model", CHAT_MODEL],
 ] as const;
 
 const SHELL_BUNDLES = ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app"] as const;
@@ -40,7 +42,7 @@ const SHELL_BUNDLES = ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app"] as c
  * skipped. A community bundle mounts itself by inserting its own row, so
  * `cordis.patch.yml` can configure or disable one only from behind it.
  */
-const LARES_BUNDLE = "@lares/bundle-web";
+const LARES_BUNDLE = "@lares/dsh-overlay";
 
 const OWNED_BUNDLES: readonly string[] = [...SHELL_BUNDLES, LARES_BUNDLE];
 
@@ -71,9 +73,6 @@ export function ensureLaresWebProfile(dataDir: string): { dshHome: string; profi
     }
   }
 
-  const externalDependencies = Object.fromEntries(
-    Object.entries(previous.dependencies ?? {}).filter(([name]) => !name.startsWith("@lares/")),
-  );
   const extraBundles = (previous.dsh?.profile?.bundles ?? []).filter(
     (name) => !OWNED_BUNDLES.includes(name) && !name.startsWith("@lares/"),
   );
@@ -84,15 +83,12 @@ export function ensureLaresWebProfile(dataDir: string): { dshHome: string; profi
     private: true,
     type: "module",
     dependencies: {
-      ...externalDependencies,
-      "@lares/bundle-web": `file:${BUNDLE_WEB}`,
-      "@lares/client-lares": `file:${CLIENT_LARES}`,
-      "@lares/voice-input": `file:${VOICE_INPUT}`,
-      "@lares/file-input": `file:${FILE_INPUT}`,
-      "@lares/file-preview": `file:${FILE_PREVIEW}`,
-      "@lares/drive-import": `file:${DRIVE_IMPORT}`,
-      "@lares/web-search": `file:${WEB_SEARCH}`,
-      "@lares/models": `file:${MODELS}`,
+      ...Object.fromEntries(
+        Object.entries(previous.dependencies ?? {}).filter(([name]) => !name.startsWith("@lares/")),
+      ),
+      ...Object.fromEntries(
+        LOCAL_PROFILE_PACKAGES.map(([name, dir]) => [name, `file:${dir}`]),
+      ),
     },
     ...(previous.pnpm ? { pnpm: previous.pnpm } : {}),
     dsh: {
@@ -287,7 +283,7 @@ export function sectionComponentNavIcon(source: string): string {
  * The registered component does survive, so a section carries its glyph as a
  * `navIcon` static and the nav-row projection reads it there. Each glyph stays
  * owned by the feature that owns the section (web-search's globe,
- * voice-input's mic) rather than being centralised in a patch, and sections
+ * composer-voice's mic) rather than being centralised in a patch, and sections
  * without the static keep upstream's switch.
  *
  * Remove once the settings.section contract accepts an icon.

@@ -59,11 +59,23 @@ if [[ "$DO_BASE" -eq 0 ]] && ! docker image inspect "$BASE_IMAGE" >/dev/null 2>&
   DO_BASE=1
 fi
 
+if [[ "$DO_BASE" -eq 1 && "$DO_PUSH" -eq 0 ]]; then
+  echo "Building base $BASE_IMAGE and app $IMAGE together for $PLATFORM"
+  # A docker-container BuildKit cannot consume an image that a prior --load
+  # placed in the host daemon. The target context keeps the app's FROM attached
+  # to this exact base build instead of silently pulling an older registry tag.
+  PLATFORM="$PLATFORM" BASE_IMAGE="$BASE_IMAGE" IMAGE="$IMAGE" \
+    docker buildx bake -f docker-bake.hcl base app --load
+  echo "Done: $IMAGE"
+  echo "base: $BASE_IMAGE"
+  echo "deploy/${APP_NAME}/values.yaml must reference the app tag."
+  echo "测试分发: scripts/deploy-image.sh <机器号>   # save + SSH + ctr import"
+  exit 0
+fi
+
 if [[ "$DO_BASE" -eq 1 ]]; then
   echo "Building base $BASE_IMAGE for $PLATFORM (OS + CLI + npm deps)"
-  if [[ "$DO_PUSH" -eq 1 ]]; then
-    echo "WARNING: --push 仅用于明确发版；测试请改用 scripts/deploy-image.sh <机器号>"
-  fi
+  echo "WARNING: --push 仅用于明确发版；测试请改用 scripts/deploy-image.sh <机器号>"
   build_one -f Dockerfile.base -t "$BASE_IMAGE" .
 fi
 

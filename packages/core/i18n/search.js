@@ -1,0 +1,33 @@
+export const ZH = {
+  "settings.title": "网络搜索",
+  "settings.intro": "使用 Router 中已配置的搜索服务，无需在 Lares 中重复填写密钥。",
+  "settings.refresh": "刷新",
+  "settings.refreshing": "刷新中…",
+  "settings.router": "Router 控制台",
+  "settings.loading": "正在读取 Router 搜索服务…",
+  "settings.status.ready": "网络搜索可用 · 默认服务 {model}",
+  "settings.status.notReady": "网络搜索尚不可用，请先在 Olares Router 配置并选择默认搜索服务",
+  "settings.default": "默认搜索服务",
+  "settings.default.none": "未选择",
+  "settings.default.empty": "Router 中没有可用的搜索服务",
+  "settings.loadFailed": "读取 Router 搜索服务失败：{msg}",
+  "settings.refreshFailed": "刷新 Router 搜索服务失败：{msg}",
+  "settings.saveFailed": "设置默认搜索服务失败：{msg}",
+};
+
+export const EN = {
+  "settings.title": "Web search",
+  "settings.intro": "Use a search service configured in Router without entering its credentials again.",
+  "settings.refresh": "Refresh",
+  "settings.refreshing": "Refreshing…",
+  "settings.router": "Router console",
+  "settings.loading": "Loading Router search services…",
+  "settings.status.ready": "Web search ready · default service {model}",
+  "settings.status.notReady": "Web search unavailable; configure and select a default service in Olares Router",
+  "settings.default": "Default search service",
+  "settings.default.none": "None",
+  "settings.default.empty": "No search service is available in Router",
+  "settings.loadFailed": "Failed to load Router search services: {msg}",
+  "settings.refreshFailed": "Failed to refresh Router search services: {msg}",
+  "settings.saveFailed": "Failed to set the default search service: {msg}",
+};

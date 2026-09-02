@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { watchCatalogRevision } from "../../packages/plugins/shared/client/catalog-events.js";
-import { watchRouterCatalog } from "../../packages/plugins/shared/host/catalog-events.js";
+import { watchCatalogRevision } from "../../packages/web/shared/client/catalog-events.js";
+import { watchRouterCatalog } from "../../packages/web/chat-model/host/catalog-events.js";
 
 test("watchRouterCatalog is a no-op when the NATS URL is empty", async () => {
   assert.equal(await watchRouterCatalog(() => {}, { env: {} }), null);

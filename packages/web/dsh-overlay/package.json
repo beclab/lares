@@ -1,0 +1,24 @@
+{
+  "name": "@lares/dsh-overlay",
+  "version": "0.15.0",
+  "private": true,
+  "type": "module",
+  "description": "Lares overlay on dsh-base + dsh-web-app: LLM shim, Olares identity, workspace seed",
+  "exports": {
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./host/crypto-uuid.js": "./host/crypto-uuid.js",
+    "./host/llm-routes.js": "./host/llm-routes.js",
+    "./host/olares/olares-identity.js": "./host/olares/olares-identity.js",
+    "./host/default-workspace.js": "./host/default-workspace.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "files": [
+    "cordis.patch.yml",
+    "host"
+  ]
+}

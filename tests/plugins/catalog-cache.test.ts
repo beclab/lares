@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { CatalogCache, writeCatalogSeed } from "../../packages/plugins/shared/host/catalog-cache.js";
+import { CatalogCache, writeCatalogSeed } from "../../packages/core/router/catalog-cache.js";
 
 const payload = { data: [{ id: "Qwen/chat", mode: "chat" }] };
 
@@ -105,6 +105,30 @@ test("an unreadable seed file is ignored and the cache fetches", async () => {
     const cache = new CatalogCache({ ttlMs: 1_000, dataDir: dir, fetch: fetchImpl, now: () => 1 });
     await cache.get();
     assert.equal(calls(), 1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("restore reverts memory and the seed file after a later consumer failed", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "lares-catalog-restore-"));
+  try {
+    const first = { data: [{ id: "Qwen/old", mode: "chat" }] };
+    const next = { data: [{ id: "Qwen/new", mode: "chat" }] };
+    const cache = new CatalogCache({
+      ttlMs: 1_000,
+      dataDir: dir,
+      fetch: async () => new Response(JSON.stringify(next), { status: 200 }),
+      now: () => 1,
+    });
+    cache.seed(first);
+    const previous = cache.snapshot();
+    cache.invalidate();
+    await cache.get();
+    assert.equal(cache.snapshot().rows[0].id, "Qwen/new");
+    cache.restore(previous);
+    assert.equal(cache.snapshot().rows[0].id, "Qwen/old");
+    assert.equal(JSON.parse(readFileSync(join(dir, "router-catalog.json"), "utf8")).data[0].id, "Qwen/old");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

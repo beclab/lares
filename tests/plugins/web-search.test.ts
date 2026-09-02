@@ -3,11 +3,41 @@ import test from "node:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  searchDefaultReady,
+  searchMenuValue,
+  searchSelectorItems,
+  searchValueFromMenu,
+} from "@olares/lares-core/search/menu";
+import { searchWebErrorCode } from "@olares/lares-core/router/search";
+
+test("search settings map none to an unset default", () => {
+  assert.equal(searchMenuValue(null), "none");
+  assert.equal(searchValueFromMenu("none"), null);
+  assert.equal(searchDefaultReady([{ id: "tavily/search" }], "tavily/search"), true);
+  assert.equal(searchDefaultReady([{ id: "tavily/search" }], "missing"), false);
+  assert.deepEqual(searchSelectorItems([], { none: "None", empty: "No services" }), [
+    { id: "none", label: "No services" },
+  ]);
+  assert.deepEqual(
+    searchSelectorItems([{ id: "tavily/search", name: "Tavily" }], { none: "None", empty: "No services" }),
+    [
+      { id: "none", label: "None" },
+      { id: "tavily/search", label: "Tavily" },
+    ],
+  );
+});
+
+test("SearchError codes map onto dsh WebError codes", () => {
+  assert.equal(searchWebErrorCode("no_model"), "WEB_PROVIDER_CONFIGURED_UNAVAILABLE");
+  assert.equal(searchWebErrorCode("aborted"), "WEB_ABORTED");
+  assert.equal(searchWebErrorCode("unknown"), "WEB_PROVIDER_ERROR");
+});
 
 test("Router catalog exposes only search models", async () => {
-  const { searchModelsFromRouterCatalog } = await import(
-    `../../packages/plugins/web-search/host/router.js?catalog=${Date.now()}`
-  );
+    const { searchModelsFromRouterCatalog } = await import(
+      `../../packages/core/router/search.js?catalog=${Date.now()}`
+    );
   assert.deepEqual(
     searchModelsFromRouterCatalog({
       data: [
@@ -32,14 +62,14 @@ test("default search model must come from the live Router catalog", async () => 
   process.env.DSH_HOME = home;
   try {
     const { readConfig, setDefaultSearchModel } = await import(
-      `../../packages/plugins/web-search/host/config.js?config=${Date.now()}`
+      `../../packages/core/search/config.js?config=${Date.now()}`
     );
     const available = [{ id: "tavily/search" }];
 
     assert.equal(readConfig().defaultSearchModel, null);
     assert.throws(
       () => setDefaultSearchModel("missing/search", available),
-      (err: { code?: string }) => err.code === "not_available",
+      (err: { code?: string; status?: number }) => err.code === "not_available" && err.status === 400,
     );
 
     const saved = setDefaultSearchModel("  tavily/search  ", available);
@@ -65,15 +95,15 @@ test("reading a temporarily incomplete Router catalog does not erase the saved d
       status: 200,
       headers: { "content-type": "application/json" },
     });
-  const { catalogCache } = await import("../../packages/plugins/shared/host/catalog-cache.js");
+  const { catalogCache } = await import("../../packages/core/router/catalog-cache.js");
   catalogCache.reset();
   try {
     const { setDefaultSearchModel, readConfig } = await import(
-      `../../packages/plugins/web-search/host/config.js?read=${Date.now()}`
+      `../../packages/core/search/config.js?read=${Date.now()}`
     );
     setDefaultSearchModel("tavily/search", [{ id: "tavily/search" }]);
     const { currentConfig } = await import(
-      `../../packages/plugins/web-search/host/index.js?read=${Date.now()}`
+      `../../packages/web/router-search/host/index.js?read=${Date.now()}`
     );
     assert.deepEqual(await currentConfig(), {
       defaultSearchModel: "tavily/search",
@@ -99,7 +129,7 @@ test("Router list and search use the same gateway identity as LLM calls", async 
   process.env.OLARES_APP_ID = "lares";
   delete process.env.LARES_ROUTER_API_KEY;
 
-  const { catalogCache } = await import("../../packages/plugins/shared/host/catalog-cache.js");
+  const { catalogCache } = await import("../../packages/core/router/catalog-cache.js");
   catalogCache.reset();
 
   const originalFetch = globalThis.fetch;
@@ -132,7 +162,7 @@ test("Router list and search use the same gateway identity as LLM calls", async 
 
   try {
     const { fetchRouterSearchModels, routerSearch } = await import(
-      `../../packages/plugins/web-search/host/router.js?http=${Date.now()}`
+      `../../packages/web/router-search/host/router.js?http=${Date.now()}`
     );
     assert.deepEqual(await fetchRouterSearchModels(), [
       { id: "tavily/search", name: "tavily/search" },
@@ -171,7 +201,7 @@ test("Router search distinguishes its timeout from caller cancellation", async (
     });
   try {
     const { routerSearch } = await import(
-      `../../packages/plugins/web-search/host/router.js?timeout=${Date.now()}`
+      `../../packages/web/router-search/host/router.js?timeout=${Date.now()}`
     );
     await assert.rejects(
       () => routerSearch("tavily/search", "news", { timeoutMs: 1 }),
@@ -201,10 +231,10 @@ test("dsh search facade follows the selected Router model", async () => {
   const originalFetch = globalThis.fetch;
   try {
     const { setDefaultSearchModel } = await import(
-      `../../packages/plugins/web-search/host/config.js?facade=${Date.now()}`
+      `../../packages/core/search/config.js?facade=${Date.now()}`
     );
     const { createLaresSearchProvider } = await import(
-      `../../packages/plugins/web-search/host/provider.js?facade=${Date.now()}`
+      `../../packages/web/router-search/host/provider.js?facade=${Date.now()}`
     );
     const provider = createLaresSearchProvider();
     assert.equal(provider.available(), false);

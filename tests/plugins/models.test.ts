@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { catalogCache } from "../../packages/plugins/shared/host/catalog-cache.js";
+import { catalogCache } from "../../packages/core/router/catalog-cache.js";
 
 type Ctx = {
   llm: {
@@ -18,7 +18,7 @@ type Ctx = {
 };
 
 function catalogModule() {
-  return import(`../../packages/plugins/models/host/catalog.js?t=${Date.now()}`);
+  return import(`../../packages/web/chat-model/host/catalog.js?t=${Date.now()}`);
 }
 
 function stubCtx(overrides: Partial<Ctx["llm"]> = {}, saved: unknown[] = [], mutations: unknown[] = []): Ctx {
@@ -176,6 +176,31 @@ test("concurrent Router refresh requests share one catalog update", async () => 
     const ctx = stubCtx();
     await Promise.all([refreshCatalog(ctx), refreshCatalog(ctx)]);
     assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = previousFetch;
+    catalogCache.reset();
+  }
+});
+
+test("a failed settings write leaves the catalog cache on the previous snapshot", async () => {
+  const { refreshCatalog, catalogRevision } = await catalogModule();
+  const previousFetch = globalThis.fetch;
+  catalogCache.reset();
+  catalogCache.seed({ data: [{ id: "Qwen/old", mode: "chat" }] });
+  const before = catalogRevision();
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ data: [{ id: "Qwen/new", mode: "chat" }] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  try {
+    const ctx = stubCtx();
+    ctx.settings.mutate = async () => {
+      throw new Error("settings locked");
+    };
+    await assert.rejects(() => refreshCatalog(ctx), /settings locked/);
+    assert.equal(catalogCache.snapshot().rows[0].id, "Qwen/old");
+    assert.equal(catalogRevision(), before);
   } finally {
     globalThis.fetch = previousFetch;
     catalogCache.reset();

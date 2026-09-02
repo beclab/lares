@@ -13,24 +13,25 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
-import { createUploadHandler } from "../../packages/plugins/file-input/host/index.js";
+import { createUploadHandler } from "../../packages/web/composer-attach/host/index.js";
 import {
   numberedName,
   saveUpload,
   sanitizeFilename,
-} from "../../packages/plugins/file-input/host/storage.js";
-import { uploadFile } from "../../packages/plugins/file-input/src/client/api.js";
+} from "@olares/lares-core/files/upload";
+import { uploadFile } from "@olares/lares-core/files/upload-client";
 import {
-  claimComposerBlock,
-  documentPasteFiles,
   FileIntake,
+  claimComposerBlock,
+  commitComposerImages,
+  composerDropHasDocuments,
+  composerPasteInCard,
+  documentPasteFiles,
+  partitionDocumentsBySize,
   splitComposerFiles,
-} from "../../packages/plugins/file-input/src/client/intake.js";
-import {
-  insertUploadReferences,
-  uploadReference,
-} from "../../packages/plugins/file-input/src/client/reference.js";
-import { createPreviewHandler } from "../../packages/plugins/file-preview/host/index.js";
+} from "@olares/lares-core/files/intake";
+import { appendDraftMentions, createUploadCommit, insertUploadReferences, uploadReference } from "@olares/lares-core/files/mention";
+import { createPreviewHandler } from "../../packages/web/workspace-preview/host/index.js";
 
 type FakeRequest = Readable & { headers: Record<string, string> };
 
@@ -221,6 +222,10 @@ test("document intake commits paths only after upload succeeds", async () => {
     images: [image],
     documents: [markdown],
   });
+  assert.deepEqual(partitionDocumentsBySize([markdown, { ...markdown, size: 99 }], 10), {
+    accepted: [markdown],
+    oversized: [{ ...markdown, size: 99 }],
+  });
 
   const intake = new FileIntake(async () => ({
     path: ".lares/uploads/季度经营分析_2026Q2.md",
@@ -232,6 +237,15 @@ test("document intake commits paths only after upload succeeds", async () => {
   assert.equal(input.state.getSnapshot().draft, "分析 @季度经营分析_2026Q2.md ");
   assert.equal(input.persisted(), "分析 @.lares/uploads/季度经营分析_2026Q2.md ");
   assert.deepEqual(intake.getSnapshot("s1"), { pending: 0, failures: [] });
+});
+
+test("appendDraftMentions spaces mentions for a plain composer draft", () => {
+  assert.equal(appendDraftMentions("", [".lares/uploads/a.md"]), "@.lares/uploads/a.md");
+  assert.equal(
+    appendDraftMentions("看这个", [".lares/uploads/a.md", ".lares/uploads/b.md"]),
+    "看这个 @.lares/uploads/a.md @.lares/uploads/b.md",
+  );
+  assert.equal(appendDraftMentions("已有 ", [".lares/uploads/c.md"]), "已有 @.lares/uploads/c.md");
 });
 
 test("an uploaded file becomes a file reference the model still sees as a path", () => {
@@ -308,6 +322,38 @@ test("document intake cancellation leaves no path or failure behind", async () =
   assert.deepEqual(intake.getSnapshot("s1"), { pending: 0, failures: [] });
 });
 
+test("composer paste/drop only claims documents inside the composer card", () => {
+  assert.equal(composerPasteInCard({ closest: (sel: string) => (sel === "[data-composer-card]" ? {} : null) }), true);
+  assert.equal(composerPasteInCard({ closest: () => null }), false);
+  assert.equal(composerDropHasDocuments([{ type: "image/png" }]), false);
+  assert.equal(composerDropHasDocuments([{ type: "text/markdown" }]), true);
+});
+
+test("draft image insert reports blocked and rolls back attachments", () => {
+  const failures: string[] = [];
+  const files = [{ name: "a.png" }];
+  commitComposerImages({
+    createDraftImages: () => [{ id: "img-1" }],
+    addImages: () => false,
+    releaseDraftImages: () => {},
+    reportFailure: (_id: string, _file: unknown, code: string) => failures.push(code),
+  }, files, "s1");
+  assert.deepEqual(failures, ["file_input_blocked"]);
+});
+
+test("createUploadCommit skips a session that has already closed", () => {
+  const notices: string[] = [];
+  const commit = createUploadCommit({
+    scopeSession: () => undefined,
+    inputFor: () => {
+      throw new Error("should not open input");
+    },
+    unlinkedMessage: (path: string) => path,
+  });
+  commit("gone")([".lares/uploads/a.md"]);
+  assert.deepEqual(notices, []);
+});
+
 test("composer upload block clears only when it still owns the block", () => {
   let current: { reason: string } | undefined;
   const registry = {
@@ -328,18 +374,21 @@ test("composer upload block clears only when it still owns the block", () => {
 
 test("uploadFile makes one request and leaves retry to the user", async () => {
   const original = globalThis.fetch;
-  let calls = 0;
-  globalThis.fetch = (async () => {
-    calls += 1;
+  const calls: string[] = [];
+  globalThis.fetch = (async (url: string) => {
+    calls.push(String(url));
     throw new TypeError("network down");
   }) as typeof fetch;
   try {
     const file = new File(["hello"], "notes.md", { type: "text/markdown" });
     await assert.rejects(
-      () => uploadFile(file, "s1", { requestId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }),
+      () => uploadFile(file, "s1", {
+        requestId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        url: "/laresHost/api/lares/files/upload",
+      }),
       /network down/,
     );
-    assert.equal(calls, 1);
+    assert.deepEqual(calls, ["/laresHost/api/lares/files/upload"]);
   } finally {
     globalThis.fetch = original;
   }

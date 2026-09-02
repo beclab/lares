@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 # App image: compile and ship Lares code on top of the environment image.
 # Default `scripts/build-image.sh` rebuilds only this file.
-ARG BASE_IMAGE=docker.io/beclab/lares-base:9
+ARG BASE_IMAGE=docker.io/beclab/lares-base:10
 FROM ${BASE_IMAGE}
 
 USER root
@@ -10,6 +10,8 @@ WORKDIR /app
 COPY tsconfig.base.json tsconfig.server.json ./
 COPY scripts/build-client.mjs ./scripts/
 COPY packages/ ./packages/
+RUN mkdir -p node_modules/@olares \
+  && ln -sfn ../../packages/core node_modules/@olares/lares-core
 
 # The olares-* skills are not in git: they belong to the olares-cli in the base
 # image, and a hand-copied snapshot describes verbs some other release has.

@@ -65,12 +65,12 @@ test("nav icon patch fails loudly when the settings shell drifts", () => {
 test("Lares profile packages link to authoritative source directories", () => {
   const root = mkdtempSync(join(tmpdir(), "lares-profile-"));
   const profileDir = join(root, "profile");
-  const source = join(root, "bundle-web");
+  const source = join(root, "dsh-overlay");
   mkdirSync(source);
 
   try {
-    linkOwnedProfileDeps(profileDir, [["@lares/bundle-web", source]]);
-    const target = join(profileDir, "node_modules", "@lares", "bundle-web");
+    linkOwnedProfileDeps(profileDir, [["@lares/dsh-overlay", source]]);
+    const target = join(profileDir, "node_modules", "@lares", "dsh-overlay");
     assert.equal(lstatSync(target).isSymbolicLink(), true);
     assert.equal(readlinkSync(target), source);
   } finally {
@@ -86,7 +86,7 @@ test("Lares profile refresh drops retired first-party bundles", () => {
     join(profileDir, "package.json"),
     JSON.stringify({
       dependencies: {
-        "@lares/dsh-overlay": "file:/old/overlay",
+        "@lares/bundle-web": "file:/old/bundle-web",
         "community-bundle": "1.0.0",
       },
       dsh: {
@@ -95,7 +95,7 @@ test("Lares profile refresh drops retired first-party bundles", () => {
             "@deepseek-ai/dsh-base",
             "@deepseek-ai/dsh-web-app",
             "community-bundle",
-            "@lares/dsh-overlay",
+            "@lares/bundle-web",
           ],
         },
       },
@@ -105,13 +105,14 @@ test("Lares profile refresh drops retired first-party bundles", () => {
   try {
     ensureLaresWebProfile(root);
     const manifest = JSON.parse(readFileSync(join(profileDir, "package.json"), "utf8"));
-    assert.equal(manifest.dependencies["@lares/dsh-overlay"], undefined);
+    assert.equal(manifest.dependencies["@lares/bundle-web"], undefined);
     assert.equal(manifest.dependencies["community-bundle"], "1.0.0");
+    assert.match(String(manifest.dependencies["@lares/dsh-overlay"]), /\/packages\/web\/dsh-overlay$/);
     assert.deepEqual(manifest.dsh.profile.bundles, [
       "@deepseek-ai/dsh-base",
       "@deepseek-ai/dsh-web-app",
       "community-bundle",
-      "@lares/bundle-web",
+      "@lares/dsh-overlay",
     ]);
   } finally {
     rmSync(root, { recursive: true, force: true });
