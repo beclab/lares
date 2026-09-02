@@ -36,6 +36,7 @@ on:
       - 'scripts/**'
       - 'Dockerfile'
       - 'Dockerfile.base'
+      - 'docker-bake.hcl'
       - 'package.json'
       - 'package-lock.json'
       - 'tsconfig.*.json'
