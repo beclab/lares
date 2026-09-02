@@ -2,7 +2,9 @@
 
 Chat on Olares, wired to Router.
 
-Current Chart version: **0.24.0** (must match `Chart.yaml` / `OlaresManifest.yaml`).
+Current app version: **0.26.1** — `appVersion` in `Chart.yaml` and the image tag in
+`values.yaml`. In the `terminus-apps` / `apps` index the chart's own `version` follows a
+separate `0.0.N` sequence, bumped once per submission.
 
 ## Chart ownership (test / public index)
 

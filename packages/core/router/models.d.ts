@@ -13,4 +13,5 @@ export function fetchRouterModels(env: {
   routerUrl?: string | null;
   routerApiKey?: string | null;
   olaresAppId?: string | null;
+  dataDir?: string | null;
 }): Promise<RouterModelEntry[]>;

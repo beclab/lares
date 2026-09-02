@@ -98,6 +98,8 @@ test("retryable covers cold-start / restart statuses only", () => {
 test("listModels reuses a live catalog until refresh", async () => {
   let fetches = 0;
   const originalFetch = globalThis.fetch;
+  const { catalogCache } = await import("../../packages/core/router/catalog-cache.js");
+  catalogCache.reset();
   globalThis.fetch = async () => {
     fetches += 1;
     return new Response(JSON.stringify({ data: [{ id: "whisper-a", mode: "audio" }] }), {
@@ -118,11 +120,14 @@ test("listModels reuses a live catalog until refresh", async () => {
     assert.equal(fetches, 2);
   } finally {
     globalThis.fetch = originalFetch;
+    catalogCache.reset();
   }
 });
 
 test("resolved STT cache is keyed by the configured preference", async () => {
   const originalFetch = globalThis.fetch;
+  const { catalogCache } = await import("../../packages/core/router/catalog-cache.js");
+  catalogCache.reset();
   globalThis.fetch = async () =>
     new Response(
       JSON.stringify({
@@ -142,6 +147,7 @@ test("resolved STT cache is keyed by the configured preference", async () => {
     assert.equal(await resolveSttModel("whisper-b"), "whisper-b");
   } finally {
     globalThis.fetch = originalFetch;
+    catalogCache.reset();
   }
 });
 

@@ -1,3 +1,4 @@
+import { catalogCache } from "./catalog-cache.js";
 import { routerCatalogRows } from "./catalog.js";
 import { routerGatewayUrl, routerHeaders } from "./gateway.js";
 
@@ -57,18 +58,8 @@ export function searchSourcesFromRouter(payload) {
 const DEFAULT_TIMEOUT_MS = 20_000;
 
 export async function fetchRouterSearchModels() {
-  const response = await fetch(`${routerGatewayUrl()}/models`, {
-    method: "GET",
-    headers: routerHeaders(),
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!response.ok) {
-    throw Object.assign(new Error(`Router /models returned ${response.status}`), {
-      code: "router_unavailable",
-      status: 503,
-    });
-  }
-  return searchModelsFromRouterCatalog(await response.json());
+  const { payload } = await catalogCache.get();
+  return searchModelsFromRouterCatalog(payload);
 }
 
 /**

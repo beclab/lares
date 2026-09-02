@@ -5,6 +5,7 @@ import {
   SettingsSelector,
   SettingsStatus,
 } from "../../../shared/client/settings-controls.js";
+import { watchCatalogRevision } from "../../../shared/client/catalog-events.js";
 import { useLatest, useMountedRef } from "../../../shared/client/react-lifecycle.js";
 import { loadVoiceSettings, rememberedVoiceSettings, saveVoiceSettings } from "./api.js";
 import {
@@ -63,8 +64,14 @@ export function VoiceSettings() {
           setNotice({ kind: "error", text: translate.current("settings.loadFailed") });
         }
       });
+    const stop = watchCatalogRevision(() => {
+      if (alive) void loadVoiceSettings({ force: true }).then((next) => {
+        if (alive) setView(next);
+      }).catch(() => {});
+    });
     return () => {
       alive = false;
+      stop();
     };
   }, []);
 

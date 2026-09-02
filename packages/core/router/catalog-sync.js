@@ -1,10 +1,11 @@
 import { createInFlightCoalescer } from "../tools/async.js";
+import { catalogCache } from "./catalog-cache.js";
 import {
   LLM_SETTINGS_NS,
   ROUTER_PROVIDER_ID,
   catalogSettingsOps,
+  chatModelsFromRouterCatalog,
   defaultNeedsRepair,
-  fetchChatModels,
   listedCatalog,
   parseDefaultModelRequest,
   pickDefaultModel,
@@ -15,6 +16,25 @@ function messageOf(err) {
   return err instanceof Error ? err.message : String(err);
 }
 
+let adapterRevision = 0;
+/** @type {Set<(revision: number) => void>} */
+const revisionListeners = new Set();
+
+export function catalogRevision() {
+  return adapterRevision;
+}
+
+/** @param {(revision: number) => void} listener */
+export function onCatalogRevision(listener) {
+  revisionListeners.add(listener);
+  return () => revisionListeners.delete(listener);
+}
+
+function bumpRevision() {
+  adapterRevision += 1;
+  for (const listener of revisionListeners) listener(adapterRevision);
+}
+
 /**
  * @param {{
  *   mutateSettings: (ns: string, ops: unknown[]) => Promise<void>,
@@ -23,12 +43,15 @@ function messageOf(err) {
  * }} ports
  */
 async function performRefresh(ports) {
-  const models = await fetchChatModels();
+  catalogCache.invalidate();
+  const { payload } = await catalogCache.get();
+  const models = chatModelsFromRouterCatalog(payload);
   await ports.mutateSettings(LLM_SETTINGS_NS, catalogSettingsOps(models));
   const current = ports.currentSelection();
   if (defaultNeedsRepair(current, models)) {
     await ports.saveSelection({ provider: ROUTER_PROVIDER_ID, model: pickDefaultModel(models).id });
   }
+  bumpRevision();
   return models;
 }
 
@@ -83,5 +106,10 @@ export async function saveDefault(ports, request) {
 }
 
 export function catalogState(ports, listed) {
-  return { default: currentDefault(ports), models: listed.models, failures: listed.failures };
+  return {
+    default: currentDefault(ports),
+    models: listed.models,
+    failures: listed.failures,
+    revision: catalogRevision(),
+  };
 }

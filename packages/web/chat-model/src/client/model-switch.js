@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
+import { watchCatalogRevision } from "../../../shared/client/catalog-events.js";
 import { createLocaleBinding } from "../../../shared/client/locale-binding.js";
 import { EN, ZH } from "@olares/lares-core/i18n/chat-model-switch";
 import {
@@ -137,6 +138,11 @@ export function ModelSwitch({ available, directory, load, select, locked }) {
 
   useEffect(() => {
     if (available) load();
+  }, [available, load]);
+
+  useEffect(() => {
+    if (!available) return undefined;
+    return watchCatalogRevision(() => load());
   }, [available, load]);
 
   useEffect(() => {

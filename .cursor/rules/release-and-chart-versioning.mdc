@@ -1,0 +1,47 @@
+---
+description: 发版路径与 chart 版本号的外部约束：镜像只由 CI 推送、版本来源是 Chart.yaml 而不是 git 标签、dev 包版本受 app-service 与 market 两条硬限制、以及超长版本上传后的脏记录怎么清。改 deploy/、scripts/ 或发版相关 workflow 之前读。
+globs: deploy/**,scripts/**,.github/workflows/**,project.json
+alwaysApply: false
+---
+
+# 发布与 chart 版本号
+
+## 发布镜像只走 CI
+
+`docker.io/beclab/lares` 与 `beclab/lares-base` 由 [`.github/workflows/image.yml`](../../.github/workflows/image.yml)
+推送，双原生 runner 分别构建 amd64 / arm64，再用 `imagetools create` 合成 manifest list。
+
+触发只有两种：推 `v<Chart.yaml 版本>` 标签，或手动 dispatch。PR 会在两个架构上跑
+`scripts/build-image.sh --base` 但不推任何东西。
+
+- 版本来源是 `deploy/lares/Chart.yaml`，不是 git 标签。`resolve` job 断言
+  `values.yaml` 的镜像 tag、`OlaresManifest.yaml` 的 version 和它三者一致，标签事件再
+  断言标签名就是 `v<版本>`——标签只是触发器，对不上就红。
+- 底座只在它自己的 tag（`project.json` 的 `image_base_tag`）在 registry 里不存在时才
+  构建。改了 `Dockerfile.base` 就要同时抬这个 tag，否则新底座根本不会被构建。
+- 上一条的例外是 dispatch 时勾 `base=true`，用于强制重建。
+- 预发布版本（版本号带连字符）只发 `:<版本>` 与 `:sha-<short>`，**不动** `:latest`。
+- 本地 `docker push` 与直接上架公共市场都不是测试路径。发版时机由维护者决定，agent
+  不主动推标签、不主动 dispatch。
+
+## dev chart 版本号
+
+`scripts/package-chart.sh --dev` 生成的版本受两条外部限制，脚本已内建校验：
+
+- **不得带预发布后缀。** app-service 用空版本查 Helm index，semver 视作 `*` 约束，
+  而 `*` 不匹配预发布版本。带 `-dev.x` 的包安装时报
+  `no chart version found for lares-`，与 index 内容无关。
+- **总长 ≤ 16 字符。** market 的版本列是 `varchar(16)`，超长在上传时报 HTTP 400。
+
+## 安装失败后的脏记录
+
+超长版本上传会出现「chart 进了 chartrepo、数据库 upsert 失败」的半成功状态，
+之后所有安装都拿到空版本。清理方式是删掉整个应用的所有版本再重新上传：
+
+```bash
+olares-cli market delete lares          # 不带 --version，清掉所有版本
+olares-cli market upload artifacts/lares-<v>.tgz
+```
+
+`market upgrade` 对这类应用会报 `opID not found in response data`，
+走 `market uninstall` + `market install` 更可靠。

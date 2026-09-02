@@ -1,6 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { createInFlightCoalescer } from "../tools/async.js";
-import { routerCatalogRows } from "./catalog.js";
+import { catalogCache } from "./catalog-cache.js";
 import { routerShimBaseUrl } from "./gateway.js";
 
 const STT_HINTS = /whisper|\bstt\b|\basr\b|transcri/i;
@@ -67,30 +66,23 @@ export function audioFilenameForContentType(contentType) {
 }
 
 const REQUEST_TIMEOUT_MS = 180_000;
-const CATALOG_TIMEOUT_MS = 15_000;
 const RETRY_BACKOFF_MS = [1_000, 3_000];
 const RESOLVED_TTL_MS = 120_000;
 
-const coalesceCatalog = createInFlightCoalescer();
-/** @type {{ expires: number, rows: { id: string, mode: string | null }[] } | null} */
-let catalog = null;
-
-async function fetchCatalog() {
-  const res = await fetch(`${routerShimBaseUrl()}/models`, {
-    headers: { accept: "application/json" },
-    signal: AbortSignal.timeout(CATALOG_TIMEOUT_MS),
-  });
-  if (!res.ok) throw new VoiceError("voice_model_unavailable", 503, `Router /models returned ${res.status}`);
-  const rows = routerCatalogRows(await res.json()).map(({ id, mode }) => ({ id, mode }));
-  catalog = { expires: Date.now() + RESOLVED_TTL_MS, rows };
-  return rows;
-}
-
 /** @returns {Promise<{ id: string, mode: string | null }[]>} */
 export async function listModels(options) {
-  if (!options?.refresh && catalog && catalog.expires > Date.now()) return catalog.rows;
-  if (options?.refresh) return fetchCatalog();
-  return coalesceCatalog(fetchCatalog);
+  try {
+    if (options?.refresh) catalogCache.invalidate();
+    const { rows } = await catalogCache.get();
+    return rows.map(({ id, mode }) => ({ id, mode }));
+  } catch (err) {
+    const status = err && typeof err === "object" && "status" in err ? Number(err.status) : 503;
+    throw new VoiceError(
+      "voice_model_unavailable",
+      status || 503,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
 }
 
 /** @returns {Promise<string[]>} */
@@ -119,7 +111,6 @@ export async function resolveSttModel(preferred, options) {
 
 export function forgetSttModel() {
   resolved = null;
-  catalog = null;
 }
 
 /** @param {Record<string, string>} fields @param {{ filename: string, contentType: string, bytes: Buffer }} file */

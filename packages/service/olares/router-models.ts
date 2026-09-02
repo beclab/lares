@@ -10,7 +10,7 @@ import {
 } from "@olares/lares-core/router/models";
 
 export type RouterModelEntry = RouterCatalogRow;
-export type RouterModelsEnv = Pick<LaresEnv, "routerUrl" | "routerApiKey" | "olaresAppId">;
+export type RouterModelsEnv = Pick<LaresEnv, "routerUrl" | "routerApiKey" | "olaresAppId" | "dataDir">;
 export {
   isChatModel,
   isChatModelId,

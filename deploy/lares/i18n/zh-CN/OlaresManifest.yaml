@@ -24,9 +24,9 @@ spec:
     2. 确认 Router 已安装。
     3. 打开 Lares 入口开始对话。
   upgradeDescription: |
-    ## Lares 0.24.0
+    ## Lares 0.26.1
 
-    - 会话内预览工作区文件（含 Agent 刚产出的媒体），并可直接下载。
-    - 支持从 Drive 或 URL 导入工作区；ffmpeg_encode 使用镜像内 Debian ffmpeg
-      （软解 H.264）。
-    - 容器通过 TIMEZONE / TZ 继承用户时区。
+    - Router 的 provider、模型或本地模型应用状态变化后，模型列表会自动刷新。
+    - 模型选择、语音输入和网络搜索共用一份缓存目录，并通过实时 revision
+      流更新已打开的页面。
+    - 已有 profile 引用旧版 Lares bundle 名称时会自动恢复。

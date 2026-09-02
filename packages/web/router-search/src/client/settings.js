@@ -8,6 +8,7 @@ import {
   SettingsSelector,
   SettingsStatus,
 } from "../../../shared/client/settings-controls.js";
+import { watchCatalogRevision } from "../../../shared/client/catalog-events.js";
 import { useLatest, useMountedRef } from "../../../shared/client/react-lifecycle.js";
 import { loadSearchSettings, rememberedSearchSettings, saveSearchDefault } from "./api.js";
 import {
@@ -46,8 +47,16 @@ export function WebSearchSettings() {
           }));
         }
       });
+    const stop = watchCatalogRevision(() => {
+      loadSearchSettings({ force: true })
+        .then((next) => {
+          if (alive) setConfig(next);
+        })
+        .catch(() => {});
+    });
     return () => {
       alive = false;
+      stop();
     };
   }, []);
 

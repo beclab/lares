@@ -1,11 +1,15 @@
 /** The model facts Lares's settings panel reads and writes. */
 import {
+  catalogRevision,
   catalogState,
   currentDefault as readDefault,
   listCatalog as listCatalogCore,
+  onCatalogRevision,
   refreshCatalog as refreshCatalogCore,
   saveDefault as saveDefaultCore,
 } from "@olares/lares-core/router/catalog-sync";
+
+export { catalogRevision, onCatalogRevision };
 
 export {
   chatModelsFromRouterCatalog,

@@ -9,6 +9,7 @@ import {
   SettingsStatus,
 } from "../../../shared/client/settings-controls.js";
 import { useLatest, useMountedRef } from "../../../shared/client/react-lifecycle.js";
+import { watchCatalogRevision } from "../../../shared/client/catalog-events.js";
 import { loadModelSettings, rememberedModelSettings, refreshModels, setDefaultModel } from "./api.js";
 import { useT } from "./locale.js";
 import { catalogDefaultReady, groupModelsByProvider, selectionKey } from "@olares/lares-core/router/session-model";
@@ -72,8 +73,16 @@ export function ModelsSettings() {
           }));
         }
       });
+    const stop = watchCatalogRevision(() => {
+      loadModelSettings({ force: true })
+        .then((next) => {
+          if (alive) setState(next);
+        })
+        .catch(() => {});
+    });
     return () => {
       alive = false;
+      stop();
     };
   }, []);
 

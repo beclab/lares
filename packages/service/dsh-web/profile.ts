@@ -32,16 +32,6 @@ const LOCAL_PROFILE_PACKAGES = [
   ["@lares/chat-model", CHAT_MODEL],
 ] as const;
 
-const STALE_PROFILE_DEPS = [
-  "@lares/bundle-web",
-  "@lares/voice-input",
-  "@lares/file-input",
-  "@lares/file-preview",
-  "@lares/drive-import",
-  "@lares/web-search",
-  "@lares/models",
-] as const;
-
 const SHELL_BUNDLES = ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app"] as const;
 
 /**
@@ -84,7 +74,7 @@ export function ensureLaresWebProfile(dataDir: string): { dshHome: string; profi
   }
 
   const extraBundles = (previous.dsh?.profile?.bundles ?? []).filter(
-    (name) => !OWNED_BUNDLES.includes(name) && !(STALE_PROFILE_DEPS as readonly string[]).includes(name),
+    (name) => !OWNED_BUNDLES.includes(name) && !name.startsWith("@lares/"),
   );
   const bundles = [...SHELL_BUNDLES, ...extraBundles, LARES_BUNDLE];
 
@@ -94,17 +84,11 @@ export function ensureLaresWebProfile(dataDir: string): { dshHome: string; profi
     type: "module",
     dependencies: {
       ...Object.fromEntries(
-        Object.entries(previous.dependencies ?? {}).filter(([name]) => !STALE_PROFILE_DEPS.includes(name as typeof STALE_PROFILE_DEPS[number])),
+        Object.entries(previous.dependencies ?? {}).filter(([name]) => !name.startsWith("@lares/")),
       ),
-      "@lares/dsh-overlay": `file:${DSH_OVERLAY}`,
-      "@lares/brand": `file:${BRAND}`,
-      "@lares/composer-voice": `file:${COMPOSER_VOICE}`,
-      "@lares/composer-attach": `file:${COMPOSER_ATTACH}`,
-      "@lares/workspace-preview": `file:${WORKSPACE_PREVIEW}`,
-      "@lares/workspace-preview-3d": `file:${WORKSPACE_PREVIEW_3D}`,
-      "@lares/workspace-artifacts": `file:${WORKSPACE_ARTIFACTS}`,
-      "@lares/router-search": `file:${ROUTER_SEARCH}`,
-      "@lares/chat-model": `file:${CHAT_MODEL}`,
+      ...Object.fromEntries(
+        LOCAL_PROFILE_PACKAGES.map(([name, dir]) => [name, `file:${dir}`]),
+      ),
     },
     ...(previous.pnpm ? { pnpm: previous.pnpm } : {}),
     dsh: {

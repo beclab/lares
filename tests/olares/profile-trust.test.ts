@@ -1,9 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { lstatSync, mkdtempSync, mkdirSync, readlinkSync, rmSync } from "node:fs";
+import {
+  lstatSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  readlinkSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  ensureLaresWebProfile,
   linkOwnedProfileDeps,
   sectionComponentNavIcon,
   trustOlaresConnectionHost,
@@ -64,6 +73,47 @@ test("Lares profile packages link to authoritative source directories", () => {
     const target = join(profileDir, "node_modules", "@lares", "dsh-overlay");
     assert.equal(lstatSync(target).isSymbolicLink(), true);
     assert.equal(readlinkSync(target), source);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("Lares profile refresh drops retired first-party bundles", () => {
+  const root = mkdtempSync(join(tmpdir(), "lares-profile-"));
+  const profileDir = join(root, "dsh-home", "profiles", "lares-web");
+  mkdirSync(profileDir, { recursive: true });
+  writeFileSync(
+    join(profileDir, "package.json"),
+    JSON.stringify({
+      dependencies: {
+        "@lares/bundle-web": "file:/old/bundle-web",
+        "community-bundle": "1.0.0",
+      },
+      dsh: {
+        profile: {
+          bundles: [
+            "@deepseek-ai/dsh-base",
+            "@deepseek-ai/dsh-web-app",
+            "community-bundle",
+            "@lares/bundle-web",
+          ],
+        },
+      },
+    }),
+  );
+
+  try {
+    ensureLaresWebProfile(root);
+    const manifest = JSON.parse(readFileSync(join(profileDir, "package.json"), "utf8"));
+    assert.equal(manifest.dependencies["@lares/bundle-web"], undefined);
+    assert.equal(manifest.dependencies["community-bundle"], "1.0.0");
+    assert.match(String(manifest.dependencies["@lares/dsh-overlay"]), /\/packages\/web\/dsh-overlay$/);
+    assert.deepEqual(manifest.dsh.profile.bundles, [
+      "@deepseek-ai/dsh-base",
+      "@deepseek-ai/dsh-web-app",
+      "community-bundle",
+      "@lares/dsh-overlay",
+    ]);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

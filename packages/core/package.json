@@ -44,6 +44,10 @@
     "./i18n/preview": "./i18n/preview.js",
     "./i18n/mobile": "./i18n/mobile.js",
     "./router/catalog": "./router/catalog.js",
+    "./router/catalog-cache": {
+      "types": "./router/catalog-cache.d.ts",
+      "default": "./router/catalog-cache.js"
+    },
     "./router/gateway": "./router/gateway.js",
     "./router/models": {
       "types": "./router/models.d.ts",

@@ -1,3 +1,4 @@
+import { writeCatalogSeed } from "./catalog-cache.js";
 import { routerCatalogRows } from "./catalog.js";
 import { routerAuthHeaders, routerGatewayUrl, routerShimBaseUrl } from "./gateway.js";
 
@@ -72,7 +73,7 @@ export async function fetchChatModels() {
  */
 export async function fetchRouterModels(env) {
   const routerUrl = String(env.routerUrl ?? "").replace(/\/+$/, "") || routerGatewayUrl();
-  const res = await fetch(`${routerUrl}/models`, {
+  const res = await fetch(`${routerUrl}/models?include_not_ready=true`, {
     method: "GET",
     headers: {
       ...routerAuthHeaders(env.routerApiKey, env.olaresAppId),
@@ -81,7 +82,9 @@ export async function fetchRouterModels(env) {
     signal: AbortSignal.timeout(15_000),
   });
   if (!res.ok) throw new Error(`Router /models returned ${res.status}`);
-  return modelsFromRouterCatalog(await res.json());
+  const payload = await res.json();
+  writeCatalogSeed(payload, env.dataDir);
+  return modelsFromRouterCatalog(payload);
 }
 
 export function parseDefaultModelRequest(request) {

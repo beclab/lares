@@ -1,6 +1,7 @@
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
-import { readBody, sendError } from "../tools/http.js";
+import { readBody, sendError, sendJson } from "../tools/http.js";
+import { catalogCache } from "./catalog-cache.js";
 import { carriesWebpImage, transcodeWebpImages } from "../media/router-images.js";
 import { routerAuthHeaders, routerGatewayUrl } from "./gateway.js";
 import { STT_MAX_AUDIO_BYTES } from "./stt.js";
@@ -75,7 +76,32 @@ export function healthPayload(env = process.env) {
   };
 }
 
+function isModelsGet(req) {
+  const method = (req.method ?? "GET").toUpperCase();
+  if (method !== "GET" && method !== "HEAD") return false;
+  const u = new URL(req.url ?? "/", "http://x");
+  return llmShimSuffix(u.pathname).replace(/\/+$/, "") === "models";
+}
+
+function serveCachedModels(req, res) {
+  void catalogCache.get().then(
+    ({ payload }) => {
+      if ((req.method ?? "GET").toUpperCase() === "HEAD") {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end();
+        return;
+      }
+      sendJson(res, 200, payload);
+    },
+    (err) => sendError(res, err, "llm_proxy_failed"),
+  );
+}
+
 export function proxyToRouter(req, res, env = process.env) {
+  if (isModelsGet(req)) {
+    serveCachedModels(req, res);
+    return;
+  }
   const routerUrl = routerGatewayUrl(env);
   const rawUrl = req.url ?? "/";
   const u = new URL(rawUrl, "http://x");
