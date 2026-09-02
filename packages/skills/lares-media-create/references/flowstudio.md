@@ -12,12 +12,14 @@ olares-cli market status flowstudio -o json
 
 - App id is `flowstudio`. `running` (and other produce-ready states from the market skill) counts as installed.
 - Missing, uninstalled, or stopped → this step is not a hit. Return to the front door (offer install only in [fallback.md](fallback.md), do not treat `ffmpeg_encode` as generation).
-- Installed but Router still has no `image_generation` rows for it: register and re-mirror, then call through Router:
+- Installed but Router still has no rows for **this family's modes** (see the front-door table; music is `music_generation`, not `audio`): register and re-mirror, then list those modes again:
 
 ```bash
 olares-cli router provider register flowstudio
 olares-cli router provider sync-models flowstudio
 olares-cli router list --mode image_generation -o json
+olares-cli router list --mode video_generation -o json
+olares-cli router list --mode music_generation -o json
 ```
 
 `provider register` is only for an application that is already installed and has no Router row. Do not install a second copy.

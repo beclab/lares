@@ -39,6 +39,10 @@ test("identity prompt points media creation at the dedicated skill", () => {
   assert.match(identityPrompt(), /lares-media-create skill/);
 });
 
+test("identity prompt keeps user files out of the application overlay", () => {
+  assert.match(identityPrompt(), /Do not write them under \/app/);
+});
+
 test("surface prompt is product-branded", () => {
   const text = surfacePrompt("http://127.0.0.1:8080");
   assert.match(text, new RegExp(PRODUCT_NAME));

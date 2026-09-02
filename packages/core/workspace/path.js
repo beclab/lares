@@ -1,6 +1,6 @@
 import { lstatSync } from "node:fs";
 import { mkdir, realpath, stat } from "node:fs/promises";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { HttpError } from "../tools/http.js";
 
 export function isInsideWorkspace(root, target) {
@@ -12,6 +12,22 @@ export async function resolveWorkspaceRoot(workspacePath) {
   return realpath(workspacePath).catch(() => {
     throw new HttpError("workspace_unavailable", 409, "session workspace is unavailable");
   });
+}
+
+/**
+ * An absolute path outside the session workspace is not previewable. Writes
+ * sometimes land as `/app/name.ext` (application root) while the open chip
+ * still points there. A single filename under a filesystem root may alias the
+ * same name in the workspace — never a nested path (`/app/packages/x`).
+ */
+export function workspaceFileAlias(root, requestedPath) {
+  if (typeof requestedPath !== "string" || !isAbsolute(requestedPath)) return null;
+  if (isInsideWorkspace(root, requestedPath)) return null;
+  const base = basename(requestedPath);
+  if (!base || base === "." || base === "..") return null;
+  const parentRel = relative("/", dirname(requestedPath));
+  if (parentRel === "" || parentRel.includes("/") || parentRel.startsWith("..")) return null;
+  return base;
 }
 
 export function workspaceCandidate(root, requestedPath) {

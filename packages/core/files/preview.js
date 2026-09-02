@@ -7,6 +7,7 @@ import {
   resolveExistingWorkspacePath,
   resolveWorkspaceRoot,
   workspaceCandidate,
+  workspaceFileAlias,
 } from "../workspace/path.js";
 import { materializeFilesFile } from "./preview-cache.js";
 
@@ -128,8 +129,24 @@ export async function resolveWorkspaceFile(workspacePath, requestedPath) {
     throw new HttpError("path_invalid", 400, "file path is required");
   }
   const root = await resolveWorkspaceRoot(workspacePath);
-  const candidate = workspaceCandidate(root, requestedPath);
-  const absolutePath = await resolveExistingWorkspacePath(root, candidate);
+  let candidate;
+  try {
+    candidate = workspaceCandidate(root, requestedPath);
+  } catch (error) {
+    const alias = workspaceFileAlias(root, requestedPath);
+    if (!alias || error?.code !== "path_forbidden") throw error;
+    try {
+      candidate = workspaceCandidate(root, alias);
+    } catch {
+      throw error;
+    }
+  }
+  const absolutePath = await resolveExistingWorkspacePath(root, candidate).catch((error) => {
+    if (workspaceFileAlias(root, requestedPath) && error?.code === "file_not_found") {
+      throw new HttpError("path_forbidden", 403, "path leaves the session workspace");
+    }
+    throw error;
+  });
   const info = await stat(absolutePath).catch(() => {
     throw new HttpError("file_not_found", 404, "file was not found");
   });

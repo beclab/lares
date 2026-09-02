@@ -25,13 +25,15 @@ Stop at the first step that can do the job. Do not skip ahead.
 
 ## Output families
 
-| User wants | Treat as a hit when Router / FlowStudio has |
-|---|---|
-| Image generate or edit | `mode=image_generation`, or a FlowStudio workflow with `output=image` |
-| Video | FlowStudio `output=video` (usually listed under the FlowStudio `image_generation` provider) |
-| Speech / TTS | `mode=audio` with TTS flags, via `router call speak` |
-| Music / generative audio | FlowStudio `output=audio` |
-| 3D / mesh / glb | FlowStudio `output=model3d` |
+Router **mode** is the catalog key. User words like “音频 / 声音” are not that key: speech and music are different modes. Probe `--mode` for the family below; an empty `audio` list is not a miss for a song.
+
+| User wants | Router mode (step 1) | Also a hit |
+|---|---|---|
+| Image generate or edit | `image_generation` | FlowStudio `output=image` |
+| Video | `video_generation` | FlowStudio `output=video` (may also appear under the FlowStudio `image_generation` provider) |
+| Speech / TTS | `audio` with TTS flags | `router call speak` |
+| Music / song / generative audio | `music_generation` | FlowStudio `output=audio` |
+| 3D / mesh / glb | — | FlowStudio `output=model3d` |
 
 Chat with vision is not generation. Transcribe is not TTS. `ffmpeg_encode` is transcode / test pattern, not a generative model.
 

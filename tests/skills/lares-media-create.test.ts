@@ -44,12 +44,25 @@ test("deliver reference lands bytes through drive tools and refuses internal hos
   assert.match(text, /Never curl/);
 });
 
+test("output families map music to music_generation, not speech audio", () => {
+  const skill = read("SKILL.md");
+  assert.match(skill, /Music \/ song \/ generative audio[\s\S]*`music_generation`/);
+  assert.match(skill, /Speech \/ TTS[\s\S]*`audio`/);
+  assert.match(skill, /empty `audio` list is not a miss for a song/);
+  assert.match(skill, /Video[\s\S]*`video_generation`/);
+  assert.doesNotMatch(skill, /Music \/ generative audio \| FlowStudio `output=audio`/);
+});
+
 test("router reference forbids calling FlowStudio HTTP for generation", () => {
   const text = read("references/router.md");
   assert.match(text, /olares-cli router list --mode image_generation/);
+  assert.match(text, /olares-cli router list --mode video_generation/);
+  assert.match(text, /olares-cli router list --mode music_generation/);
+  assert.match(text, /Do not probe `--mode audio` for music/);
+  assert.match(text, /`speak` is TTS only/);
   assert.match(text, /Never curl FlowStudio/);
   assert.match(text, /\/v1\/images\/generations/);
-  assert.match(text, /do not use it as the video \/ 3D \/ audio path/);
+  assert.match(text, /do not use it as the video \/ 3D \/ music path/);
   assert.doesNotMatch(text, /flowstudio-svc:8080/);
 });
 

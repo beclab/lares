@@ -23,6 +23,7 @@ import {
   sendFileDownload,
   sendRawFile,
 } from "@olares/lares-core/files/preview";
+import { workspaceFileAlias } from "@olares/lares-core/workspace/path";
 import { materializeFilesFile } from "@olares/lares-core/files/preview-cache";
 import {
   rewriteWorkspaceTargets,
@@ -167,6 +168,19 @@ test("resolveWorkspaceFile confines real files and symlinks to the workspace", a
     await assert.rejects(
       () => resolveWorkspaceFile(root, "docs/missing.txt"),
       (error: { code?: string }) => error.code === "file_not_found",
+    );
+    writeFileSync(join(root, "notes.md"), "# hi\n");
+    assert.equal(workspaceFileAlias(root, "/app/notes.md"), "notes.md");
+    assert.equal(workspaceFileAlias(root, "/app/packages/notes.md"), null);
+    const aliased = await resolveWorkspaceFile(root, "/app/notes.md");
+    assert.equal(aliased.path, "notes.md");
+    await assert.rejects(
+      () => resolveWorkspaceFile(root, "/app/packages/secret.txt"),
+      (error: { code?: string }) => error.code === "path_forbidden",
+    );
+    await assert.rejects(
+      () => resolveWorkspaceFile(root, "/app/absent.md"),
+      (error: { code?: string }) => error.code === "path_forbidden",
     );
     const fromRequest = await fileFromPreviewRequest(
       "/preview?path=docs/notes.txt&sessionId=s1",
