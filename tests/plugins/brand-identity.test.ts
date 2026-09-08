@@ -17,7 +17,9 @@ const {
   agentsMarkdown,
   LEGACY_AGENTS_SEEDS,
 } = await import("@olares/lares-core/brand/identity");
-const { MARK_PATH, MARK_SVG, MARK_DATA_URI } = await import("@olares/lares-core/icons/mark");
+const { MARK_PATH, MARK_TYPE, MARK_SVG, MARK_DATA_URI, MARKET_ICON_URL } = await import(
+  "@olares/lares-core/icons/mark"
+);
 const { MANIFEST, MANIFEST_PATH } = await import("@olares/lares-core/brand/manifest");
 const { seedWorkspaceAgents } = await import(seedPath);
 
@@ -82,8 +84,18 @@ test("seedWorkspaceAgents writes and rewrites previous official seeds", () => {
 
 test("product mark SVG names the product and encodes as a data URI", () => {
   assert.equal(MARK_PATH, "/lares/mark.svg");
+  assert.equal(MARK_TYPE, "image/svg+xml");
+  assert.equal(MARKET_ICON_URL, "https://app.cdn.olares.com/appstore/lares/icon_new.png");
   assert.match(MARK_SVG, new RegExp(`aria-label="${PRODUCT_NAME}"`));
   assert.match(MARK_DATA_URI, /^url\("data:image\/svg\+xml,/);
+});
+
+test("product mark is a self-contained vector of the Market tile", () => {
+  // Favicon rasterizers drop <image> data URIs, and an external href cannot
+  // resolve inside a data-URI stylesheet — both surfaces need real geometry.
+  assert.doesNotMatch(MARK_SVG, /<image\b|href=/);
+  assert.match(MARK_SVG, /<path fill="#252121" d="M83\.5926/);
+  assert.match(MARK_SVG, /stop-color="#FFED52"[\s\S]*stop-color="#EBD304"/);
 });
 
 test("PWA manifest names the product and points at the mark", () => {
@@ -108,4 +120,7 @@ test("market listings name Lares and omit the upstream product", () => {
     assert.doesNotMatch(text, /\bdsh web\b/);
     assert.doesNotMatch(text, /官方 dsh/);
   }
+  const listing = readFileSync(join(ROOT, "deploy/lares/OlaresManifest.yaml"), "utf8");
+  assert.equal(listing.includes(MARKET_ICON_URL), true);
+  assert.doesNotMatch(listing, /mark\.svg/);
 });

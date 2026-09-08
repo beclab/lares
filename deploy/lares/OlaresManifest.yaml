@@ -6,7 +6,7 @@ metadata:
   appid: lares
   title: Lares
   description: Chat on Olares, wired to Router
-  icon: https://raw.githubusercontent.com/ffkijjkokok/lares/main/icon.png
+  icon: https://app.cdn.olares.com/appstore/lares/icon_new.png
   version: 0.26.3
   categories:
     - Utilities_v112
@@ -61,7 +61,7 @@ entrances:
     host: lares-svc
     port: 8080
     title: Lares
-    icon: https://raw.githubusercontent.com/ffkijjkokok/lares/main/icon.png
+    icon: https://app.cdn.olares.com/appstore/lares/icon_new.png
     authLevel: private
     openMethod: window
 options:
