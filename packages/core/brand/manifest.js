@@ -1,5 +1,5 @@
 import { PRODUCT_NAME, THEME_COLOR } from "./identity.js";
-import { MARK_PATH } from "../icons/mark.js";
+import { MARK_PATH, MARK_TYPE } from "../icons/mark.js";
 
 export const MANIFEST_PATH = "/lares/manifest.webmanifest";
 
@@ -11,5 +11,5 @@ export const MANIFEST = {
   scope: "/",
   display: "fullscreen",
   theme_color: THEME_COLOR,
-  icons: [{ src: MARK_PATH, sizes: "any", type: "image/svg+xml", purpose: "any" }],
+  icons: [{ src: MARK_PATH, sizes: "any", type: MARK_TYPE, purpose: "any" }],
 };

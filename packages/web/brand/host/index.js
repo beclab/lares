@@ -2,7 +2,7 @@
 import { PRODUCT_NAME, THEME_COLOR, identityPrompt, surfacePrompt } from "@olares/lares-core/brand/identity";
 import { loopbackWebUrl } from "@olares/lares-core/olares/entrance";
 import { BRAND_CSS } from "./stylesheet.js";
-import { MANIFEST, MANIFEST_PATH, MARK_PATH, MARK_SVG } from "./mark.js";
+import { MANIFEST, MANIFEST_PATH, MARK_PATH, MARK_SVG, MARK_TYPE } from "./mark.js";
 
 export const name = "lares-brand";
 export const inject = ["webServer"];
@@ -29,7 +29,7 @@ function localWebUrl(ctx) {
  */
 export function apply(ctx) {
   ctx.effect(
-    () => ctx.webServer.register({ kind: "exact", path: MARK_PATH, handler: serve(MARK_SVG, "image/svg+xml") }),
+    () => ctx.webServer.register({ kind: "exact", path: MARK_PATH, handler: serve(MARK_SVG, MARK_TYPE) }),
     "lares-brand-mark",
   );
   ctx.effect(
@@ -45,7 +45,7 @@ export function apply(ctx) {
   ctx.webServer.tapIndex((html) =>
     html
       .replace(/<title>[^<]*<\/title>/i, `<title>${PRODUCT_NAME}</title>`)
-      .replace(/<link rel="icon"[^>]*>/i, `<link rel="icon" type="image/svg+xml" href="${MARK_PATH}" />`)
+      .replace(/<link rel="icon"[^>]*>/i, `<link rel="icon" type="${MARK_TYPE}" href="${MARK_PATH}" />`)
       .replace(/<link rel="manifest"[^>]*>/i, `<link rel="manifest" href="${MANIFEST_PATH}" />`)
       .replace(
         /<\/head>/i,
