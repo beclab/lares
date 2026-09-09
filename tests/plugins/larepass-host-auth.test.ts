@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
+import { HOST_PORT_KEYS, pickHostPorts } from "@olares/lares-core/larepass/host";
 import { uploadFile } from "@olares/lares-core/files/upload-client";
 import { postTranscribe } from "@olares/lares-core/voice/client";
 import { createHostClient } from "../../packages/mobile/src/host.js";
@@ -256,4 +258,73 @@ test("openMux opens a bare socket when the host offers no protocol", async () =>
       assert.equal(call.protocols, undefined);
     }
   });
+});
+
+/**
+ * The gap that let `socketProtocol` ship inert: the client read it correctly,
+ * but the component in front of it never forwarded it. A host spreads the ports
+ * on as props (`v-bind="ports"`), Vue drops any prop the component does not
+ * declare into attrs, and `App.vue` then rebuilt the object from a hand-written
+ * key list — so the port was lost twice over, with nothing failing loudly.
+ * These cover the plumbing rather than the client.
+ */
+test("the canonical port list carries every port the client reads", () => {
+  for (const key of ["baseUrl", "proxyPrefix", "env", "request", "socketProtocol"]) {
+    assert.ok(HOST_PORT_KEYS.includes(key), `HOST_PORT_KEYS is missing ${key}`);
+  }
+});
+
+test("pickHostPorts forwards every port and ignores everything else", () => {
+  const request = async () => ({ ok: true, status: 200 });
+  const socketProtocol = () => "tok";
+  const ports = pickHostPorts({
+    baseUrl: "https://h",
+    proxyPrefix: "",
+    env: { PROTOCOL: "https:" },
+    request,
+    socketProtocol,
+    // A component instance carries far more than the ports.
+    locale: "zh",
+    device: "mobile",
+    $el: {},
+  });
+
+  assert.deepEqual(Object.keys(ports).sort(), [...HOST_PORT_KEYS].sort());
+  assert.equal(ports.request, request);
+  assert.equal(ports.socketProtocol, socketProtocol);
+});
+
+test("LaresApp declares every port as a prop, or the host's value never lands", () => {
+  const source = readFileSync(
+    new URL("../../packages/mobile/src/App.vue", import.meta.url),
+    "utf8",
+  );
+  const script = /<script\b[^>]*>([\s\S]*?)<\/script>/i.exec(source)?.[1] ?? "";
+  const start = script.indexOf("props: {");
+  assert.ok(start !== -1, "App.vue has no props block");
+
+  // Walk to the brace that closes `props`, so a key from some other option
+  // object cannot stand in for a missing prop.
+  let depth = 0;
+  let end = -1;
+  for (let i = script.indexOf("{", start); i < script.length; i += 1) {
+    if (script[i] === "{") depth += 1;
+    else if (script[i] === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        end = i;
+        break;
+      }
+    }
+  }
+  assert.ok(end !== -1, "App.vue props block is unbalanced");
+  const props = script.slice(start, end);
+
+  for (const key of HOST_PORT_KEYS) {
+    assert.match(
+      props,
+      new RegExp(`\\b${key}\\s*:`),
+      `App.vue does not declare the '${key}' prop, so v-bind="ports" drops it into attrs`,
+    );
+  }
 });

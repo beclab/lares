@@ -110,6 +110,7 @@
 </template>
 
 <script>
+import { pickHostPorts } from "@olares/lares-core/larepass/host";
 import { connectChat } from "./runtime.js";
 import { createT } from "./i18n.js";
 import { failText, withPendingUser } from "./chat/format.js";
@@ -140,6 +141,9 @@ export default {
     proxyPrefix: { type: String, default: undefined },
     request: { type: Function, default: undefined },
     env: { type: Object, default: undefined },
+    // Vue drops an undeclared prop into attrs, so a port missing from this list
+    // never reaches `ports` below no matter what the host passes.
+    socketProtocol: { type: [Function, String, Array], default: undefined },
   },
   data() {
     return {
@@ -178,12 +182,9 @@ export default {
   },
   computed: {
     ports() {
-      return {
-        baseUrl: this.baseUrl,
-        proxyPrefix: this.proxyPrefix,
-        request: this.request,
-        env: this.env,
-      };
+      // Built from the canonical key list rather than spelled out, so adding a
+      // port does not need this object edited in lockstep.
+      return pickHostPorts(this);
     },
     runtime() {
       return connectChat(this.ports);
