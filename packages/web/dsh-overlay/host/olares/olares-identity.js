@@ -15,6 +15,23 @@ export const name = "lares-olares-identity";
 export const inject = ["webServer"];
 
 /**
+ * A WebSocket handshake arrives as `upgrade`, never as `request`, so listening
+ * on `request` alone leaves the mux socket unrewritten: it reaches dsh's origin
+ * fence still carrying the host page's own origin — `file://` for a packaged
+ * LarePass build — and is refused with 403, while every plain `/api` call on
+ * the same entrance succeeds.
+ */
+const SERVER_EVENTS = ["request", "upgrade"];
+
+/** One line per distinct cause; the broken path repeats on every reconnect. */
+const warned = new Set();
+function warnOnce(message) {
+  if (warned.has(message)) return;
+  warned.add(message);
+  console.warn(message);
+}
+
+/**
  * @param {import('@deepseek-ai/cordis').Context} ctx
  */
 export function apply(ctx) {
@@ -27,7 +44,16 @@ export function apply(ctx) {
       const identity = identityFromHeaders(req.headers ?? {});
       const edgeAuthenticated = Boolean(identity.user && identity.token);
       if (edgeAuthenticated) rememberRequestIdentity(identity);
-      if (!edgeAuthenticated || !shouldRewriteApiLoopback(req, trustedEntranceHosts())) return;
+      if (!shouldRewriteApiLoopback(req, trustedEntranceHosts())) return;
+      if (!edgeAuthenticated) {
+        // Reached the entrance but the edge sent no usable identity, so the
+        // rewrite is skipped and dsh answers 403. Silent until now, which is
+        // why this was indistinguishable from an authentication failure.
+        warnOnce(
+          `[lares] entrance /api without edge identity: user=${identity.user ? "yes" : "no"} token=${identity.token ? "yes" : "no"}`,
+        );
+        return;
+      }
       applyLoopbackHeaders(req.headers, loopbackAuthority(ctx.webServer.port));
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -36,7 +62,9 @@ export function apply(ctx) {
   };
 
   const detach = () => {
-    if (attached) attached.off("request", onRequest);
+    if (attached) {
+      for (const event of SERVER_EVENTS) attached.off(event, onRequest);
+    }
     attached = undefined;
   };
 
@@ -45,7 +73,7 @@ export function apply(ctx) {
     const server = /** @type {{ server?: import('node:http').Server }} */ (ctx.webServer).server;
     if (!server || server === attached) return Boolean(server);
     detach();
-    server.prependListener("request", onRequest);
+    for (const event of SERVER_EVENTS) server.prependListener(event, onRequest);
     attached = server;
     return true;
   };
