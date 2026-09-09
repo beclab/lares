@@ -23,7 +23,7 @@ function fakeContext() {
 }
 
 /** An edge-authenticated request on the trusted entrance, from a foreign page. */
-function incoming() {
+function incoming(extra: Record<string, string> = {}) {
   return {
     url: "/api/events.mux",
     headers: {
@@ -31,6 +31,7 @@ function incoming() {
       origin: "file://",
       "x-bfl-user": "one3",
       cookie: "auth_token=jwt-value",
+      ...extra,
     } as Record<string, string>,
   };
 }
@@ -97,6 +98,42 @@ test("both listeners are bound, so neither path can regress on its own", () => {
     for (const event of ["request", "upgrade"]) {
       assert.equal(server.listenerCount(event), 1, `no listener bound for '${event}'`);
     }
+  });
+});
+
+/**
+ * The rewrite is only as good as its weakest header. `Sec-Fetch-Site` is set by
+ * the browser and survives the host/origin rewrite untouched, so a request that
+ * now looks perfectly same-origin still announces itself as `cross-site` and dsh
+ * refuses it — a 403 that leaves no trace here, because as far as this handler
+ * is concerned the rewrite succeeded. Only secure contexts carry `Sec-` headers,
+ * which is why the plain-http LAN entrance never showed the symptom.
+ */
+test("fetch metadata is restated to match the rewritten origin", () => {
+  withTrustedHosts(() => {
+    const { server, ctx } = fakeContext();
+    apply(ctx as never);
+
+    for (const event of ["request", "upgrade"]) {
+      const req = incoming({ "sec-fetch-site": "cross-site", "sec-fetch-mode": "cors" });
+      server.emit(event, req);
+      assert.equal(req.headers["sec-fetch-site"], "same-origin", `not restated on '${event}'`);
+      // Mode and dest describe the call, not its origin; a same-origin fetch
+      // reports `cors` too, so they are left as the browser set them.
+      assert.equal(req.headers["sec-fetch-mode"], "cors");
+    }
+  });
+});
+
+test("a request without fetch metadata gains none", () => {
+  withTrustedHosts(() => {
+    const { server, ctx } = fakeContext();
+    apply(ctx as never);
+    const req = incoming();
+
+    server.emit("request", req);
+
+    assert.equal("sec-fetch-site" in req.headers, false);
   });
 });
 
