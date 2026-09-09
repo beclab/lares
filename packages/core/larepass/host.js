@@ -45,6 +45,23 @@ export function hostConfigFromEnv(env = {}) {
   };
 }
 
+/**
+ * Every key the host may hand down. The list is canonical: a host spreads these
+ * onto the components as props and `createHostClient` reads them back off the
+ * object, so a key that exists in one place and not the other is dropped in
+ * silence — which is how `socketProtocol` shipped inert once already.
+ */
+export const HOST_PORT_KEYS = ["baseUrl", "proxyPrefix", "env", "request", "socketProtocol"];
+
+/** Collect the port keys off any carrier (a component instance included). */
+export function pickHostPorts(source = {}) {
+  const ports = {};
+  for (const key of HOST_PORT_KEYS) {
+    ports[key] = source[key];
+  }
+  return ports;
+}
+
 /** Resolve the live Host origin. Explicit baseUrl/proxyPrefix win over env. */
 export function hostTarget(ports = {}) {
   const fromEnv = hostConfigFromEnv(ports.env);

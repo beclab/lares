@@ -24,6 +24,7 @@ spec:
     2. 确认 Router 已安装。
     3. 打开 Lares 入口开始对话。
   upgradeDescription: |
-    ## Lares 0.26.4
+    ## Lares 0.26.5
 
-    - 产品标、浏览器 tab 图标和市场列表图标换成黄色 Lares 图形。
+    - 修复 LarePass 经公网入口无法聊天的问题：浏览器标记为跨站的请求会被拒绝。
+    - 修复 LarePass 聊天事件流连不上的问题，回复不再收不到。

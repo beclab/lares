@@ -15,6 +15,15 @@ export const name = "lares-olares-identity";
 export const inject = ["webServer"];
 
 /**
+ * A WebSocket handshake arrives as `upgrade`, never as `request`, so listening
+ * on `request` alone leaves the mux socket unrewritten: it reaches dsh's origin
+ * fence still carrying the host page's own origin — `file://` for a packaged
+ * LarePass build — and is refused with 403, while every plain `/api` call on
+ * the same entrance succeeds.
+ */
+const SERVER_EVENTS = ["request", "upgrade"];
+
+/**
  * @param {import('@deepseek-ai/cordis').Context} ctx
  */
 export function apply(ctx) {
@@ -36,7 +45,9 @@ export function apply(ctx) {
   };
 
   const detach = () => {
-    if (attached) attached.off("request", onRequest);
+    if (attached) {
+      for (const event of SERVER_EVENTS) attached.off(event, onRequest);
+    }
     attached = undefined;
   };
 
@@ -45,7 +56,7 @@ export function apply(ctx) {
     const server = /** @type {{ server?: import('node:http').Server }} */ (ctx.webServer).server;
     if (!server || server === attached) return Boolean(server);
     detach();
-    server.prependListener("request", onRequest);
+    for (const event of SERVER_EVENTS) server.prependListener(event, onRequest);
     attached = server;
     return true;
   };

@@ -25,6 +25,11 @@ export type HostPorts = {
   proxyPrefix?: string;
   env?: HostEnv;
   request?: (url: string, init?: HostRequestInit) => Promise<HostResponse>;
+  /**
+   * Token offered as `Sec-WebSocket-Protocol` on the mux upgrade, which cannot
+   * carry `X-Authorization`. Pass a function to have it read per connect.
+   */
+  socketProtocol?: string | string[] | (() => string | string[] | undefined);
 };
 
 export const PC_TEST_PROXY: string;
