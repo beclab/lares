@@ -15,7 +15,25 @@ function pageOrigin() {
   }
 }
 
-function openMuxSocket(httpUrl, signal) {
+/**
+ * A browser `WebSocket` takes no headers, so the mux upgrade cannot carry the
+ * `X-Authorization` every other call uses and a cross-origin host page — a
+ * packaged LarePass build sends no Olares cookie — is answered 401. Olares
+ * reads the token off `Sec-WebSocket-Protocol` instead and promotes it to the
+ * header before the entrance auth runs, so the host hands one down here.
+ *
+ * Read at connect time rather than captured with the client: a refreshed token
+ * then lands on the next reconnect instead of needing a rebuilt runtime.
+ */
+function socketProtocols(ports) {
+  const value = typeof ports.socketProtocol === "function"
+    ? ports.socketProtocol()
+    : ports.socketProtocol;
+  if (Array.isArray(value)) return value.length > 0 ? value : undefined;
+  return value ? String(value) : undefined;
+}
+
+function openMuxSocket(httpUrl, signal, protocols) {
   const Socket = globalThis.WebSocket;
   if (typeof Socket !== "function") {
     return Promise.resolve({
@@ -26,7 +44,10 @@ function openMuxSocket(httpUrl, signal) {
   }
   return new Promise((resolve) => {
     let settled = false;
-    const socket = new Socket(muxWsUrl(httpUrl, pageOrigin()));
+    const url = muxWsUrl(httpUrl, pageOrigin());
+    // Offering a subprotocol the server does not echo back aborts the
+    // handshake, so a host that hands down none keeps the bare constructor.
+    const socket = protocols === undefined ? new Socket(url) : new Socket(url, protocols);
     const finish = (result) => {
       if (settled) return;
       settled = true;
@@ -137,15 +158,26 @@ export function createHostClient(ports = {}) {
     downloadUrl(sessionId, path) {
       return urlFor(downloadFileUrl(sessionId, path));
     },
+    // Both carry a binary body, so neither can go through `request` as an RPC —
+    // but both must still ride the host's auth. `ports.request` is passed
+    // through rather than called here so a host that supplies none keeps the
+    // cookie `fetch` these two used before.
     upload(sessionId, file, options) {
-      return uploadFile(file, sessionId, { ...options, url: urlFor(FILES_UPLOAD_PATH) });
+      return uploadFile(file, sessionId, {
+        ...options,
+        url: urlFor(FILES_UPLOAD_PATH),
+        request: ports.request,
+      });
     },
     transcribe(blob, language, signal) {
-      return postTranscribe(blob, language, signal, { baseUrl: urlFor(VOICE_API) });
+      return postTranscribe(blob, language, signal, {
+        baseUrl: urlFor(VOICE_API),
+        request: ports.request,
+      });
     },
     async openMux(signal) {
       try {
-        return await openMuxSocket(urlFor(MUX_PATH), signal);
+        return await openMuxSocket(urlFor(MUX_PATH), signal, socketProtocols(ports));
       } catch (err) {
         return {
           ok: false,

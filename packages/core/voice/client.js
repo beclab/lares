@@ -62,23 +62,39 @@ export function mergeTranscript(draft, transcript) {
   return `${base} ${text}`;
 }
 
+function transcribeErrorCode(payload) {
+  const code = payload && typeof payload === "object" ? payload.error?.code : undefined;
+  return typeof code === "string" ? code : "voice_failed";
+}
+
+/**
+ * The only voice call that carries a body, and so the only one that cannot go
+ * through `createHostSettings`. Like the upload it must accept the host's
+ * `request` port: a cross-origin host page sends no Olares cookie, so a plain
+ * `fetch` here answers 401 even though `/config`, `/status` and `/models` — which
+ * do ride the port — all succeed.
+ */
 export async function postTranscribe(blob, language, signal, options = {}) {
   const query = language ? `?language=${encodeURIComponent(language)}` : "";
   const base = String(options.baseUrl ?? API).replace(/\/$/, "");
-  const res = await fetch(`${base}/transcribe${query}`, {
-    method: "POST",
-    headers: { "content-type": blob.type || "audio/webm" },
-    body: blob,
-    signal,
-  });
+  const url = `${base}/transcribe${query}`;
+  const headers = { "content-type": blob.type || "audio/webm" };
+
+  if (typeof options.request === "function") {
+    const res = await options.request(url, { method: "POST", headers, body: blob, signal });
+    if (!res?.ok) throw new Error(transcribeErrorCode(res?.body));
+    return String(res?.body?.text ?? "").trim();
+  }
+
+  const res = await fetch(url, { method: "POST", headers, body: blob, signal });
   if (!res.ok) {
-    let code = "voice_failed";
+    let payload = null;
     try {
-      code = (await res.json())?.error?.code ?? code;
+      payload = await res.json();
     } catch {
-      /* keep default */
+      /* fall back to the generic code */
     }
-    throw new Error(code);
+    throw new Error(transcribeErrorCode(payload));
   }
   return String((await res.json())?.text ?? "").trim();
 }
