@@ -7,12 +7,12 @@ metadata:
   title: Lares
   description: Chat on Olares, wired to Router
   icon: https://app.cdn.olares.com/appstore/lares/icon_new.png
-  version: 0.26.5-dev1
+  version: 0.26.5-dev2
   categories:
     - Utilities_v112
     - AI
 spec:
-  versionName: "0.26.5-dev1"
+  versionName: "0.26.5-dev2"
   runAsUser: true
   fullDescription: |
     ## Overview

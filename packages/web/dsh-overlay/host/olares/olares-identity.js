@@ -23,6 +23,15 @@ export const inject = ["webServer"];
  */
 const SERVER_EVENTS = ["request", "upgrade"];
 
+/** The `/api` half of `shouldRewriteApiLoopback`, without the host half. */
+function isApiPath(url) {
+  try {
+    return new URL(url ?? "/", "http://x").pathname.startsWith("/api");
+  } catch {
+    return false;
+  }
+}
+
 /** One line per distinct cause; the broken path repeats on every reconnect. */
 const warned = new Set();
 function warnOnce(message) {
@@ -44,17 +53,26 @@ export function apply(ctx) {
       const identity = identityFromHeaders(req.headers ?? {});
       const edgeAuthenticated = Boolean(identity.user && identity.token);
       if (edgeAuthenticated) rememberRequestIdentity(identity);
-      if (!shouldRewriteApiLoopback(req, trustedEntranceHosts())) return;
-      if (!edgeAuthenticated) {
-        // Reached the entrance but the edge sent no usable identity, so the
-        // rewrite is skipped and dsh answers 403. Silent until now, which is
-        // why this was indistinguishable from an authentication failure.
-        warnOnce(
-          `[lares] entrance /api without edge identity: user=${identity.user ? "yes" : "no"} token=${identity.token ? "yes" : "no"}`,
-        );
+      const trusted = trustedEntranceHosts();
+      const viaEntrance = shouldRewriteApiLoopback(req, trusted);
+      if (viaEntrance && edgeAuthenticated) {
+        applyLoopbackHeaders(req.headers, loopbackAuthority(ctx.webServer.port));
         return;
       }
-      applyLoopbackHeaders(req.headers, loopbackAuthority(ctx.webServer.port));
+      // Every skip is reported, not just the identity one: an `/api` call that
+      // is not rewritten reaches dsh's origin fence and comes back 403, and
+      // until now both reasons returned in silence — indistinguishable from the
+      // edge having rejected the request before it ever arrived. Reporting the
+      // host as received is what separates "arrived wearing a name we do not
+      // recognise" from "never arrived at all".
+      if (!isApiPath(req.url)) return;
+      warnOnce(
+        `[lares] /api not rewritten: host=${req.headers?.host ?? "(none)"}`
+          + ` origin=${req.headers?.origin ?? "(none)"}`
+          + ` entrance=${viaEntrance ? "yes" : "no"}`
+          + ` user=${identity.user ? "yes" : "no"} token=${identity.token ? "yes" : "no"}`
+          + ` trusted=${trusted.join("|") || "(empty)"}`,
+      );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.warn(`[lares] olares identity skipped: ${message}`);
