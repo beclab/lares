@@ -41,7 +41,7 @@ spec:
     - New-session hero, directory new-folder picker, and smoother history panel animation on mobile.
     - Slash command menus dismiss on outside tap; desktop composer parity for references, queue, and permissions.
   developer: luolong
-  submitter: luolong
+  submitter: Olares
   locale:
     - en-US
     - zh-CN
