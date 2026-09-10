@@ -3,5 +3,24 @@
   "title": "Lares",
   "image_repo": "docker.io/beclab/lares",
   "image_base_tag": "10",
-  "npm_scope": "@lares"
+  "npm_scope": "@lares",
+  "hot_reload": {
+    "source_subpath": "devsrc",
+    "excludes": [
+      ".git/",
+      ".cursor/",
+      "node_modules/",
+      "__pycache__/",
+      "*.pyc",
+      ".env",
+      ".env.*",
+      "deploy/",
+      "scripts/",
+      "tests/",
+      "artifacts/",
+      "*.tgz",
+      "*.md",
+      ".lares-image-id"
+    ]
+  }
 }

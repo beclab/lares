@@ -5,6 +5,10 @@ import {
   rememberedSettings,
   resetHostSettingsCache,
 } from "@olares/lares-core/larepass/settings";
+import {
+  conversationSettings,
+  resolveSubmitMode,
+} from "@olares/lares-core/larepass/submission-settings";
 
 function ok(body) {
   return { ok: true, status: 200, body };
@@ -15,6 +19,37 @@ function mockRequest() {
   let voiceConfig = { model: "", language: "" };
   const request = async (path, init = {}) => {
     calls.push({ path, method: init.method ?? "GET", body: init.body });
+    if (path === "/api/settings.describe") {
+      return ok({
+        type: "server-response",
+        rpcId: init.body.rpcId,
+        result: {
+          ok: true,
+          value: {
+            writable: true,
+            namespaces: [{
+              ns: "ui-conversation",
+              value: { busyEnter: "queue" },
+              revision: 3,
+            }],
+          },
+        },
+      });
+    }
+    if (path === "/api/settings.update") {
+      return ok({
+        type: "server-response",
+        rpcId: init.body.rpcId,
+        result: {
+          ok: true,
+          value: {
+            ns: "ui-conversation",
+            value: init.body.payload.patch,
+            revision: 4,
+          },
+        },
+      });
+    }
     if (path === "/api/lares/models") return ok({ models: [{ id: "m1", provider: "p" }], default: { provider: "p", model: "m1" } });
     if (path === "/api/lares/models/refresh") return ok({ models: [], default: null });
     if (path === "/api/lares/models/default") return ok({ models: [], default: init.body });
@@ -32,6 +67,20 @@ function mockRequest() {
   };
   return { calls, request };
 }
+
+test("busy Enter follows the durable preference and accelerated uses its opposite", () => {
+  assert.equal(resolveSubmitMode(false, false, true, "steer"), "queue");
+  assert.equal(resolveSubmitMode(true, false, true, "queue"), "queue");
+  assert.equal(resolveSubmitMode(true, true, true, "queue"), "steer");
+  assert.equal(resolveSubmitMode(true, false, true, "steer"), "steer");
+  assert.equal(resolveSubmitMode(true, true, true, "steer"), "queue");
+  assert.equal(resolveSubmitMode(true, false, false, "steer"), "queue");
+  assert.deepEqual(conversationSettings({ writable: false, namespaces: [] }), {
+    busyEnter: "queue",
+    revision: undefined,
+    writable: false,
+  });
+});
 
 test("createHostSettings maps model, voice, and search over the Host request", async () => {
   resetHostSettingsCache();
@@ -51,6 +100,10 @@ test("createHostSettings maps model, voice, and search over the Host request", a
 
   assert.equal((await settings.search()).defaultSearchModel, "brave");
   assert.equal((await settings.setSearchDefault(null)).defaultSearchModel, null);
+  assert.equal((await settings.conversation()).busyEnter, "queue");
+  assert.equal((await settings.setBusyEnter("steer")).busyEnter, "steer");
+  const update = calls.find((call) => call.path === "/api/settings.update");
+  assert.equal(update.body.payload.expectedRevision, 3);
 });
 
 test("createHostSettings reuses the last snapshot until force", async () => {

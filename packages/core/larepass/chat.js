@@ -1,5 +1,6 @@
 import { isAuthFailure } from "./host.js";
 import { consumeMux, MUX_PATH } from "./mux.js";
+import { permissionSelect } from "./permissions.js";
 import { foldTranscript, mergeEvents } from "./transcript.js";
 import { promptPayload, rpcPath, unwrapServerResponse, wrapClientRequest } from "./rpc.js";
 
@@ -31,18 +32,18 @@ export async function callRpc(request, method, payload = {}) {
   return { ...parsed, status: "ok", http };
 }
 
-export async function listRootSessions(rpc) {
+export async function listNavigableSessions(rpc) {
   const listed = await rpc("session.list", {});
   if (!listed.ok) return listed;
   return {
     ok: true,
     status: listed.status || "ok",
-    value: { items: rootSessions(listed.value?.items).map(summarizeSession) },
+    value: { items: navigableSessions(listed.value?.items).map(summarizeSession) },
   };
 }
 
 export async function ensureSession(rpc) {
-  const listed = await listRootSessions(rpc);
+  const listed = await listNavigableSessions(rpc);
   if (!listed.ok) return listed;
   const existing = listed.value.items[0];
   if (existing) {
@@ -54,9 +55,13 @@ export async function ensureSession(rpc) {
   return { ok: true, status: "ok", value: { sessionId: row.sessionId, sessions: [row] } };
 }
 
-export function rootSessions(items) {
+/**
+ * Sessions a person can open. `parentSessionId` is lineage, not a hide signal:
+ * forked children carry it too, and only subagent runs are off-list.
+ */
+export function navigableSessions(items) {
   return (Array.isArray(items) ? items : []).filter(
-    (row) => row?.sessionId && !row.parentSessionId && row.origin !== "subagent",
+    (row) => row?.sessionId && row.origin !== "subagent",
   );
 }
 
@@ -75,11 +80,22 @@ export function sessionTitleOf(row) {
 }
 
 export function summarizeSession(row) {
+  const permissions = permissionSelect(row);
+  const projections = row?.projections?.values ?? {};
   return {
     sessionId: row.sessionId,
     title: sessionTitleOf(row),
     updatedAt: Number(row.updatedAt || row.mtime || row.createdAt || 0) || 0,
     blank: Boolean(row.blank),
+    ...(typeof row.cwd === "string" ? { cwd: row.cwd } : {}),
+    // The composer's permission chip reads its preset from here, so the one
+    // projection this summary keeps is the one a session row can answer for.
+    ...(permissions ? { permissions } : {}),
+    ...(projections.plan ? { plan: projections.plan } : {}),
+    ...(projections.contextPressure ? { contextPressure: projections.contextPressure } : {}),
+    ...(projections.contextBreakdown ? { contextBreakdown: projections.contextBreakdown } : {}),
+    ...(projections.goal ? { goal: projections.goal } : {}),
+    ...(Array.isArray(projections.todos) ? { todos: projections.todos } : {}),
   };
 }
 
@@ -127,8 +143,8 @@ export function clientTimeZone() {
   }
 }
 
-export function sendPrompt(rpc, sessionId, text) {
-  return rpc("session.prompt", promptPayload(sessionId, text, clientTimeZone()));
+export function sendPrompt(rpc, sessionId, textOrContent, mode = "queue") {
+  return rpc("session.prompt", promptPayload(sessionId, textOrContent, clientTimeZone(), mode));
 }
 
 export { consumeMux, mergeEvents, MUX_PATH };

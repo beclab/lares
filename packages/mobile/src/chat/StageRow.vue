@@ -78,8 +78,8 @@ export default {
 .lares-stage__summary {
   min-width: 0;
   overflow: hidden;
-  font-size: 14px;
-  line-height: 24px;
+  font-size: 16px;
+  line-height: 26px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -106,14 +106,14 @@ export default {
   box-sizing: border-box;
   min-width: 0;
   max-width: 100%;
-  max-height: 141px;
+  max-height: 156px;
   margin: 4px 0 0 22px;
   border-radius: 8px;
   padding: 10px 12px;
   overflow: auto;
   background: var(--q-background-3);
   color: var(--q-ink-2);
-  font: 400 11px/16px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font: 400 13px/18px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: break-word;
@@ -126,6 +126,9 @@ export default {
   border-left: 2px solid var(--q-input-stroke);
   padding: 0 0 0 12px;
   background: transparent;
-  font: 400 13px/1.6 inherit;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.6;
 }
 </style>

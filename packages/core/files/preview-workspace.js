@@ -1,16 +1,11 @@
+import { closeTab, openTab, touchTab } from "./preview-tabs.js";
+
 export class NullScrollport {
   offset() {
     return null;
   }
 
   scrollTo() {}
-}
-
-const MAX_TABS = 8;
-
-export function fileName(path) {
-  const parts = String(path).split(/[/\\]/);
-  return parts.at(-1) || path;
 }
 
 function initialSnapshot() {
@@ -174,33 +169,23 @@ export class FilePreviewWorkspace {
   open(sessionId, path, resolved) {
     if (resolved?.status === "ready" && resolved.data?.path) path = resolved.data.path;
     const state = this.session(sessionId);
-    const existing = state.snapshot.tabs.find((tab) => tab.path === path);
-    let tabs = state.snapshot.tabs;
-    let evictedName = null;
-    if (!existing) {
-      if (tabs.length >= MAX_TABS) {
-        const victim = state.lru[0];
-        const evicted = tabs.find((tab) => tab.path === victim);
-        tabs = tabs.filter((tab) => tab.path !== victim);
-        state.lru = state.lru.filter((item) => item !== victim);
-        state.contents.delete(victim);
-        state.offsets.delete(victim);
-        state.requestVersions.delete(victim);
-        evictedName = evicted?.name ?? null;
-      }
-      tabs = [...tabs, { path, name: fileName(path) }];
+    const { tabs, lru, evicted } = openTab({ tabs: state.snapshot.tabs, lru: state.lru }, path);
+    state.lru = lru;
+    if (evicted) {
+      state.contents.delete(evicted.path);
+      state.offsets.delete(evicted.path);
+      state.requestVersions.delete(evicted.path);
     }
     if (resolved !== undefined) {
       state.contents.set(path, resolved);
       state.requestVersions.set(path, (state.requestVersions.get(path) ?? 0) + 1);
     }
-    this.touch(state, path);
     this.emit(sessionId, {
       mode: "preview",
       tabs,
       activePath: path,
       content: state.contents.get(path) ?? { status: "idle" },
-      evictedName,
+      evictedName: evicted?.name ?? null,
     });
     if (resolved === undefined) void this.load(sessionId, path, true);
   }
@@ -220,9 +205,13 @@ export class FilePreviewWorkspace {
 
   close(sessionId, path) {
     const state = this.session(sessionId);
-    if (!state.snapshot.tabs.some((tab) => tab.path === path)) return;
-    const tabs = state.snapshot.tabs.filter((tab) => tab.path !== path);
-    state.lru = state.lru.filter((item) => item !== path);
+    const closed = closeTab(
+      { tabs: state.snapshot.tabs, lru: state.lru, activePath: state.snapshot.activePath },
+      path,
+    );
+    if (!closed) return;
+    const { tabs, activePath } = closed;
+    state.lru = closed.lru;
     state.contents.delete(path);
     state.offsets.delete(path);
     state.requestVersions.set(path, (state.requestVersions.get(path) ?? 0) + 1);
@@ -236,11 +225,10 @@ export class FilePreviewWorkspace {
       });
       return;
     }
-    if (state.snapshot.activePath !== path) {
+    if (activePath === state.snapshot.activePath) {
       this.emit(sessionId, { tabs, evictedName: null });
       return;
     }
-    const activePath = state.lru.at(-1) ?? tabs.at(-1).path;
     this.emit(sessionId, {
       tabs,
       activePath,
@@ -261,8 +249,7 @@ export class FilePreviewWorkspace {
   }
 
   touch(state, path) {
-    state.lru = state.lru.filter((item) => item !== path);
-    state.lru.push(path);
+    state.lru = touchTab(state.lru, path);
   }
 
   /**

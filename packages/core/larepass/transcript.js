@@ -1,6 +1,7 @@
 import { producedPathsFromView } from "../files/deliverables.js";
 import { contextForm, contextProvenance, isHumanUserSource } from "./context-provenance.js";
 import { toolRowModel } from "./tool-row.js";
+import { createTurnMetrics } from "./turn-metrics.js";
 
 export function textFromBlocks(blocks) {
   if (!Array.isArray(blocks)) return "";
@@ -98,6 +99,8 @@ export function foldTranscript(entries) {
   const items = [];
   const blocks = new Map();
   const tools = new Map();
+  const metrics = createTurnMetrics();
+  const lastReply = new Map();
   const retries = new Map();
   const fileSeen = new Set();
   let files = [];
@@ -132,7 +135,10 @@ export function foldTranscript(entries) {
   };
 
   const putBlock = (turn, step, index, row) => {
-    upsert(items, blocks, blockKey(turn, step, index), row);
+    const stored = upsert(items, blocks, blockKey(turn, step, index), row);
+    // The turn's readings belong under its closing reply, the row whose action
+    // bar ends the turn on screen.
+    if (stored.type === "assistant") lastReply.set(Number(turn) || 0, stored);
   };
 
   const chunkIndex = (data, chunk) => {
@@ -219,6 +225,7 @@ export function foldTranscript(entries) {
     if (!event) continue;
     const data = event.data ?? {};
     const view = entryView(entry, event);
+    metrics.observe(event);
 
     if (event.type === "turn/start") {
       closeTurn();
@@ -322,6 +329,10 @@ export function foldTranscript(entries) {
   }
 
   settleOpen(items, running);
+  for (const [turn, row] of lastReply) {
+    const value = metrics.value(turn);
+    if (value) row.metrics = value;
+  }
   if (running) syncFiles();
   return {
     items,

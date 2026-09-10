@@ -53,7 +53,7 @@
 </template>
 
 <script>
-import { fileName } from "@olares/lares-core/files/preview-workspace";
+import { fileName } from "@olares/lares-core/files/filename";
 
 export default {
   name: "LaresDeliverables",
@@ -79,7 +79,7 @@ export default {
 .lares-turn-media-loading {
   margin: 0;
   color: var(--q-ink-3);
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .lares-turn-media-list {
@@ -109,7 +109,7 @@ export default {
   justify-content: space-between;
   gap: 12px;
   color: var(--q-ink-2);
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .lares-turn-media-caption > span {
@@ -119,11 +119,21 @@ export default {
   white-space: nowrap;
 }
 
-.lares-turn-open,
-.lares-turn-file {
-  border: 0;
+.lares-turn-open {
+  height: 28px;
+  flex: none;
+  padding: 0 10px;
+  border: 1px solid var(--q-input-stroke);
+  border-radius: 14px;
   background: transparent;
-  color: var(--q-blue-default);
+  color: var(--q-ink-1);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.lares-turn-open:hover {
+  background: var(--q-background-hover);
 }
 
 .lares-turn-media-image,
@@ -144,8 +154,8 @@ export default {
   width: min(520px, 100%);
   padding: 16px;
   color: var(--q-ink-3);
-  font-size: 13px;
-  line-height: 20px;
+  font-size: 15px;
+  line-height: 22px;
 }
 
 .lares-turn-files {
@@ -153,7 +163,7 @@ export default {
   grid-template-columns: max-content minmax(0, 1fr);
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .lares-turn-files-label {
@@ -170,7 +180,9 @@ export default {
   max-width: 320px;
   padding: 4px 8px;
   overflow: hidden;
+  border: 0;
   border-radius: 6px;
+  cursor: pointer;
   background: var(--q-background-hover);
   color: var(--q-ink-2);
   text-overflow: ellipsis;

@@ -1,10 +1,19 @@
+@import "./motion.css";
+
+/* Own the base size instead of inheriting the host page, so unstyled text
+   (user bubbles, composer textareas) matches the transcript body. */
 .lares-shell {
   position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
   flex: 1;
+  font-size: 17px;
   color: var(--q-ink-1);
+}
+
+.lares-shell[data-device="desktop"] {
+  font-size: 15px;
 }
 
 .lares-shell__conversation {

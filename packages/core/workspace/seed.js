@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
+import { DEFAULT_WORKSPACE_TITLE } from "./constants.js";
 
-export const DEFAULT_WORKSPACE_TITLE = "Default";
+export { DEFAULT_WORKSPACE_TITLE };
 
 /**
  * @param {{ create: (path: string, title?: string) => Promise<{ id: string, path: string, title: string }> }} registry

@@ -1,7 +1,8 @@
 import React from "react";
 import { Button, IconLoadingOutline16 } from "@deepseek-ai/dsh-client-ui-primitives";
 import { partitionPreviews } from "@olares/lares-core/files/preview-groups";
-import { fetchPreviewMap, fileName, rawFileUrl } from "@olares/lares-core/files/preview-workspace";
+import { fileName } from "@olares/lares-core/files/filename";
+import { fetchPreviewMap, rawFileUrl } from "@olares/lares-core/files/preview-workspace";
 import { Model3dHost } from "./Model3dHost.js";
 
 const h = React.createElement;

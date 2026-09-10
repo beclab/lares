@@ -52,7 +52,7 @@ export default {
   inset: 0;
   background: rgb(0 0 0 / 32%);
   opacity: 0;
-  transition: opacity 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+  transition: opacity var(--lares-duration-sheet, 280ms) var(--lares-ease-out, cubic-bezier(0.32, 0.72, 0, 1));
 }
 
 .lares-sheet[data-open="true"] .lares-sheet__backdrop {
@@ -73,7 +73,7 @@ export default {
   background: var(--q-background-1);
   box-shadow: 0 -8px 32px rgb(0 0 0 / 12%);
   transform: translateY(100%);
-  transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+  transition: transform var(--lares-duration-sheet, 280ms) var(--lares-ease-out, cubic-bezier(0.32, 0.72, 0, 1));
 }
 
 .lares-sheet[data-open="true"] .lares-sheet__panel {
@@ -91,9 +91,9 @@ export default {
 
 .lares-sheet__title {
   margin: 0;
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 500;
-  line-height: 24px;
+  line-height: 26px;
 }
 
 .lares-sheet__close {

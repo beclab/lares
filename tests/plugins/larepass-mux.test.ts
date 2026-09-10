@@ -229,6 +229,87 @@ test("classifyMuxEnvelope keeps question waits that session/event folding would 
   );
 });
 
+test("classifyMuxEnvelope preserves queue snapshots for the composer dock", () => {
+  const items = [{
+    id: "q1",
+    placement: "queued",
+    content: [{ type: "text", text: "next" }],
+  }];
+  assert.deepEqual(
+    classifyMuxEnvelope({
+      type: "server-request",
+      rpcId: "r1",
+      payload: { type: "session/queue", sessionId: "s1", items },
+    }),
+    {
+      kind: "queue",
+      sessionId: "s1",
+      items: [{
+        id: "q1",
+        placement: "queued",
+        content: [{ type: "text", text: "next" }],
+        text: "next",
+        preview: "next",
+      }],
+    },
+  );
+});
+
+test("classifyMuxEnvelope preserves live projection updates", () => {
+  assert.deepEqual(
+    classifyMuxEnvelope({
+      type: "server-request",
+      rpcId: "r1",
+      payload: {
+        type: "session/projection",
+        sessionId: "s1",
+        key: "plan",
+        value: { active: true, pending: false },
+        seq: 9,
+      },
+    }),
+    {
+      kind: "projection",
+      sessionId: "s1",
+      key: "plan",
+      value: { active: true, pending: false },
+      seq: 9,
+    },
+  );
+});
+
+test("classifyMuxEnvelope preserves pending tool approvals", () => {
+  assert.deepEqual(
+    classifyMuxEnvelope({
+      type: "server-request",
+      rpcId: "a1",
+      payload: {
+        type: "approval/requested",
+        sessionId: "s1",
+        approvalId: "ap1",
+        toolName: "bash",
+        reason: "run ls",
+      },
+    }),
+    {
+      kind: "approval",
+      sessionId: "s1",
+      rpcId: "a1",
+      approvalId: "ap1",
+      toolName: "bash",
+      callId: undefined,
+      reason: "run ls",
+    },
+  );
+  assert.deepEqual(
+    classifyMuxEnvelope({
+      type: "server-request",
+      payload: { type: "approval/resolved", sessionId: "s1", approvalId: "ap1", outcome: "allowed-once" },
+    }),
+    { kind: "approval-resolved", sessionId: "s1", approvalId: "ap1", outcome: "allowed-once" },
+  );
+});
+
 test("mergeEvents is seq-idempotent and ordered", () => {
   const merged = mergeEvents(
     [{ type: "turn/start", seq: 1, data: { turn: 1 } }],

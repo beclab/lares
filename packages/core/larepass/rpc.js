@@ -50,11 +50,14 @@ export function unwrapServerResponse(body) {
   return { ok: false, rpcId: body.rpcId, error: { code: "invalid-envelope", message: "invalid rpc envelope" } };
 }
 
-export function promptPayload(sessionId, text, timeZone) {
+export function promptPayload(sessionId, textOrContent, timeZone, mode = "queue") {
+  const content = Array.isArray(textOrContent)
+    ? textOrContent
+    : [{ type: "text", text: String(textOrContent ?? "") }];
   return {
     sessionId,
-    mode: "queue",
-    content: [{ type: "text", text: String(text ?? "") }],
+    mode: mode === "steer" ? "steer" : "queue",
+    content,
     ...(timeZone ? { clientTimeZone: timeZone } : {}),
   };
 }

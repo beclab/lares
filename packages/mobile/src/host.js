@@ -1,5 +1,7 @@
 import { hostTarget, hostUrl, MODELS_PATH, probeHost } from "@olares/lares-core/larepass/host";
 import { callRpc, consumeMux, ensureSession, loadTranscript, MUX_PATH, sendPrompt } from "@olares/lares-core/larepass/chat";
+import { commandsUrl, normalizeCommands } from "@olares/lares-core/larepass/commands";
+import { normalizeReferenceCandidates, referencesUrl } from "@olares/lares-core/larepass/references";
 import { muxWsUrl } from "@olares/lares-core/larepass/mux";
 import { RESPOND_PATH } from "@olares/lares-core/larepass/rpc";
 import { createHostSettings } from "@olares/lares-core/larepass/settings";
@@ -133,14 +135,30 @@ export function createHostClient(ports = {}) {
     history(sessionId) {
       return loadTranscript(rpc, sessionId);
     },
-    prompt(sessionId, text) {
-      return sendPrompt(rpc, sessionId, text);
+    prompt(sessionId, content, mode) {
+      return sendPrompt(rpc, sessionId, content, mode);
     },
     async respond(message) {
       const res = await request(RESPOND_PATH, { method: "POST", body: message });
       const body = res?.body;
       if (body && typeof body === "object" && typeof body.accepted === "boolean") return body;
       return { accepted: Boolean(res?.ok), reason: res?.ok ? undefined : "bad-response" };
+    },
+    async commands(sessionId) {
+      const res = await request(commandsUrl(sessionId));
+      const http = Number(res?.status) || 0;
+      if (http < 200 || http >= 300) {
+        throw new Error(res?.body?.error?.code || `commands ${http || "failed"}`);
+      }
+      return normalizeCommands(res?.body);
+    },
+    async references(sessionId, query, quoted = false) {
+      const res = await request(referencesUrl(sessionId, query));
+      const http = Number(res?.status) || 0;
+      if (http < 200 || http >= 300) {
+        throw new Error(res?.body?.error?.code || `references ${http || "failed"}`);
+      }
+      return normalizeReferenceCandidates(res?.body, quoted);
     },
     async preview(sessionId, path) {
       const res = await request(previewMetaUrl(sessionId, path));

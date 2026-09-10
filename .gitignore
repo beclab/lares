@@ -39,6 +39,7 @@ dist/
 *.log
 tmp/
 temp/
+.tmp-*/
 .cache/
 coverage/
 

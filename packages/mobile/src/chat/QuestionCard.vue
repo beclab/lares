@@ -74,13 +74,13 @@ export default {
 .lares-question__heading {
   margin: 0;
   color: var(--q-ink-2);
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .lares-question__prompt {
   margin: 0;
   color: var(--q-ink-1);
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 500;
 }
 
@@ -88,7 +88,7 @@ export default {
 .lares-question__wait {
   margin: 0;
   color: var(--q-ink-3);
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .lares-question__options {
@@ -115,12 +115,12 @@ export default {
 }
 
 .lares-question__label {
-  font-size: 14px;
+  font-size: 16px;
   color: var(--q-ink-1);
 }
 
 .lares-question__hint {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--q-ink-3);
 }
 </style>

@@ -17,6 +17,8 @@ volumeMounts    app-data → /app (subPath: devsrc)
 initContainers  fix-dev-perms, seed-dev-src
 ```
 
+`seed-dev-src` 用 overlay 里的 `.lares-image-id` 判断是否换了镜像：文件缺失就整层重刷。这个文件只在镜像里，同步脚本的 `--delete` 会删掉它，于是下一次重启把刚同步的代码冲回镜像版本。`project.json` 的 `hot_reload.excludes` 因此必须保留 `.lares-image-id`（该列表是整体替换默认值，不是追加）。
+
 额外验收（dsh UI）：
 
 ```text

@@ -2,62 +2,50 @@
   <Teleport to="body">
     <div class="lares-preview" role="dialog" aria-modal="true" :aria-label="t('preview')">
       <header class="lares-preview__bar">
-        <button type="button" class="lares-preview__back" @click="$emit('close')">{{ t("chat") }}</button>
-        <strong class="lares-preview__name" :title="path">{{ name }}</strong>
+        <button
+          type="button"
+          class="lares-preview__icon-btn"
+          :aria-label="t('back')"
+          @click="$emit('close')"
+        >
+          <svg class="lares-preview__glyph" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M14.5 6 9 12l5.5 6" />
+          </svg>
+        </button>
+        <h1 class="lares-preview__name" :title="path">{{ name }}</h1>
         <a
           v-if="downloadHref"
-          class="lares-preview__link"
+          class="lares-preview__download"
           :href="downloadHref"
           download
-        >{{ t("download") }}</a>
+        >
+          {{ t("download") }}
+        </a>
+        <span v-else class="lares-preview__side-spacer" aria-hidden="true" />
       </header>
-      <div v-if="status === 'loading'" class="lares-preview__hint">{{ t("loading") }}</div>
-      <div v-else-if="status === 'error'" class="lares-preview__hint">
-        <p>{{ failText }}</p>
-        <button type="button" class="lares-preview__link" @click="$emit('retry')">{{ t("retry") }}</button>
-      </div>
-      <div v-else-if="data?.kind === 'image'" class="lares-preview__media">
-        <img :src="mediaSrc" :alt="name" />
-      </div>
-      <div v-else-if="data?.kind === 'video'" class="lares-preview__media">
-        <video :src="mediaSrc" controls playsinline />
-      </div>
-      <div v-else-if="data?.kind === 'audio'" class="lares-preview__media">
-        <audio :src="mediaSrc" controls />
-      </div>
-      <iframe
-        v-else-if="data?.kind === 'pdf'"
-        class="lares-preview__pdf"
-        :src="mediaSrc"
-        :title="name"
+      <LaresPreviewBody
+        :path="path"
+        :session-id="sessionId"
+        :status="status"
+        :data="data"
+        :error="error"
+        :media-src="mediaSrc"
+        :href-for="hrefFor"
+        :t="t"
+        @retry="$emit('retry')"
+        @open="$emit('open', $event)"
       />
-      <div
-        v-else-if="data?.kind === 'markdown'"
-        class="lares-preview__markdown"
-        v-html="markdownHtml"
-        @click="onMarkdownClick"
-      />
-      <pre v-else-if="data?.kind === 'text'" class="lares-preview__text">{{ data.text }}</pre>
-      <div v-else-if="data?.kind === 'model3d'" class="lares-preview__hint">
-        <p>{{ t("model3dHint") }}</p>
-      </div>
-      <div v-else class="lares-preview__hint">
-        <p>{{ t("unsupportedTitle") }}</p>
-        <p>{{ t("unsupported") }}</p>
-      </div>
-      <p v-if="data?.truncated" class="lares-preview__hint">{{ t("truncated") }}</p>
     </div>
   </Teleport>
 </template>
 
 <script>
-import { fileName, workspaceLinkClickPath } from "@olares/lares-core/files/preview-workspace";
-import { rewriteWorkspaceTargets } from "@olares/lares-core/files/markdown";
-import { messageFromCode } from "@olares/lares-core/i18n/t";
-import { renderMarkdown } from "../chat/markdown.js";
+import { fileName } from "@olares/lares-core/files/filename";
+import LaresPreviewBody from "./PreviewBody.vue";
 
 export default {
   name: "LaresPreview",
+  components: { LaresPreviewBody },
   props: {
     path: { type: String, required: true },
     sessionId: { type: String, default: "" },
@@ -74,25 +62,6 @@ export default {
     name() {
       return this.data?.name || fileName(this.path);
     },
-    failText() {
-      return messageFromCode(this.t, this.error, "failed");
-    },
-    markdownHtml() {
-      const text = this.data?.text ?? "";
-      const rewritten = this.hrefFor
-        ? rewriteWorkspaceTargets(text, this.data?.path ?? this.path, this.hrefFor)
-        : text;
-      return renderMarkdown(rewritten);
-    },
-  },
-  methods: {
-    onMarkdownClick(event) {
-      if (!this.sessionId) return;
-      const path = workspaceLinkClickPath(this.sessionId, event);
-      if (path === null) return;
-      event.preventDefault();
-      this.$emit("open", path);
-    },
   },
 };
 </script>
@@ -100,12 +69,12 @@ export default {
 <style scoped>
 .lares-preview {
   position: fixed;
-  inset: 0;
   z-index: 50;
   display: flex;
-  flex-direction: column;
   min-width: 0;
   min-height: 0;
+  flex-direction: column;
+  inset: 0;
   padding-top: env(safe-area-inset-top, 0px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
   background: var(--q-background-1);
@@ -113,111 +82,83 @@ export default {
 }
 
 .lares-preview__bar {
+  position: relative;
   display: flex;
-  gap: 8px;
-  align-items: center;
   flex-shrink: 0;
-  height: 56px;
-  padding: 0 12px;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 56px;
+  padding: 6px 8px;
 }
 
-.lares-preview__name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 16px;
-  font-weight: 500;
+.lares-preview__icon-btn,
+.lares-preview__side-spacer {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
 }
 
-.lares-preview__back,
-.lares-preview__link {
+.lares-preview__icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 0;
-  background: none;
-  font: inherit;
-  color: var(--q-blue-default);
-  text-decoration: none;
-}
-
-.lares-preview__hint,
-.lares-preview__text,
-.lares-preview__markdown {
-  margin: 0;
-  padding: 12px 20px;
-  font-size: 14px;
-  color: var(--q-ink-2);
-}
-
-.lares-preview__text,
-.lares-preview__markdown {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
+  border-radius: 999px;
+  padding: 0;
+  background: transparent;
   color: var(--q-ink-1);
 }
 
-.lares-preview__text {
-  white-space: pre-wrap;
-  word-break: break-word;
+.lares-preview__icon-btn:active {
+  background: var(--q-btn-bg-pressed);
 }
 
-.lares-preview__markdown :deep(p),
-.lares-preview__markdown :deep(pre) {
-  margin: 0 0 10px;
+.lares-preview__glyph {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-.lares-preview__markdown :deep(ul),
-.lares-preview__markdown :deep(ol) {
-  margin: 4px 0 12px;
-  padding: 0 0 0 1.35em;
+.lares-preview__name {
+  position: absolute;
+  left: 50%;
+  max-width: calc(100% - 152px);
+  margin: 0;
+  overflow: hidden;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 24px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  pointer-events: none;
 }
 
-.lares-preview__markdown :deep(ul) {
-  list-style: disc outside;
-}
-
-.lares-preview__markdown :deep(ol) {
-  list-style: decimal outside;
-}
-
-.lares-preview__markdown :deep(li + li) {
-  margin-top: 6px;
-}
-
-.lares-preview__markdown :deep(img) {
-  max-width: 100%;
-  height: auto;
-}
-
-.lares-preview__media {
-  display: grid;
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  place-items: center;
-  overflow: auto;
-  padding: 16px 20px;
-}
-
-.lares-preview__media img,
-.lares-preview__media video {
-  max-width: 100%;
-  max-height: 100%;
-  min-width: 0;
-  min-height: 0;
+.lares-preview__download {
+  display: inline-flex;
+  min-width: 40px;
+  height: 32px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--q-separator);
   border-radius: 10px;
-  object-fit: contain;
+  padding: 0 12px;
+  background: var(--q-background-3);
+  color: var(--q-ink-1);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 18px;
+  text-decoration: none;
 }
 
-.lares-preview__pdf {
-  flex: 1;
-  min-height: 0;
-  width: 100%;
-  border: 0;
-}
-
-.lares-preview__media audio {
-  width: min(100%, 520px);
+.lares-preview__download:active {
+  background: var(--q-btn-bg-pressed);
 }
 </style>

@@ -1,0 +1,166 @@
+/* Shared motion tokens — align with Sheet / HistoryPanel easing. */
+.lares-shell {
+  --lares-ease-out: cubic-bezier(0.32, 0.72, 0, 1);
+  --lares-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --lares-duration-fast: 120ms;
+  --lares-duration-normal: 220ms;
+  --lares-duration-sheet: 280ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lares-shell {
+    --lares-duration-fast: 0ms;
+    --lares-duration-normal: 0ms;
+    --lares-duration-sheet: 0ms;
+  }
+}
+
+/* Mobile full-screen preview — push from the right. */
+.lares-preview-enter-active,
+.lares-preview-leave-active {
+  transition: transform var(--lares-duration-sheet) var(--lares-ease-out);
+}
+
+.lares-preview-enter-from,
+.lares-preview-leave-to {
+  transform: translateX(100%);
+}
+
+/* Desktop preview overlay — fade over the conversation. */
+.lares-desk-preview-enter-active,
+.lares-desk-preview-leave-active {
+  transition: opacity var(--lares-duration-normal) var(--lares-ease-out);
+}
+
+.lares-desk-preview-enter-from,
+.lares-desk-preview-leave-to {
+  opacity: 0;
+}
+
+/* Modal dialog — backdrop fade + surface scale. */
+.lares-dialog-enter-active,
+.lares-dialog-leave-active {
+  transition: opacity var(--lares-duration-normal) var(--lares-ease-out);
+}
+
+.lares-dialog-enter-active .lares-pc-dialog__surface,
+.lares-dialog-leave-active .lares-pc-dialog__surface {
+  transition: transform var(--lares-duration-normal) var(--lares-ease-out),
+    opacity var(--lares-duration-normal) var(--lares-ease-out);
+}
+
+.lares-dialog-enter-from,
+.lares-dialog-leave-to {
+  opacity: 0;
+}
+
+.lares-dialog-enter-from .lares-pc-dialog__surface,
+.lares-dialog-leave-to .lares-pc-dialog__surface {
+  opacity: 0;
+  transform: scale(0.96) translateY(8px);
+}
+
+/* Popover menu — subtle rise. */
+.lares-popover-enter-active,
+.lares-popover-leave-active {
+  transition: opacity var(--lares-duration-fast) var(--lares-ease-out),
+    transform var(--lares-duration-fast) var(--lares-ease-out);
+}
+
+.lares-popover-enter-from,
+.lares-popover-leave-to {
+  opacity: 0;
+  transform: translateY(-4px) scale(0.98);
+}
+
+/* Mobile hero ↔ chat crossfade. */
+.lares-view-enter-active,
+.lares-view-leave-active {
+  transition: opacity var(--lares-duration-normal) var(--lares-ease-out),
+    transform var(--lares-duration-normal) var(--lares-ease-out);
+}
+
+.lares-view-enter-from {
+  opacity: 0;
+  transform: translateY(12px);
+}
+
+.lares-view-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+/* Composer panels (queue, questions, approval). */
+.lares-panel-enter-active,
+.lares-panel-leave-active {
+  transition: opacity var(--lares-duration-normal) var(--lares-ease-out),
+    transform var(--lares-duration-normal) var(--lares-ease-out);
+}
+
+.lares-panel-enter-from,
+.lares-panel-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+/* Preview tab strip — slide in from the header edge. */
+.lares-tabs-enter-active {
+  transition: opacity var(--lares-duration-normal) var(--lares-ease-out),
+    transform var(--lares-duration-normal) var(--lares-ease-out);
+}
+
+.lares-tabs-enter-from {
+  opacity: 0;
+  transform: translateX(12px);
+}
+
+.lares-tab-enter-active,
+.lares-tab-leave-active {
+  transition: opacity var(--lares-duration-fast) var(--lares-ease-out),
+    transform var(--lares-duration-fast) var(--lares-ease-out);
+}
+
+.lares-tab-enter-from,
+.lares-tab-leave-to {
+  opacity: 0;
+  transform: scale(0.92);
+}
+
+.lares-tab-leave-active {
+  position: absolute;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lares-preview-enter-active,
+  .lares-preview-leave-active,
+  .lares-desk-preview-enter-active,
+  .lares-desk-preview-leave-active,
+  .lares-dialog-enter-active,
+  .lares-dialog-leave-active,
+  .lares-dialog-enter-active .lares-pc-dialog__surface,
+  .lares-dialog-leave-active .lares-pc-dialog__surface,
+  .lares-popover-enter-active,
+  .lares-popover-leave-active,
+  .lares-view-enter-active,
+  .lares-view-leave-active,
+  .lares-panel-enter-active,
+  .lares-panel-leave-active,
+  .lares-tabs-enter-active,
+  .lares-tab-enter-active,
+  .lares-tab-leave-active {
+    transition: none;
+  }
+
+  .lares-preview-enter-from,
+  .lares-preview-leave-to,
+  .lares-view-enter-from,
+  .lares-view-leave-to,
+  .lares-panel-enter-from,
+  .lares-panel-leave-to,
+  .lares-dialog-enter-from .lares-pc-dialog__surface,
+  .lares-dialog-leave-to .lares-pc-dialog__surface,
+  .lares-popover-enter-from,
+  .lares-popover-leave-to {
+    transform: none;
+  }
+}

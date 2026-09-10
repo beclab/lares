@@ -11,9 +11,13 @@ import { LaresApp, laresPortsFromAccount, findLaresEntrance } from "@olares/lare
 </script>
 ```
 
-`device` 为 `desktop` 时对话列居中、宽 748px；`mobile`（默认）保持全宽。
+`device` 为 `desktop` 时启用工作区侧栏和桌面 Composer；`mobile`（默认）保持原来的移动端顶栏、历史抽屉与输入区。
 
-设置页同样只挂 `LaresAgentSettings`。
+桌面 Composer 的权限胶囊读会话的 `permissions` 投影，切换发 Host 自己的 `/permission <preset>`；命令菜单读 Host 的 `/api/lares/commands`。两者都由 Host 决定有无：投影缺失时胶囊不显示，端点缺失时菜单给出错误文案，其余功能不受影响。
+
+回复下方那行图标在指针设备上悬停才显示用时读数（时刻 · 用时 · 首 token · tok/s），触屏保持原来的裸图标行。读数全部由会话日志里的 `time` 和 `usage` 推出（见 `larepass/turn-metrics`），日志没记的那项直接不显示，不做估算。
+
+设置页同样只挂 `LaresAgentSettings`。`device` 为 `desktop` 时用锚定下拉，`mobile`（默认）用底部列表。
 
 正式 App：把当前登录账号的 `myApps` 交给 `laresPortsFromAccount`（或自己调 `findLaresEntrance` 得到 `baseUrl`）。入口前缀是安装时随机的，不要拼 `lares.<用户>.olares.com`，也不要把 webpack `.env` 里的调试子域带进生产。
 

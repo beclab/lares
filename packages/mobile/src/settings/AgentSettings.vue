@@ -1,5 +1,5 @@
 <template>
-  <div class="lares-agent" :aria-busy="loading ? 'true' : 'false'">
+  <div class="lares-agent" :data-device="layoutDevice" :aria-busy="loading ? 'true' : 'false'">
     <div v-if="loading" class="lares-agent__loading" role="status">
       <span class="lares-agent__spinner" aria-hidden="true" />
       <p>{{ t("agent.loading") }}</p>
@@ -7,7 +7,15 @@
     <div class="lares-agent__body" :inert="loading || undefined">
     <section class="lares-agent__group">
       <h2>{{ tModel("settings.title") }}</h2>
-      <div class="lares-agent__list">
+      <LaresSelect
+        v-if="isDesktop"
+        :value="modelCurrent"
+        :sections="modelSelectSections"
+        :disabled="busy || !models"
+        :empty="tModel('settings.empty')"
+        @select="(item) => pick(item, 'model')"
+      />
+      <div v-else class="lares-agent__list">
         <LaresSettingRow
           :label="tModel('settings.default')"
           :value="modelLabel"
@@ -21,6 +29,17 @@
         {{ tModel("settings.providerFailed", { name: entry.name || entry.provider, msg: entry.message }) }}
       </p>
       <p v-if="modelError" class="lares-agent__hint" data-status="error">{{ modelError }}</p>
+    </section>
+    <section v-if="isDesktop" class="lares-agent__group">
+      <h2>{{ t("settings.input.title") }}</h2>
+      <LaresSelect
+        :value="conversation?.busyEnter || 'queue'"
+        :sections="busyEnterSections"
+        :disabled="busy || !conversation?.writable"
+        @select="chooseBusyEnter"
+      />
+      <p class="lares-agent__hint">{{ t("settings.input.busyEnter.hint") }}</p>
+      <p v-if="conversationError" class="lares-agent__hint" data-status="error">{{ conversationError }}</p>
     </section>
     <!-- Voice input parked.
     <section class="lares-agent__group">
@@ -48,7 +67,15 @@
     -->
     <section class="lares-agent__group">
       <h2>{{ tSearch("settings.title") }}</h2>
-      <div class="lares-agent__list">
+      <LaresSelect
+        v-if="isDesktop"
+        :value="searchMenuId"
+        :sections="searchSelectSections"
+        :disabled="busy || !search"
+        :empty="tSearch('settings.default.empty')"
+        @select="(item) => pick(item, 'search')"
+      />
+      <div v-else class="lares-agent__list">
         <LaresSettingRow
           :label="tSearch('settings.default')"
           :value="searchLabel"
@@ -60,7 +87,7 @@
       </div>
       <p v-if="searchError" class="lares-agent__hint" data-status="error">{{ searchError }}</p>
     </section>
-    <LaresSheet :open="Boolean(panel)" :title="sheetTitle" @close="panel = ''">
+    <LaresSheet v-if="!isDesktop" :open="Boolean(panel)" :title="sheetTitle" @close="panel = ''">
       <p v-if="sheetEmpty" class="lares-agent__hint lares-agent__hint--sheet">{{ sheetEmpty }}</p>
       <template v-for="section in sheetSections" :key="section.heading || 'main'">
         <p v-if="section.heading" class="lares-agent__heading">{{ section.heading }}</p>
@@ -100,8 +127,10 @@ import { hostKey as hostSessionKey } from "@olares/lares-core/larepass/host";
 import { createHostClient } from "../host.js";
 import { adoptHost } from "../runtime.js";
 import { createT } from "../i18n.js";
+import { chatDevice, DEVICE_DESKTOP } from "../layout.js";
 import LaresSettingRow from "./SettingRow.vue";
 import LaresSheet from "./Sheet.vue";
+import LaresSelect from "./Select.vue";
 
 const catalogs = {
   model: { zh: MODEL_ZH, en: MODEL_EN },
@@ -115,10 +144,11 @@ function itemLabel(items, id) {
 
 export default {
   name: "LaresAgentSettings",
-  components: { LaresSettingRow, LaresSheet },
+  components: { LaresSettingRow, LaresSheet, LaresSelect },
   expose: ["reload"],
   props: {
     locale: { type: String, default: "en" },
+    device: { type: String, default: "mobile" },
     baseUrl: { type: String, default: undefined },
     proxyPrefix: { type: String, default: undefined },
     request: { type: Function, default: undefined },
@@ -133,14 +163,22 @@ export default {
       models: remembered.models,
       voice: remembered.voice,
       search: remembered.search,
+      conversation: remembered.conversation,
       modelError: "",
       voiceError: "",
       searchError: "",
+      conversationError: "",
     };
   },
   computed: {
     t() {
       return createT(this.locale);
+    },
+    layoutDevice() {
+      return chatDevice(this.device);
+    },
+    isDesktop() {
+      return this.layoutDevice === DEVICE_DESKTOP;
     },
     ports() {
       return {
@@ -200,9 +238,33 @@ export default {
       if (!this.voice) return "—";
       return itemLabel(this.voiceLanguages, voiceMenuValue(this.voice.config?.language));
     },
+    searchMenuId() {
+      return searchMenuValue(this.search?.defaultSearchModel);
+    },
     searchLabel() {
       if (!this.search) return "—";
-      return itemLabel(this.searchItems, searchMenuValue(this.search.defaultSearchModel));
+      return itemLabel(this.searchItems, this.searchMenuId);
+    },
+    modelSelectSections() {
+      return this.modelGroups.map((group) => ({
+        heading: group.provider,
+        items: group.models.map((model) => ({
+          id: this.modelKey(model),
+          label: model.name,
+          model,
+        })),
+      }));
+    },
+    searchSelectSections() {
+      return [{ items: this.searchItems.map((item) => ({ id: item.id, label: item.label })) }];
+    },
+    busyEnterSections() {
+      return [{
+        items: [
+          { id: "queue", label: this.t("settings.input.busyEnter.queue") },
+          { id: "steer", label: this.t("settings.input.busyEnter.steer") },
+        ],
+      }];
     },
     sheetTitle() {
       if (this.panel === "model") return this.tModel("settings.title");
@@ -212,32 +274,17 @@ export default {
       return "";
     },
     sheetCurrent() {
-      if (this.panel === "model") return this.modelCurrent;
-      if (this.panel === "voiceModel") return voiceMenuValue(this.voice?.config?.model);
-      if (this.panel === "voiceLang") return voiceMenuValue(this.voice?.config?.language);
-      if (this.panel === "search") return searchMenuValue(this.search?.defaultSearchModel);
-      return "";
+      return this.sheetCurrentFor(this.panel);
     },
     sheetSections() {
-      if (this.panel === "model") {
-        return this.modelGroups.map((group) => ({
-          heading: group.provider,
-          items: group.models.map((model) => ({
-            id: this.modelKey(model),
-            label: model.name,
-            model,
-          })),
-        }));
-      }
+      if (this.panel === "model") return this.modelSelectSections;
       if (this.panel === "voiceModel") {
         return [{ items: this.voiceModels.map((item) => ({ id: item.id, label: item.label })) }];
       }
       if (this.panel === "voiceLang") {
         return [{ items: this.voiceLanguages.map((item) => ({ id: item.id, label: item.label })) }];
       }
-      if (this.panel === "search") {
-        return [{ items: this.searchItems.map((item) => ({ id: item.id, label: item.label })) }];
-      }
+      if (this.panel === "search") return this.searchSelectSections;
       return [];
     },
     sheetEmpty() {
@@ -255,9 +302,11 @@ export default {
       this.models = null;
       this.voice = null;
       this.search = null;
+      this.conversation = null;
       this.modelError = "";
       this.voiceError = "";
       this.searchError = "";
+      this.conversationError = "";
       this.load(true);
     },
   },
@@ -286,9 +335,8 @@ export default {
       if (!ready) return;
       this.panel = panel;
     },
-    async pick(item) {
-      const panel = this.panel;
-      if (item.id === this.sheetCurrent) {
+    async pick(item, panel = this.panel) {
+      if (item.id === this.sheetCurrentFor(panel)) {
         this.panel = "";
         return;
       }
@@ -297,6 +345,13 @@ export default {
       if (panel === "voiceModel") await this.patchVoice("model", voiceValueFromMenu(item.id));
       if (panel === "voiceLang") await this.patchVoice("language", voiceValueFromMenu(item.id));
       if (panel === "search") await this.chooseSearch(item.id);
+    },
+    sheetCurrentFor(panel) {
+      if (panel === "model") return this.modelCurrent;
+      if (panel === "voiceModel") return voiceMenuValue(this.voice?.config?.model);
+      if (panel === "voiceLang") return voiceMenuValue(this.voice?.config?.language);
+      if (panel === "search") return searchMenuValue(this.search?.defaultSearchModel);
+      return "";
     },
     reload() {
       return this.load(true);
@@ -307,17 +362,20 @@ export default {
         this.models = remembered.models ?? this.models;
         this.voice = remembered.voice ?? this.voice;
         this.search = remembered.search ?? this.search;
-        if (this.models && this.voice && this.search) return;
+        this.conversation = remembered.conversation ?? this.conversation;
+        if (this.models && this.voice && this.search && this.conversation) return;
       }
       this.panel = "";
       this.loading = true;
       this.modelError = "";
       this.voiceError = "";
       this.searchError = "";
-      const [models, voice, search] = await Promise.allSettled([
+      this.conversationError = "";
+      const [models, voice, search, conversation] = await Promise.allSettled([
         this.settings.models({ force }),
         this.settings.voice(force),
         this.settings.search({ force }),
+        this.settings.conversation({ force }),
       ]);
       if (models.status === "fulfilled") this.models = models.value;
       else this.modelError = this.failText(this.tModel, "settings.loadFailed", models.reason);
@@ -325,6 +383,8 @@ export default {
       else this.voiceError = this.tVoice("settings.loadFailed");
       if (search.status === "fulfilled") this.search = search.value;
       else this.searchError = this.failText(this.tSearch, "settings.loadFailed", search.reason);
+      if (conversation.status === "fulfilled") this.conversation = conversation.value;
+      else this.conversationError = conversation.reason instanceof Error ? conversation.reason.message : String(conversation.reason);
       this.loading = false;
     },
     async chooseModel(model) {
@@ -369,6 +429,18 @@ export default {
         this.pending = "";
       }
     },
+    async chooseBusyEnter(item) {
+      if (!item?.id || item.id === this.conversation?.busyEnter || this.busy) return;
+      this.pending = "busyEnter";
+      this.conversationError = "";
+      try {
+        this.conversation = await this.settings.setBusyEnter(item.id);
+      } catch (err) {
+        this.conversationError = err instanceof Error ? err.message : String(err);
+      } finally {
+        this.pending = "";
+      }
+    },
   },
 };
 </script>
@@ -382,11 +454,25 @@ export default {
   color: var(--q-ink-1);
 }
 
+.lares-agent[data-device="desktop"] {
+  min-height: 0;
+  width: 100%;
+}
+
 .lares-agent__body {
   display: flex;
   flex-direction: column;
   gap: 20px;
   padding: 16px 20px 32px;
+}
+
+.lares-agent[data-device="desktop"] .lares-agent__body {
+  gap: 16px;
+  padding: 0;
+}
+
+.lares-agent[data-device="desktop"] .lares-agent__group h2 {
+  font-size: 16px;
 }
 
 .lares-agent__loading {
@@ -405,8 +491,12 @@ export default {
 
 .lares-agent__loading p {
   margin: 0;
-  font-size: 14px;
-  line-height: 20px;
+  font-size: 16px;
+  line-height: 22px;
+}
+
+.lares-agent[data-device="desktop"] .lares-agent__loading {
+  min-height: 96px;
 }
 
 .lares-agent__spinner {
@@ -436,9 +526,9 @@ export default {
 
 .lares-agent__group h2 {
   margin: 0;
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 500;
-  line-height: 22px;
+  line-height: 24px;
 }
 
 .lares-agent__list {
@@ -449,7 +539,7 @@ export default {
 
 .lares-agent__hint {
   margin: 0;
-  font-size: 13px;
+  font-size: 15px;
   color: var(--q-ink-3);
 }
 
@@ -465,8 +555,8 @@ export default {
   margin: 0;
   padding: 12px 16px 4px;
   color: var(--q-ink-3);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
-  line-height: 16px;
+  line-height: 18px;
 }
 </style>

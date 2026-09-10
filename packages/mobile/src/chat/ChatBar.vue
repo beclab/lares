@@ -47,9 +47,9 @@ export default {
   max-width: 100%;
   margin: 0;
   overflow: hidden;
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 600;
-  line-height: 22px;
+  line-height: 24px;
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;

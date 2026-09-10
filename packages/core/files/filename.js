@@ -1,3 +1,9 @@
+/** Display name of a workspace path, which may arrive with either separator. */
+export function fileName(path) {
+  const parts = String(path).split(/[/\\]/);
+  return parts.at(-1) || path;
+}
+
 export function posixBasename(path) {
   const raw = String(path ?? "");
   const trimmed = raw.replace(/\/+$/, "");

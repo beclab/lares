@@ -1,0 +1,14 @@
+{
+  "name": "@lares/session-commands",
+  "version": "0.15.0",
+  "private": true,
+  "type": "module",
+  "description": "Slash-command discovery for the Lares composer",
+  "exports": {
+    ".": "./host/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "host"
+  ]
+}

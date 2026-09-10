@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { callRpc, ensureSession, groupSessionsByRecency, loadTranscript, rootSessions, sendPrompt, summarizeSession, visibleHistorySessions } from "@olares/lares-core/larepass/chat";
+import { callRpc, ensureSession, groupSessionsByRecency, loadTranscript, navigableSessions, sendPrompt, summarizeSession, visibleHistorySessions } from "@olares/lares-core/larepass/chat";
 import { promptPayload, RESPOND_PATH, rpcPath, unwrapServerResponse, wrapClientRequest, wrapClientResponse } from "@olares/lares-core/larepass/rpc";
 import { parseAskUserQuestions, singleSelectAnswer } from "@olares/lares-core/larepass/questions";
 import { STAGE_COPY } from "@olares/lares-core/larepass/stage-copy";
@@ -53,6 +53,19 @@ test("promptPayload is a queued text turn", () => {
     mode: "queue",
     content: [{ type: "text", text: "hello" }],
     clientTimeZone: "Asia/Shanghai",
+  });
+});
+
+test("promptPayload preserves rich content and accelerated steer mode", () => {
+  const content = [
+    { type: "text", text: "look" },
+    { type: "image", mediaType: "image/png", data: "AAAA", name: "shot.png" },
+  ];
+  assert.deepEqual(promptPayload("abc", content, "UTC", "steer"), {
+    sessionId: "abc",
+    mode: "steer",
+    content,
+    clientTimeZone: "UTC",
   });
 });
 
@@ -215,14 +228,18 @@ test("ensureSession reuses a top-level row before creating", async () => {
   assert.equal(created.value.sessionId, "fresh");
 });
 
-test("rootSessions drops subagent rows and summarizeSession picks a title", () => {
+test("navigableSessions drops subagent rows, keeps forks, and summarizeSession picks a title", () => {
   assert.deepEqual(
-    rootSessions([
+    navigableSessions([
       { sessionId: "child", parentSessionId: "s1", origin: "subagent", title: "tool" },
       { sessionId: "s1", title: "hello", updatedAt: 9 },
+      { sessionId: "fork", parentSessionId: "s1", title: "hello (fork)", updatedAt: 11 },
       { name: "orphan" },
     ]).map(summarizeSession),
-    [{ sessionId: "s1", title: "hello", updatedAt: 9, blank: false }],
+    [
+      { sessionId: "s1", title: "hello", updatedAt: 9, blank: false },
+      { sessionId: "fork", title: "hello (fork)", updatedAt: 11, blank: false },
+    ],
   );
   assert.equal(summarizeSession({ sessionId: "s2", name: "  draft  ", createdAt: 3 }).title, "draft");
   assert.equal(

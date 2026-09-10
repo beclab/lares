@@ -52,6 +52,7 @@ export default {
   background: transparent;
   color: var(--q-ink-1);
   text-align: left;
+  transition: background var(--lares-duration-fast, 120ms) var(--lares-ease-out, ease);
 }
 
 .lares-set-row--boxed {
@@ -75,8 +76,8 @@ export default {
 .lares-set-row__label {
   min-width: 0;
   flex: 1;
-  font-size: 14px;
-  line-height: 20px;
+  font-size: 16px;
+  line-height: 22px;
   word-break: break-word;
 }
 
@@ -91,8 +92,8 @@ export default {
 
 .lares-set-row__value {
   overflow: hidden;
-  font-size: 13px;
-  line-height: 18px;
+  font-size: 15px;
+  line-height: 20px;
   color: var(--q-ink-2);
   text-align: right;
   text-overflow: ellipsis;

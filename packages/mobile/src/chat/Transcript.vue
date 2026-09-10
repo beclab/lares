@@ -33,7 +33,7 @@
         :body="row.text"
       />
       <LaresQuestionCard
-        v-else-if="row.type === 'tool' && row.name === 'ask_user_question' && row.status === 'running'"
+        v-else-if="!questionTakeover && row.type === 'tool' && row.name === 'ask_user_question' && row.status === 'running'"
         :questions="questionItems(row)"
         :rpc-id="question?.rpcId || ''"
         :busy="questionBusy"
@@ -64,6 +64,7 @@
         <LaresMessageActions
           :text="row.text"
           :reaction="reactions[actionKey(index)] || ''"
+          :metrics="row.metrics || null"
           :t="t"
           @react="setReaction(index, $event)"
         />
@@ -106,6 +107,7 @@ export default {
     sessionId: { type: String, default: "" },
     question: { type: Object, default: null },
     questionBusy: { type: Boolean, default: false },
+    questionTakeover: { type: Boolean, default: false },
     t: { type: Function, required: true },
   },
   emits: ["open", "media", "answer"],
@@ -225,7 +227,7 @@ export default {
 
 .lares-log__empty {
   margin: 24px 0 0;
-  font-size: 13px;
+  font-size: 15px;
   color: var(--q-ink-3);
 }
 
@@ -267,7 +269,8 @@ export default {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .lares-sk {
+  .lares-sk,
+  .lares-log__item[data-pending="true"] {
     animation: none;
   }
 }
@@ -278,6 +281,17 @@ export default {
   gap: 8px;
   min-width: 0;
   max-width: 100%;
+}
+
+.lares-log__item[data-pending="true"] {
+  animation: lares-msg-in var(--lares-duration-normal, 220ms) var(--lares-ease-out, cubic-bezier(0.32, 0.72, 0, 1));
+}
+
+@keyframes lares-msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
 }
 
 .lares-log__item[data-type="user"],
@@ -305,7 +319,7 @@ export default {
   min-width: 0;
   max-width: 100%;
   overflow-x: hidden;
-  font-size: 15px;
+  font-size: 17px;
   line-height: 1.55;
   word-break: break-word;
   overflow-wrap: anywhere;
@@ -350,7 +364,7 @@ export default {
 .lares-md :deep(h2),
 .lares-md :deep(h3) {
   margin: 0 0 8px;
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 600;
 }
 
@@ -358,7 +372,7 @@ export default {
   border-radius: 4px;
   padding: 1px 4px;
   background: var(--q-background-3);
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .lares-md :deep(pre) {

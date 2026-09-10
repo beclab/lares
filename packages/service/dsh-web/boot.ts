@@ -17,6 +17,7 @@ import {
   installProfileDeps,
   patchConnectionTrustFences,
   patchSettingsNavIcon,
+  patchWebBlockLocale,
   resolveDshBin,
 } from "./profile.js";
 
@@ -40,6 +41,7 @@ export async function bootLaresWeb(): Promise<void> {
   await installProfileDeps(profileDir);
   patchConnectionTrustFences();
   patchSettingsNavIcon();
+  patchWebBlockLocale();
 
   let catalogModels: RouterModelEntry[] = [];
   try {

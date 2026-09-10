@@ -127,7 +127,7 @@ export function groupModelsByProvider(models) {
   for (const model of models) {
     let group = index.get(model.provider);
     if (group === undefined) {
-      group = { provider: model.provider, models: [] };
+      group = { provider: model.provider, name: model.providerName || model.provider, models: [] };
       index.set(model.provider, group);
       groups.push(group);
     }

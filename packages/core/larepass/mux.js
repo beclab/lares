@@ -1,3 +1,5 @@
+import { normalizeQueueItems } from "./queue.js";
+
 export const MUX_PATH = "/api/events.mux";
 
 export const MUX_FETCH_HEADERS = {
@@ -63,12 +65,47 @@ export function classifyMuxEnvelope(envelope) {
       event: frame.view ? { ...frame.event, view: frame.view } : frame.event,
     };
   }
+  if (frame.type === "session/queue") {
+    return {
+      kind: "queue",
+      sessionId,
+      items: normalizeQueueItems(frame.items),
+    };
+  }
+  if (frame.type === "session/projection" && typeof frame.key === "string") {
+    return {
+      kind: "projection",
+      sessionId,
+      key: frame.key,
+      value: frame.value,
+      seq: frame.seq,
+    };
+  }
   if (frame.type === "question/requested") {
     return {
       kind: "question",
       sessionId,
       rpcId,
       questions: Array.isArray(frame.questions) ? frame.questions : [],
+    };
+  }
+  if (frame.type === "approval/requested") {
+    return {
+      kind: "approval",
+      sessionId,
+      rpcId,
+      approvalId: frame.approvalId,
+      toolName: frame.toolName,
+      callId: frame.callId,
+      reason: frame.reason,
+    };
+  }
+  if (frame.type === "approval/resolved") {
+    return {
+      kind: "approval-resolved",
+      sessionId,
+      approvalId: frame.approvalId,
+      outcome: frame.outcome,
     };
   }
   if (frame.type === "question/resolved") {

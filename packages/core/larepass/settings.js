@@ -1,8 +1,29 @@
 import { createSnapshotStore } from "../tools/async.js";
+import { callRpc } from "./chat.js";
+import {
+  CONVERSATION_SETTINGS_NAMESPACE,
+  busyEnterBehavior,
+  conversationSettings,
+} from "./submission-settings.js";
 
 const modelsStore = createSnapshotStore();
 const voiceStore = createSnapshotStore();
 const searchStore = createSnapshotStore();
+const conversationStore = createSnapshotStore();
+const conversationListeners = new Set();
+
+function publishConversation(value) {
+  conversationStore.remember(value);
+  for (const listener of conversationListeners) listener(value);
+  return value;
+}
+
+export function subscribeConversationSettings(listener) {
+  conversationListeners.add(listener);
+  const current = conversationStore.peek();
+  if (current) listener(current);
+  return () => conversationListeners.delete(listener);
+}
 
 function fail(res, path) {
   const err = res?.body?.error;
@@ -12,6 +33,11 @@ function fail(res, path) {
 function payload(res, path) {
   if (!res?.ok) fail(res, path);
   return res.body;
+}
+
+function rpcValue(result, method) {
+  if (result?.ok) return result.value;
+  throw new Error(result?.error?.message || result?.error?.code || method);
 }
 
 function sttModels(body) {
@@ -24,6 +50,7 @@ export function rememberedSettings() {
     models: modelsStore.peek(),
     voice: voiceStore.peek(),
     search: searchStore.peek(),
+    conversation: conversationStore.peek(),
   };
 }
 
@@ -31,6 +58,7 @@ export function resetHostSettingsCache() {
   modelsStore.remember(null);
   voiceStore.remember(null);
   searchStore.remember(null);
+  conversationStore.remember(null);
 }
 
 export function createHostSettings(request) {
@@ -95,6 +123,27 @@ export function createHostSettings(request) {
           "/api/lares/web-search/config/default",
         ),
       );
+    },
+    async conversation(options = {}) {
+      const value = await conversationStore.load(async () => {
+        const described = rpcValue(await callRpc(request, "settings.describe"), "settings.describe");
+        return conversationSettings(described);
+      }, options);
+      return publishConversation(value);
+    },
+    async setBusyEnter(value) {
+      const current = await this.conversation();
+      if (!current.writable) throw new Error("settings are read-only");
+      const next = rpcValue(await callRpc(request, "settings.update", {
+        ns: CONVERSATION_SETTINGS_NAMESPACE,
+        patch: { busyEnter: busyEnterBehavior(value) },
+        ...(current.revision === undefined ? {} : { expectedRevision: current.revision }),
+      }), "settings.update");
+      return publishConversation({
+        busyEnter: busyEnterBehavior(next.value?.busyEnter),
+        revision: Number.isInteger(next.revision) ? next.revision : undefined,
+        writable: true,
+      });
     },
   };
 }

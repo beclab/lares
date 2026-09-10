@@ -14,6 +14,7 @@ import { join } from "node:path";
 import {
   ensureLaresWebProfile,
   linkOwnedProfileDeps,
+  localizeWebBlockCopy,
   sectionComponentNavIcon,
   trustOlaresConnectionHost,
 } from "../../packages/service/dsh-web/profile.js";
@@ -60,6 +61,27 @@ test("a settings section's own component supplies its nav glyph", () => {
 
 test("nav icon patch fails loudly when the settings shell drifts", () => {
   assert.throws(() => sectionComponentNavIcon("unrelated upstream source"), /anchor not found/);
+});
+
+const WEB_BLOCK = [
+  'c?jsx("div",{children:"未找到结果"}):jsx("ol",{})',
+  'truncated&&jsx("div",{children:"来源列表已截断"})',
+  'truncated&&jsx("span",{children:"内容已截断"})',
+].join("\n");
+
+test("WebBlock state labels follow the active document locale", () => {
+  const patched = localizeWebBlockCopy(WEB_BLOCK);
+  assert.match(
+    patched,
+    /document\.documentElement\.lang\.startsWith\("zh"\)\?"未找到结果":"No results found"/,
+  );
+  assert.match(patched, /"来源列表已截断":"Source list truncated"/);
+  assert.match(patched, /"内容已截断":"Content truncated"/);
+  assert.equal(localizeWebBlockCopy(patched), patched);
+});
+
+test("WebBlock locale patch fails loudly when upstream anchors drift", () => {
+  assert.throws(() => localizeWebBlockCopy("unrelated upstream source"), /anchor not found/);
 });
 
 test("Lares profile packages link to authoritative source directories", () => {

@@ -1,6 +1,6 @@
 {
   "name": "@olares/lares-core",
-  "version": "0.15.5",
+  "version": "0.15.6",
   "description": "Lares 共享业务核心：Router、workspace、文件/媒体、Olares 身份（无 UI、无平台壳）",
   "type": "module",
   "repository": {
@@ -61,6 +61,7 @@
     "./workspace/env": "./workspace/env.js",
     "./workspace/home": "./workspace/home.js",
     "./workspace/path": "./workspace/path.js",
+    "./workspace/constants": "./workspace/constants.js",
     "./workspace/seed": "./workspace/seed.js",
     "./workspace/session": "./workspace/session.js",
     "./files/filename": "./files/filename.js",
@@ -70,12 +71,14 @@
     "./files/upload-client": "./files/upload-client.js",
     "./files/preview": "./files/preview.js",
     "./files/preview-workspace": "./files/preview-workspace.js",
+    "./files/preview-tabs": "./files/preview-tabs.js",
     "./files/preview-groups": "./files/preview-groups.js",
     "./files/preview-cache": "./files/preview-cache.js",
     "./files/markdown": "./files/markdown.js",
     "./files/deliverables": "./files/deliverables.js",
     "./files/disposition": "./files/disposition.js",
     "./files/intake": "./files/intake.js",
+    "./files/draft-images": "./files/draft-images.js",
     "./files/mention": "./files/mention.js",
     "./drive/files-path": "./drive/files-path.js",
     "./drive/paths": "./drive/paths.js",
@@ -110,6 +113,15 @@
     "./larepass/session-cache": "./larepass/session-cache.js",
     "./larepass/runtime": "./larepass/runtime.js",
     "./larepass/questions": "./larepass/questions.js",
-    "./larepass/settings": "./larepass/settings.js"
+    "./larepass/settings": "./larepass/settings.js",
+    "./larepass/workspace": "./larepass/workspace.js",
+    "./larepass/unread": "./larepass/unread.js",
+    "./larepass/permissions": "./larepass/permissions.js",
+    "./larepass/commands": "./larepass/commands.js",
+    "./larepass/queue": "./larepass/queue.js",
+    "./larepass/references": "./larepass/references.js",
+    "./larepass/submission-settings": "./larepass/submission-settings.js",
+    "./larepass/turn-metrics": "./larepass/turn-metrics.js",
+    "./larepass/context-occupancy": "./larepass/context-occupancy.js"
   }
 }

@@ -71,10 +71,12 @@ export const LaresApp: DefineComponent<{
   proxyPrefix?: string;
   env?: HostEnv;
   request?: (url: string, init?: HostRequestInit) => Promise<HostResponse>;
+  socketProtocol?: HostPorts["socketProtocol"];
 }>;
 
 export const LaresAgentSettings: DefineComponent<{
   locale?: string;
+  device?: ChatDevice;
   baseUrl?: string;
   proxyPrefix?: string;
   env?: HostEnv;

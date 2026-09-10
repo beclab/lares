@@ -20,6 +20,7 @@ const WORKSPACE_PREVIEW_3D = join(APP_ROOT, "packages", "web", "workspace-previe
 const WORKSPACE_ARTIFACTS = join(APP_ROOT, "packages", "web", "workspace-artifacts");
 const ROUTER_SEARCH = join(APP_ROOT, "packages", "web", "router-search");
 const CHAT_MODEL = join(APP_ROOT, "packages", "web", "chat-model");
+const SESSION_COMMANDS = join(APP_ROOT, "packages", "web", "session-commands");
 const LOCAL_PROFILE_PACKAGES = [
   ["@lares/dsh-overlay", DSH_OVERLAY],
   ["@lares/brand", BRAND],
@@ -30,6 +31,7 @@ const LOCAL_PROFILE_PACKAGES = [
   ["@lares/workspace-artifacts", WORKSPACE_ARTIFACTS],
   ["@lares/router-search", ROUTER_SEARCH],
   ["@lares/chat-model", CHAT_MODEL],
+  ["@lares/session-commands", SESSION_COMMANDS],
 ] as const;
 
 const SHELL_BUNDLES = ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app"] as const;
@@ -297,6 +299,50 @@ export function patchSettingsNavIcon(): void {
 
   writeFileSync(lib, patched);
   console.log("[lares] settings nav icons → section component navIcon");
+}
+
+const WEB_BLOCK_COPY = [
+  ["未找到结果", "No results found"],
+  ["来源列表已截断", "Source list truncated"],
+  ["内容已截断", "Content truncated"],
+] as const;
+
+export function localizeWebBlockCopy(source: string): string {
+  let patched = source;
+  for (const [zh, en] of WEB_BLOCK_COPY) {
+    const anchor = `children:"${zh}"`;
+    const replacement =
+      `children:(document.documentElement.lang.startsWith("zh")?"${zh}":"${en}")`;
+    if (patched.includes(replacement)) continue;
+    if (!patched.includes(anchor)) {
+      throw new Error(`dsh WebBlock locale patch anchor not found: ${anchor}`);
+    }
+    patched = patched.replace(anchor, replacement);
+  }
+  return patched;
+}
+
+/**
+ * The WebBlock shipped in rc.2 bypasses the locale service for its three state
+ * labels. `<html lang>` is maintained by dsh-client-locale and the surrounding
+ * locale update re-renders the card, so it is the authoritative language seam
+ * available inside this prebuilt primitive.
+ *
+ * Remove once upstream WebBlock accepts translated labels or a locale face.
+ */
+export function patchWebBlockLocale(): void {
+  const indexHtml = require.resolve("@deepseek-ai/dsh-web-frontend/dist/index.html");
+  const html = readFileSync(indexHtml, "utf8");
+  const entry = html.match(/<script\b[^>]*\bsrc="\/assets\/([^"]+\.js)"/)?.[1];
+  if (!entry) throw new Error("dsh frontend entry script not found");
+
+  const lib = join(dirname(indexHtml), "assets", entry);
+  const source = readFileSync(lib, "utf8");
+  const patched = localizeWebBlockCopy(source);
+  if (patched === source) return;
+
+  writeFileSync(lib, patched);
+  console.log("[lares] dsh WebBlock state labels → active locale");
 }
 
 const SIDEBAR_FENCE_ANCHOR =
