@@ -2,7 +2,7 @@
   "name": "lares",
   "title": "Lares",
   "image_repo": "docker.io/beclab/lares",
-  "image_base_tag": "10",
+  "image_base_tag": "11",
   "npm_scope": "@lares",
   "hot_reload": {
     "source_subpath": "devsrc",
