@@ -1,17 +1,26 @@
 <template>
   <Teleport to="body">
     <Transition name="lares-dialog">
-      <div v-if="open" class="lares-pc-dialog" role="dialog" aria-modal="true" :aria-labelledby="titleId">
+      <div
+        v-if="open"
+        class="lares-pc-dialog"
+        role="dialog"
+        aria-modal="true"
+        :aria-labelledby="titleId"
+        :data-variant="variant || undefined"
+      >
         <button class="lares-pc-dialog__backdrop" type="button" :aria-label="closeLabel" @click="close" />
         <section class="lares-pc-dialog__surface" :style="{ width: surfaceWidth }">
         <header class="lares-pc-dialog__header">
-          <div class="lares-pc-dialog__title">
-            <h2 :id="titleId">{{ title }}</h2>
-            <button type="button" class="lares-pc-dialog__close" :aria-label="closeLabel" @click="close">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" /></svg>
-            </button>
-          </div>
-          <p v-if="description">{{ description }}</p>
+          <slot name="header" :title-id="titleId">
+            <div class="lares-pc-dialog__title">
+              <h2 :id="titleId">{{ title }}</h2>
+              <button type="button" class="lares-pc-dialog__close" :aria-label="closeLabel" @click="close">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" /></svg>
+              </button>
+            </div>
+            <p v-if="description">{{ description }}</p>
+          </slot>
         </header>
         <div class="lares-pc-dialog__body">
           <slot />
@@ -37,6 +46,7 @@ export default {
     closeLabel: { type: String, default: "Close" },
     width: { type: [Number, String], default: 440 },
     busy: { type: Boolean, default: false },
+    variant: { type: String, default: "" },
   },
   emits: ["close"],
   data() {
@@ -82,4 +92,9 @@ export default {
 .lares-pc-dialog__close svg { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; }
 .lares-pc-dialog__body { min-height:0; overflow:auto; padding:16px; }
 .lares-pc-dialog__footer { display:flex; min-height:58px; flex-shrink:0; align-items:center; justify-content:flex-end; gap:8px; padding:0 16px; border-top:1px solid var(--q-separator); }
+/* The directory variant only changes geometry; colors stay on the shared tokens. */
+.lares-pc-dialog[data-variant="directory"] .lares-pc-dialog__surface { border-radius:20px; }
+.lares-pc-dialog[data-variant="directory"] .lares-pc-dialog__header { padding:0; }
+.lares-pc-dialog[data-variant="directory"] .lares-pc-dialog__body { padding:0; }
+.lares-pc-dialog[data-variant="directory"] .lares-pc-dialog__footer { min-height:62px; padding:0 22px; }
 </style>

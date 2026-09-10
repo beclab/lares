@@ -1,7 +1,50 @@
 <template>
-  <form class="desktop-composer" @submit.prevent>
+  <form class="desktop-composer" :data-hero="hero ? 'true' : undefined" @submit.prevent>
     <div class="desktop-composer__model-row">
-      <LaresPcPopover v-model="modelOpen" :width="260" placement="top-end">
+      <LaresPcPopover
+        v-if="hero"
+        v-model="workspaceOpen"
+        class="desktop-composer__workspace-slot"
+        :width="240"
+        placement="top-start"
+      >
+        <template #trigger="{ toggle }">
+          <button
+            type="button"
+            class="desktop-composer__model desktop-composer__workspace"
+            :disabled="!state.workspacesReady"
+            aria-haspopup="menu"
+            :aria-expanded="workspaceOpen"
+            @mousedown.prevent
+            @click="toggle"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3.5 7.5h6l1.6 2H20.5v9H3.5z" />
+            </svg>
+            <span>{{ workspaceLabel }}</span>
+            <ChevronIcon />
+          </button>
+        </template>
+        <div class="desktop-composer__menu">
+          <button
+            v-for="workspace in state.workspaces"
+            :key="workspace.workspaceId"
+            type="button"
+            class="desktop-composer__option"
+            :data-selected="workspace.workspaceId === state.currentWorkspaceId"
+            @click="pickWorkspace(workspace.workspaceId)"
+          >
+            <span>{{ workspace.title || defaultWorkspaceTitle }}</span>
+            <CheckIcon v-if="workspace.workspaceId === state.currentWorkspaceId" />
+          </button>
+        </div>
+      </LaresPcPopover>
+      <LaresPcPopover
+        v-model="modelOpen"
+        class="desktop-composer__model-slot"
+        :width="260"
+        placement="top-end"
+      >
         <template #trigger="{ toggle }">
           <button
             type="button"
@@ -397,6 +440,7 @@
 <script>
 import { h } from "vue";
 import { resolveSubmitMode } from "@olares/lares-core/larepass/submission-settings";
+import { DEFAULT_WORKSPACE_TITLE } from "@olares/lares-core/workspace/constants";
 import { activeReferenceToken, insertReference } from "@olares/lares-core/larepass/references";
 import { draftImageStatus } from "@olares/lares-core/files/draft-images";
 import LaresDesktopQueue from "./DesktopQueue.vue";
@@ -456,16 +500,18 @@ export default {
   props: {
     state: { type: Object, required: true },
     t: { type: Function, required: true },
+    hero: { type: Boolean, default: false },
     modelKey: { type: Function, required: true },
     effortName: { type: Function, required: true },
   },
   emits: [
     "update-draft", "send", "stop", "steer-queue", "files", "choose-model", "choose-effort", "answer-approval", "answer-questions",
-    "choose-permission", "disable-plan", "goal-action", "open-commands", "pick-command", "queue-action", "remove-image",
+    "choose-permission", "disable-plan", "goal-action", "open-commands", "pick-command", "queue-action", "remove-image", "pick-workspace",
   ],
   data() {
     return {
       modelOpen: false,
+      workspaceOpen: false,
       effortOpen: false,
       permissionOpen: false,
       permissionConfirm: false,
@@ -484,6 +530,16 @@ export default {
     };
   },
   computed: {
+    defaultWorkspaceTitle() {
+      return DEFAULT_WORKSPACE_TITLE;
+    },
+    workspaceLabel() {
+      if (!this.state.workspacesReady) return this.t("agent.loading");
+      const current = this.state.workspaces.find(
+        (row) => row.workspaceId === this.state.currentWorkspaceId,
+      );
+      return current?.title || this.state.workspaces[0]?.title || DEFAULT_WORKSPACE_TITLE;
+    },
     /** Held by id, so removing or sending the draft closes the dialog. */
     previewImage() {
       return this.state.draftImages.find((row) => row.id === this.previewImageId) ?? null;
@@ -524,6 +580,7 @@ export default {
         return this.t("chat.placeholderSteerQueue", { shortcut });
       }
       if (this.state.planActive) return this.t("chat.placeholderPlan");
+      if (this.hero) return this.t("chat.placeholderNewSession");
       return this.t("chat.placeholderDesktop");
     },
   },
@@ -544,6 +601,11 @@ export default {
     window.removeEventListener("mousedown", this.onComposerOverlayPointer, true);
   },
   methods: {
+    pickWorkspace(workspaceId) {
+      this.workspaceOpen = false;
+      if (!workspaceId || workspaceId === this.state.currentWorkspaceId) return;
+      this.$emit("pick-workspace", workspaceId);
+    },
     chooseModel(model) {
       this.modelOpen = false;
       this.$emit("choose-model", model);
@@ -768,12 +830,21 @@ export default {
   padding: 8px 0 20px;
 }
 .desktop-composer__model-row { display:flex; justify-content:flex-end; gap:2px; min-height:28px; margin-bottom:6px; }
+.desktop-composer[data-hero="true"] .desktop-composer__model-row { justify-content:space-between; }
 .desktop-composer__model,
 .desktop-composer__circle,
 .desktop-composer__send {
   border:0; color:var(--q-ink-2); cursor:pointer;
 }
 .desktop-composer__model { display:flex; align-items:center; gap:4px; border-radius:999px; padding:4px 10px; background:transparent; font-size:14px; }
+/* The model name is the long label of the pair, so it is the one that gives way;
+   without a floor of its own the workspace chip absorbs every pixel of shrink. */
+.desktop-composer__workspace-slot { flex:0 0 auto; max-width:45%; }
+.desktop-composer__model-slot { min-width:0; }
+.desktop-composer__workspace,
+.desktop-composer__model-slot .desktop-composer__model { min-width:0; max-width:100%; }
+.desktop-composer__workspace span,
+.desktop-composer__model-slot .desktop-composer__model span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .desktop-composer__model svg,
 .desktop-composer__permission svg,
 .desktop-composer__circle svg,
