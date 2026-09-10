@@ -17,7 +17,7 @@ export const ZH = {
 
 export const EN = {
   "settings.title": "Web search",
-  "settings.intro": "Use a search service configured in Router without entering its credentials again.",
+  "settings.intro": "Use a search service configured in Router without re-entering its credentials.",
   "settings.refresh": "Refresh",
   "settings.refreshing": "Refreshing…",
   "settings.router": "Router console",
