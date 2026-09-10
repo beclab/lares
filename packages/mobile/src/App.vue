@@ -14,6 +14,7 @@
       :effort-name="effortName"
       @create="newChat"
       @pick-session="pickSession"
+      @pick-workspace="pickWorkspace"
       @retry="retry"
       @open-file="openFile"
       @answer="answerQuestion"

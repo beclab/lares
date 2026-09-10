@@ -187,6 +187,20 @@ test("the desktop transcript and composer share one reading column", () => {
   assert.match(composer, /var\(--lares-column/);
 });
 
+test("desktop new sessions reuse the centered composer with workspace and model pickers", () => {
+  const shell = readFileSync(new URL("../../packages/mobile/src/desktop/DesktopShell.vue", import.meta.url), "utf8");
+  const composer = readFileSync(new URL("../../packages/mobile/src/desktop/DesktopComposer.vue", import.meta.url), "utf8");
+  const app = readFileSync(new URL("../../packages/mobile/src/App.vue", import.meta.url), "utf8");
+
+  assert.match(shell, /newSessionHero/);
+  assert.match(shell, /MARK_DATA_URI/);
+  assert.match(shell, /:hero="newSessionHero"/);
+  assert.match(composer, /v-if="hero"[\s\S]{0,80}v-model="workspaceOpen"/);
+  assert.match(composer, /chat\.placeholderNewSession/);
+  assert.match(composer, /\$emit\("pick-workspace"/);
+  assert.match(app, /<LaresDesktopShell[\s\S]*@pick-workspace="pickWorkspace"/);
+});
+
 test("the desktop composer exposes the host conversation controls", () => {
   const composer = readFileSync(new URL("../../packages/mobile/src/desktop/DesktopComposer.vue", import.meta.url), "utf8");
   const shell = readFileSync(new URL("../../packages/mobile/src/desktop/DesktopShell.vue", import.meta.url), "utf8");
@@ -212,7 +226,7 @@ test("the desktop composer exposes the host conversation controls", () => {
 test("composer menus open upward and only flip when the space runs out", () => {
   const composer = readFileSync(new URL("../../packages/mobile/src/desktop/DesktopComposer.vue", import.meta.url), "utf8");
   // Both chips sit right above the input box, so a downward menu covers it.
-  assert.match(composer, /v-model="modelOpen" :width="260" placement="top-end"/);
+  assert.match(composer, /v-model="modelOpen"[\s\S]{0,120}:width="260"[\s\S]{0,40}placement="top-end"/);
   assert.match(composer, /v-model="effortOpen" :width="180" placement="top-end"/);
 
   const box = { top: 600, bottom: 632, left: 300, right: 560 };
