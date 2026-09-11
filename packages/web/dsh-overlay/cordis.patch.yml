@@ -67,6 +67,13 @@
 - id: better-sidebar
   disabled: true
 
+# dsh-base auto-titles a fresh session with a second LLM call on the
+# same Router route. Local llama.cpp is often -np 2; that pair fills
+# both slots and adds seconds of queue to the visible first token.
+# session-title itself stays: fallback is the first prompt's first words.
+- id: session-title-llm
+  disabled: true
+
 - id: agent-default-model
   config:
     provider: olares-router
