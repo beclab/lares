@@ -4,6 +4,8 @@
 .cursorignore
 .cursor
 _参考
+# Home Assistant skills stay in git; they are not part of the product image.
+packages/skills/ha-*
 dist
 **/dist
 artifacts
