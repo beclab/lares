@@ -1,0 +1,87 @@
+/* Settings section for official skill packs. Tokens only: --dsw-*. */
+.lares-skills {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 720px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.lares-skills-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.lares-skills-group-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+.lares-skills-card {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 20px 24px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 14px;
+}
+
+.lares-skills-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.lares-skills-name {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+.lares-skills-intro {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+/* Reserve the control's row so swapping the init spinner for a button is still. */
+.lares-skills-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-height: 32px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* IconLoadingOutline16 is a static glyph; the rotation is ours. */
+.lares-skills-spin {
+  animation: lares-skills-spin 0.8s linear infinite;
+}
+
+@keyframes lares-skills-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lares-skills-spin {
+    animation: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .lares-skills-card {
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px;
+  }
+}

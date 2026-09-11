@@ -25,7 +25,8 @@
     "search",
     "tools",
     "voice",
-    "workspace"
+    "workspace",
+    "skills"
   ],
   "exports": {
     "./tools/http": "./tools/http.js",
@@ -41,6 +42,7 @@
     "./i18n/files": "./i18n/files.js",
     "./i18n/voice": "./i18n/voice.js",
     "./i18n/search": "./i18n/search.js",
+    "./i18n/skills": "./i18n/skills.js",
     "./i18n/preview": "./i18n/preview.js",
     "./i18n/mobile": "./i18n/mobile.js",
     "./router/catalog": "./router/catalog.js",
@@ -122,6 +124,12 @@
     "./larepass/references": "./larepass/references.js",
     "./larepass/submission-settings": "./larepass/submission-settings.js",
     "./larepass/turn-metrics": "./larepass/turn-metrics.js",
-    "./larepass/context-occupancy": "./larepass/context-occupancy.js"
+    "./larepass/context-occupancy": "./larepass/context-occupancy.js",
+    "./skills/packs": "./skills/packs.js",
+    "./skills/state": {
+      "types": "./skills/state.d.ts",
+      "default": "./skills/state.js"
+    },
+    "./skills/client": "./skills/client.js"
   }
 }

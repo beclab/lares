@@ -163,6 +163,10 @@
       name: '@lares/chat-model'
       inject: [webServer, llm, agentDefaultModel, settings]
 
+    - id: lares-skill-packs
+      name: '@lares/skill-packs'
+      inject: [webServer]
+
     - id: lares-session-commands
       name: '@lares/session-commands'
       inject: [webServer, commands, agents, fileReferences, sessionReferenceResolver]

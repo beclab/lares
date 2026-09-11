@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   mkdtempSync,
   mkdirSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   truncateSync,
@@ -751,6 +752,50 @@ test("fileFromPreviewRequest serves an Olares files path without the session wor
   assert.equal(file.kind, "video");
   assert.equal(file.size, 491_000_000);
   assert.equal(file.absolutePath, undefined);
+});
+
+test("fileFromPreviewRequest unwraps a files path the chat opener joined onto the cwd", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lares-file-preview-joined-")));
+  try {
+    const stat = async (source: string) => ({
+      path: source,
+      name: "clip.webm",
+      size: 1_761_844_690,
+      modifiedAt: 1,
+    });
+    const query = `path=${encodeURIComponent(join(root, "drive/Home/Downloads/clip.webm"))}`;
+    const file = await fileFromPreviewRequest(
+      `/preview?${query}&sessionId=s1`,
+      async () => ({ path: root }),
+      { stat },
+    );
+    assert.equal(file.origin, "files");
+    assert.equal(file.path, "drive/Home/Downloads/clip.webm");
+    assert.equal(file.kind, "video");
+
+    // A real workspace file keeps the workspace namespace.
+    mkdirSync(join(root, "drive", "Home", "Downloads"), { recursive: true });
+    writeFileSync(join(root, "drive", "Home", "Downloads", "clip.webm"), "local");
+    const local = await fileFromPreviewRequest(
+      `/preview?${query}&sessionId=s1`,
+      async () => ({ path: root }),
+      { stat },
+    );
+    assert.equal(local.origin, undefined);
+    assert.equal(local.size, 5);
+
+    // A missing workspace file that is not a files address still fails as one.
+    await assert.rejects(
+      () => fileFromPreviewRequest(
+        `/preview?path=${encodeURIComponent(join(root, "notes.txt"))}&sessionId=s1`,
+        async () => ({ path: root }),
+        { stat },
+      ),
+      (error: { code?: string }) => error.code === "file_not_found",
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("files-path video metadata does not download bytes", async () => {

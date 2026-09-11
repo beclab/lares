@@ -4,7 +4,7 @@
 .cursorignore
 .cursor
 _参考
-# Home Assistant skills stay in git; they are not part of the product image.
+# Home Assistant skills are downloaded at runtime from hass-cli, not the image.
 packages/skills/ha-*
 dist
 **/dist

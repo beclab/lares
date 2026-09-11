@@ -13,7 +13,7 @@ test("interpolate fills named placeholders and leaves missing ones", () => {
 test("t picks zh / en tables and falls back to the key", () => {
   assert.equal(t(catalog, "zh-CN", "settings.title"), "模型");
   assert.equal(t(catalog, "en", "settings.title"), "Models");
-  assert.equal(t(catalog, "fr", "settings.nav"), "Model configuration");
+  assert.equal(t(catalog, "fr", "settings.nav"), "Models");
   assert.equal(
     t(catalog, "zh", "settings.status.ready", { model: "qwen" }),
     "对话可用 · 默认模型 qwen",

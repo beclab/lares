@@ -1,13 +1,13 @@
 export const ZH = {
   "settings.nav": "模型配置",
   "settings.title": "模型",
-  "settings.intro": "模型来自 Olares Router。选中的模型是新会话的默认模型；会话内可随时在输入框上方切换。",
+  "settings.intro": "模型由 Olares Router 提供。新会话默认使用所选模型，会话中也可在输入框上方随时切换。",
   "settings.loading": "正在读取模型列表…",
   "settings.refresh": "刷新",
   "settings.refreshing": "刷新中…",
   "settings.router": "Router 控制台",
   "settings.status.ready": "对话可用 · 默认模型 {model}",
-  "settings.status.notReady": "对话模型尚不可用，请先在 Olares 模型控制台配置对话模型",
+  "settings.status.notReady": "暂无可用对话模型，请在 Olares 模型控制台配置",
   "settings.empty": "Router 暂时没有可用的对话模型。",
   "settings.default": "默认",
   "settings.setDefault": "设为默认",
@@ -19,16 +19,16 @@ export const ZH = {
 };
 
 export const EN = {
-  "settings.nav": "Model configuration",
+  "settings.nav": "Models",
   "settings.title": "Models",
   "settings.intro":
-    "Models come from Olares Router. The selected one starts every new session; a session can switch above the composer at any time.",
+    "Models are provided by Olares Router. New sessions use the selected model by default. You can switch models anytime from the menu above the input box.",
   "settings.loading": "Loading models…",
   "settings.refresh": "Refresh",
   "settings.refreshing": "Refreshing…",
   "settings.router": "Router console",
   "settings.status.ready": "Chat ready · default model {model}",
-  "settings.status.notReady": "Chat unavailable; configure a chat model in the Olares Model Console first",
+  "settings.status.notReady": "No chat models available. Configure one in Olares Model Console.",
   "settings.empty": "Router serves no chat model right now.",
   "settings.default": "Default",
   "settings.setDefault": "Set as default",

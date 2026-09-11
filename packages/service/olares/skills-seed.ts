@@ -1,25 +1,18 @@
-import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { syncRuntimeSkills } from "@olares/lares-core/skills/state";
 
 const APP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
-const BUNDLED = path.join(APP_ROOT, "packages", "skills");
 
-/** Copy vendored skill bundles (olares-*, ha-*, lares-*) into the runtime skills dir for dsh skill-filesystem. */
-export function seedOlaresSkills(targetDir: string): string {
-  mkdirSync(targetDir, { recursive: true });
-  if (!existsSync(BUNDLED)) return targetDir;
-
-  for (const name of readdirSync(BUNDLED)) {
-    const from = path.join(BUNDLED, name);
-    if (!statSync(from).isDirectory()) continue;
-    const to = path.join(targetDir, name);
-    rmSync(to, { recursive: true, force: true });
-    cpSync(from, to, { recursive: true });
-  }
-  return targetDir;
+export function bundledSkillsRoot() {
+  return process.env.LARES_SKILLS_ROOT?.trim() || path.join(APP_ROOT, "packages", "skills");
 }
 
-export function bundledSkillsRoot(): string {
-  return BUNDLED;
+/** Seed always-on image skills, plus optional packs that the user has enabled. */
+export function seedOlaresSkills(targetDir: string): string {
+  return syncRuntimeSkills(bundledSkillsRoot(), path.dirname(targetDir));
+}
+
+export function seedSkillsForDataDir(dataDir: string): string {
+  return seedOlaresSkills(path.join(dataDir, "skills"));
 }

@@ -367,8 +367,7 @@ RSYNC_EXCLUDES=(
   # 没有；不排除的话 --delete 会在每次热同步时把它们从 /app 删掉。
   --exclude 'packages/skills/olares-*'
   --exclude 'packages/skills/.olares-cli-suite'
-  # ha-* stays in git but is not shipped. Do not copy it into /app;
-  # leftover copies on a machine are removed by hand.
+  # ha-* is downloaded at runtime from hass-cli, never from this tree.
   --exclude 'packages/skills/ha-*'
   --exclude 'artifacts/'
   --exclude '*.tgz'

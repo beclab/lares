@@ -1,0 +1,22 @@
+export function packsStatePath(dataDir: string): string;
+export function runtimeSkillsDir(dataDir: string): string;
+export function packCacheDir(dataDir: string, packId: string): string;
+export function defaultCatalogRoot(): string;
+export function readEnabledPacks(dataDir: string): string[];
+export function writeEnabledPacks(dataDir: string, enabled: string[]): void;
+export function cachedSkillDirs(dataDir: string, pack: { id: string; prefix: string }): string[];
+export function packDownloaded(dataDir: string, pack: { id: string; prefix: string }): boolean;
+export function syncRuntimeSkills(catalogRoot: string, dataDir: string): string;
+export function writeExportedSkills(cacheDir: string, files: Array<{ name?: string; body?: string }>): void;
+export function listOfficialPacks(dataDir: string, cliReady?: Record<string, boolean>): Array<{
+  id: string;
+  official: boolean;
+  optional: boolean;
+  downloaded: boolean;
+  enabled: boolean;
+  skillCount: number;
+  cliBin: string | null;
+  cliReady: boolean;
+}>;
+export function enableOfficialPack(catalogRoot: string, dataDir: string, id: string): { id: string };
+export function disableOfficialPack(catalogRoot: string, dataDir: string, id: string): { id: string };
