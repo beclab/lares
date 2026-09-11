@@ -49,8 +49,9 @@ deploy/files/
 # Chart packages（与运行时 dist/ 分离）
 artifacts/
 
-# olares-* 技能由镜像构建期 `olares-cli skills export` 写入（见 Dockerfile）；
-# ha-* / lares-* 是本仓源码。.olares-cli-suite 是 export 留下的内容指纹。
+# olares-* 由镜像构建期 `olares-cli skills export` 写入；ha-* 由设置页从
+# hass-cli `skill list/show` 导出到 $LARES_DATA_DIR，都不入仓。
 packages/skills/olares-*/
+packages/skills/ha-*/
 packages/skills/.olares-cli-suite
 

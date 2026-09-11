@@ -1,0 +1,19 @@
+{
+  "name": "@lares/skill-packs",
+  "version": "0.15.0",
+  "private": true,
+  "type": "module",
+  "description": "Official skill packs: download from the CLI, then enable or disable",
+  "exports": {
+    ".": "./host/index.js",
+    "./client": "../../../dist/plugins/skill-packs/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": ["@deepseek-ai/dsh-client-ui-slots"]
+    }
+  },
+  "files": ["host"]
+}

@@ -19,3 +19,9 @@
   color: var(--dsw-alias-label-primary);
   white-space: nowrap;
 }
+
+/* Settings shell nav is 188px and ellipsizes English labels such as
+   "Model configuration". Hash prefixes change with dsh; the BEM suffixes do not. */
+[class$="_panel"]:has(> [class$="_nav"] > [class$="_navTitle"]) > [class$="_nav"] {
+  width: 252px;
+}

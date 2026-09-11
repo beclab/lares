@@ -21,6 +21,7 @@ const WORKSPACE_ARTIFACTS = join(APP_ROOT, "packages", "web", "workspace-artifac
 const ROUTER_SEARCH = join(APP_ROOT, "packages", "web", "router-search");
 const CHAT_MODEL = join(APP_ROOT, "packages", "web", "chat-model");
 const SESSION_COMMANDS = join(APP_ROOT, "packages", "web", "session-commands");
+const SKILL_PACKS = join(APP_ROOT, "packages", "web", "skill-packs");
 const LOCAL_PROFILE_PACKAGES = [
   ["@lares/dsh-overlay", DSH_OVERLAY],
   ["@lares/brand", BRAND],
@@ -31,6 +32,7 @@ const LOCAL_PROFILE_PACKAGES = [
   ["@lares/workspace-artifacts", WORKSPACE_ARTIFACTS],
   ["@lares/router-search", ROUTER_SEARCH],
   ["@lares/chat-model", CHAT_MODEL],
+  ["@lares/skill-packs", SKILL_PACKS],
   ["@lares/session-commands", SESSION_COMMANDS],
 ] as const;
 

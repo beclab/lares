@@ -6,6 +6,7 @@
   "npm_scope": "@lares",
   "hot_reload": {
     "source_subpath": "devsrc",
+    "prebuild": "npm run build",
     "excludes": [
       ".git/",
       ".cursor/",
@@ -20,7 +21,8 @@
       "artifacts/",
       "*.tgz",
       "*.md",
-      ".lares-image-id"
+      ".lares-image-id",
+      "packages/skills/olares-*/"
     ]
   }
 }

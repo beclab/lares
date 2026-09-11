@@ -1,5 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { spawn } from "node:child_process";
+import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadEnv } from "../config/env.js";
@@ -80,8 +81,10 @@ export async function bootLaresWeb(): Promise<void> {
       .filter(Boolean),
   ];
 
+  const userLocalBin = path.join(process.env.HOME?.trim() || homedir(), ".local", "bin");
   const childEnv: NodeJS.ProcessEnv = {
     ...process.env,
+    PATH: `${userLocalBin}${process.env.PATH ? `:${process.env.PATH}` : ""}`,
     DSH_HOME: dshHome,
     PORT: String(env.port),
     HOSTNAME: bindHost,

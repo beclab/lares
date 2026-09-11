@@ -1,0 +1,31 @@
+export const ZH = {
+  "settings.nav": "技能",
+  "settings.group.builtin": "系统内置",
+  "settings.initializing": "初始化中…",
+  "settings.download": "下载",
+  "settings.downloading": "下载中…",
+  "settings.enable": "打开",
+  "settings.disable": "关闭",
+  "settings.enabling": "打开中…",
+  "settings.disabling": "关闭中…",
+  "settings.loadFailed": "读取技能包失败：{msg}",
+  "settings.saveFailed": "更新技能包失败：{msg}",
+  "pack.ha.title": "Home Assistant",
+  "pack.ha.intro": "连接并控制 Home Assistant 中的灯光、空调、自动化和仪表盘。",
+};
+
+export const EN = {
+  "settings.nav": "Skills",
+  "settings.group.builtin": "Built-in",
+  "settings.initializing": "Initializing…",
+  "settings.download": "Download",
+  "settings.downloading": "Downloading…",
+  "settings.enable": "Open",
+  "settings.disable": "Close",
+  "settings.enabling": "Opening…",
+  "settings.disabling": "Closing…",
+  "settings.loadFailed": "Failed to load skill packs: {msg}",
+  "settings.saveFailed": "Failed to update skill packs: {msg}",
+  "pack.ha.title": "Home Assistant",
+  "pack.ha.intro": "Connect and control lights, climate, automations, and dashboards in Home Assistant.",
+};

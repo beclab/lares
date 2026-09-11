@@ -1,9 +1,10 @@
 import { open, stat } from "node:fs/promises";
-import { basename, extname, relative } from "node:path";
+import { basename, extname, isAbsolute, relative } from "node:path";
 import { isFilesPath, parseFilesPath } from "../drive/files-path.js";
 import { statFilesFile } from "../drive/ls.js";
 import { HttpError } from "../tools/http.js";
 import {
+  isInsideWorkspace,
   resolveExistingWorkspacePath,
   resolveWorkspaceRoot,
   workspaceCandidate,
@@ -91,11 +92,30 @@ export async function resolveFilesPreviewFile(requestedPath, deps = {}) {
   }
 }
 
+/**
+ * A files-backend address is absolute in its own namespace but looks relative,
+ * so the chat view's opener joins the session cwd — the workspace root — onto
+ * it before any open gesture reaches this route. Strip that prefix back off.
+ */
+function joinedFilesAddress(root, requestedPath) {
+  if (!isAbsolute(requestedPath) || !isInsideWorkspace(root, requestedPath)) return null;
+  const address = relative(root, requestedPath);
+  return isFilesPath(address) ? address : null;
+}
+
 export async function fileFromPreviewRequest(reqUrl, resolveWorkspace, deps = {}) {
   const { path, sessionId } = previewQueryFromUrl(reqUrl);
   if (isFilesPath(path)) return resolveFilesPreviewFile(path, deps);
   const workspace = await resolveWorkspace(sessionId);
-  return resolveWorkspaceFile(workspace.path, path);
+  const root = await resolveWorkspaceRoot(workspace.path);
+  try {
+    return await resolveWorkspaceFile(root, path);
+  } catch (error) {
+    // A real workspace file of the same name wins; only its absence unwraps.
+    const address = error?.code === "file_not_found" ? joinedFilesAddress(root, path) : null;
+    if (address === null) throw error;
+    return resolveFilesPreviewFile(address, deps);
+  }
 }
 
 async function ensurePreviewBytes(file, deps = {}) {

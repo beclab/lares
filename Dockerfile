@@ -15,7 +15,8 @@ RUN mkdir -p node_modules/@olares \
 
 # The olares-* skills are not in git: they belong to the olares-cli in the base
 # image, and a hand-copied snapshot describes verbs some other release has.
-# This writes them beside the lares-* skills. ha-* stays in git only.
+# This writes them beside the lares-* skills. ha-* is downloaded at runtime
+# from hass-cli (Settings → Skills), never copied from git.
 RUN olares-cli skills export packages/skills
 
 RUN npm run build \
