@@ -7,12 +7,12 @@ metadata:
   title: Lares
   description: Chat on Olares, wired to Router
   icon: https://app.cdn.olares.com/appstore/lares/icon_new.png
-  version: 0.26.10
+  version: 0.26.11
   categories:
     - Utilities_v112
     - AI
 spec:
-  versionName: "0.26.10"
+  versionName: "0.26.11"
   runAsUser: true
   fullDescription: |
     ## Overview
@@ -35,10 +35,10 @@ spec:
     2. Ensure Router is installed.
     3. Open the Lares entrance and start a chat.
   upgradeDescription: |
-    ## Lares 0.26.10
+    ## Lares 0.26.11
 
-    - Settings → Skills downloads Home Assistant skills from hass-cli and can open or close the pack.
-    - Home Assistant skill markdown is no longer kept in git.
+    - New users now start in English while saved English or Chinese preferences remain unchanged.
+    - Browser language metadata now uses the same `en-US` and `zh-CN` locale tags as Olares.
   developer: luolong
   submitter: Olares
   locale:

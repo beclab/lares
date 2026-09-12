@@ -17,6 +17,7 @@ import {
   ensureLaresWebProfile,
   installProfileDeps,
   patchConnectionTrustFences,
+  patchLocaleDefaultToEnglish,
   patchSettingsNavIcon,
   patchWebBlockLocale,
   resolveDshBin,
@@ -41,6 +42,7 @@ export async function bootLaresWeb(): Promise<void> {
 
   await installProfileDeps(profileDir);
   patchConnectionTrustFences();
+  patchLocaleDefaultToEnglish();
   patchSettingsNavIcon();
   patchWebBlockLocale();
 

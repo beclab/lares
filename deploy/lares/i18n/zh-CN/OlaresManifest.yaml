@@ -24,7 +24,7 @@ spec:
     2. 确认 Router 已安装。
     3. 打开 Lares 入口开始对话。
   upgradeDescription: |
-    ## Lares 0.26.10
+    ## Lares 0.26.11
 
-    - 设置 → 技能可从 hass-cli 下载 Home Assistant 技能，并打开或关闭该包。
-    - 仓库不再保存 Home Assistant 技能 markdown。
+    - 新用户现在默认使用英文，已保存的中英文选择保持不变。
+    - 浏览器语言标记与 Olares 一致，使用 `en-US` 和 `zh-CN`。

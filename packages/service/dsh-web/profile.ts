@@ -248,6 +248,38 @@ export function patchConnectionTrustFences(): void {
   console.log("[lares] dsh-client-connection trust fences → Olares trusted hosts");
 }
 
+const LOCALE_DEFAULT_ANCHOR = "this.provisional = resolveInitialLocale();";
+const LOCALE_DEFAULT_REPLACEMENT = 'this.provisional = "en";/* lares-default-locale */';
+const EN_DOCUMENT_LANGUAGE_ANCHOR = 'en: "en"';
+const EN_DOCUMENT_LANGUAGE_REPLACEMENT = 'en: "en-US"';
+
+export function useEnglishLocaleDefault(source: string): string {
+  if (source.includes(LOCALE_DEFAULT_REPLACEMENT)) return source;
+  if (!source.includes(LOCALE_DEFAULT_ANCHOR)) {
+    throw new Error("dsh-client-locale default patch anchor not found");
+  }
+  return source.replace(LOCALE_DEFAULT_ANCHOR, LOCALE_DEFAULT_REPLACEMENT);
+}
+
+export function useOlaresDocumentLanguage(source: string): string {
+  if (source.includes(EN_DOCUMENT_LANGUAGE_REPLACEMENT)) return source;
+  if (!source.includes(EN_DOCUMENT_LANGUAGE_ANCHOR)) {
+    throw new Error("dsh-client-locale document language patch anchor not found");
+  }
+  return source.replace(EN_DOCUMENT_LANGUAGE_ANCHOR, EN_DOCUMENT_LANGUAGE_REPLACEMENT);
+}
+
+/** Leave an explicit dsh language preference in charge; otherwise use English. */
+export function patchLocaleDefaultToEnglish(): void {
+  const lib = require.resolve("@deepseek-ai/dsh-client-locale/client");
+  const source = readFileSync(lib, "utf8");
+  const patched = useOlaresDocumentLanguage(useEnglishLocaleDefault(source));
+  if (patched === source) return;
+
+  writeFileSync(lib, patched);
+  console.log("[lares] default locale → English");
+}
+
 const NAV_ICON_ROW_ANCHOR = 'resolveSlotLabel)(e.options.label) ?? ""';
 
 const NAV_ICON_ROW_REPLACEMENT = `${NAV_ICON_ROW_ANCHOR}, icon: e.component?.navIcon`;
