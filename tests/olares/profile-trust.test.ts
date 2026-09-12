@@ -17,6 +17,8 @@ import {
   localizeWebBlockCopy,
   sectionComponentNavIcon,
   trustOlaresConnectionHost,
+  useEnglishLocaleDefault,
+  useOlaresDocumentLanguage,
 } from "../../packages/service/dsh-web/profile.js";
 
 const INTERCEPTOR =
@@ -37,6 +39,24 @@ test("connection trust patch fails loudly when upstream anchors drift", () => {
     () => trustOlaresConnectionHost("unrelated upstream source"),
     /trust patch anchor not found/,
   );
+});
+
+test("an unset language preference defaults to English", () => {
+  const upstream = "this.provisional = resolveInitialLocale();";
+  const patched = useEnglishLocaleDefault(upstream);
+  assert.equal(patched, 'this.provisional = "en";/* lares-default-locale */');
+  assert.equal(useEnglishLocaleDefault(patched), patched);
+});
+
+test("locale default patch fails loudly when upstream anchors drift", () => {
+  assert.throws(() => useEnglishLocaleDefault("unrelated upstream source"), /anchor not found/);
+});
+
+test("document language tags use the same locale symbols as Olares", () => {
+  const upstream = 'zh: "zh-CN",\nen: "en"';
+  const patched = useOlaresDocumentLanguage(upstream);
+  assert.equal(patched, 'zh: "zh-CN",\nen: "en-US"');
+  assert.equal(useOlaresDocumentLanguage(patched), patched);
 });
 
 const SETTINGS_SHELL = [
