@@ -113,12 +113,12 @@ export function createHostSettings(request) {
         options,
       );
     },
-    async setSearchDefault(id) {
+    async setSearchDefault(selection) {
       return searchStore.remember(
         payload(
           await request("/api/lares/web-search/config/default", {
             method: "POST",
-            body: { defaultSearchModel: id },
+            body: selection,
           }),
           "/api/lares/web-search/config/default",
         ),

@@ -135,6 +135,28 @@ test("Router refresh replaces the routable catalog and repairs a stale default",
   }
 });
 
+test("a reconcile that finds the same catalog does not wake every client", async () => {
+  const { refreshCatalog, catalogRevision } = await catalogModule();
+  const previousFetch = globalThis.fetch;
+  catalogCache.reset();
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ data: [{ id: "Qwen/same", mode: "chat" }] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  try {
+    const ctx = stubCtx();
+    await refreshCatalog(ctx);
+    const settled = catalogRevision();
+    catalogCache.reset();
+    await refreshCatalog(ctx);
+    assert.equal(catalogRevision(), settled);
+  } finally {
+    globalThis.fetch = previousFetch;
+    catalogCache.reset();
+  }
+});
+
 test("Router refresh repairs a stale default with the preferred MTP build", async () => {
   const { refreshCatalog } = await catalogModule();
   const previousFetch = globalThis.fetch;

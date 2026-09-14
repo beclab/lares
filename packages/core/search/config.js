@@ -3,26 +3,36 @@ import { HttpError } from "../tools/http.js";
 import { dshPluginConfigPath } from "../workspace/home.js";
 import { fetchRouterSearchModels } from "../router/search.js";
 
-/** @typedef {{ defaultSearchModel: string | null }} WebSearchConfig */
+/**
+ * Three states, because "nobody chose yet" and "the user turned search off"
+ * must not collapse into one value: an unset default follows Router, and an
+ * automatic default must never reopen search the user closed.
+ * @typedef {{ defaultSearchModel: string | null, searchOff: boolean }} WebSearchConfig
+ */
 
 /** @returns {WebSearchConfig} */
 function defaults() {
-  return { defaultSearchModel: null };
+  return { defaultSearchModel: null, searchOff: false };
 }
 
 function configPath() {
   return dshPluginConfigPath("web-search");
 }
 
+/** @param {unknown} value */
+function modelId(value) {
+  const id = typeof value === "string" ? value.trim() : "";
+  if (!id || id.length > 512 || /[\u0000-\u001f\u007f]/.test(id)) return null;
+  return id;
+}
+
 /** @param {unknown} raw @returns {WebSearchConfig} */
 function normalize(raw) {
   if (!raw || typeof raw !== "object") return defaults();
   const body = /** @type {Record<string, unknown>} */ (raw);
-  const value = typeof body.defaultSearchModel === "string" ? body.defaultSearchModel.trim() : "";
   return {
-    defaultSearchModel: value && value.length <= 512 && !/[\u0000-\u001f\u007f]/.test(value)
-      ? value
-      : null,
+    defaultSearchModel: modelId(body.defaultSearchModel),
+    searchOff: body.searchOff === true,
   };
 }
 
@@ -43,56 +53,59 @@ function persist(config) {
 }
 
 /**
- * @param {string | null} id
+ * @param {WebSearchConfig} selection
  * @param {{ id: string }[]} available
  */
-export function setDefaultSearchModel(id, available) {
-  if (id === null) {
-    return persist({ defaultSearchModel: null });
-  }
-  const model = typeof id === "string" ? id.trim() : "";
-  if (
-    !model
-    || model.length > 512
-    || /[\u0000-\u001f\u007f]/.test(model)
-    || !available.some((item) => item.id === model)
-  ) {
+export function setSearchSelection(selection, available) {
+  if (selection.searchOff) return persist({ defaultSearchModel: null, searchOff: true });
+  if (selection.defaultSearchModel === null) return persist(defaults());
+  const model = modelId(selection.defaultSearchModel);
+  if (!model || !available.some((item) => item.id === model)) {
     throw new HttpError("not_available", 400, "search service is not available from Router");
   }
-  return persist({ defaultSearchModel: model });
+  return persist({ defaultSearchModel: model, searchOff: false });
 }
 
 export async function currentSearchConfig() {
   const searchModels = await fetchRouterSearchModels();
-  return {
-    defaultSearchModel: readConfig().defaultSearchModel,
-    searchModels,
-  };
+  return { ...readConfig(), searchModels };
 }
 
 export const LARES_PROVIDER_ID = "lares";
-export { SEARCH_NONE, searchDefaultReady, searchMenuValue, searchValueFromMenu } from "./menu.js";
+export {
+  SEARCH_OFF,
+  SEARCH_ROUTER_DEFAULT,
+  searchDefaultReady,
+  searchMenuValue,
+  searchStatus,
+  searchValueFromMenu,
+} from "./menu.js";
 
+/** The model to send, or null to follow Router's own default-search category. */
 export function configuredSearchModel() {
   return readConfig().defaultSearchModel;
 }
 
-export function defaultSearchModelFromBody(body) {
-  const id = body?.defaultSearchModel === null ? null : body?.defaultSearchModel;
-  if (id !== null && typeof id !== "string") {
-    throw new HttpError("bad_model", 400, "invalid defaultSearchModel");
-  }
-  return id;
+export function searchDisabled() {
+  return readConfig().searchOff;
 }
 
-export async function setDefaultSearchFromRequest(id) {
-  if (id !== null && typeof id !== "string") {
+/** @param {unknown} body @returns {WebSearchConfig} */
+export function searchSelectionFromBody(body) {
+  const raw = body && typeof body === "object" ? /** @type {Record<string, unknown>} */ (body) : null;
+  if (!raw) throw new HttpError("bad_model", 400, "invalid search selection");
+  const asked = raw.defaultSearchModel;
+  if (asked !== null && asked !== undefined && typeof asked !== "string") {
     throw new HttpError("bad_model", 400, "invalid defaultSearchModel");
   }
+  if (raw.searchOff !== undefined && typeof raw.searchOff !== "boolean") {
+    throw new HttpError("bad_model", 400, "invalid searchOff");
+  }
+  return { defaultSearchModel: typeof asked === "string" ? asked : null, searchOff: raw.searchOff === true };
+}
+
+/** @param {WebSearchConfig} selection */
+export async function setSearchSelectionFromRequest(selection) {
   const searchModels = await fetchRouterSearchModels();
-  const saved = setDefaultSearchModel(id, searchModels);
-  return {
-    defaultSearchModel: saved.defaultSearchModel,
-    searchModels,
-  };
+  return { ...setSearchSelection(selection, searchModels), searchModels };
 }

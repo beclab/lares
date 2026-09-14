@@ -4,28 +4,60 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  searchDefaultReady,
   searchMenuValue,
   searchSelectorItems,
+  searchStatus,
   searchValueFromMenu,
 } from "@olares/lares-core/search/menu";
 import { searchWebErrorCode } from "@olares/lares-core/router/search";
 
-test("search settings map none to an unset default", () => {
-  assert.equal(searchMenuValue(null), "none");
-  assert.equal(searchValueFromMenu("none"), null);
-  assert.equal(searchDefaultReady([{ id: "tavily/search" }], "tavily/search"), true);
-  assert.equal(searchDefaultReady([{ id: "tavily/search" }], "missing"), false);
-  assert.deepEqual(searchSelectorItems([], { none: "None", empty: "No services" }), [
-    { id: "none", label: "No services" },
-  ]);
+test("search settings keep following Router apart from being turned off", () => {
+  assert.equal(searchMenuValue(null), "router-default");
+  assert.equal(searchMenuValue({ defaultSearchModel: null, searchOff: false }), "router-default");
+  assert.equal(searchMenuValue({ defaultSearchModel: null, searchOff: true }), "off");
+  assert.equal(searchMenuValue({ defaultSearchModel: "tavily/search", searchOff: false }), "tavily/search");
+
+  assert.deepEqual(searchValueFromMenu("router-default"), { defaultSearchModel: null, searchOff: false });
+  assert.deepEqual(searchValueFromMenu("off"), { defaultSearchModel: null, searchOff: true });
+  assert.deepEqual(searchValueFromMenu("tavily/search"), {
+    defaultSearchModel: "tavily/search",
+    searchOff: false,
+  });
+
   assert.deepEqual(
-    searchSelectorItems([{ id: "tavily/search", name: "Tavily" }], { none: "None", empty: "No services" }),
+    searchSelectorItems([{ id: "tavily/search", name: "Tavily" }], { routerDefault: "Router", off: "Off" }),
     [
-      { id: "none", label: "None" },
+      { id: "router-default", label: "Router" },
       { id: "tavily/search", label: "Tavily" },
+      { id: "off", label: "Off" },
     ],
   );
+});
+
+test("search status separates following Router from an empty or stale choice", () => {
+  const listed = [{ id: "tavily/search" }];
+  assert.deepEqual(searchStatus(listed, { defaultSearchModel: null, searchOff: false }), {
+    ready: true,
+    key: "settings.status.router",
+  });
+  assert.deepEqual(searchStatus([], { defaultSearchModel: null, searchOff: false }), {
+    ready: false,
+    key: "settings.status.empty",
+  });
+  assert.deepEqual(searchStatus(listed, { defaultSearchModel: null, searchOff: true }), {
+    ready: false,
+    key: "settings.status.off",
+  });
+  assert.deepEqual(searchStatus(listed, { defaultSearchModel: "tavily/search", searchOff: false }), {
+    ready: true,
+    key: "settings.status.ready",
+    model: "tavily/search",
+  });
+  assert.deepEqual(searchStatus(listed, { defaultSearchModel: "gone/search", searchOff: false }), {
+    ready: false,
+    key: "settings.status.notReady",
+    model: "gone/search",
+  });
 });
 
 test("SearchError codes map onto dsh WebError codes", () => {
@@ -61,23 +93,28 @@ test("default search model must come from the live Router catalog", async () => 
   const previous = process.env.DSH_HOME;
   process.env.DSH_HOME = home;
   try {
-    const { readConfig, setDefaultSearchModel } = await import(
+    const { readConfig, setSearchSelection } = await import(
       `../../packages/core/search/config.js?config=${Date.now()}`
     );
     const available = [{ id: "tavily/search" }];
 
-    assert.equal(readConfig().defaultSearchModel, null);
+    assert.deepEqual(readConfig(), { defaultSearchModel: null, searchOff: false });
     assert.throws(
-      () => setDefaultSearchModel("missing/search", available),
+      () => setSearchSelection({ defaultSearchModel: "missing/search", searchOff: false }, available),
       (err: { code?: string; status?: number }) => err.code === "not_available" && err.status === 400,
     );
 
-    const saved = setDefaultSearchModel("  tavily/search  ", available);
+    const saved = setSearchSelection({ defaultSearchModel: "  tavily/search  ", searchOff: false }, available);
     assert.equal(saved.defaultSearchModel, "tavily/search");
     assert.equal(readConfig().defaultSearchModel, "tavily/search");
 
-    setDefaultSearchModel(null, available);
-    assert.equal(readConfig().defaultSearchModel, null);
+    // Turning search off is remembered as its own state, so an automatic
+    // default can never reopen it.
+    setSearchSelection({ defaultSearchModel: null, searchOff: true }, available);
+    assert.deepEqual(readConfig(), { defaultSearchModel: null, searchOff: true });
+
+    setSearchSelection({ defaultSearchModel: null, searchOff: false }, available);
+    assert.deepEqual(readConfig(), { defaultSearchModel: null, searchOff: false });
   } finally {
     if (previous === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = previous;
@@ -98,15 +135,16 @@ test("reading a temporarily incomplete Router catalog does not erase the saved d
   const { catalogCache } = await import("../../packages/core/router/catalog-cache.js");
   catalogCache.reset();
   try {
-    const { setDefaultSearchModel, readConfig } = await import(
+    const { setSearchSelection, readConfig } = await import(
       `../../packages/core/search/config.js?read=${Date.now()}`
     );
-    setDefaultSearchModel("tavily/search", [{ id: "tavily/search" }]);
+    setSearchSelection({ defaultSearchModel: "tavily/search", searchOff: false }, [{ id: "tavily/search" }]);
     const { currentConfig } = await import(
       `../../packages/web/router-search/host/index.js?read=${Date.now()}`
     );
     assert.deepEqual(await currentConfig(), {
       defaultSearchModel: "tavily/search",
+      searchOff: false,
       searchModels: [],
     });
     assert.equal(readConfig().defaultSearchModel, "tavily/search");
@@ -224,33 +262,47 @@ test("Router search distinguishes its timeout from caller cancellation", async (
   }
 });
 
-test("dsh search facade follows the selected Router model", async () => {
+test("dsh search facade works before anyone picks a service", async () => {
   const home = mkdtempSync(join(tmpdir(), "lares-websearch-facade-"));
   const previousHome = process.env.DSH_HOME;
   process.env.DSH_HOME = home;
   const originalFetch = globalThis.fetch;
+  const asked: string[] = [];
+  globalThis.fetch = async (_input, init) => {
+    asked.push(JSON.parse(String(init?.body)).model);
+    return new Response(
+      JSON.stringify({ results: [{ url: "https://ok.test", title: "OK" }] }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  };
   try {
-    const { setDefaultSearchModel } = await import(
+    const { setSearchSelection } = await import(
       `../../packages/core/search/config.js?facade=${Date.now()}`
     );
     const { createLaresSearchProvider } = await import(
       `../../packages/web/router-search/host/provider.js?facade=${Date.now()}`
     );
     const provider = createLaresSearchProvider();
-    assert.equal(provider.available(), false);
 
-    setDefaultSearchModel("tavily/search", [{ id: "tavily/search" }]);
+    // A fresh install has chosen nothing, and must still search: the choice
+    // belongs to Router's own default-search category.
     assert.equal(provider.available(), true);
-
-    globalThis.fetch = async (_input, init) => {
-      assert.equal(JSON.parse(String(init?.body)).model, "tavily/search");
-      return new Response(
-        JSON.stringify({ results: [{ url: "https://ok.test", title: "OK" }] }),
-        { status: 200, headers: { "content-type": "application/json" } },
-      );
-    };
     const result = await provider.search({ query: "news", maxResults: 4 });
     assert.equal(result.sources[0].url, "https://ok.test");
+    assert.deepEqual(asked, ["default-search"]);
+
+    setSearchSelection({ defaultSearchModel: "tavily/search", searchOff: false }, [{ id: "tavily/search" }]);
+    assert.equal(provider.available(), true);
+    await provider.search({ query: "news" });
+    assert.deepEqual(asked, ["default-search", "tavily/search"]);
+
+    setSearchSelection({ defaultSearchModel: null, searchOff: true }, []);
+    assert.equal(provider.available(), false);
+    await assert.rejects(
+      () => provider.search({ query: "news" }),
+      (err: { code?: string }) => err.code === "WEB_PROVIDER_CONFIGURED_UNAVAILABLE",
+    );
+    assert.equal(asked.length, 2);
   } finally {
     globalThis.fetch = originalFetch;
     if (previousHome === undefined) delete process.env.DSH_HOME;

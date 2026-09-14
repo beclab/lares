@@ -85,6 +85,26 @@ test("boot seed file is reused on the first get so the child does not refetch", 
   }
 });
 
+test("invalidate before the first get still reaches Router, not the boot seed", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "lares-catalog-stale-seed-"));
+  try {
+    writeCatalogSeed({ data: [{ id: "Qwen/boot", mode: "chat" }] }, dir);
+    const cache = new CatalogCache({
+      ttlMs: 1_000,
+      dataDir: dir,
+      fetch: async () =>
+        new Response(JSON.stringify({ data: [{ id: "Qwen/fresh", mode: "chat" }] }), { status: 200 }),
+      now: () => 1,
+    });
+    // A change signal arriving before anything primed the cache must not be
+    // answered with the catalog this process booted on.
+    cache.invalidate();
+    assert.equal((await cache.get()).rows[0].id, "Qwen/fresh");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("a successful fetch writes the seed file", async () => {
   const dir = mkdtempSync(join(tmpdir(), "lares-catalog-write-"));
   try {

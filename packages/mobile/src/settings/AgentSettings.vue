@@ -72,7 +72,6 @@
         :value="searchMenuId"
         :sections="searchSelectSections"
         :disabled="busy || !search"
-        :empty="tSearch('settings.default.empty')"
         @select="(item) => pick(item, 'search')"
       />
       <div v-else class="lares-agent__list">
@@ -217,8 +216,8 @@ export default {
     },
     searchItems() {
       return searchSelectorItems(this.searchModels, {
-        none: this.tSearch("settings.default.none"),
-        empty: this.tSearch("settings.default.empty"),
+        routerDefault: this.tSearch("settings.default.router"),
+        off: this.tSearch("settings.default.off"),
       });
     },
     modelLabel() {
@@ -239,7 +238,7 @@ export default {
       return itemLabel(this.voiceLanguages, voiceMenuValue(this.voice.config?.language));
     },
     searchMenuId() {
-      return searchMenuValue(this.search?.defaultSearchModel);
+      return searchMenuValue(this.search);
     },
     searchLabel() {
       if (!this.search) return "—";
@@ -291,7 +290,6 @@ export default {
       const count = this.sheetSections.reduce((sum, section) => sum + section.items.length, 0);
       if (count > 0) return "";
       if (this.panel === "model") return this.tModel("settings.empty");
-      if (this.panel === "search") return this.tSearch("settings.default.empty");
       return "";
     },
   },
@@ -312,6 +310,15 @@ export default {
   },
   mounted() {
     this.load(false);
+    // LarePass has no catalog-revision stream, so returning to the panel is
+    // the only moment a Router change can still be picked up.
+    this.onVisible = () => {
+      if (document.visibilityState === "visible" && !this.busy) this.load(true);
+    };
+    document.addEventListener("visibilitychange", this.onVisible);
+  },
+  beforeUnmount() {
+    if (this.onVisible) document.removeEventListener("visibilitychange", this.onVisible);
   },
   methods: {
     tModel(key, params) {
@@ -350,7 +357,7 @@ export default {
       if (panel === "model") return this.modelCurrent;
       if (panel === "voiceModel") return voiceMenuValue(this.voice?.config?.model);
       if (panel === "voiceLang") return voiceMenuValue(this.voice?.config?.language);
-      if (panel === "search") return searchMenuValue(this.search?.defaultSearchModel);
+      if (panel === "search") return searchMenuValue(this.search);
       return "";
     },
     reload() {
@@ -418,11 +425,10 @@ export default {
     },
     async chooseSearch(rawId) {
       if (!this.search || this.busy) return;
-      const id = searchValueFromMenu(rawId);
       this.pending = "search";
       this.searchError = "";
       try {
-        this.search = await this.settings.setSearchDefault(id);
+        this.search = await this.settings.setSearchDefault(searchValueFromMenu(rawId));
       } catch (err) {
         this.searchError = this.failText(this.tSearch, "settings.saveFailed", err);
       } finally {

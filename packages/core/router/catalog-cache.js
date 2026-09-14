@@ -56,8 +56,14 @@ export class CatalogCache {
     this.primed = false;
   }
 
+  /**
+   * Marking the seed consumed is the point: a caller that invalidates wants
+   * Router, and the boot seed would otherwise satisfy the very first reload
+   * of a fresh dsh child with the state the caller just declared stale.
+   */
   invalidate() {
     this.fetchedAt = 0;
+    this.primed = true;
   }
 
   /**
