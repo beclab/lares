@@ -137,12 +137,48 @@
 .lares-model-group-title {
   position: sticky;
   top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
   padding: 5px 8px 3px;
   font-size: 12px;
   font-weight: 500;
   line-height: 18px;
   color: var(--dsw-alias-label-tertiary, #6b7280);
   background: var(--dsw-specific-menu, #fff);
+}
+
+.lares-model-group-name {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lares-model-loading {
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  color: var(--dsw-alias-label-tertiary, #6b7280);
+}
+
+/* IconLoadingOutline16 is a static glyph; the rotation is ours. */
+.lares-model-spin {
+  flex: none;
+  animation: lares-model-spin 0.8s linear infinite;
+}
+
+@keyframes lares-model-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lares-model-spin {
+    animation: none;
+  }
 }
 
 .lares-model-option {

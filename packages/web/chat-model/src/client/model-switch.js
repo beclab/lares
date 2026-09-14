@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
+import { IconLoadingOutline16 } from "@deepseek-ai/dsh-client-ui-primitives";
 import { watchCatalogRevision } from "../../../shared/client/catalog-events.js";
 import { createLocaleBinding } from "../../../shared/client/locale-binding.js";
 import { EN, ZH } from "@olares/lares-core/i18n/chat-model-switch";
@@ -66,6 +67,16 @@ function CheckGlyph() {
       strokeLinejoin: "round",
     }),
   );
+}
+
+/** IconLoadingOutline16 is a static glyph; the rotation is ours (model.css). */
+function Spinner(label) {
+  return h(IconLoadingOutline16, {
+    size: 14,
+    className: "lares-model-spin",
+    role: "status",
+    "aria-label": label,
+  });
 }
 
 function Option(key, name, description, selected, disabled, onClick) {
@@ -163,6 +174,7 @@ export function ModelSwitch({ available, directory, load, select, locked }) {
   const effortLabel = effortDisplayLabel(reasoning, effort, t("reasoning.default"));
   const label = sessionModelLabel(currentModel, current, t("model.select"));
   const busy = state.status === "selecting";
+  const refreshing = state.status === "loading";
 
   const submit = (selection) => {
     select(selection).then((accepted) => {
@@ -219,9 +231,8 @@ export function ModelSwitch({ available, directory, load, select, locked }) {
           className: "lares-model-menu",
           role: "menu",
           "aria-label": t("model.menuAria"),
-          "aria-busy": state.status === "loading" || busy,
+          "aria-busy": refreshing || busy,
         },
-        state.status === "loading" ? h("div", { className: "lares-model-note" }, t("model.refreshing")) : null,
         state.error === null
           ? null
           : h(
@@ -241,7 +252,14 @@ export function ModelSwitch({ available, directory, load, select, locked }) {
           h(
             "section",
             { key: group.id, className: "lares-model-group", role: "group" },
-            h("div", { className: "lares-model-group-title" }, group.name),
+            h(
+              "div",
+              { className: "lares-model-group-title" },
+              h("span", { className: "lares-model-group-name" }, group.name),
+              // A refresh keeps the listed models on screen, so the group heading
+              // carries the progress instead of a row that pushes them down.
+              refreshing ? Spinner(t("model.refreshing")) : null,
+            ),
             group.models.map((model) =>
               Option(
                 model.id,
@@ -254,6 +272,9 @@ export function ModelSwitch({ available, directory, load, select, locked }) {
             ),
           ),
         ),
+        refreshing && state.groups.length === 0
+          ? h("div", { className: "lares-model-loading" }, Spinner(t("model.refreshing")))
+          : null,
         state.status === "ready" && state.groups.length === 0
           ? h("div", { className: "lares-model-note" }, t("model.empty"))
           : null,
