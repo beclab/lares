@@ -3,7 +3,7 @@ variable "PLATFORM" {
 }
 
 variable "BASE_IMAGE" {
-  default = "docker.io/beclab/lares-base:12"
+  default = "docker.io/beclab/lares-base:13"
 }
 
 variable "IMAGE" {
