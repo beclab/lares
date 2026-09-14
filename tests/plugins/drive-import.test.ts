@@ -259,6 +259,26 @@ test("the call view declares the fetched path as a produced file", () => {
   assert.deepEqual(view?.locations, [{ path: "downloads/clip.webm" }]);
 });
 
+test("url_fetch declares media destinations as produced, not research files", () => {
+  const media = createUrlFetchTool(async () => ({ bytes: 1, mediaType: "image/jpeg" }));
+  assert.deepEqual(
+    (media.presentCall?.({
+      url: "https://images.example.com/photo.jpg",
+      destination: "downloads/photo.jpg",
+    }) as any)?.locations,
+    [{ path: "downloads/photo.jpg" }],
+  );
+
+  const research = createUrlFetchTool(async () => ({ bytes: 1, mediaType: "application/json" }));
+  assert.equal(
+    (research.presentCall?.({
+      url: "https://api.github.com/repos/beclab/apps/contents/jellyfin",
+      destination: "downloads/jellyfin-list.json",
+    }) as any)?.locations,
+    undefined,
+  );
+});
+
 test("url_fetch declares and returns a produced workspace file", async () => {
   const root = mkdtempSync(join(tmpdir(), "lares-url-import-"));
   try {

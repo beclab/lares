@@ -1,5 +1,40 @@
+import { posixExtname } from "./filename.js";
+
 const MEDIA_KINDS = new Set(["image", "video", "audio", "model3d"]);
 
+/** Extensions that stay as user-facing Produced media after a fetch. */
+const MEDIA_EXTENSIONS = new Set([
+  ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp",
+  ".mp4", ".webm", ".mov", ".m4v", ".ogv",
+  ".mp3", ".wav", ".ogg", ".m4a", ".aac", ".flac",
+  ".glb", ".gltf", ".obj",
+]);
+
+function posixPath(path) {
+  return String(path ?? "").replace(/\\/g, "/");
+}
+
+/**
+ * Image / video / audio / 3D destinations are durable deliverables. Other
+ * fetch targets (git APIs, chart YAML, JSON lists, READMEs) are workspace
+ * scratch and must not become Produced chips.
+ */
+export function isMediaDeliverablePath(path) {
+  return MEDIA_EXTENSIONS.has(posixExtname(posixPath(path)).toLowerCase());
+}
+
+/** Default url_fetch / drive_fetch landing zone for non-final research files. */
+export function isDownloadsScratchPath(path) {
+  const normalized = posixPath(path);
+  if (normalized === "downloads" || normalized.startsWith("downloads/")) return true;
+  return /(?:^|\/)downloads(?:\/|$)/.test(normalized);
+}
+
+/**
+ * Produced UI follows live workspace truth: media that still exists previews
+ * inline; missing paths drop out; non-media under downloads/ is scratch even
+ * while the file is briefly on disk.
+ */
 export function partitionPreviews(paths, previews) {
   const media = [];
   const files = [];
@@ -11,11 +46,16 @@ export function partitionPreviews(paths, previews) {
       continue;
     }
     const preview = previews.get(original);
-    const path = preview?.path ?? original;
+    if (preview === null) continue;
+    const path = preview.path ?? original;
     if (seen.has(path)) continue;
     seen.add(path);
-    if (preview !== null && MEDIA_KINDS.has(preview.kind)) media.push(preview);
-    else files.push(path);
+    if (MEDIA_KINDS.has(preview.kind)) {
+      media.push(preview);
+      continue;
+    }
+    if (isDownloadsScratchPath(path) || isDownloadsScratchPath(original)) continue;
+    files.push(path);
   }
   return { media, files, loading };
 }

@@ -131,6 +131,46 @@ test("turn media treats produced glb as inline media", () => {
   );
 });
 
+test("produced chips omit missing files and non-media downloads scratch", () => {
+  const chart = {
+    path: "plex/Chart.yaml",
+    name: "Chart.yaml",
+    kind: "text",
+    mediaType: "text/plain; charset=utf-8",
+    size: 20,
+  };
+  const portrait = {
+    path: "downloads/portrait.jpg",
+    name: "portrait.jpg",
+    kind: "image",
+    mediaType: "image/jpeg",
+    size: 40,
+  };
+  assert.deepEqual(
+    partitionPreviews(
+      [
+        "downloads/jellyfin-list.json",
+        "downloads/portrait.jpg",
+        "plex/Chart.yaml",
+        "downloads/gone.mp4",
+      ],
+      new Map([
+        ["downloads/jellyfin-list.json", {
+          path: "downloads/jellyfin-list.json",
+          name: "jellyfin-list.json",
+          kind: "text",
+          mediaType: "text/plain; charset=utf-8",
+          size: 10,
+        }],
+        ["downloads/portrait.jpg", portrait],
+        ["plex/Chart.yaml", chart],
+        ["downloads/gone.mp4", null],
+      ]),
+    ),
+    { media: [portrait], files: ["plex/Chart.yaml"], loading: false },
+  );
+});
+
 
 test("parseRange accepts bounded, open, and suffix byte ranges", () => {
   assert.deepEqual(parseRange(undefined, 100), null);
