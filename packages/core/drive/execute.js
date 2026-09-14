@@ -9,6 +9,7 @@ import {
 } from "../workspace/path.js";
 import { runOlaresDownload } from "./download.js";
 import { statFilesFile } from "./ls.js";
+import { isMediaDeliverablePath } from "../files/preview-groups.js";
 import {
   describeFetch,
   describeFfmpegEncode,
@@ -20,6 +21,11 @@ import {
   resolveWorkspacePublish,
 } from "./paths.js";
 import { downloadUrl, saveDataUrl } from "./url-download.js";
+
+/** Only image / video / audio / 3D fetches become Produced; research files do not. */
+function producedFetchPath(destination) {
+  return destination && isMediaDeliverablePath(destination) ? destination : undefined;
+}
 
 export async function executeDriveFetch(args, exec, download) {
   const run = download ?? runOlaresDownload;
@@ -110,7 +116,7 @@ export function presentDriveFetch(args) {
   const fetched = describeFetch(args);
   return producedEditCard(
     `Fetch ${fetched?.source ?? String(args.path ?? "")}`,
-    fetched?.destination,
+    producedFetchPath(fetched?.destination),
   );
 }
 
@@ -120,7 +126,7 @@ export function presentUrlFetch(args) {
     fetched?.kind === "data"
       ? `Save ${fetched.destination}`
       : `Download ${fetched?.source ?? String(args.url ?? "").slice(0, 160)}`,
-    fetched?.destination,
+    producedFetchPath(fetched?.destination),
   );
 }
 
