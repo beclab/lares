@@ -1,5 +1,6 @@
 import { WebError } from "@deepseek-ai/dsh-web";
 import {
+  ROUTER_DEFAULT_SEARCH_ROUTE,
   SearchError,
   fetchRouterSearchModels,
   routerSearch as searchRouter,
@@ -8,7 +9,12 @@ import {
   searchWebErrorCode,
 } from "@olares/lares-core/router/search";
 
-export { fetchRouterSearchModels, searchModelsFromRouterCatalog, searchSourcesFromRouter };
+export {
+  ROUTER_DEFAULT_SEARCH_ROUTE,
+  fetchRouterSearchModels,
+  searchModelsFromRouterCatalog,
+  searchSourcesFromRouter,
+};
 
 export async function routerSearch(model, query, opts) {
   try {

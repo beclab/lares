@@ -12,9 +12,9 @@ import { watchCatalogRevision } from "../../../shared/client/catalog-events.js";
 import { useLatest, useMountedRef } from "../../../shared/client/react-lifecycle.js";
 import { loadSearchSettings, rememberedSearchSettings, saveSearchDefault } from "./api.js";
 import {
-  searchDefaultReady,
   searchMenuValue,
   searchSelectorItems,
+  searchStatus,
   searchValueFromMenu,
 } from "@olares/lares-core/search/menu";
 import { useT } from "./locale.js";
@@ -76,11 +76,10 @@ export function WebSearchSettings() {
   }, [t]);
 
   const setDefault = useCallback(async (rawId) => {
-    const id = searchValueFromMenu(rawId);
     setSaving(true);
     setError("");
     try {
-      const next = await saveSearchDefault(id);
+      const next = await saveSearchDefault(searchValueFromMenu(rawId));
       if (mounted.current) setConfig(next);
     } catch (err) {
       if (mounted.current) {
@@ -93,12 +92,12 @@ export function WebSearchSettings() {
 
   const models = Array.isArray(config?.searchModels) ? config.searchModels : [];
   const items = searchSelectorItems(models, {
-    none: t("settings.default.none"),
-    empty: t("settings.default.empty"),
+    routerDefault: t("settings.default.router"),
+    off: t("settings.default.off"),
   });
   const disabled = !config || saving || refreshing;
-  const value = searchMenuValue(config?.defaultSearchModel);
-  const ready = searchDefaultReady(models, config?.defaultSearchModel);
+  const value = searchMenuValue(config);
+  const status = searchStatus(models, config);
 
   return h(
     "div",
@@ -119,10 +118,8 @@ export function WebSearchSettings() {
       ? null
       : h(
           SettingsStatus,
-          { ready },
-          ready
-            ? t("settings.status.ready", { model: config.defaultSearchModel })
-            : t("settings.status.notReady"),
+          { ready: status.ready },
+          t(status.key, status.model ? { model: status.model } : undefined),
         ),
     h(
       "div",

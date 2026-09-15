@@ -2,8 +2,8 @@
 import { createRouteHandler, readJsonObject, sendJson } from "@olares/lares-core/tools/http";
 import {
   currentSearchConfig,
-  defaultSearchModelFromBody,
-  setDefaultSearchFromRequest,
+  searchSelectionFromBody,
+  setSearchSelectionFromRequest,
 } from "@olares/lares-core/search/config";
 import { createLaresSearchProvider } from "./provider.js";
 
@@ -20,10 +20,10 @@ async function handleGetConfig(_req, res) {
   sendJson(res, 200, await currentConfig());
 }
 
-/** Switch default immediately: { defaultSearchModel: string|null }. */
+/** Switch default immediately: { defaultSearchModel: string|null, searchOff?: boolean }. */
 async function handleSetDefault(req, res) {
   const body = await readJsonObject(req);
-  sendJson(res, 200, await setDefaultSearchFromRequest(defaultSearchModelFromBody(body)));
+  sendJson(res, 200, await setSearchSelectionFromRequest(searchSelectionFromBody(body)));
 }
 
 /** @type {Record<string, Record<string, (req, res) => Promise<void>>>} */

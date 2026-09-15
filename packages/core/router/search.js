@@ -22,6 +22,13 @@ export function searchWebErrorCode(code) {
   return SEARCH_WEB_CODES[code] ?? "WEB_PROVIDER_ERROR";
 }
 
+/**
+ * Router's own default-search category. Sending it defers the choice to the
+ * Router console, which is where the search services are configured; Router
+ * refuses it outright when nothing stands behind it.
+ */
+export const ROUTER_DEFAULT_SEARCH_ROUTE = "default-search";
+
 export function searchModelsFromRouterCatalog(payload) {
   return routerCatalogRows(payload)
     .filter((model) => model.mode === "search")

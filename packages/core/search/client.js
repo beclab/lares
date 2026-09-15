@@ -12,8 +12,9 @@ export async function loadSearchSettings(options = {}) {
   return settings.load(() => getJson("/config"), options);
 }
 
-export async function saveSearchDefault(id) {
-  return settings.remember(await postJson("/config/default", { defaultSearchModel: id }));
+/** @param {{ defaultSearchModel: string | null, searchOff: boolean }} selection */
+export async function saveSearchDefault(selection) {
+  return settings.remember(await postJson("/config/default", selection));
 }
 
 export async function getJson(path) {

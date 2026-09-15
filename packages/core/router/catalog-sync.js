@@ -18,6 +18,8 @@ function messageOf(err) {
 }
 
 let adapterRevision = 0;
+/** What the last successful refresh wrote, so periodic reconciles stay quiet. */
+let publishedModels = null;
 /** @type {Set<(revision: number) => void>} */
 const revisionListeners = new Set();
 
@@ -55,7 +57,11 @@ async function performRefresh(ports) {
       await ports.saveSelection({ provider: ROUTER_PROVIDER_ID, model: pickDefaultModel(models).id });
     }
     forgetSttModel();
-    bumpRevision();
+    const serialized = JSON.stringify(models);
+    if (serialized !== publishedModels) {
+      publishedModels = serialized;
+      bumpRevision();
+    }
     return models;
   } catch (err) {
     catalogCache.restore(previous);

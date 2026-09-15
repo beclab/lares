@@ -61,7 +61,11 @@ function mockRequest() {
     if (path.startsWith("/api/lares/voice/models")) return ok({ stt: ["whisper", { id: "paraformer" }] });
     if (path === "/api/lares/web-search/config") return ok({ searchModels: [{ id: "brave" }], defaultSearchModel: "brave" });
     if (path === "/api/lares/web-search/config/default") {
-      return ok({ searchModels: [{ id: "brave" }], defaultSearchModel: init.body.defaultSearchModel });
+      return ok({
+        searchModels: [{ id: "brave" }],
+        defaultSearchModel: init.body.defaultSearchModel,
+        searchOff: init.body.searchOff,
+      });
     }
     return { ok: false, status: 404, body: { error: { message: path } } };
   };
@@ -99,7 +103,9 @@ test("createHostSettings maps model, voice, and search over the Host request", a
   assert.ok(calls.some((call) => call.path === "/api/lares/voice/status?refresh=1"));
 
   assert.equal((await settings.search()).defaultSearchModel, "brave");
-  assert.equal((await settings.setSearchDefault(null)).defaultSearchModel, null);
+  const followRouter = await settings.setSearchDefault({ defaultSearchModel: null, searchOff: false });
+  assert.equal(followRouter.defaultSearchModel, null);
+  assert.equal(followRouter.searchOff, false);
   assert.equal((await settings.conversation()).busyEnter, "queue");
   assert.equal((await settings.setBusyEnter("steer")).busyEnter, "steer");
   const update = calls.find((call) => call.path === "/api/settings.update");
