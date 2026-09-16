@@ -125,7 +125,7 @@ export class CatalogCache {
         return this.snapshot();
       }
     }
-    const response = await this.fetchImpl(`${routerGatewayUrl()}/models?include_not_ready=true`, {
+    const response = await this.fetchImpl(`${routerGatewayUrl()}/models`, {
       method: "GET",
       headers: routerHeaders(),
       signal: AbortSignal.timeout(15_000),
