@@ -47,9 +47,8 @@ function bumpRevision() {
  */
 async function performRefresh(ports) {
   const previous = catalogCache.snapshot();
-  catalogCache.invalidate();
   try {
-    const { payload } = await catalogCache.get();
+    const { payload } = await catalogCache.get({ refresh: true });
     const models = chatModelsFromRouterCatalog(payload);
     await ports.mutateSettings(LLM_SETTINGS_NS, catalogSettingsOps(models));
     const current = ports.currentSelection();

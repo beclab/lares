@@ -157,6 +157,44 @@ test("reading a temporarily incomplete Router catalog does not erase the saved d
   }
 });
 
+test("a search settings refresh hits Router instead of the catalog TTL", async () => {
+  const home = mkdtempSync(join(tmpdir(), "lares-websearch-refresh-"));
+  const previousHome = process.env.DSH_HOME;
+  const previousUrl = process.env.LLM_GATEWAY_URL;
+  const originalFetch = globalThis.fetch;
+  process.env.DSH_HOME = home;
+  process.env.LLM_GATEWAY_URL = "http://router.test/v1";
+  const { catalogCache } = await import("../../packages/core/router/catalog-cache.js");
+  catalogCache.reset();
+  let calls = 0;
+  globalThis.fetch = async (input) => {
+    calls += 1;
+    assert.match(String(input), /\/models\?include_not_ready=true$/);
+    return new Response(
+      JSON.stringify({ data: [{ id: `tavily/${calls}`, mode: "search" }] }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  };
+  try {
+    const { currentSearchConfig } = await import(
+      `../../packages/core/search/config.js?refresh=${Date.now()}`
+    );
+    assert.equal((await currentSearchConfig()).searchModels[0].id, "tavily/1");
+    assert.equal((await currentSearchConfig()).searchModels[0].id, "tavily/1");
+    assert.equal(calls, 1);
+    assert.equal((await currentSearchConfig({ refresh: true })).searchModels[0].id, "tavily/2");
+    assert.equal(calls, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+    catalogCache.reset();
+    if (previousHome === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = previousHome;
+    if (previousUrl === undefined) delete process.env.LLM_GATEWAY_URL;
+    else process.env.LLM_GATEWAY_URL = previousUrl;
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("Router list and search use the same gateway identity as LLM calls", async () => {
   const previous = {
     url: process.env.LLM_GATEWAY_URL,

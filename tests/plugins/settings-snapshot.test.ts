@@ -62,6 +62,7 @@ test("model / search / voice settings skip a second load", async () => {
     await voice.loadVoiceSettings({ force: true });
     assert.equal(calls.filter((line) => line.startsWith("GET /api/lares/models")).length, 2);
     assert.equal(calls.filter((line) => line.includes("/web-search/config")).length, 2);
+    assert.ok(calls.some((line) => line.includes("/web-search/config?refresh=1")));
     assert.ok(calls.some((line) => line.includes("/voice/status?refresh=1")));
     assert.equal(voice.rememberedVoiceSettings().status.model, "whisper");
     assert.equal(search.rememberedSearchSettings().defaultSearchModel, "tavily/search");

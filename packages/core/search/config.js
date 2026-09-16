@@ -66,8 +66,9 @@ export function setSearchSelection(selection, available) {
   return persist({ defaultSearchModel: model, searchOff: false });
 }
 
-export async function currentSearchConfig() {
-  const searchModels = await fetchRouterSearchModels();
+/** @param {{ refresh?: boolean }} [options] */
+export async function currentSearchConfig(options = {}) {
+  const searchModels = await fetchRouterSearchModels(options);
   return { ...readConfig(), searchModels };
 }
 

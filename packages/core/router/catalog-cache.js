@@ -67,6 +67,24 @@ export class CatalogCache {
   }
 
   /**
+   * @param {{ refresh?: boolean }} [options]
+   * `refresh` skips TTL and the boot seed so a user click hits Router now.
+   */
+  async get(options = {}) {
+    if (options.refresh) this.invalidate();
+    if (this.payload && this.fetchedAt !== 0 && this.now() - this.fetchedAt < this.ttlMs) {
+      return this.snapshot();
+    }
+    if (this.inflight) return this.inflight;
+    const pending = this.load();
+    const shared = pending.finally(() => {
+      if (this.inflight === shared) this.inflight = null;
+    });
+    this.inflight = shared;
+    return shared;
+  }
+
+  /**
    * @param {unknown} payload
    */
   seed(payload) {
@@ -96,19 +114,6 @@ export class CatalogCache {
     this.fetchedAt = Number.isFinite(snap.fetchedAt) ? snap.fetchedAt : 0;
     this.primed = true;
     writeCatalogSeed(snap.payload, this.dataDir);
-  }
-
-  async get() {
-    if (this.payload && this.fetchedAt !== 0 && this.now() - this.fetchedAt < this.ttlMs) {
-      return this.snapshot();
-    }
-    if (this.inflight) return this.inflight;
-    const pending = this.load();
-    const shared = pending.finally(() => {
-      if (this.inflight === shared) this.inflight = null;
-    });
-    this.inflight = shared;
-    return shared;
   }
 
   async load() {

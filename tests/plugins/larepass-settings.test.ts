@@ -59,7 +59,7 @@ function mockRequest() {
     }
     if (path.startsWith("/api/lares/voice/status")) return ok({ modelAvailable: true, model: "whisper" });
     if (path.startsWith("/api/lares/voice/models")) return ok({ stt: ["whisper", { id: "paraformer" }] });
-    if (path === "/api/lares/web-search/config") return ok({ searchModels: [{ id: "brave" }], defaultSearchModel: "brave" });
+    if (path.startsWith("/api/lares/web-search/config") && !path.includes("/default")) return ok({ searchModels: [{ id: "brave" }], defaultSearchModel: "brave" });
     if (path === "/api/lares/web-search/config/default") {
       return ok({
         searchModels: [{ id: "brave" }],
@@ -132,7 +132,8 @@ test("createHostSettings reuses the last snapshot until force", async () => {
   await settings.search({ force: true });
   await settings.voice(true);
   assert.equal(calls.filter((call) => call.path === "/api/lares/models").length, 2);
-  assert.equal(calls.filter((call) => call.path === "/api/lares/web-search/config").length, 2);
+  assert.equal(calls.filter((call) => call.path === "/api/lares/web-search/config").length, 1);
+  assert.ok(calls.some((call) => call.path === "/api/lares/web-search/config?refresh=1"));
   assert.ok(calls.some((call) => call.path === "/api/lares/voice/status?refresh=1"));
 });
 

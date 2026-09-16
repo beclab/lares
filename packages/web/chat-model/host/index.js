@@ -1,5 +1,4 @@
 /** Lares model settings Host routes under /api/lares/models. */
-import { catalogCache } from "@olares/lares-core/router/catalog-cache";
 import { createRouteHandler, readJsonObject, sendJson } from "@olares/lares-core/tools/http";
 import { watchRouterCatalog } from "./catalog-events.js";
 import { catalogPanelState, onCatalogRevision, catalogRevision, refreshCatalog, saveDefault } from "./catalog.js";
@@ -92,7 +91,6 @@ export function apply(ctx) {
     let watcher = null;
     /** @param {string} reason */
     const reconcile = async (reason) => {
-      catalogCache.invalidate();
       try {
         await refreshCatalog(ctx);
       } catch (err) {

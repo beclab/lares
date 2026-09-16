@@ -64,8 +64,9 @@ export function searchSourcesFromRouter(payload) {
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 
-export async function fetchRouterSearchModels() {
-  const { payload } = await catalogCache.get();
+/** @param {{ refresh?: boolean }} [options] */
+export async function fetchRouterSearchModels(options = {}) {
+  const { payload } = await catalogCache.get(options);
   return searchModelsFromRouterCatalog(payload);
 }
 
