@@ -169,7 +169,7 @@ test("a search settings refresh hits Router instead of the catalog TTL", async (
   let calls = 0;
   globalThis.fetch = async (input) => {
     calls += 1;
-    assert.match(String(input), /\/models\?include_not_ready=true$/);
+    assert.match(String(input), /\/models$/);
     return new Response(
       JSON.stringify({ data: [{ id: `tavily/${calls}`, mode: "search" }] }),
       { status: 200, headers: { "content-type": "application/json" } },
@@ -252,7 +252,7 @@ test("Router list and search use the same gateway identity as LLM calls", async 
       truncated: false,
     });
 
-    assert.equal(calls[0].url, "http://router.test/v1/models?include_not_ready=true");
+    assert.equal(calls[0].url, "http://router.test/v1/models");
     assert.equal((calls[0].init.headers as Record<string, string>)["x-caller-appid"], "lares");
     assert.equal(calls[1].url, "http://router.test/v1/search");
     assert.deepEqual(JSON.parse(String(calls[1].init.body)), {

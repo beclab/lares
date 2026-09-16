@@ -21,6 +21,33 @@ function catalogModule() {
   return import(`../../packages/web/chat-model/host/catalog.js?t=${Date.now()}`);
 }
 
+test("boot catalog requests only Router's callable models", async () => {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    assert.equal(String(input), "http://router.test/v1/models");
+    return new Response(JSON.stringify({ data: [{ id: "Qwen/ready", mode: "chat" }] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+  try {
+    const { fetchRouterModels } = await import("../../packages/core/router/models.js");
+    assert.deepEqual(await fetchRouterModels({ routerUrl: "http://router.test/v1" }), [
+      {
+        id: "Qwen/ready",
+        name: "Qwen/ready",
+        mode: "chat",
+        supportsVision: false,
+        reasoningEfforts: null,
+        contextWindow: null,
+        maxTokens: null,
+      },
+    ]);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
 function stubCtx(overrides: Partial<Ctx["llm"]> = {}, saved: unknown[] = [], mutations: unknown[] = []): Ctx {
   return {
     llm: {

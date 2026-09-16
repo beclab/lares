@@ -11,7 +11,7 @@ function okFetch(body = payload) {
   let calls = 0;
   const fetchImpl = async (url: string | URL) => {
     calls += 1;
-    assert.match(String(url), /\/models\?include_not_ready=true$/);
+    assert.match(String(url), /\/models$/);
     return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
   };
   return { fetchImpl, calls: () => calls };
@@ -47,7 +47,7 @@ test("get({ refresh: true }) skips TTL and the boot seed", async () => {
       dataDir: dir,
       fetch: async (url: string | URL) => {
         calls += 1;
-        assert.match(String(url), /\/models\?include_not_ready=true$/);
+        assert.match(String(url), /\/models$/);
         return new Response(JSON.stringify({ data: [{ id: "Qwen/live", mode: "chat" }] }), { status: 200 });
       },
       now: () => 1,

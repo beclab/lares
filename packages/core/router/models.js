@@ -73,7 +73,7 @@ export async function fetchChatModels() {
  */
 export async function fetchRouterModels(env) {
   const routerUrl = String(env.routerUrl ?? "").replace(/\/+$/, "") || routerGatewayUrl();
-  const res = await fetch(`${routerUrl}/models?include_not_ready=true`, {
+  const res = await fetch(`${routerUrl}/models`, {
     method: "GET",
     headers: {
       ...routerAuthHeaders(env.routerApiKey, env.olaresAppId),
