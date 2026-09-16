@@ -108,8 +108,12 @@ export function createHostSettings(request) {
       return this.voice(true);
     },
     async search(options = {}) {
+      const query = options.force ? "?refresh=1" : "";
       return searchStore.load(
-        async () => payload(await request("/api/lares/web-search/config"), "/api/lares/web-search/config"),
+        async () => payload(
+          await request(`/api/lares/web-search/config${query}`),
+          "/api/lares/web-search/config",
+        ),
         options,
       );
     },

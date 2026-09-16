@@ -72,8 +72,7 @@ const RESOLVED_TTL_MS = 120_000;
 /** @returns {Promise<{ id: string, mode: string | null }[]>} */
 export async function listModels(options) {
   try {
-    if (options?.refresh) catalogCache.invalidate();
-    const { rows } = await catalogCache.get();
+    const { rows } = await catalogCache.get({ refresh: options?.refresh });
     return rows.map(({ id, mode }) => ({ id, mode }));
   } catch (err) {
     const status = err && typeof err === "object" && "status" in err ? Number(err.status) : 503;

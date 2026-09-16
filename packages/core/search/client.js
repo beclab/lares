@@ -9,7 +9,8 @@ export function rememberedSearchSettings() {
 }
 
 export async function loadSearchSettings(options = {}) {
-  return settings.load(() => getJson("/config"), options);
+  const query = options.force ? "?refresh=1" : "";
+  return settings.load(() => getJson(`/config${query}`), options);
 }
 
 /** @param {{ defaultSearchModel: string | null, searchOff: boolean }} selection */

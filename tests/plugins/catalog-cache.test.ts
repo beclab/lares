@@ -37,6 +37,32 @@ test("invalidate forces the next get to hit Router", async () => {
   assert.equal(calls(), 2);
 });
 
+test("get({ refresh: true }) skips TTL and the boot seed", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "lares-catalog-refresh-"));
+  try {
+    writeCatalogSeed({ data: [{ id: "Qwen/boot", mode: "chat" }] }, dir);
+    let calls = 0;
+    const cache = new CatalogCache({
+      ttlMs: 1_000,
+      dataDir: dir,
+      fetch: async (url: string | URL) => {
+        calls += 1;
+        assert.match(String(url), /\/models\?include_not_ready=true$/);
+        return new Response(JSON.stringify({ data: [{ id: "Qwen/live", mode: "chat" }] }), { status: 200 });
+      },
+      now: () => 1,
+    });
+    assert.equal((await cache.get()).rows[0].id, "Qwen/boot");
+    assert.equal(calls, 0);
+    assert.equal((await cache.get({ refresh: true })).rows[0].id, "Qwen/live");
+    assert.equal(calls, 1);
+    assert.equal((await cache.get()).rows[0].id, "Qwen/live");
+    assert.equal(calls, 1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("TTL expiry refetches without an explicit invalidate", async () => {
   let now = 0;
   const { fetchImpl, calls } = okFetch();

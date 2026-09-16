@@ -12,12 +12,16 @@ export const inject = ["web", "webServer"];
 
 const ROUTE_PREFIX = "/api/lares/web-search";
 
-export async function currentConfig() {
-  return currentSearchConfig();
+function wantsRefresh(req) {
+  return new URL(req.url ?? "/", "http://x").searchParams.get("refresh") === "1";
 }
 
-async function handleGetConfig(_req, res) {
-  sendJson(res, 200, await currentConfig());
+export async function currentConfig(options = {}) {
+  return currentSearchConfig(options);
+}
+
+async function handleGetConfig(req, res) {
+  sendJson(res, 200, await currentConfig({ refresh: wantsRefresh(req) }));
 }
 
 /** Switch default immediately: { defaultSearchModel: string|null, searchOff?: boolean }. */

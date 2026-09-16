@@ -23,7 +23,7 @@ export class CatalogCache {
   seed(payload: unknown): void;
   snapshot(): CatalogSnapshot;
   restore(snap: CatalogSnapshot | { payload: unknown; rows?: RouterCatalogRow[]; fetchedAt?: number } | null): void;
-  get(): Promise<CatalogSnapshot>;
+  get(options?: { refresh?: boolean }): Promise<CatalogSnapshot>;
 }
 
 export const catalogCache: CatalogCache;
