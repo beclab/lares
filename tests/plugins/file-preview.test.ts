@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   mkdtempSync,
   mkdirSync,
+  readFileSync,
   realpathSync,
   rmSync,
   symlinkSync,
@@ -607,6 +608,17 @@ test("opening an existing tab through a markdown link also refreshes it", async 
   } finally {
     globalThis.fetch = original;
   }
+});
+
+test("image and video preview CSS fits the pane instead of scrolling the bitmap", () => {
+  const css = readFileSync(
+    join(import.meta.dirname, "../../packages/web/workspace-preview/src/client/styles.css"),
+    "utf8",
+  );
+  const media = (css.match(/\.lares-preview-media\s*\{[^}]+\}/)?.[0] ?? "").replace(/\/\*[\s\S]*?\*\//g, "");
+  assert.match(media, /grid-template:\s*minmax\(0,\s*1fr\)\s*\/\s*minmax\(0,\s*1fr\)/);
+  assert.match(media, /overflow:\s*hidden/);
+  assert.doesNotMatch(media, /overflow:\s*auto/);
 });
 
 test("the chat offset survives the preview owning the scrollport", () => {

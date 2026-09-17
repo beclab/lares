@@ -4,6 +4,8 @@ Load this after **any** successful generate — Router, FlowStudio-via-Router, o
 
 Do not reply until one drive tool has published a path. `url_fetch` and `ffmpeg_encode` already publish; `workspace_publish` is for a file that already exists. Do not call `workspace_publish` after `url_fetch` or `ffmpeg_encode`.
 
+If `--out` did not appear in the workspace, do **not** `find` / grep the filesystem and **never** `router call … --id` or sleep-loop a re-collect. Use that same call's receipt: `b64_json` / `data:` → `url_fetch` as below.
+
 ## How the bytes arrive
 
 Pick the first row that matches. Never curl, wget, or open FlowStudio / ComfyUI to "just download it".

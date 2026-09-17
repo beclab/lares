@@ -18,7 +18,7 @@ function PreviewBody({ data, sessionId, openPath, scroll, t }) {
   if (data.kind === "image") {
     return h(
       "div",
-      { className: "lares-preview-media", ...scroll },
+      { className: "lares-preview-media" },
       h("img", {
         className: "lares-preview-image",
         src: rawFileUrl(sessionId, data.path, data.modifiedAt),
