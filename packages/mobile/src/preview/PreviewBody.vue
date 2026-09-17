@@ -154,22 +154,25 @@ export default {
 
 .lares-preview-body__media {
   display: grid;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   flex: 1;
   place-items: center;
-  overflow: auto;
+  overflow: hidden;
   padding: 16px 20px;
 }
 
 .lares-preview-body__media img,
 .lares-preview-body__media video {
+  display: block;
   min-width: 0;
   min-height: 0;
   max-width: 100%;
   max-height: 100%;
   border-radius: 10px;
   object-fit: contain;
+  object-position: center;
 }
 
 .lares-preview-body__media audio {
