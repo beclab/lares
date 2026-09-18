@@ -24,7 +24,7 @@ spec:
     2. 确认 Router 已安装。
     3. 打开 Lares 入口开始对话。
   upgradeDescription: |
-    ## Lares 0.26.17
+    ## Lares 0.26.18
 
     - 图片生成走本地 LLM shim，并带上当前登录的 Olares 用户，FlowStudio
       历史会记到本人，而不是共享 chart 属主。
