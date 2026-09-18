@@ -3,7 +3,7 @@ import test from "node:test";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ensureCliProfile, identityFromHeaders } from "@olares/lares-core/olares/identity";
+import { ensureCliProfile, identityFromHeaders, olaresUsername } from "@olares/lares-core/olares/identity";
 import { rememberSessionIdentity, getSessionIdentity } from "@olares/lares-core/olares/session-identity";
 
 test("identityFromHeaders reads edge cookie and user", () => {
@@ -15,6 +15,12 @@ test("identityFromHeaders reads edge cookie and user", () => {
   assert.equal(identity.user, "luolong01@olares.com");
   assert.equal(identity.token, "tok-abc");
   assert.equal(identity.terminus, "luolong01.olares.com");
+});
+
+test("olaresUsername strips the domain", () => {
+  assert.equal(olaresUsername("Demo1002@olares.com"), "demo1002");
+  assert.equal(olaresUsername("demo1002"), "demo1002");
+  assert.equal(olaresUsername(""), "");
 });
 
 test("ensureCliProfile writes config and keychain blob", () => {
@@ -45,6 +51,7 @@ test("rememberSessionIdentity materializes profile env", () => {
   const root = mkdtempSync(join(tmpdir(), "lares-cli-sess-"));
   const previousRoot = process.env.LARES_CLI_ROOT;
   const previousHome = process.env.OLARES_CLI_HOME;
+  const previousUser = process.env.OLARES_USERNAME;
   process.env.LARES_CLI_ROOT = root;
   try {
     const identity = {
@@ -56,11 +63,14 @@ test("rememberSessionIdentity materializes profile env", () => {
     assert.deepEqual(getSessionIdentity("sess-1"), identity);
     assert.ok(process.env.OLARES_CLI_HOME?.includes(root));
     assert.equal(process.env.OLARES_CLI_REMOTE_ONLY, "1");
+    assert.equal(process.env.OLARES_USERNAME, "luolong01");
   } finally {
     if (previousRoot === undefined) delete process.env.LARES_CLI_ROOT;
     else process.env.LARES_CLI_ROOT = previousRoot;
     if (previousHome === undefined) delete process.env.OLARES_CLI_HOME;
     else process.env.OLARES_CLI_HOME = previousHome;
+    if (previousUser === undefined) delete process.env.OLARES_USERNAME;
+    else process.env.OLARES_USERNAME = previousUser;
     delete process.env.OLARES_CLI_DATA_DIR;
     delete process.env.OLARES_CLI_REMOTE_ONLY;
     rmSync(root, { recursive: true, force: true });

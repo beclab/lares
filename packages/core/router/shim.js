@@ -3,7 +3,7 @@ import { request as httpsRequest } from "node:https";
 import { readBody, sendError, sendJson } from "../tools/http.js";
 import { catalogCache } from "./catalog-cache.js";
 import { carriesWebpImage, transcodeWebpImages } from "../media/router-images.js";
-import { routerAuthHeaders, routerGatewayUrl } from "./gateway.js";
+import { routerAuthHeaders, routerEndUser, routerGatewayUrl } from "./gateway.js";
 import { STT_MAX_AUDIO_BYTES } from "./stt.js";
 
 export const SHIM_PATH = "/llm/v1";
@@ -53,7 +53,11 @@ export function shimRequestHeaders(incoming, env = process.env) {
   }
   Object.assign(
     headers,
-    routerAuthHeaders(env.LARES_ROUTER_API_KEY?.trim() || null, env.OLARES_APP_ID?.trim() || "lares"),
+    routerAuthHeaders(
+      env.LARES_ROUTER_API_KEY?.trim() || null,
+      env.OLARES_APP_ID?.trim() || "lares",
+      routerEndUser(env, incoming),
+    ),
   );
   return headers;
 }

@@ -1,6 +1,6 @@
 import { writeCatalogSeed } from "./catalog-cache.js";
 import { routerCatalogRows } from "./catalog.js";
-import { routerAuthHeaders, routerGatewayUrl, routerShimBaseUrl } from "./gateway.js";
+import { routerAuthHeaders, routerEndUser, routerGatewayUrl, routerShimBaseUrl } from "./gateway.js";
 
 export const ROUTER_PROVIDER_ID = "olares-router";
 export const LLM_SETTINGS_NS = "llm-pi-ai";
@@ -76,7 +76,11 @@ export async function fetchRouterModels(env) {
   const res = await fetch(`${routerUrl}/models`, {
     method: "GET",
     headers: {
-      ...routerAuthHeaders(env.routerApiKey, env.olaresAppId),
+      ...routerAuthHeaders(
+        env.routerApiKey,
+        env.olaresAppId,
+        env.olaresUsername || routerEndUser(),
+      ),
       accept: "application/json",
     },
     signal: AbortSignal.timeout(15_000),

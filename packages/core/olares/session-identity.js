@@ -1,6 +1,7 @@
 import {
   ensureCliProfile,
   identityAvailable,
+  olaresUsername,
 } from "./identity.js";
 
 /** @type {Map<string, import('./identity.js').OlaresIdentity>} */
@@ -14,12 +15,18 @@ let latest = null;
  * @param {string} sessionId
  * @param {import('./identity.js').OlaresIdentity} identity
  */
-export function rememberSessionIdentity(sessionId, identity) {
-  if (sessionId) bySession.set(sessionId, identity);
-  latest = identity;
+function applyIdentityEnv(identity) {
+  const user = olaresUsername(identity.user);
+  if (user) process.env.OLARES_USERNAME = user;
   if (!identityAvailable(identity)) return;
   const profile = ensureCliProfile(identity);
   Object.assign(process.env, profile.env);
+}
+
+export function rememberSessionIdentity(sessionId, identity) {
+  if (sessionId) bySession.set(sessionId, identity);
+  latest = identity;
+  applyIdentityEnv(identity);
 }
 
 /**
@@ -28,9 +35,7 @@ export function rememberSessionIdentity(sessionId, identity) {
  */
 export function rememberRequestIdentity(identity) {
   latest = identity;
-  if (!identityAvailable(identity)) return;
-  const profile = ensureCliProfile(identity);
-  Object.assign(process.env, profile.env);
+  applyIdentityEnv(identity);
 }
 
 /** @param {string} sessionId */

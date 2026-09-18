@@ -31,9 +31,14 @@ function parseCookies(cookieHeader) {
   return out;
 }
 
+/** Username without domain; Olares may send `user` or `user@olares.com`. */
+export function olaresUsername(user) {
+  return String(user || "").split("@", 1)[0]?.trim().toLowerCase() ?? "";
+}
+
 /** @param {string} user */
 function userLabel(user) {
-  return user.split("@", 1)[0]?.trim().toLowerCase() ?? "";
+  return olaresUsername(user);
 }
 
 /**

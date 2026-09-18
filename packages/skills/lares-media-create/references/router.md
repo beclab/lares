@@ -14,13 +14,13 @@ Skip disabled rows. Skip a row whose title is another family. A FlowStudio video
 
 ## Call
 
-Prefer the front-door `router call` line with `--out`. A missing CLI verb is not a missing catalog row: if there is no music verb, `music_generation` is still a hit — use Router's data plane for that mode (gateway from `olares-cli router status`, or in-cluster `LLM_GATEWAY_URL`).
+Prefer `$LARES_LLM_BASE_URL` (the in-process shim). It stamps the logged-in user. Do not `olares-cli router call` to generate: in-cluster that presents as the Lares app, and FlowStudio would own the job as the shared chart owner.
 
 For `image_generation` rows (cloud image models **and** FlowStudio workflows registered on Router):
 
-- Prefer `router call image … --out` (`.webp` for images; `.mp4` / `.glb` when the row is a parked FlowStudio video / 3D scene).
-- If that verb cannot write a file, POST to **Router's** data plane `/v1/images/generations` (the gateway `olares-cli router status` reports, or `LLM_GATEWAY_URL`). Pass `model` as `router list` printed it. That endpoint returns `b64_json` — including for a FlowStudio video parked on this mode. Do not POST it for a real `video_generation` / `music_generation` catalog row.
-- Never `router call … --id`.
+- POST `$LARES_LLM_BASE_URL/images/generations` with `Prefer: respond-async` (`.webp` for images; `.mp4` / `.glb` when the row is a parked FlowStudio video / 3D scene).
+- If the shim is down, POST to **Router's** data plane `/v1/images/generations` (`LLM_GATEWAY_URL`) and still send `x-bfl-user` / `remote-user` as the logged-in username. Pass `model` as `router list` printed it. That endpoint returns `b64_json` — including for a FlowStudio video parked on this mode. Do not POST it for a real `video_generation` / `music_generation` catalog row.
+- Never `olares-cli router call … --id`.
 
 Then land with [deliver.md](deliver.md). A Router JSON body or `--out` path is not preview.
 

@@ -48,14 +48,16 @@ test("shim request headers drop hop-by-hop and caller identity, then stamp Route
       "x-caller-appid": "other",
       "content-type": "application/json",
       "x-request-id": "abc",
+      "x-bfl-user": "demo1002@olares.com",
     },
-    { LARES_ROUTER_API_KEY: "", OLARES_APP_ID: "lares" },
+    { LARES_ROUTER_API_KEY: "", OLARES_APP_ID: "lares", OLARES_USERNAME: "demo1001" },
   );
   assert.equal(headers.host, undefined);
   assert.equal(headers.authorization, undefined);
   assert.equal(headers["x-caller-appid"], "lares");
   assert.equal(headers["content-type"], "application/json");
   assert.equal(headers["x-request-id"], "abc");
+  assert.equal(headers["x-bfl-user"], "demo1002");
 });
 
 test("shim response headers drop encoding that Node already decoded", () => {

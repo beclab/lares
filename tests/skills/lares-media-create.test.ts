@@ -20,8 +20,11 @@ test("lares-media-create is a produce protocol, not a diagnosis ladder", () => {
   assert.match(skill, /next same-family row/);
   assert.match(skill, /`read_image` that workspace file/);
   assert.match(skill, /same meaning in English/);
-  assert.match(skill, /image\*\* verb and `--out outputs\/<name>\.mp4`/);
-  assert.match(skill, /do not `router call … --id`/);
+  assert.match(skill, /POST the \*\*image\*\* route and write `outputs\/<name>\.mp4`/);
+  assert.match(skill, /LARES_LLM_BASE_URL/);
+  assert.match(skill, /logged-in Olares user/);
+  assert.match(skill, /Do not `olares-cli router call` to generate/);
+  assert.match(skill, /Do not `router call … --id`/);
   assert.match(skill, /Do not run `--help`/);
   assert.match(skill, /Do not `provider sync-models`/);
   assert.match(skill, /references\/router\.md/);
@@ -66,7 +69,9 @@ test("router reference forbids calling FlowStudio HTTP and catalog surgery on pr
   assert.match(text, /Never curl FlowStudio/);
   assert.match(text, /\/v1\/images\/generations/);
   assert.match(text, /parked FlowStudio video/);
-  assert.match(text, /Never `router call … --id`/);
+  assert.match(text, /LARES_LLM_BASE_URL/);
+  assert.match(text, /x-bfl-user/);
+  assert.match(text, /Never `olares-cli router call … --id`/);
   assert.match(text, /One row 404/);
   assert.match(text, /Do not\*\* `provider sync-models`/);
   assert.doesNotMatch(text, /olares-cli router list --mode image_generation/);
