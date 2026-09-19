@@ -24,9 +24,9 @@ spec:
     2. Ensure Router is installed.
     3. Open the Lares entrance and start a chat.
   upgradeDescription: |
-    ## Lares 0.26.19
+    ## Lares 0.26.20
 
-    - Olares Files Produced cards now open the file in a new Files tab instead
-      of downloading or caching it inside Lares.
-    - Direct preview APIs use the current browser credential for every metadata,
-      media, and download request.
+    - Olares Files cards now preview on demand with the current browser
+      credential and never download into a local preview cache.
+    - Files previews include an Open in Files action that opens the original
+      file in a safe new browser tab while retaining Download.

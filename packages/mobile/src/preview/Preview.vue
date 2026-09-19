@@ -13,14 +13,21 @@
           </svg>
         </button>
         <h1 class="lares-preview__name" :title="path">{{ name }}</h1>
-        <a
-          v-if="downloadHref"
-          class="lares-preview__download"
-          :href="downloadHref"
-          download
-        >
-          {{ t("download") }}
-        </a>
+        <div v-if="filesHref || downloadHref" class="lares-preview__actions">
+          <a
+            v-if="filesHref"
+            class="lares-preview__action"
+            :href="filesHref"
+            target="_blank"
+            rel="noopener noreferrer"
+          >{{ t("openInFiles") }}</a>
+          <a
+            v-if="downloadHref"
+            class="lares-preview__action"
+            :href="downloadHref"
+            download
+          >{{ t("download") }}</a>
+        </div>
         <span v-else class="lares-preview__side-spacer" aria-hidden="true" />
       </header>
       <LaresPreviewBody
@@ -54,6 +61,7 @@ export default {
     error: { type: String, default: "" },
     mediaSrc: { type: String, default: "" },
     downloadHref: { type: String, default: "" },
+    filesHref: { type: String, default: "" },
     hrefFor: { type: Function, default: null },
     t: { type: Function, required: true },
   },
@@ -83,10 +91,11 @@ export default {
 
 .lares-preview__bar {
   position: relative;
-  display: flex;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  column-gap: 8px;
   flex-shrink: 0;
   align-items: center;
-  justify-content: space-between;
   min-height: 56px;
   padding: 6px 8px;
 }
@@ -124,9 +133,8 @@ export default {
 }
 
 .lares-preview__name {
-  position: absolute;
-  left: 50%;
-  max-width: calc(100% - 152px);
+  min-width: 0;
+  max-width: 100%;
   margin: 0;
   overflow: hidden;
   font-size: 18px;
@@ -135,11 +143,17 @@ export default {
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
-  transform: translateX(-50%);
   pointer-events: none;
 }
 
-.lares-preview__download {
+.lares-preview__actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.lares-preview__action {
   display: inline-flex;
   min-width: 40px;
   height: 32px;
@@ -158,7 +172,7 @@ export default {
   text-decoration: none;
 }
 
-.lares-preview__download:active {
+.lares-preview__action:active {
   background: var(--q-btn-bg-pressed);
 }
 </style>

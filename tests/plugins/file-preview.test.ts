@@ -543,28 +543,30 @@ test("openCurrent claims workspace files and declines everything else", async ()
   }
 });
 
-test("a Files click opens the Files app without requesting preview metadata", async () => {
+test("an unauthenticated Files click keeps the card out of preview and retries fresh", async () => {
   const original = globalThis.fetch;
-  let requested = false;
-  globalThis.fetch = (async () => {
-    requested = true;
-    throw new Error("Files cards must not call Lares preview");
-  }) as typeof fetch;
+  let authenticated = false;
+  globalThis.fetch = (async () => authenticated
+    ? new Response(JSON.stringify({
+      path: "drive/Home/notes.txt",
+      name: "notes.txt",
+      kind: "text",
+      size: 2,
+      text: "hi",
+    }), { status: 200 })
+    : new Response(JSON.stringify({ error: { code: "files_unauthenticated" } }), { status: 401 })) as typeof fetch;
 
-  const opened: string[] = [];
-  const workspace = new FilePreviewWorkspace(undefined, {
-    openFilesPath(path: string) {
-      opened.push(path);
-      return true;
-    },
-  });
+  const workspace = new FilePreviewWorkspace();
   const unbind = workspace.bindCurrent("s1");
   try {
     assert.equal(await workspace.openCurrent("drive/Home/notes.txt"), true);
     assert.equal(workspace.getSnapshot("s1").mode, "chat");
     assert.deepEqual(workspace.getSnapshot("s1").tabs, []);
-    assert.deepEqual(opened, ["drive/Home/notes.txt"]);
-    assert.equal(requested, false);
+
+    authenticated = true;
+    assert.equal(await workspace.openCurrent("drive/Home/notes.txt"), true);
+    assert.equal(workspace.getSnapshot("s1").mode, "preview");
+    assert.equal(workspace.getSnapshot("s1").activePath, "drive/Home/notes.txt");
   } finally {
     unbind();
     globalThis.fetch = original;

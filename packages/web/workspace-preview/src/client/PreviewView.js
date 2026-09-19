@@ -9,6 +9,7 @@ import { errorMessage } from "./locale.js";
 import { rewriteWorkspaceTargets } from "@olares/lares-core/files/markdown";
 import { downloadCurrentFile } from "./download.js";
 import { downloadFileUrl, rawFileHref, rawFileUrl, workspaceLinkClickPath } from "@olares/lares-core/files/preview-workspace";
+import { filesAppUrl } from "@olares/lares-core/files/app-link";
 import { Model3dHost } from "./Model3dHost.js";
 
 const h = React.createElement;
@@ -108,6 +109,7 @@ export function createPreviewView(workspace, t) {
     const content = snapshot.content;
     const scrollRef = useRef(null);
     const ready = content.status === "ready";
+    const filesHref = filesAppUrl(path);
     const [downloadError, setDownloadError] = useState(null);
 
     useLayoutEffect(() => {
@@ -136,6 +138,16 @@ export function createPreviewView(workspace, t) {
         { className: "lares-preview-header" },
         h("div", { className: "lares-preview-path", title: path }, path),
         downloadError && h("div", { className: "lares-preview-download-error", role: "alert" }, downloadError),
+        filesHref && h(
+          "a",
+          {
+            className: "lares-preview-open-files",
+            href: filesHref,
+            target: "_blank",
+            rel: "noopener noreferrer",
+          },
+          t("openInFiles"),
+        ),
         h(
           Button,
           {
