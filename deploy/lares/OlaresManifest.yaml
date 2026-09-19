@@ -37,10 +37,10 @@ spec:
   upgradeDescription: |
     ## Lares 0.26.19
 
-    - Olares Files previews now open only on click and use the current browser
-      credential for every metadata, media, and download request.
-    - Missing or expired credentials leave the Produced file card in place
-      without opening a broken preview.
+    - Olares Files Produced cards now open the file in a new Files tab instead
+      of downloading or caching it inside Lares.
+    - Direct preview APIs use the current browser credential for every metadata,
+      media, and download request.
   developer: luolong
   submitter: Olares
   locale:

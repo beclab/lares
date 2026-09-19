@@ -129,6 +129,7 @@ import { markSeen, pruneSeen, readSeen, SEEN_STORAGE_KEY, unseenSessions } from 
 import { fileName } from "@olares/lares-core/files/filename";
 import { closeTab, openTab, touchTab } from "@olares/lares-core/files/preview-tabs";
 import { isFilesPath } from "@olares/lares-core/drive/files-path";
+import { openFilesApp } from "@olares/lares-core/files/app-link";
 import { chatDevice as resolveChatDevice } from "./layout.js";
 import LaresMobileShell from "./mobile/MobileShell.vue";
 import LaresDesktopShell from "./desktop/DesktopShell.vue";
@@ -749,19 +750,11 @@ export default {
     },
     async openFile(path) {
       if (isFilesPath(path)) {
-        const gen = (this.previewGen.get(path) ?? 0) + 1;
-        this.previewGen.set(path, gen);
-        try {
-          const data = await this.runtime.preview(path);
-          if (this.previewGen.get(path) !== gen) return;
-          this.openPreviewTab(path);
-          const canonical = this.adoptPreviewPath(path, data?.path);
-          this.previewGen.set(canonical, gen);
-          this.setPreviewContent(canonical, gen, { status: "ready", data, error: "" });
-        } catch {
-          // The Produced card stays in place; another click retries with the
-          // browser's then-current credential.
-        }
+        openFilesApp(path, {
+          entrance: this.baseUrl,
+          accountDomain: this.env?.ACCOUNT_DOMAIN,
+          protocol: this.env?.PROTOCOL,
+        });
         return;
       }
       this.openPreviewTab(path);
@@ -836,13 +829,6 @@ export default {
         this.previewGen.set(canonical, gen);
         this.setPreviewContent(canonical, gen, { status: "ready", data, error: "" });
       } catch (err) {
-        if (
-          isFilesPath(path)
-          && ["files_no_credential", "files_unauthenticated"].includes(err instanceof Error ? err.message : "")
-        ) {
-          this.closePreviewTab(path);
-          return;
-        }
         this.setPreviewContent(path, gen, {
           status: "error",
           data: null,

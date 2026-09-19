@@ -72,6 +72,7 @@
     "./files/limits": "./files/limits.js",
     "./files/upload-client": "./files/upload-client.js",
     "./files/backend-client": "./files/backend-client.js",
+    "./files/app-link": "./files/app-link.js",
     "./files/preview": "./files/preview.js",
     "./files/preview-workspace": "./files/preview-workspace.js",
     "./files/preview-tabs": "./files/preview-tabs.js",
