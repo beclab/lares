@@ -24,9 +24,10 @@ spec:
     2. 确认 Router 已安装。
     3. 打开 Lares 入口开始对话。
   upgradeDescription: |
-    ## Lares 0.26.20
+    ## Lares 0.26.21
 
-    - Olares Files 文件卡片现在会使用当前浏览器凭证按需预览，且不会下载到
-      本地预览缓存。
-    - Files 文件预览保留“下载”，并新增“在 Files 打开”，可在安全的新标签页中
-      打开原文件。
+    - 容器内的 olares-cli 改用 Olares 为它挂载的凭证，不再使用 Lares 依据请求头
+      自建的 profile。那份 profile 里的用户名不带域名，因此在 olares.cn 和自定义
+      域名下，CLI 访问的是错误的实例。
+    - olares-cli 的会话不再随浏览器登录一起过期：挂载的凭证会自行续期，报告的
+      后端版本也变成真实值，而不是固定的 1.12.7。

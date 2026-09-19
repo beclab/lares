@@ -24,9 +24,12 @@ spec:
     2. Ensure Router is installed.
     3. Open the Lares entrance and start a chat.
   upgradeDescription: |
-    ## Lares 0.26.20
+    ## Lares 0.26.21
 
-    - Olares Files cards now preview on demand with the current browser
-      credential and never download into a local preview cache.
-    - Files previews include an Open in Files action that opens the original
-      file in a safe new browser tab while retaining Download.
+    - olares-cli in the container now uses the credential Olares mounts for
+      it, instead of a profile Lares built from the request headers. That
+      profile carried a username without its domain, so on olares.cn and on
+      custom domains the CLI addressed the wrong instance.
+    - The olares-cli session no longer expires with the browser login: the
+      mounted credential refreshes itself, and the backend version it reports
+      is the real one rather than a fixed 1.12.7.
