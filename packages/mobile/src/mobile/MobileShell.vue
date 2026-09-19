@@ -206,6 +206,7 @@
         :error="state.preview.error"
         :media-src="state.previewMediaSrc"
         :download-href="state.previewDownloadHref"
+        :files-href="state.previewFilesHref"
         :href-for="previewHref"
         :t="t"
         @close="$emit('close-preview')"

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { filesAppUrl, openFilesApp } from "@olares/lares-core/files/app-link";
+import { filesAppUrl } from "@olares/lares-core/files/app-link";
 
 const entrance = "https://489966aa.alice.olares.com";
 
@@ -43,17 +43,7 @@ test("packaged clients can build a Files link from their account domain", () => 
   );
 });
 
-test("opening a Files path uses a new noopener tab and rejects untrusted origins", () => {
-  const opened: unknown[][] = [];
-  assert.equal(openFilesApp("drive/Home/notes.txt", {
-    entrance,
-    open: (...args: unknown[]) => opened.push(args),
-  }), true);
-  assert.deepEqual(opened, [[
-    "https://files.alice.olares.com/Files/Home/notes.txt",
-    "_blank",
-    "noopener,noreferrer",
-  ]]);
+test("Files links reject untrusted origins and malformed paths", () => {
   assert.equal(filesAppUrl("drive/Home/notes.txt", { entrance: "https://evil.example" }), "");
   assert.equal(filesAppUrl("drive/Home/notes.txt", { entrance: "ftp://app.alice.olares.com" }), "");
   assert.equal(filesAppUrl("../notes.txt", { entrance }), "");

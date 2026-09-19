@@ -8,7 +8,6 @@ import { EN, ZH } from "./locale.js";
 import { installPathOpener } from "./open.js";
 import styles from "./styles.css";
 import { FilePreviewWorkspace } from "@olares/lares-core/files/preview-workspace";
-import { openFilesApp } from "@olares/lares-core/files/app-link";
 import { ChatScrollport } from "./chat-scrollport.js";
 import { installPluginStyle } from "../../../shared/client/plugin-style.js";
 
@@ -18,7 +17,7 @@ const NS = "lares.workspace-preview";
 export const inject = [];
 
 export function apply(ctx) {
-  const workspace = new FilePreviewWorkspace(new ChatScrollport(), { openFilesPath: openFilesApp });
+  const workspace = new FilePreviewWorkspace(new ChatScrollport());
   installPluginStyle(ctx, "@lares/workspace-preview", styles, "lares-workspace-preview-css");
   installPathOpener(ctx, workspace);
 

@@ -1,5 +1,4 @@
 import { closeTab, openTab, touchTab } from "./preview-tabs.js";
-import { isFilesPath } from "../drive/files-path.js";
 
 export class NullScrollport {
   offset() {
@@ -21,6 +20,11 @@ function initialSnapshot() {
 
 function errorCode(payload) {
   return payload?.error?.code || "file_preview_failed";
+}
+
+function filesAuthFailure(content) {
+  return content.status === "error"
+    && ["files_no_credential", "files_unauthenticated"].includes(content.message);
 }
 
 export async function fetchPreview(sessionId, path) {
@@ -108,11 +112,10 @@ export function rawUrlPath(sessionId, href) {
 }
 
 export class FilePreviewWorkspace {
-  constructor(scrollport = new NullScrollport(), options = {}) {
+  constructor(scrollport = new NullScrollport()) {
     this.sessions = new Map();
     this.current = null;
     this.scrollport = scrollport;
-    this.openFilesPath = options.openFilesPath ?? (() => false);
   }
 
   session(sessionId) {
@@ -156,10 +159,10 @@ export class FilePreviewWorkspace {
    */
   async openCurrent(path) {
     if (!this.current) return false;
-    if (isFilesPath(path)) return this.openFilesPath(path);
     const { sessionId } = this.current;
     const content = await this.fetchContent(sessionId, path);
     if (content.status === "error" && content.message === "path_not_file") return false;
+    if (filesAuthFailure(content)) return true;
     this.open(sessionId, path, content);
     return true;
   }

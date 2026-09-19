@@ -24,8 +24,9 @@ spec:
     2. 确认 Router 已安装。
     3. 打开 Lares 入口开始对话。
   upgradeDescription: |
-    ## Lares 0.26.19
+    ## Lares 0.26.20
 
-    - Olares Files 产物卡片现在会在 Files 新标签页中打开，不再由 Lares
-      下载或缓存文件。
-    - 直接预览接口的每次元数据、媒体和下载请求都会使用当前浏览器凭证。
+    - Olares Files 文件卡片现在会使用当前浏览器凭证按需预览，且不会下载到
+      本地预览缓存。
+    - Files 文件预览保留“下载”，并新增“在 Files 打开”，可在安全的新标签页中
+      打开原文件。

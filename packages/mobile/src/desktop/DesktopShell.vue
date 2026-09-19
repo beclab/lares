@@ -95,6 +95,7 @@
             :error="state.preview.error"
             :media-src="state.previewMediaSrc"
             :download-href="state.previewDownloadHref"
+            :files-href="state.previewFilesHref"
             :href-for="previewHref"
             :t="t"
             @retry="$emit('open-file', state.preview.path)"

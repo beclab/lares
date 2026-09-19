@@ -94,3 +94,43 @@ test("the produced-file card opens its preview from a button, not a bare link", 
   assert.match(open, /border: 1px solid var\(--q-input-stroke\)/);
   assert.match(open, /border-radius: 14px/);
 });
+
+test("all preview surfaces expose Olares Files as a safe new-tab action", () => {
+  const react = readFileSync(
+    new URL("../../packages/web/workspace-preview/src/client/PreviewView.js", import.meta.url),
+    "utf8",
+  );
+  const desktop = readFileSync(
+    new URL("../../packages/mobile/src/desktop/DesktopPreview.vue", import.meta.url),
+    "utf8",
+  );
+  const mobile = readFileSync(
+    new URL("../../packages/mobile/src/preview/Preview.vue", import.meta.url),
+    "utf8",
+  );
+
+  for (const source of [react, desktop, mobile]) {
+    assert.match(source, /openInFiles/);
+    assert.match(source, /_blank/);
+    assert.match(source, /noopener noreferrer/);
+  }
+  assert.match(react, /filesAppUrl\(path\)/);
+  assert.match(desktop, /v-if="filesHref"/);
+  assert.match(mobile, /v-if="filesHref"/);
+});
+
+test("the packaged shell builds a Files action only for its active preview path", () => {
+  const app = readFileSync(new URL("../../packages/mobile/src/App.vue", import.meta.url), "utf8");
+  const desktop = readFileSync(
+    new URL("../../packages/mobile/src/desktop/DesktopShell.vue", import.meta.url),
+    "utf8",
+  );
+  const mobile = readFileSync(
+    new URL("../../packages/mobile/src/mobile/MobileShell.vue", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(app, /previewFilesHref\(\)[\s\S]*filesAppUrl\(this\.preview\.path/);
+  assert.match(desktop, /:files-href="state\.previewFilesHref"/);
+  assert.match(mobile, /:files-href="state\.previewFilesHref"/);
+});

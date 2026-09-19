@@ -64,13 +64,3 @@ export function filesAppUrl(path, options = {}) {
     || originFromAccount(options.accountDomain, options.protocol);
   return origin ? new URL(route, origin).href : "";
 }
-
-/** Open Files synchronously from the click handler so popup blockers allow it. */
-export function openFilesApp(path, options = {}) {
-  const url = filesAppUrl(path, options);
-  if (!url) return false;
-  const open = options.open ?? globalThis.open;
-  if (typeof open !== "function") return false;
-  open(url, "_blank", "noopener,noreferrer");
-  return true;
-}

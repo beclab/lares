@@ -184,6 +184,18 @@
   gap: 5px;
 }
 
+.lares-preview-open-files {
+  flex: none;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 18px;
+  text-decoration: none;
+}
+
+.lares-preview-open-files:hover {
+  text-decoration: underline;
+}
+
 .lares-preview-download-error {
   flex: none;
   color: var(--dsw-alias-state-error-primary);
