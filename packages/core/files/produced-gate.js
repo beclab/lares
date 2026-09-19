@@ -86,16 +86,10 @@ export function durableProducedPathsFromEvents(events, turn) {
 }
 
 async function pathIsOpenable(workspaceRoot, path, deps = {}) {
-  if (isFilesPath(path)) {
-    const statFiles = deps.statFilesFile;
-    if (!statFiles) return false;
-    try {
-      const info = await statFiles(path, deps);
-      return Boolean(info && typeof info.size === "number");
-    } catch {
-      return false;
-    }
-  }
+  // Olares Files requires the browser credential carried by an interactive
+  // preview request. A background turn-stopping hook must not reuse the last
+  // process-global CLI identity or block a turn because that token expired.
+  if (isFilesPath(path)) return true;
   try {
     const root = await (deps.resolveWorkspaceRoot ?? resolveWorkspaceRoot)(workspaceRoot);
     const absolute = await (deps.resolveExistingWorkspacePath ?? resolveExistingWorkspacePath)(

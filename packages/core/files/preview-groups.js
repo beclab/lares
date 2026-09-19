@@ -1,4 +1,5 @@
 import { posixExtname } from "./filename.js";
+import { isFilesPath } from "../drive/files-path.js";
 
 const MEDIA_KINDS = new Set(["image", "video", "audio", "model3d"]);
 
@@ -42,11 +43,18 @@ export function partitionPreviews(paths, previews) {
   let loading = false;
   for (const original of paths) {
     if (!previews.has(original)) {
+      if (isFilesPath(original)) {
+        files.push(original);
+        continue;
+      }
       loading = true;
       continue;
     }
     const preview = previews.get(original);
-    if (preview === null) continue;
+    if (preview === null) {
+      if (isFilesPath(original)) files.push(original);
+      continue;
+    }
     const path = preview.path ?? original;
     if (seen.has(path)) continue;
     seen.add(path);

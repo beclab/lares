@@ -17,14 +17,16 @@ spec:
     ## Requirements
     - Olares >= 1.12.7
     - Router app installed and running (`router` dependency)
-    - Arch: amd64
+    - Arch: amd64, arm64
 
     ## Getting started
     1. Install Lares from Market (test source: `market.test`).
     2. Ensure Router is installed.
     3. Open the Lares entrance and start a chat.
   upgradeDescription: |
-    ## Lares 0.26.18
+    ## Lares 0.26.19
 
-    - Image generation via the local LLM shim stamps the logged-in Olares user
-      so FlowStudio history matches the person, not the shared chart owner.
+    - Olares Files Produced cards now open the file in a new Files tab instead
+      of downloading or caching it inside Lares.
+    - Direct preview APIs use the current browser credential for every metadata,
+      media, and download request.

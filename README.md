@@ -88,6 +88,7 @@ olares 技能一起复制到 `$LARES_DATA_DIR/skills`，经 `DSH_BUNDLED_SKILL_D
 | `LLM_GATEWAY_URL` | `http://router-svc.router-shared/v1` | Router（本地可改；集群安装使用 mesh-in allowlist 入口） |
 | `OLARES_APP_ID` | `lares` | `x-caller-appid` |
 | `LARES_ROUTER_API_KEY` | empty | 仅本地可选 sk-；集群走应用身份 |
+| `LARES_FILES_BASE_URL` | cluster injected | Files 用户入口模板；`{user}` 按当前浏览器请求替换 |
 | `DSH_HOME` | `$LARES_DATA_DIR/dsh-home` | dsh profiles |
 
 语音输入的模型 / 语言 / 市场应用改在 **设置 → 语音输入** 面板配置，持久化到

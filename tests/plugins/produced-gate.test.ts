@@ -114,6 +114,20 @@ test("findUnopenableProducedPaths reports missing durable files", async () => {
   }
 });
 
+test("turn stopping never probes Olares Files without a browser request", async () => {
+  let probed = false;
+  assert.deepEqual(
+    await findUnopenableProducedPaths("/unused", ["drive/Home/Downloads/clip.webm"], {
+      statFilesFile: async () => {
+        probed = true;
+        throw new Error("must not run");
+      },
+    }),
+    [],
+  );
+  assert.equal(probed, false);
+});
+
 test("produced gate budget caps steers per turn", () => {
   const budget = createProducedGateBudget(2);
   assert.equal(budget.consume("a", 1), true);

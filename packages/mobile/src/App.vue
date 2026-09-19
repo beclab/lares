@@ -128,6 +128,8 @@ import { subscribeConversationSettings } from "@olares/lares-core/larepass/setti
 import { markSeen, pruneSeen, readSeen, SEEN_STORAGE_KEY, unseenSessions } from "@olares/lares-core/larepass/unread";
 import { fileName } from "@olares/lares-core/files/filename";
 import { closeTab, openTab, touchTab } from "@olares/lares-core/files/preview-tabs";
+import { isFilesPath } from "@olares/lares-core/drive/files-path";
+import { openFilesApp } from "@olares/lares-core/files/app-link";
 import { chatDevice as resolveChatDevice } from "./layout.js";
 import LaresMobileShell from "./mobile/MobileShell.vue";
 import LaresDesktopShell from "./desktop/DesktopShell.vue";
@@ -689,7 +691,9 @@ export default {
       this.$refs.shell?.focusComposer?.();
     },
     async hydrateFiles(paths) {
-      const missing = [...new Set(paths)].filter((path) => !(path in this.previews));
+      const missing = [...new Set(paths)].filter(
+        (path) => !isFilesPath(path) && !(path in this.previews),
+      );
       if (!missing.length) return;
       const next = { ...this.previews };
       await Promise.all(missing.map(async (path) => {
@@ -736,13 +740,24 @@ export default {
         this.approvalBusy = false;
       }
     },
-    openFile(path) {
+    openPreviewTab(path) {
       const { tabs, lru, evicted } = openTab({ tabs: this.previewTabs, lru: this.previewLru }, path);
       this.previewTabs = tabs;
       this.previewLru = lru;
       if (evicted) this.dropPreviewContent(evicted.path);
       this.previewPath = path;
       this.previewMode = "preview";
+    },
+    async openFile(path) {
+      if (isFilesPath(path)) {
+        openFilesApp(path, {
+          entrance: this.baseUrl,
+          accountDomain: this.env?.ACCOUNT_DOMAIN,
+          protocol: this.env?.PROTOCOL,
+        });
+        return;
+      }
+      this.openPreviewTab(path);
       return this.loadPreview(path);
     },
     showChat() {
