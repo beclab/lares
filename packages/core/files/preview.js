@@ -1,7 +1,8 @@
 import { open, stat } from "node:fs/promises";
 import { basename, extname, isAbsolute, relative } from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { isFilesPath, parseFilesPath } from "../drive/files-path.js";
-import { statFilesFile } from "../drive/ls.js";
 import { HttpError } from "../tools/http.js";
 import {
   isInsideWorkspace,
@@ -10,7 +11,6 @@ import {
   workspaceCandidate,
   workspaceFileAlias,
 } from "../workspace/path.js";
-import { materializeFilesFile } from "./preview-cache.js";
 
 export const MAX_PREVIEW_TEXT_BYTES = 1024 * 1024;
 export const MAX_RAW_BYTES = 200 * 1024 * 1024;
@@ -78,7 +78,10 @@ export async function resolveFilesPreviewFile(requestedPath, deps = {}) {
     throw new HttpError("path_invalid", 400, error instanceof Error ? error.message : String(error));
   }
   try {
-    const info = await (deps.stat ?? statFilesFile)(source, deps);
+    if (typeof deps.stat !== "function") {
+      throw new HttpError("files_unavailable", 503, "Olares Files client is unavailable");
+    }
+    const info = await deps.stat(source, deps);
     return {
       origin: "files",
       path: info.path,
@@ -120,14 +123,7 @@ export async function fileFromPreviewRequest(reqUrl, resolveWorkspace, deps = {}
 
 async function ensurePreviewBytes(file, deps = {}) {
   if (file.absolutePath) return file;
-  if (file.origin !== "files") {
-    throw new HttpError("file_preview_failed", 500, "file has no local path");
-  }
-  try {
-    return await (deps.materialize ?? materializeFilesFile)(file, deps);
-  } catch (error) {
-    throw asPreviewHttpError(error);
-  }
+  throw new HttpError("file_preview_failed", 500, "file has no local path");
 }
 
 export function previewTypeForName(name) {
@@ -211,6 +207,37 @@ export async function buildPreview(file, deps) {
   };
   const knownText = ["text", "markdown"].includes(file.kind);
   if (!knownText && file.kind !== "unsupported") return metadata;
+  if (file.origin === "files") {
+    if (typeof deps?.readFilesRaw !== "function") {
+      throw new HttpError("files_unavailable", 503, "Olares Files client is unavailable");
+    }
+    let raw;
+    try {
+      raw = await deps.readFilesRaw(file.path, MAX_PREVIEW_TEXT_BYTES + 1);
+    } catch (error) {
+      throw asPreviewHttpError(error);
+    }
+    const truncated = file.size > MAX_PREVIEW_TEXT_BYTES || raw.truncated;
+    const read = raw.bytes.subarray(0, MAX_PREVIEW_TEXT_BYTES);
+    const body = truncated ? trimPartialUtf8(read) : read;
+    try {
+      const text = new TextDecoder("utf-8", { fatal: true }).decode(body);
+      if (!knownText && !looksLikeText(text)) return metadata;
+      return {
+        ...metadata,
+        kind: knownText ? file.kind : "text",
+        mediaType: knownText ? file.mediaType : "text/plain; charset=utf-8",
+        text,
+        truncated,
+      };
+    } catch (error) {
+      if (error instanceof TypeError) {
+        if (!knownText) return metadata;
+        throw new HttpError("file_not_text", 415, "file is not valid UTF-8 text");
+      }
+      throw error;
+    }
+  }
   const local = await ensurePreviewBytes(file, deps);
   const handle = await openVerified(local);
   try {
@@ -326,6 +353,38 @@ async function sendFile(req, res, file, disposition) {
   stream.pipe(res);
 }
 
+async function sendFilesFile(req, res, file, disposition, deps = {}) {
+  if (typeof deps.openFilesRaw !== "function") {
+    throw new HttpError("files_unavailable", 503, "Olares Files client is unavailable");
+  }
+  let response;
+  try {
+    response = await deps.openFilesRaw(file.path, {
+      method: req.method === "HEAD" ? "HEAD" : "GET",
+      range: req.headers.range,
+    });
+  } catch (error) {
+    throw asPreviewHttpError(error);
+  }
+  const headers = {
+    "cache-control": "private, no-cache",
+    "content-type": file.mediaType,
+    "content-disposition": `${disposition}; filename*=UTF-8''${encodeURIComponent(file.name)}`,
+    "x-content-type-options": "nosniff",
+  };
+  for (const name of ["accept-ranges", "content-length", "content-range"]) {
+    const value = response.headers.get(name);
+    if (value) headers[name] = value;
+  }
+  res.writeHead(response.status, headers);
+  if (req.method === "HEAD" || !response.body) {
+    await response.body?.cancel().catch(() => {});
+    res.end();
+    return;
+  }
+  await pipeline(Readable.fromWeb(response.body), res);
+}
+
 export async function sendRawFile(req, res, file, deps) {
   if (!["image", "video", "audio", "pdf", "model3d"].includes(file.kind)) {
     throw new HttpError("preview_unsupported", 415, "raw preview is not supported for this file");
@@ -335,6 +394,7 @@ export async function sendRawFile(req, res, file, deps) {
   if (["image", "pdf", "model3d"].includes(file.kind) && file.size > MAX_RAW_BYTES) {
     throw new HttpError("file_too_large", 413, `file exceeds ${MAX_RAW_BYTES} bytes`);
   }
+  if (file.origin === "files") return sendFilesFile(req, res, file, "inline", deps);
   return sendFile(req, res, await ensurePreviewBytes(file, deps), "inline");
 }
 
@@ -344,5 +404,6 @@ export async function sendRawFile(req, res, file, deps) {
  * about what the user may keep a copy of.
  */
 export async function sendFileDownload(req, res, file, deps) {
+  if (file.origin === "files") return sendFilesFile(req, res, file, "attachment", deps);
   return sendFile(req, res, await ensurePreviewBytes(file, deps), "attachment");
 }

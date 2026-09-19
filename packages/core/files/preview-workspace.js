@@ -22,6 +22,11 @@ function errorCode(payload) {
   return payload?.error?.code || "file_preview_failed";
 }
 
+function filesAuthFailure(content) {
+  return content.status === "error"
+    && ["files_no_credential", "files_unauthenticated"].includes(content.message);
+}
+
 export async function fetchPreview(sessionId, path) {
   const query = new URLSearchParams({ sessionId, path });
   const response = await fetch(`/api/lares/file-preview/preview?${query}`);
@@ -157,6 +162,7 @@ export class FilePreviewWorkspace {
     const { sessionId } = this.current;
     const content = await this.fetchContent(sessionId, path);
     if (content.status === "error" && content.message === "path_not_file") return false;
+    if (filesAuthFailure(content)) return true;
     this.open(sessionId, path, content);
     return true;
   }

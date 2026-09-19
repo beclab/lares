@@ -128,6 +128,7 @@ import { subscribeConversationSettings } from "@olares/lares-core/larepass/setti
 import { markSeen, pruneSeen, readSeen, SEEN_STORAGE_KEY, unseenSessions } from "@olares/lares-core/larepass/unread";
 import { fileName } from "@olares/lares-core/files/filename";
 import { closeTab, openTab, touchTab } from "@olares/lares-core/files/preview-tabs";
+import { isFilesPath } from "@olares/lares-core/drive/files-path";
 import { chatDevice as resolveChatDevice } from "./layout.js";
 import LaresMobileShell from "./mobile/MobileShell.vue";
 import LaresDesktopShell from "./desktop/DesktopShell.vue";
@@ -689,7 +690,9 @@ export default {
       this.$refs.shell?.focusComposer?.();
     },
     async hydrateFiles(paths) {
-      const missing = [...new Set(paths)].filter((path) => !(path in this.previews));
+      const missing = [...new Set(paths)].filter(
+        (path) => !isFilesPath(path) && !(path in this.previews),
+      );
       if (!missing.length) return;
       const next = { ...this.previews };
       await Promise.all(missing.map(async (path) => {
@@ -736,13 +739,32 @@ export default {
         this.approvalBusy = false;
       }
     },
-    openFile(path) {
+    openPreviewTab(path) {
       const { tabs, lru, evicted } = openTab({ tabs: this.previewTabs, lru: this.previewLru }, path);
       this.previewTabs = tabs;
       this.previewLru = lru;
       if (evicted) this.dropPreviewContent(evicted.path);
       this.previewPath = path;
       this.previewMode = "preview";
+    },
+    async openFile(path) {
+      if (isFilesPath(path)) {
+        const gen = (this.previewGen.get(path) ?? 0) + 1;
+        this.previewGen.set(path, gen);
+        try {
+          const data = await this.runtime.preview(path);
+          if (this.previewGen.get(path) !== gen) return;
+          this.openPreviewTab(path);
+          const canonical = this.adoptPreviewPath(path, data?.path);
+          this.previewGen.set(canonical, gen);
+          this.setPreviewContent(canonical, gen, { status: "ready", data, error: "" });
+        } catch {
+          // The Produced card stays in place; another click retries with the
+          // browser's then-current credential.
+        }
+        return;
+      }
+      this.openPreviewTab(path);
       return this.loadPreview(path);
     },
     showChat() {
@@ -814,6 +836,13 @@ export default {
         this.previewGen.set(canonical, gen);
         this.setPreviewContent(canonical, gen, { status: "ready", data, error: "" });
       } catch (err) {
+        if (
+          isFilesPath(path)
+          && ["files_no_credential", "files_unauthenticated"].includes(err instanceof Error ? err.message : "")
+        ) {
+          this.closePreviewTab(path);
+          return;
+        }
         this.setPreviewContent(path, gen, {
           status: "error",
           data: null,

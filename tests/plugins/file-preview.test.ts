@@ -26,7 +26,6 @@ import {
   sendRawFile,
 } from "@olares/lares-core/files/preview";
 import { workspaceFileAlias } from "@olares/lares-core/workspace/path";
-import { materializeFilesFile } from "@olares/lares-core/files/preview-cache";
 import {
   rewriteWorkspaceTargets,
   workspaceTargetPath,
@@ -129,6 +128,18 @@ test("turn media treats produced glb as inline media", () => {
   assert.deepEqual(
     partitionPreviews(["outputs/mesh.glb"], new Map([["outputs/mesh.glb", item]])),
     { media: [item], files: [], loading: false },
+  );
+});
+
+test("Olares Files deliverables stay as cards until the user opens them", () => {
+  const path = "drive/Home/Downloads/clip.webm";
+  assert.deepEqual(
+    partitionPreviews([path], new Map()),
+    { media: [], files: [path], loading: false },
+  );
+  assert.deepEqual(
+    partitionPreviews([path], new Map([[path, null]])),
+    { media: [], files: [path], loading: false },
   );
 });
 
@@ -532,6 +543,36 @@ test("openCurrent claims workspace files and declines everything else", async ()
   }
 });
 
+test("an unauthenticated Files click keeps the card out of preview and retries fresh", async () => {
+  const original = globalThis.fetch;
+  let authenticated = false;
+  globalThis.fetch = (async () => authenticated
+    ? new Response(JSON.stringify({
+      path: "drive/Home/notes.txt",
+      name: "notes.txt",
+      kind: "text",
+      size: 2,
+      text: "hi",
+    }), { status: 200 })
+    : new Response(JSON.stringify({ error: { code: "files_unauthenticated" } }), { status: 401 })) as typeof fetch;
+
+  const workspace = new FilePreviewWorkspace();
+  const unbind = workspace.bindCurrent("s1");
+  try {
+    assert.equal(await workspace.openCurrent("drive/Home/notes.txt"), true);
+    assert.equal(workspace.getSnapshot("s1").mode, "chat");
+    assert.deepEqual(workspace.getSnapshot("s1").tabs, []);
+
+    authenticated = true;
+    assert.equal(await workspace.openCurrent("drive/Home/notes.txt"), true);
+    assert.equal(workspace.getSnapshot("s1").mode, "preview");
+    assert.equal(workspace.getSnapshot("s1").activePath, "drive/Home/notes.txt");
+  } finally {
+    unbind();
+    globalThis.fetch = original;
+  }
+});
+
 test("reopening a path refetches files that were overwritten in place", async () => {
   const original = globalThis.fetch;
   let revision = 0;
@@ -874,99 +915,47 @@ test("files-path video metadata does not download bytes", async () => {
   assert.equal(materialized, false);
 });
 
-test("raw preview materializes a files path then range-streams the cache", async () => {
-  const cache = mkdtempSync(join(tmpdir(), "lares-preview-cache-"));
-  try {
-    const file = await fileFromPreviewRequest(
-      "/raw?path=drive/Home/Downloads/clip.webm&sessionId=s1",
-      async () => ({ path: "/nope" }),
-      {
-        stat: async (source: string) => ({
-          path: source,
-          name: "clip.webm",
-          size: 5,
-          modifiedAt: 1,
-        }),
-      },
-    );
-    const sent: { status?: number; headers?: Record<string, string> } = {};
-    const res = {
-      writeHead: (status: number, headers: Record<string, string>) => {
-        sent.status = status;
-        sent.headers = headers;
-      },
-      end: () => {},
-    };
-    await sendRawFile(
-      { method: "HEAD", headers: {} } as never,
-      res as never,
-      file,
-      {
-        cacheRoot: cache,
-        download: async (_source: string, dest: string) => {
-          writeFileSync(dest, "webm!");
-        },
-      },
-    );
-    assert.equal(sent.status, 200);
-    assert.equal(sent.headers?.["content-type"], "video/webm");
-    assert.equal(sent.headers?.["content-length"], "5");
-  } finally {
-    rmSync(cache, { recursive: true, force: true });
-  }
-});
-
-test("preview cache reuses a matching download and resumes a partial one", async () => {
-  const cache = mkdtempSync(join(tmpdir(), "lares-preview-cache-"));
-  const file = {
-    origin: "files",
-    path: "drive/Home/Downloads/reuse.webm",
-    name: "reuse.webm",
-    size: 6,
-    modifiedAt: 42,
-    kind: "video",
-    mediaType: "video/webm",
+test("raw preview proxies a Files range instead of materializing a cache", async () => {
+  const file = await fileFromPreviewRequest(
+    "/raw?path=drive/Home/Downloads/clip.webm&sessionId=s1",
+    async () => ({ path: "/nope" }),
+    {
+      stat: async (source: string) => ({
+        path: source,
+        name: "clip.webm",
+        size: 5,
+        modifiedAt: 1,
+      }),
+    },
+  );
+  const sent: { status?: number; headers?: Record<string, string> } = {};
+  const res = {
+    writeHead: (status: number, headers: Record<string, string>) => {
+      sent.status = status;
+      sent.headers = headers;
+    },
+    end: () => {},
   };
-  try {
-    let downloads = 0;
-    const first = await materializeFilesFile(file, {
-      cacheRoot: cache,
-      download: async (_source: string, dest: string) => {
-        downloads += 1;
-        writeFileSync(dest, "cached");
+  await sendRawFile(
+    { method: "HEAD", headers: { range: "bytes=0-4" } } as never,
+    res as never,
+    file,
+    {
+      openFilesRaw: async (source: string, options: { method?: string; range?: string }) => {
+        assert.equal(source, "drive/Home/Downloads/clip.webm");
+        assert.deepEqual(options, { method: "HEAD", range: "bytes=0-4" });
+        return new Response(null, {
+          status: 206,
+          headers: {
+            "accept-ranges": "bytes",
+            "content-length": "5",
+            "content-range": "bytes 0-4/5",
+          },
+        });
       },
-    });
-    const second = await materializeFilesFile(file, {
-      cacheRoot: cache,
-      download: async () => {
-        downloads += 1;
-        throw new Error("should reuse the cache");
-      },
-    });
-    assert.equal(downloads, 1);
-    assert.equal(first.absolutePath, second.absolutePath);
-
-    writeFileSync(first.absolutePath, "part");
-    const flags: { overwrite?: boolean; resume?: boolean }[] = [];
-    await materializeFilesFile(file, {
-      cacheRoot: cache,
-      download: async (_source: string, dest: string, options: { overwrite?: boolean; resume?: boolean }) => {
-        flags.push({ overwrite: options.overwrite, resume: options.resume });
-        writeFileSync(dest, "cached");
-      },
-    });
-    await materializeFilesFile({ ...file, size: 10, modifiedAt: 99 }, {
-      cacheRoot: cache,
-      download: async (_source: string, dest: string, options: { overwrite?: boolean; resume?: boolean }) => {
-        flags.push({ overwrite: options.overwrite, resume: options.resume });
-        writeFileSync(dest, "1234567890");
-      },
-    });
-    assert.deepEqual(flags, [
-      { overwrite: false, resume: true },
-      { overwrite: true, resume: false },
-    ]);
-  } finally {
-    rmSync(cache, { recursive: true, force: true });
-  }
+    },
+  );
+  assert.equal(sent.status, 206);
+  assert.equal(sent.headers?.["content-type"], "video/webm");
+  assert.equal(sent.headers?.["content-length"], "5");
 });

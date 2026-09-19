@@ -7,7 +7,6 @@ import {
   workspacePublishDefinition,
 } from "@olares/lares-core/drive/tools";
 import { DRIVE_IMPORT_PROMPT } from "@olares/lares-core/drive/paths";
-import { statFilesFile } from "@olares/lares-core/drive/ls";
 import {
   PRODUCED_GATE_PLUGIN,
   createProducedGateBudget,
@@ -47,10 +46,7 @@ function sessionCwd(agent) {
  */
 export function installProducedOpenabilityGate(ctx, options = {}) {
   const budget = options.budget ?? createProducedGateBudget();
-  const deps = {
-    statFilesFile: options.statFilesFile ?? statFilesFile,
-    ...(options.deps ?? {}),
-  };
+  const deps = options.deps ?? {};
   return ctx.on("agent/turn-stopping", async ({ agent, turn, signal }) => {
     if (signal?.aborted) return;
     const cwd = sessionCwd(agent);

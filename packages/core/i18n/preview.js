@@ -27,6 +27,9 @@ export const ZH = {
   "error.workspace_not_found": "当前会话没有可用工作区",
   "error.workspace_unavailable": "当前工作区不可用",
   "error.file_preview_failed": "文件预览加载失败",
+  "error.files_no_credential": "当前浏览器没有可用的 Olares 登录凭证",
+  "error.files_unauthenticated": "Olares 登录已失效，请重新登录后重试",
+  "error.files_unavailable": "暂时无法访问 Olares Files",
 };
 
 export const EN = {
@@ -58,4 +61,7 @@ export const EN = {
   "error.workspace_not_found": "No workspace is available for this session",
   "error.workspace_unavailable": "The current workspace is unavailable",
   "error.file_preview_failed": "File preview failed to load",
+  "error.files_no_credential": "This browser has no usable Olares credential",
+  "error.files_unauthenticated": "Your Olares sign-in expired; sign in and try again",
+  "error.files_unavailable": "Olares Files is temporarily unavailable",
 };

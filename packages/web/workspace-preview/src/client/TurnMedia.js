@@ -4,6 +4,7 @@ import { partitionPreviews } from "@olares/lares-core/files/preview-groups";
 import { fileName } from "@olares/lares-core/files/filename";
 import { fetchPreviewMap, rawFileUrl } from "@olares/lares-core/files/preview-workspace";
 import { Model3dHost } from "./Model3dHost.js";
+import { isFilesPath } from "@olares/lares-core/drive/files-path";
 
 const h = React.createElement;
 const { useEffect, useMemo, useState } = React;
@@ -52,7 +53,8 @@ export function createTurnMedia(t) {
     useEffect(() => {
       let live = true;
       setPreviews(new Map());
-      void fetchPreviewMap(sessionId, paths).then((next) => {
+      const eager = paths.filter((path) => !isFilesPath(path));
+      void fetchPreviewMap(sessionId, eager).then((next) => {
         if (live) setPreviews(next);
       });
       return () => {
