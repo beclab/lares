@@ -93,7 +93,6 @@ ENV PORT=8080 \
   LARES_DATA_DIR=/data/lares \
   LLM_GATEWAY_URL=http://router-svc.router-shared/v1 \
   OLARES_APP_ID=lares \
-  LARES_CLI_ROOT=/data/cli \
   GOPATH=/data/home/go \
   GOTOOLCHAIN=local
 
@@ -122,7 +121,7 @@ COPY package.json package-lock.json ./
 # Ownership is settled here, while /app holds two json files, rather than after
 # npm ci. A recursive chown over a finished node_modules makes overlayfs copy up
 # every file in it to change one metadata field, and that cost 450 MB.
-RUN mkdir -p /data/home /data/lares /data/workspace /data/cli \
+RUN mkdir -p /data/home /data/lares /data/workspace \
   && chown -R node:node /data /app
 
 USER node

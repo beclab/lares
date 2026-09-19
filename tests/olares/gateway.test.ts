@@ -29,16 +29,12 @@ test("routerEndUser falls back to the chart install user", () => {
 test("routerHeaders uses session identity when no request user is present", () => {
   const previousUser = process.env.OLARES_USERNAME;
   delete process.env.OLARES_USERNAME;
-  rememberRequestIdentity({
-    user: "demo1002@olares.com",
-    token: "",
-    terminus: "",
-  });
+  rememberRequestIdentity({ user: "demo1002@olares.com", token: "" });
   try {
     const headers = routerHeaders({ OLARES_APP_ID: "lares" });
     assert.equal(headers["x-bfl-user"], "demo1002");
   } finally {
-    rememberRequestIdentity({ user: "", token: "", terminus: "" });
+    rememberRequestIdentity({ user: "", token: "" });
     if (previousUser === undefined) delete process.env.OLARES_USERNAME;
     else process.env.OLARES_USERNAME = previousUser;
   }

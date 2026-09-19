@@ -1,8 +1,4 @@
-import {
-  ensureCliProfile,
-  identityAvailable,
-  olaresUsername,
-} from "./identity.js";
+import { olaresUsername } from "./identity.js";
 
 /** @type {Map<string, import('./identity.js').OlaresIdentity>} */
 const bySession = new Map();
@@ -11,16 +7,15 @@ const bySession = new Map();
 let latest = null;
 
 /**
- * Cache edge identity and materialize olares-cli env (HOME / OLARES_CLI_*) for bash.
- * @param {string} sessionId
+ * The Router end user for calls that carry no request of their own. The
+ * olares-cli session is not set up here: it comes from the credential
+ * app-service mounts, which already names the full Olares ID.
+ *
  * @param {import('./identity.js').OlaresIdentity} identity
  */
 function applyIdentityEnv(identity) {
   const user = olaresUsername(identity.user);
   if (user) process.env.OLARES_USERNAME = user;
-  if (!identityAvailable(identity)) return;
-  const profile = ensureCliProfile(identity);
-  Object.assign(process.env, profile.env);
 }
 
 export function rememberSessionIdentity(sessionId, identity) {

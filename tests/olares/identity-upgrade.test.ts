@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { EventEmitter } from "node:events";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { apply } from "../../packages/web/dsh-overlay/host/olares/olares-identity.js";
 
 const ENTRANCE = "489966aa.one3.one2.olaresdomain.space";
@@ -36,22 +33,14 @@ function incoming(extra: Record<string, string> = {}) {
   };
 }
 
-/**
- * `LARES_CLI_ROOT` is set too because the handler writes the olares-cli profile
- * before it rewrites: a throw there is caught and silently costs the rewrite,
- * so an unwritable root would make these pass or fail for the wrong reason.
- */
 function withTrustedHosts<T>(run: () => T): T {
-  const previous = { ...process.env };
+  const previous = process.env.DSH_TRUSTED_HOSTS;
   process.env.DSH_TRUSTED_HOSTS = ENTRANCE;
-  process.env.LARES_CLI_ROOT = mkdtempSync(join(tmpdir(), "lares-cli-"));
   try {
     return run();
   } finally {
-    for (const key of ["DSH_TRUSTED_HOSTS", "LARES_CLI_ROOT"]) {
-      if (previous[key] === undefined) delete process.env[key];
-      else process.env[key] = previous[key];
-    }
+    if (previous === undefined) delete process.env.DSH_TRUSTED_HOSTS;
+    else process.env.DSH_TRUSTED_HOSTS = previous;
   }
 }
 

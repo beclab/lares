@@ -6,7 +6,6 @@ export interface LaresEnv {
   olaresAppId: string;
   workspace: string;
   dataDir: string;
-  cliRoot: string;
 }
 
 function readString(name: string): string | null {
@@ -29,6 +28,5 @@ export function loadEnv(): LaresEnv {
     olaresAppId: readString("OLARES_APP_ID") ?? "lares",
     workspace: readString("LARES_WORKSPACE") ?? "/data/workspace",
     dataDir: readString("LARES_DATA_DIR") ?? "/data/lares",
-    cliRoot: readString("LARES_CLI_ROOT") ?? "/data/cli",
   };
 }

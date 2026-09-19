@@ -95,7 +95,6 @@ export async function bootLaresWeb(): Promise<void> {
     DSH_CWD: env.workspace,
     LARES_WORKSPACE: env.workspace,
     LARES_DATA_DIR: env.dataDir,
-    LARES_CLI_ROOT: env.cliRoot,
     // The bundled-root hook of dsh-skill-filesystem, which the `standard` agent
     // preset mounts with default roots. Nothing else reaches these skills: the
     // provider's own roots are the project's, `$DSH_HOME/skills`, and
