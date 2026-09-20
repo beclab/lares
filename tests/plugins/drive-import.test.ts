@@ -25,6 +25,8 @@ import {
   describeFfmpegEncode,
   describeUrlFetch,
   describeWorkspacePublish,
+  filesPathAfterPrefix,
+  isFilesNamespace,
   isFilesPath,
   parseFilesPath,
   resolveFetch,
@@ -114,20 +116,53 @@ test("parseFilesPath accepts downloadable Olares addresses and rejects the rest"
   assert.equal(isFilesPath("downloads/clip.webm"), false);
   assert.equal(isFilesPath("drive/Home/Downloads/"), false);
   assert.equal(isFilesPath("Home/"), false);
+  assert.equal(isFilesNamespace("drive/Home/Downloads/clip.webm"), true);
+  assert.equal(isFilesNamespace("drive/Home/Downloads/"), true);
+  assert.equal(isFilesNamespace("Home/Documents/clip.webm"), true);
+  assert.equal(isFilesNamespace("notes.txt"), false);
+  assert.equal(isFilesNamespace("/data/workspace/notes.txt"), false);
+});
+
+test("filesPathAfterPrefix reverses a cwd join onto a Files address", () => {
+  assert.equal(
+    filesPathAfterPrefix("/data/workspace", "/data/workspace/drive/Home/Downloads/clip.webm"),
+    "drive/Home/Downloads/clip.webm",
+  );
+  assert.equal(
+    filesPathAfterPrefix("/data/workspace/", "/data/workspace/drive/Data/flowstudio/userData/a/clip.mp4"),
+    "drive/Data/flowstudio/userData/a/clip.mp4",
+  );
+  assert.equal(
+    filesPathAfterPrefix("/data/workspace", "/data/workspace/notes.txt"),
+    null,
+  );
+  assert.equal(
+    filesPathAfterPrefix("/data/workspace", "/tmp/drive/Home/Downloads/clip.webm"),
+    null,
+  );
+  assert.equal(
+    filesPathAfterPrefix("/data/workspace", "/data/workspace/drive/Home/Downloads/"),
+    "drive/Home/Downloads/",
+  );
 });
 
 test("the import prompt treats Olares files paths as previewable in place", () => {
   assert.match(DRIVE_IMPORT_PROMPT, /That is the default/);
   assert.match(DRIVE_IMPORT_PROMPT, /Never reply with only a hyperlink/);
   assert.match(DRIVE_IMPORT_PROMPT, /workspace_publish that files path immediately/);
+  assert.match(DRIVE_IMPORT_PROMPT, /turn-tail preview already shows it/);
+  assert.match(DRIVE_IMPORT_PROMPT, /duplicates the preview/);
   assert.match(DRIVE_IMPORT_PROMPT, /not only Downloads/);
   assert.match(DRIVE_IMPORT_PROMPT, /drive\/Home/);
   assert.doesNotMatch(DRIVE_IMPORT_PROMPT, /cannot be read, edited, or previewed in place/);
   assert.doesNotMatch(DRIVE_IMPORT_PROMPT, /always drive_fetch/);
+  assert.match(DRIVE_IMPORT_PROMPT, /files_path/);
+  assert.match(DRIVE_IMPORT_PROMPT, /drive\/Data\/flowstudio/);
 });
 
 test("url_fetch and workspace_publish descriptions treat preview as the default", () => {
   assert.match(urlFetchDefinition().description, /default for a pasted or requested online file/);
+  assert.match(urlFetchDefinition().description, /workspace_publish that path instead of downloading/);
   assert.match(workspacePublishDefinition().description, /user does not need to request preview/);
 });
 
@@ -194,7 +229,12 @@ test("resolveWorkspacePublish accepts a workspace file or an Olares files path",
   for (const path of ["", "/tmp/a.png", "../a.png", "outputs/", "a/./b.png"]) {
     assert.throws(() => resolveWorkspacePublish({ path }), /one existing file/);
   }
+  assert.throws(
+    () => resolveWorkspacePublish({ path: "drive/Home/Downloads/" }),
+    /directory/,
+  );
   assert.equal(describeWorkspacePublish({ path: "../a.png" }), null);
+  assert.equal(describeWorkspacePublish({ path: "drive/Home/Downloads/" }), null);
 });
 
 test("resolveFfmpegEncode builds a testsrc2 job without encoder or device flags", () => {

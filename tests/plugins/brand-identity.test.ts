@@ -39,6 +39,8 @@ test("identity prompt keeps read_image off attached images", () => {
 
 test("identity prompt points media creation at the dedicated skill", () => {
   assert.match(identityPrompt(), /lares-media-create skill/);
+  assert.match(identityPrompt(), /FlowStudio scenes and workflows/);
+  assert.match(identityPrompt(), /Do not curl FlowStudio/);
 });
 
 test("identity prompt keeps user files out of the application overlay", () => {

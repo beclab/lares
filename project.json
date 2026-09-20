@@ -7,6 +7,8 @@
   "hot_reload": {
     "source_subpath": "devsrc",
     "prebuild": "npm run build",
+    "chown": "1000:1000",
+    "reload_sentinel": ".lares-reload",
     "excludes": [
       ".git/",
       ".cursor/",

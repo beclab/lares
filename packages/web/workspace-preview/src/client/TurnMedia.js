@@ -1,10 +1,10 @@
 import React from "react";
 import { Button, IconLoadingOutline16 } from "@deepseek-ai/dsh-client-ui-primitives";
-import { partitionPreviews } from "@olares/lares-core/files/preview-groups";
 import { fileName } from "@olares/lares-core/files/filename";
+import { partitionPreviews } from "@olares/lares-core/files/preview-groups";
 import { fetchPreviewMap, rawFileUrl } from "@olares/lares-core/files/preview-workspace";
+import { hideDuplicateProducedMentions } from "./hide-produced-mentions.js";
 import { Model3dHost } from "./Model3dHost.js";
-import { isFilesPath } from "@olares/lares-core/drive/files-path";
 
 const h = React.createElement;
 const { useEffect, useMemo, useState } = React;
@@ -53,8 +53,7 @@ export function createTurnMedia(t) {
     useEffect(() => {
       let live = true;
       setPreviews(new Map());
-      const eager = paths.filter((path) => !isFilesPath(path));
-      void fetchPreviewMap(sessionId, eager).then((next) => {
+      void fetchPreviewMap(sessionId, paths).then((next) => {
         if (live) setPreviews(next);
       });
       return () => {
@@ -66,7 +65,20 @@ export function createTurnMedia(t) {
       () => partitionPreviews(paths, previews),
       [key, previews],
     );
+    const shown = useMemo(
+      () => [...media.map((item) => item.path), ...files],
+      [media, files],
+    );
 
+    useEffect(() => {
+      const id = requestAnimationFrame(() => {
+        const nodes = document.querySelectorAll(".lares-turn-deliverables");
+        for (const node of nodes) hideDuplicateProducedMentions(node, shown);
+      });
+      return () => cancelAnimationFrame(id);
+    }, [key, shown.join("\0")]);
+
+    if (!loading && media.length === 0 && files.length === 0) return null;
     return h(
       "section",
       { className: "lares-turn-deliverables", "aria-label": t("produced") },

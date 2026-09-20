@@ -3,7 +3,7 @@ import { createHeaderTabs } from "./HeaderTabs.js";
 import { createPreviewOverlay } from "./PreviewOverlay.js";
 import { createPreviewView } from "./PreviewView.js";
 import { createTurnMedia } from "./TurnMedia.js";
-import { selectProducedFiles } from "@olares/lares-core/files/deliverables";
+import { selectInlineTurnMedia } from "@olares/lares-core/files/deliverables";
 import { EN, ZH } from "./locale.js";
 import { installPathOpener } from "./open.js";
 import styles from "./styles.css";
@@ -12,6 +12,7 @@ import { ChatScrollport } from "./chat-scrollport.js";
 import { installPluginStyle } from "../../../shared/client/plugin-style.js";
 
 const h = React.createElement;
+const { useEffect, useSyncExternalStore } = React;
 const NS = "lares.workspace-preview";
 
 export const inject = [];
@@ -35,6 +36,11 @@ export function apply(ctx) {
     // The header seat is the session-scope mount: the overlay hides the input
     // zone, so it cannot be rendered from a seat inside it.
     function FilePreviewSurface({ sessionId }) {
+      const cwd = useSyncExternalStore(
+        (listener) => ctx.get("sessions")?.list?.subscribe?.(listener) ?? (() => {}),
+        () => ctx.get("sessions")?.list?.getSnapshot?.().byId?.[sessionId]?.cwd,
+      );
+      useEffect(() => workspace.bindCurrent(sessionId, cwd), [sessionId, cwd]);
       return h(
         React.Fragment,
         null,
@@ -59,7 +65,7 @@ export function apply(ctx) {
         {
           name: "conversation.chat.turnTail",
           priority: -100,
-          select: selectProducedFiles,
+          select: selectInlineTurnMedia,
         },
         TurnMedia,
       ),

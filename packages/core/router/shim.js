@@ -1,6 +1,7 @@
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { readBody, sendError, sendJson } from "../tools/http.js";
+import { attachFlowstudioFilesPaths } from "../drive/flowstudio-files.js";
 import { catalogCache } from "./catalog-cache.js";
 import { carriesWebpImage, transcodeWebpImages } from "../media/router-images.js";
 import { routerAuthHeaders, routerEndUser, routerGatewayUrl } from "./gateway.js";
@@ -31,6 +32,11 @@ export function llmShimSuffix(pathname) {
 
 export function isAudioShimPath(suffix) {
   return /(^|\/)audio(\/|$)/.test(suffix);
+}
+
+/** GET /generations/:id — not /content, not create. */
+export function isGenerationPoll(suffix) {
+  return /^generations\/[^/]+$/.test(String(suffix ?? "").replace(/\/+$/, ""));
 }
 
 export function shimBudget(suffix) {
@@ -143,7 +149,78 @@ function downstreamCancellation(req, res) {
   return controller;
 }
 
-export function proxyToRouter(req, res, env = process.env) {
+function isJsonContentType(value) {
+  return String(value ?? "").toLowerCase().includes("application/json");
+}
+
+function collectStream(stream, maxBytes, signal) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let total = 0;
+    const onAbort = () => {
+      stream.destroy();
+      reject(signal?.reason instanceof Error ? signal.reason : new Error("aborted"));
+    };
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
+    stream.on("data", (chunk) => {
+      total += chunk.length;
+      if (total > maxBytes) {
+        stream.destroy();
+        reject(new Error("generation poll body exceeded the read limit"));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    stream.on("end", () => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve(Buffer.concat(chunks));
+    });
+    stream.on("error", (err) => {
+      signal?.removeEventListener("abort", onAbort);
+      reject(err);
+    });
+  });
+}
+
+async function enrichGenerationPoll(up, res, req, env, cancellation, deps) {
+  const status = up.statusCode ?? 502;
+  const headers = shimResponseHeaders(up.headers);
+  let raw;
+  try {
+    raw = await collectStream(up, SHIM_CHAT_MAX_BYTES, cancellation.signal);
+  } catch (err) {
+    if (cancellation.signal.aborted || res.headersSent) return;
+    sendError(res, err, "llm_proxy_failed");
+    return;
+  }
+  if (cancellation.signal.aborted || res.headersSent) return;
+  const json = status === 200 && isJsonContentType(headers["content-type"] ?? up.headers["content-type"]);
+  if (!json) {
+    res.writeHead(status, headers);
+    res.end(raw);
+    return;
+  }
+  let payload;
+  try {
+    payload = JSON.parse(raw.toString("utf8"));
+  } catch {
+    res.writeHead(status, headers);
+    res.end(raw);
+    return;
+  }
+  const enriched = await attachFlowstudioFilesPaths(payload, routerEndUser(env, req.headers), {
+    signal: cancellation.signal,
+    cat: deps.catFiles,
+  });
+  if (cancellation.signal.aborted || res.headersSent) return;
+  sendJson(res, status, enriched);
+}
+
+export function proxyToRouter(req, res, env = process.env, deps = {}) {
   if (isModelsGet(req)) {
     serveCachedModels(req, res);
     return;
@@ -158,6 +235,7 @@ export function proxyToRouter(req, res, env = process.env) {
   const transport = target.protocol === "https:" ? httpsRequest : httpRequest;
   const method = (req.method ?? "GET").toUpperCase();
   const cancellation = downstreamCancellation(req, res);
+  const enrichPoll = method === "GET" && isGenerationPoll(suffix);
 
   const run = async () => {
     let body;
@@ -177,6 +255,17 @@ export function proxyToRouter(req, res, env = process.env) {
       (up) => {
         if (cancellation.signal.aborted) {
           up.destroy();
+          return;
+        }
+        if (enrichPoll) {
+          void enrichGenerationPoll(up, res, req, env, cancellation, deps).catch((err) => {
+            if (cancellation.signal.aborted) return;
+            if (res.headersSent) {
+              res.destroy();
+              return;
+            }
+            sendError(res, err, "llm_proxy_failed");
+          });
           return;
         }
         res.writeHead(up.statusCode ?? 502, shimResponseHeaders(up.headers));

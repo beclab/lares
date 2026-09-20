@@ -11,6 +11,14 @@ const MEDIA_EXTENSIONS = new Set([
   ".glb", ".gltf", ".obj",
 ]);
 
+/** Formats TurnMedia can actually play; .gltf/.obj stay official chips. */
+const INLINE_TURN_EXTENSIONS = new Set([
+  ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp",
+  ".mp4", ".webm", ".mov", ".m4v", ".ogv",
+  ".mp3", ".wav", ".ogg", ".m4a", ".aac", ".flac",
+  ".glb",
+]);
+
 function posixPath(path) {
   return String(path ?? "").replace(/\\/g, "/");
 }
@@ -22,6 +30,14 @@ function posixPath(path) {
  */
 export function isMediaDeliverablePath(path) {
   return MEDIA_EXTENSIONS.has(posixExtname(posixPath(path)).toLowerCase());
+}
+
+/**
+ * Media the turn-tail can play. Workspace and Files addresses use the same
+ * player; a Files path is not a reason to fall back to an in-message link.
+ */
+export function isInlineTurnMediaPath(path) {
+  return INLINE_TURN_EXTENSIONS.has(posixExtname(posixPath(path)).toLowerCase());
 }
 
 /** Default url_fetch / drive_fetch landing zone for non-final research files. */
@@ -43,6 +59,10 @@ export function partitionPreviews(paths, previews) {
   let loading = false;
   for (const original of paths) {
     if (!previews.has(original)) {
+      if (isInlineTurnMediaPath(original)) {
+        loading = true;
+        continue;
+      }
       if (isFilesPath(original)) {
         files.push(original);
         continue;

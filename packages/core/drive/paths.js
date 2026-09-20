@@ -6,9 +6,9 @@
  * runs, so the path in the arguments is the path the UI opens.
  */
 import { posixBasename as basename, posixExtname as extname, sanitizeFilename } from "../files/filename.js";
-import { isFilesPath, parseFilesPath } from "./files-path.js";
+import { isFilesNamespace, parseFilesPath } from "./files-path.js";
 
-export { isFilesPath, parseFilesPath } from "./files-path.js";
+export { filesPathAfterPrefix, isFilesNamespace, isFilesPath, parseFilesPath } from "./files-path.js";
 
 const DEFAULT_DIRECTORY = "downloads";
 
@@ -55,8 +55,11 @@ export const DRIVE_IMPORT_PROMPT = [
   "Olares files paths (drive/…, sync/…, cache/…, external/…, and the cloud-account namespaces)",
   "are previewable in this app. Any file under drive/Home is included — Documents, Pictures, Music,",
   "Movies, Downloads, Code, and the rest — not only Downloads. After knowledge / Wise / yt-dlp /",
-  "torrent lands a file there, workspace_publish that files path immediately and name it in",
-  "markdown inline code. Do not copy it into the workspace only to preview it.",
+  "torrent lands a file there, workspace_publish that files path immediately. Do not copy it into",
+  "the workspace only to preview it, and do not close the reply with that path as inline code or a",
+  "link — the turn-tail preview already shows it. FlowStudio",
+  "generations whose poll JSON includes `files_path` (`drive/Data/flowstudio/…`) are the same",
+  "rule: publish that address; do not GET `/content` or copy the file into Home.",
   "Direct public HTTP(S) file URLs and data: URLs use url_fetch; never curl, wget, or shell.",
   "Give destination a meaningful filename with the correct extension whenever the URL path lacks one.",
   "Produced chips only keep durable media from url_fetch / drive_fetch (image, video, audio, 3D).",
@@ -80,11 +83,10 @@ export const DRIVE_IMPORT_PROMPT = [
   "subtitles into an input video. Do not transcode merely so a file can be previewed: webm, mp4,",
   "images, and audio preview as-is from a files path or after url_fetch. Do not run ffmpeg or ffprobe",
   "in the shell for those jobs. Report the encoder and speed from the tool result.",
-  "Name every returned workspace or Olares files path in markdown inline code so the UI can open it.",
-  "The conversation renders produced images, video, and audio right below the reply, so put those",
-  "mentions in the closing sentences and end the reply there: never name a produced file mid-reply",
-  "and then continue with more prose, alternatives, or follow-up questions, which would strand the",
-  "player far below the path.",
+  "After workspace_publish (or url_fetch / ffmpeg_encode), stop. The turn-tail preview under the",
+  "reply is the surface for produced images, video, audio, and 3D. Do not also write the path as",
+  "markdown inline code, a hyperlink, or a trailing file chip: that duplicates the preview. Name the",
+  "file in ordinary prose if the user needs the title; never leave a produced path as the last token.",
 ].join(" ");
 
 function parseDestination(value, source) {
@@ -201,7 +203,7 @@ export function describeUrlFetch(args) {
 
 export function resolveWorkspacePublish(args) {
   const raw = String(args?.path ?? "").trim().replace(/\\/g, "/");
-  if (isFilesPath(raw)) {
+  if (isFilesNamespace(raw)) {
     return { path: parseFilesPath(raw), origin: "files" };
   }
   const segments = raw.split("/");

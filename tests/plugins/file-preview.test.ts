@@ -30,7 +30,8 @@ import {
   rewriteWorkspaceTargets,
   workspaceTargetPath,
 } from "@olares/lares-core/files/markdown";
-import { producedForClosing } from "@olares/lares-core/files/deliverables";
+import { producedForClosing, selectInlineTurnMedia } from "@olares/lares-core/files/deliverables";
+import { isDuplicateProducedMention } from "@olares/lares-core/files/produced-mentions";
 import { filenameFromDisposition } from "@olares/lares-core/files/disposition";
 import { downloadCurrentFile } from "../../packages/web/workspace-preview/src/client/download.js";
 import { partitionPreviews } from "@olares/lares-core/files/preview-groups";
@@ -39,6 +40,8 @@ import {
   FilePreviewWorkspace,
   interceptOpenPath,
   isPrimaryUnmodifiedClick,
+  isUnpreviewableOpenPath,
+  previewOpenPath,
   rawFileUrl,
   rawUrlPath,
   workspaceLinkClickPath,
@@ -49,8 +52,8 @@ test("previewTypeForName classifies browser-safe preview formats", () => {
   assert.deepEqual(previewTypeForName("movie.MP4"), { kind: "video", mediaType: "video/mp4" });
   assert.deepEqual(previewTypeForName("voice.mp3"), { kind: "audio", mediaType: "audio/mpeg" });
   assert.deepEqual(previewTypeForName("mesh.glb"), { kind: "model3d", mediaType: "model/gltf-binary" });
-  assert.deepEqual(previewTypeForName("scene.GLTF"), { kind: "model3d", mediaType: "model/gltf+json" });
-  assert.deepEqual(previewTypeForName("cad.obj"), { kind: "model3d", mediaType: "model/obj" });
+  assert.equal(previewTypeForName("scene.GLTF").kind, "text");
+  assert.equal(previewTypeForName("cad.obj").kind, "text");
   assert.deepEqual(previewTypeForName("report.pdf"), { kind: "pdf", mediaType: "application/pdf" });
   assert.equal(previewTypeForName("notes.md").kind, "markdown");
   assert.equal(previewTypeForName("main.ts").kind, "text");
@@ -75,6 +78,36 @@ test("turn media keeps produced paths ordered, unique, and bounded by closing se
     },
   };
   assert.deepEqual(producedForClosing(owner), ["image/card.png", "audio/brief.mp3"]);
+});
+
+test("turn-tail inline media includes Files media and skips non-media chips", () => {
+  const owner = {
+    seq: 4,
+    turn: {
+      data: new Map([
+        ["deliverables", {
+          produced: [
+            { seq: 1, path: "image/card.png" },
+            { seq: 2, path: "notes.txt" },
+            { seq: 3, path: "drive/Home/Downloads/clip.webm" },
+            { seq: 4, path: "outputs/mesh.glb" },
+            { seq: 4, path: "outputs/scene.gltf" },
+            { seq: 4, path: "outputs/cad.obj" },
+          ],
+        }],
+      ]),
+    },
+  };
+  assert.deepEqual(selectInlineTurnMedia(owner), [
+    "image/card.png",
+    "drive/Home/Downloads/clip.webm",
+    "outputs/mesh.glb",
+  ]);
+  assert.equal(
+    previewOpenPath("/data/workspace", "/data/workspace/drive/Home/Downloads/clip.webm"),
+    "drive/Home/Downloads/clip.webm",
+  );
+  assert.equal(previewOpenPath("/data/workspace", "notes.txt"), "notes.txt");
 });
 
 test("turn media deduplicates absolute and relative reports by resolved workspace path", () => {
@@ -117,6 +150,14 @@ test("turn media deduplicates absolute and relative reports by resolved workspac
   );
 });
 
+test("in-message chips that only name a produced path are duplicates", () => {
+  const paths = ["outputs/orange-cat-jump.mp4", "drive/Data/flowstudio/out/cover.webp"];
+  assert.equal(isDuplicateProducedMention("outputs/orange-cat-jump.mp4", paths), true);
+  assert.equal(isDuplicateProducedMention("`orange-cat-jump.mp4`", paths), true);
+  assert.equal(isDuplicateProducedMention("@cover.webp", paths), true);
+  assert.equal(isDuplicateProducedMention("需要大图可打开同组的 delivery.webp", paths), false);
+});
+
 test("turn media treats produced glb as inline media", () => {
   const item = {
     path: "outputs/mesh.glb",
@@ -131,11 +172,22 @@ test("turn media treats produced glb as inline media", () => {
   );
 });
 
-test("Olares Files deliverables stay as cards until the user opens them", () => {
+test("Olares Files media waits for preview then inlines like workspace media", () => {
   const path = "drive/Home/Downloads/clip.webm";
+  const item = {
+    path,
+    name: "clip.webm",
+    kind: "video",
+    mediaType: "video/webm",
+    size: 80,
+  };
   assert.deepEqual(
     partitionPreviews([path], new Map()),
-    { media: [], files: [path], loading: false },
+    { media: [], files: [], loading: true },
+  );
+  assert.deepEqual(
+    partitionPreviews([path], new Map([[path, item]])),
+    { media: [item], files: [], loading: false },
   );
   assert.deepEqual(
     partitionPreviews([path], new Map([[path, null]])),
@@ -252,6 +304,58 @@ test("resolveWorkspaceFile confines real files and symlinks to the workspace", a
     );
   } finally {
     rmSync(root, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test("file-preview opens Lares skill files without copying them onto Drive", async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), "lares-skill-preview-"));
+  const workspace = mkdtempSync(join(tmpdir(), "lares-skill-preview-ws-"));
+  const outside = mkdtempSync(join(tmpdir(), "lares-skill-preview-out-"));
+  try {
+    const skill = join(dataDir, "skills", "olares-router", "references");
+    mkdirSync(skill, { recursive: true });
+    writeFileSync(join(skill, "olares-router-calling.md"), "# calling\n");
+    writeFileSync(join(outside, "secret.md"), "nope");
+    symlinkSync(join(outside, "secret.md"), join(skill, "escape.md"));
+
+    const env = { LARES_DATA_DIR: dataDir };
+    const file = await fileFromPreviewRequest(
+      `/preview?path=${encodeURIComponent(join(skill, "olares-router-calling.md"))}&sessionId=s1`,
+      async () => ({ path: workspace }),
+      { env },
+    );
+    assert.equal(file.origin, "local");
+    assert.equal(file.kind, "markdown");
+    assert.equal(file.name, "olares-router-calling.md");
+
+    await assert.rejects(
+      () => fileFromPreviewRequest(
+        `/preview?path=${encodeURIComponent(join(skill, "escape.md"))}&sessionId=s1`,
+        async () => ({ path: workspace }),
+        { env },
+      ),
+      (error: { code?: string }) => error.code === "path_forbidden",
+    );
+    await assert.rejects(
+      () => fileFromPreviewRequest(
+        `/preview?path=${encodeURIComponent(join(dataDir, "preview-cache", "a.md"))}&sessionId=s1`,
+        async () => ({ path: workspace }),
+        { env },
+      ),
+      (error: { code?: string }) => error.code === "path_forbidden",
+    );
+    await assert.rejects(
+      () => fileFromPreviewRequest(
+        `/preview?path=${encodeURIComponent(join(skill, "missing.md"))}&sessionId=s1`,
+        async () => ({ path: workspace }),
+        { env },
+      ),
+      (error: { code?: string }) => error.code === "file_not_found",
+    );
+  } finally {
+    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(workspace, { recursive: true, force: true });
     rmSync(outside, { recursive: true, force: true });
   }
 });
@@ -498,6 +602,15 @@ test("raw preview URLs stay Host-native so PC and LarePass share the same addres
   );
 });
 
+test("overlay source is not a preview click target", () => {
+  assert.equal(isUnpreviewableOpenPath("/app/packages/core/media/router-images.js"), true);
+  assert.equal(isUnpreviewableOpenPath("/app/packages/skills/lares-media-create/SKILL.md"), true);
+  assert.equal(isUnpreviewableOpenPath("/app"), true);
+  assert.equal(isUnpreviewableOpenPath("/app/notes.md"), false);
+  assert.equal(isUnpreviewableOpenPath("notes.md"), false);
+  assert.equal(isUnpreviewableOpenPath("/data/lares/skills/olares-router/SKILL.md"), false);
+});
+
 test("interceptOpenPath falls back to the native opener when preview declines", async () => {
   const native: string[] = [];
   await interceptOpenPath({ openCurrent: async () => false }, "folder/", (path) => {
@@ -507,6 +620,15 @@ test("interceptOpenPath falls back to the native opener when preview declines", 
   await interceptOpenPath({ openCurrent: async () => true }, "notes.md", () => {
     throw new Error("should not fall back");
   });
+  const overlay: string[] = [];
+  await interceptOpenPath(
+    { openCurrent: async () => true },
+    "/app/packages/core/media/router-images.js",
+    (path) => {
+      overlay.push(path);
+    },
+  );
+  assert.deepEqual(overlay, []);
 });
 
 test("openCurrent claims workspace files and declines everything else", async () => {
@@ -535,7 +657,12 @@ test("openCurrent claims workspace files and declines everything else", async ()
     assert.equal(snapshot.mode, "preview");
     assert.equal(snapshot.activePath, "notes.txt");
     assert.equal(snapshot.content.status, "ready");
-    // The claim probe is the only request: the tab opens with content in hand.
+
+    assert.equal(await workspace.openCurrent("/app/packages/core/media/router-images.js"), false);
+    assert.equal(workspace.getSnapshot("s1").mode, "preview");
+    assert.equal(workspace.getSnapshot("s1").activePath, "notes.txt");
+    // Overlay source is ignored before fetch; the claim probe is only the
+    // directory decline and the workspace file.
     assert.deepEqual(requested, ["/data/workspace/.", "notes.txt"]);
   } finally {
     unbind();
@@ -543,7 +670,7 @@ test("openCurrent claims workspace files and declines everything else", async ()
   }
 });
 
-test("an unauthenticated Files click keeps the card out of preview and retries fresh", async () => {
+test("an unauthenticated Files click opens a retryable preview error", async () => {
   const original = globalThis.fetch;
   let authenticated = false;
   globalThis.fetch = (async () => authenticated
@@ -560,13 +687,68 @@ test("an unauthenticated Files click keeps the card out of preview and retries f
   const unbind = workspace.bindCurrent("s1");
   try {
     assert.equal(await workspace.openCurrent("drive/Home/notes.txt"), true);
-    assert.equal(workspace.getSnapshot("s1").mode, "chat");
-    assert.deepEqual(workspace.getSnapshot("s1").tabs, []);
+    assert.equal(workspace.getSnapshot("s1").mode, "preview");
+    assert.equal(workspace.getSnapshot("s1").content.status, "error");
+    assert.equal(workspace.getSnapshot("s1").content.message, "files_unauthenticated");
 
     authenticated = true;
     assert.equal(await workspace.openCurrent("drive/Home/notes.txt"), true);
     assert.equal(workspace.getSnapshot("s1").mode, "preview");
     assert.equal(workspace.getSnapshot("s1").activePath, "drive/Home/notes.txt");
+    assert.equal(workspace.getSnapshot("s1").content.status, "ready");
+    assert.equal(workspace.getSnapshot("s1").tabs.length, 1);
+  } finally {
+    unbind();
+    globalThis.fetch = original;
+  }
+});
+
+test("openCurrent unjoins a files path the chat view attached to the session cwd", async () => {
+  const requested: string[] = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (url: string) => {
+    requested.push(new URL(String(url), "http://x").searchParams.get("path") ?? "");
+    return new Response(JSON.stringify({
+      path: "drive/Home/clip.webm",
+      name: "clip.webm",
+      kind: "video",
+      size: 8,
+    }), { status: 200 });
+  }) as typeof fetch;
+
+  const workspace = new FilePreviewWorkspace();
+  const unbind = workspace.bindCurrent("s1", "/data/workspace");
+  try {
+    assert.equal(
+      await workspace.openCurrent("/data/workspace/drive/Home/clip.webm"),
+      true,
+    );
+    assert.deepEqual(requested, ["drive/Home/clip.webm"]);
+    assert.equal(workspace.getSnapshot("s1").activePath, "drive/Home/clip.webm");
+  } finally {
+    unbind();
+    globalThis.fetch = original;
+  }
+});
+
+test("openCurrent still opens a tab when a Files path is missing", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(
+    JSON.stringify({ error: { code: "file_not_found" } }),
+    { status: 404 },
+  )) as typeof fetch;
+
+  const workspace = new FilePreviewWorkspace();
+  const unbind = workspace.bindCurrent("s1");
+  try {
+    assert.equal(
+      await workspace.openCurrent("drive/Data/flowstudio/userData/luolong01/clip.mp4"),
+      true,
+    );
+    const snapshot = workspace.getSnapshot("s1");
+    assert.equal(snapshot.mode, "preview");
+    assert.equal(snapshot.content.status, "error");
+    assert.equal(snapshot.content.message, "file_not_found");
   } finally {
     unbind();
     globalThis.fetch = original;
@@ -847,6 +1029,29 @@ test("fileFromPreviewRequest serves an Olares files path without the session wor
   assert.equal(file.absolutePath, undefined);
 });
 
+test("fileFromPreviewRequest rejects a Files directory without a workspace lookup", async () => {
+  let workspaceCalled = false;
+  let stated = false;
+  await assert.rejects(
+    () => fileFromPreviewRequest(
+      "/preview?path=drive/Home/Downloads/&sessionId=s1",
+      async () => {
+        workspaceCalled = true;
+        return { path: "/nope" };
+      },
+      {
+        stat: async () => {
+          stated = true;
+          return { path: "drive/Home/Downloads", name: "Downloads", size: 0, modifiedAt: 0 };
+        },
+      },
+    ),
+    (error: { code?: string; status?: number }) => error.code === "path_invalid" && error.status === 400,
+  );
+  assert.equal(workspaceCalled, false);
+  assert.equal(stated, false);
+});
+
 test("fileFromPreviewRequest unwraps a files path the chat opener joined onto the cwd", async () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "lares-file-preview-joined-")));
   try {
@@ -888,6 +1093,32 @@ test("fileFromPreviewRequest unwraps a files path the chat opener joined onto th
     );
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("fileFromPreviewRequest unwraps a files path when cwd realpath differs", async () => {
+  const real = realpathSync(mkdtempSync(join(tmpdir(), "lares-file-preview-real-")));
+  const lexical = join(tmpdir(), `lares-file-preview-link-${Date.now()}`);
+  symlinkSync(real, lexical);
+  try {
+    const query = `path=${encodeURIComponent(join(lexical, "drive/Home/Downloads/clip.webm"))}`;
+    const file = await fileFromPreviewRequest(
+      `/preview?${query}&sessionId=s1`,
+      async () => ({ path: lexical }),
+      {
+        stat: async (source: string) => ({
+          path: source,
+          name: "clip.webm",
+          size: 12,
+          modifiedAt: 1,
+        }),
+      },
+    );
+    assert.equal(file.origin, "files");
+    assert.equal(file.path, "drive/Home/Downloads/clip.webm");
+  } finally {
+    rmSync(lexical, { force: true });
+    rmSync(real, { recursive: true, force: true });
   }
 });
 
@@ -936,26 +1167,57 @@ test("raw preview proxies a Files range instead of materializing a cache", async
     },
     end: () => {},
   };
+  let opened = false;
   await sendRawFile(
     { method: "HEAD", headers: { range: "bytes=0-4" } } as never,
     res as never,
     file,
     {
-      openFilesRaw: async (source: string, options: { method?: string; range?: string }) => {
-        assert.equal(source, "drive/Home/Downloads/clip.webm");
-        assert.deepEqual(options, { method: "HEAD", range: "bytes=0-4" });
-        return new Response(null, {
-          status: 206,
-          headers: {
-            "accept-ranges": "bytes",
-            "content-length": "5",
-            "content-range": "bytes 0-4/5",
-          },
-        });
+      openFilesRaw: async () => {
+        opened = true;
+        throw new Error("HEAD must not open Files raw");
       },
     },
   );
+  assert.equal(opened, false);
   assert.equal(sent.status, 206);
   assert.equal(sent.headers?.["content-type"], "video/webm");
   assert.equal(sent.headers?.["content-length"], "5");
+  assert.equal(sent.headers?.["content-range"], "bytes 0-4/5");
+});
+
+test("Files download HEAD uses stated size and does not open raw", async () => {
+  let opened = false;
+  const sent: { status?: number; headers?: Record<string, string> } = {};
+  const res = {
+    writeHead: (status: number, headers: Record<string, string>) => {
+      sent.status = status;
+      sent.headers = headers;
+    },
+    end: () => {},
+  };
+  const file = {
+    origin: "files",
+    path: "drive/Home/Downloads/clip.webm",
+    name: "clip.webm",
+    size: 1_761_844_690,
+    modifiedAt: 1,
+    kind: "video",
+    mediaType: "video/webm",
+  };
+  await sendFileDownload(
+    { method: "HEAD", headers: {} } as never,
+    res as never,
+    file as never,
+    {
+      openFilesRaw: async () => {
+        opened = true;
+        throw new Error("HEAD must not open Files raw");
+      },
+    },
+  );
+  assert.equal(opened, false);
+  assert.equal(sent.status, 200);
+  assert.equal(sent.headers?.["content-length"], "1761844690");
+  assert.match(sent.headers?.["content-disposition"] ?? "", /attachment/);
 });

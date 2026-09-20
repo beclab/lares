@@ -1,5 +1,6 @@
 import { HttpError } from "../tools/http.js";
 import { parseFilesPath } from "../drive/files-path.js";
+import { findFilesChild, isDirectoryItem, itemModifiedAt, itemSize } from "../drive/ls.js";
 import { identityFromHeaders, olaresUsername } from "../olares/identity.js";
 
 const MAX_ERROR_BYTES = 256;
@@ -101,35 +102,6 @@ async function checked(response, method, pathname) {
   );
 }
 
-function itemLeaf(item) {
-  const raw = String(item?.name ?? item?.fileName ?? "").replace(/\/$/, "");
-  return raw.split("/").at(-1) ?? "";
-}
-
-function isDirectoryItem(item) {
-  if (item?.isDir === true || item?.isDirectory === true) return true;
-  const type = String(item?.type ?? "").toLowerCase();
-  return type === "dir" || type === "directory" || String(item?.name ?? "").endsWith("/");
-}
-
-function listingItems(envelope) {
-  if (Array.isArray(envelope?.items)) return envelope.items;
-  if (Array.isArray(envelope?.data)) return envelope.data;
-  if (Array.isArray(envelope?.data?.items)) return envelope.data.items;
-  if (Array.isArray(envelope?.data?.data)) return envelope.data.data;
-  return [];
-}
-
-function itemModifiedAt(item) {
-  const value = Date.parse(item?.modified ?? item?.mtime ?? item?.modTime ?? "");
-  return Number.isFinite(value) ? value : 0;
-}
-
-function itemSize(item) {
-  const value = Number(item?.size ?? item?.fileSize);
-  return Number.isFinite(value) && value >= 0 ? value : 0;
-}
-
 async function readAtMost(response, maxBytes) {
   const reader = response.body?.getReader();
   if (!reader) return { bytes: Buffer.alloc(0), truncated: false };
@@ -172,10 +144,9 @@ export class FilesRequestClient {
     };
   }
 
-  async request(method, pathname, options = {}) {
-    let response;
+  async fetchRaw(method, pathname, options = {}) {
     try {
-      response = await this.fetchFn(`${this.baseUrl}${pathname}`, {
+      return await this.fetchFn(`${this.baseUrl}${pathname}`, {
         method,
         headers: this.headers({ "accept-encoding": "identity", ...options.headers }),
         redirect: "manual",
@@ -189,31 +160,32 @@ export class FilesRequestClient {
         `Olares Files request failed: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
-    return checked(response, method, pathname);
   }
 
+  async request(method, pathname, options = {}) {
+    return checked(await this.fetchRaw(method, pathname, options), method, pathname);
+  }
+
+  /**
+   * Metadata for one Files object. The backend's file resource URL can embed
+   * bytes or 500; the supported probe is the parent listing, same as
+   * `olares-cli files download`.
+   */
   async stat(source) {
     const path = parseFilesPath(source);
     const cut = path.lastIndexOf("/");
-    const parent = `${path.slice(0, cut)}/`;
+    const parent = path.slice(0, cut);
     const name = path.slice(cut + 1);
-    const pathname = `/api/resources/${encodeFilesPath(parent)}`;
-    const response = await this.request("GET", pathname);
-    const raw = await readAtMost(response, 8 * 1024 * 1024);
-    if (raw.truncated) {
-      throw new HttpError("files_unavailable", 502, "Olares Files listing exceeded the read limit");
-    }
+    const response = await this.request("GET", `/api/resources/${encodeFilesPath(parent)}/`);
     let envelope;
     try {
-      envelope = JSON.parse(raw.bytes.toString("utf8"));
+      envelope = await response.json();
     } catch {
-      throw new HttpError("files_unavailable", 502, "Olares Files returned an invalid listing");
+      throw new HttpError("files_unavailable", 502, "Olares Files listing was not JSON");
     }
-    const item = listingItems(envelope).find((candidate) => itemLeaf(candidate) === name);
+    const item = findFilesChild(envelope, name);
     if (!item) throw new HttpError("file_not_found", 404, "file was not found");
-    if (isDirectoryItem(item)) {
-      throw new HttpError("path_not_file", 415, "path is not a regular file");
-    }
+    if (isDirectoryItem(item)) throw new HttpError("path_not_file", 415, "path is not a regular file");
     return {
       path,
       name,
@@ -222,11 +194,19 @@ export class FilesRequestClient {
     };
   }
 
+  /**
+   * Files raw is GET `?inline=true`. HEAD is not a Files verb; incoming HEAD
+   * still GETs a bounded range so the caller can drop the body.
+   */
+  rawPath(source) {
+    return `/api/raw/${encodeFilesPath(parseFilesPath(source))}?inline=true`;
+  }
+
   openRaw(source, options = {}) {
-    const path = parseFilesPath(source);
-    const pathname = `/api/raw/${encodeFilesPath(path)}`;
-    return this.request(options.method ?? "GET", pathname, {
-      headers: options.range ? { range: options.range } : {},
+    const range = options.range
+      ?? (options.method === "HEAD" ? "bytes=0-0" : undefined);
+    return this.request("GET", this.rawPath(source), {
+      headers: range ? { range } : {},
       signal: options.signal,
     });
   }

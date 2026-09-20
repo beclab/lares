@@ -1,3 +1,5 @@
+import { isInlineTurnMediaPath } from "./preview-groups.js";
+
 /** Same rule as dsh-client-ui-deliverables: only edit/diff call views produce files. */
 export function producedPathsFromView(view) {
   if (!view || !Array.isArray(view.locations)) return [];
@@ -28,5 +30,14 @@ export function producedForClosing(owner) {
 
 export function selectProducedFiles(owner) {
   const paths = producedForClosing(owner);
+  return paths.length === 0 ? null : paths;
+}
+
+/**
+ * Playable produced media for the turn-tail preview. Workspace and Files
+ * addresses share that seat so a `drive/…` image is not left as a prose link.
+ */
+export function selectInlineTurnMedia(owner) {
+  const paths = producedForClosing(owner).filter(isInlineTurnMediaPath);
   return paths.length === 0 ? null : paths;
 }

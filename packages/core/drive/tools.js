@@ -60,8 +60,10 @@ export function urlFetchDefinition(download) {
     description:
       "Download one public HTTP(S) URL, or a data: URL / base64 payload, into the session workspace"
       + " and publish it for preview. This is the default for a pasted or requested online file; do"
-      + " not answer with only the URL. Use after web search, or when olares-cli router / FlowStudio"
-      + " returns a URL or inline bytes. Size is not a reason to skip.",
+      + " not answer with only the URL. Use after web search, or when a cloud generate returns a URL"
+      + " or inline bytes. When a generation poll already returned an Olares files path"
+      + " (`files_path` / `drive/…`), workspace_publish that path instead of downloading. Size is not"
+      + " a reason to skip.",
     parameters: {
       url: {
         type: "string",

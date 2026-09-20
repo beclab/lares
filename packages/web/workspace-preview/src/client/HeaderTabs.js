@@ -1,7 +1,7 @@
 import React from "react";
 
 const h = React.createElement;
-const { useEffect, useSyncExternalStore } = React;
+const { useSyncExternalStore } = React;
 
 function FileGlyph() {
   return h(
@@ -25,8 +25,6 @@ export function createHeaderTabs(workspace, t) {
       (listener) => workspace.subscribe(sessionId, listener),
       () => workspace.getSnapshot(sessionId),
     );
-
-    useEffect(() => workspace.bindCurrent(sessionId), [sessionId]);
 
     if (snapshot.tabs.length === 0) return null;
     return h(

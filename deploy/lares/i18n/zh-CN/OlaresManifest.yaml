@@ -24,10 +24,10 @@ spec:
     2. 确认 Router 已安装。
     3. 打开 Lares 入口开始对话。
   upgradeDescription: |
-    ## Lares 0.26.21
+    ## Lares 0.26.22
 
-    - 容器内的 olares-cli 改用 Olares 为它挂载的凭证，不再使用 Lares 依据请求头
-      自建的 profile。那份 profile 里的用户名不带域名，因此在 olares.cn 和自定义
-      域名下，CLI 访问的是错误的实例。
-    - olares-cli 的会话不再随浏览器登录一起过期：挂载的凭证会自行续期，报告的
-      后端版本也变成真实值，而不是固定的 1.12.7。
+    - Files 预览改为从父目录 listing 取 stat，再用 GET raw `inline=true` 取内容。
+      HEAD `/api/raw` 不是 Files 接口，Drive 打开会在出图前 404。
+    - 工作区和 Files 的可播放媒体共用末尾预览区。回复末尾再写路径芯片或行内代码，
+      会和预览重复，现已隐藏。
+    - 发布 Files 目录（`drive/.../`）按 Files 路径拒绝，不再当成工作区缺文件。

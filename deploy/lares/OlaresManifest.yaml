@@ -7,12 +7,12 @@ metadata:
   title: Lares
   description: Chat on Olares, wired to Router
   icon: https://app.cdn.olares.com/appstore/lares/icon_new.png
-  version: 0.26.21
+  version: 0.26.22
   categories:
     - Utilities_v112
     - AI
 spec:
-  versionName: "0.26.21"
+  versionName: "0.26.22"
   runAsUser: true
   fullDescription: |
     ## Overview
@@ -35,15 +35,16 @@ spec:
     2. Ensure Router is installed.
     3. Open the Lares entrance and start a chat.
   upgradeDescription: |
-    ## Lares 0.26.21
+    ## Lares 0.26.22
 
-    - olares-cli in the container now uses the credential Olares mounts for
-      it, instead of a profile Lares built from the request headers. That
-      profile carried a username without its domain, so on olares.cn and on
-      custom domains the CLI addressed the wrong instance.
-    - The olares-cli session no longer expires with the browser login: the
-      mounted credential refreshes itself, and the backend version it reports
-      is the real one rather than a fixed 1.12.7.
+    - Files preview now stats a file from its parent listing and serves GET
+      raw with `inline=true`. HEAD `/api/raw` is not a Files verb, so Drive
+      opens were 404ing before any bytes arrived.
+    - Workspace and Files playable media share the turn-tail preview. Closing
+      a reply with the published path as a chip or inline code is a duplicate
+      of that preview and is hidden.
+    - Publishing a Files directory (`drive/.../`) is rejected as a Files path,
+      not as a missing workspace file.
   developer: luolong
   submitter: Olares
   locale:

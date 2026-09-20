@@ -2,7 +2,8 @@
  * Every dsh open-file surface (tool rows, produced-file chips, prose mentions)
  * funnels through `workspaces.openPath`, which hands the path to the Host's
  * desktop opener. This deployment is a headless container with no desktop, so
- * the preview claims what it can serve. A declined target — no bound session, or
+ * the preview claims what it can serve. Overlay source (`/app/packages/…`) is
+ * swallowed: it is not a user file. A declined directory — no bound session, or
  * a path that is not a workspace file, such as the produced-files row's folder —
  * keeps the native path, and its failure stays the Host's to report.
  */

@@ -2,7 +2,7 @@
 
 Load this only after produce listed the family and found **no usable row** (empty list, or every same-family row already failed). One stale 404 is not an empty catalog — go back and try the next row.
 
-Finding a workflow here does **not** authorize calling FlowStudio HTTP. Submit through Router.
+Finding a workflow here does **not** authorize calling FlowStudio HTTP. Submit through Router. Produce already has the scene id from `router list` — do not GET `/api/projects` to map UUID ↔ title.
 
 Lifecycle verbs: [`olares-market`](../../olares-market/SKILL.md). Provider register / sync: [`olares-router`](../../olares-router/SKILL.md).
 

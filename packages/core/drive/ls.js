@@ -33,19 +33,19 @@ function itemLeaf(item) {
   return parts.at(-1) ?? "";
 }
 
-function isDirectoryItem(item) {
+export function isDirectoryItem(item) {
   if (item?.isDir === true || item?.isDirectory === true) return true;
   const type = String(item?.type ?? "").toLowerCase();
   if (type === "dir" || type === "directory") return true;
   return typeof item?.name === "string" && item.name.endsWith("/");
 }
 
-function itemSize(item) {
+export function itemSize(item) {
   const n = Number(item?.size ?? item?.fileSize);
   return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
-function itemModifiedAt(item) {
+export function itemModifiedAt(item) {
   const t = Date.parse(item?.modified ?? item?.mtime ?? item?.modTime ?? "");
   return Number.isFinite(t) ? t : 0;
 }

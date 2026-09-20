@@ -1,16 +1,16 @@
 import { open, stat } from "node:fs/promises";
-import { basename, extname, isAbsolute, relative } from "node:path";
+import { basename, extname, relative } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { isFilesPath, parseFilesPath } from "../drive/files-path.js";
+import { filesPathAfterPrefix, isFilesNamespace, parseFilesPath } from "../drive/files-path.js";
 import { HttpError } from "../tools/http.js";
 import {
-  isInsideWorkspace,
   resolveExistingWorkspacePath,
   resolveWorkspaceRoot,
   workspaceCandidate,
   workspaceFileAlias,
 } from "../workspace/path.js";
+import { resolveLocalPreviewFile } from "./preview-local.js";
 
 export const MAX_PREVIEW_TEXT_BYTES = 1024 * 1024;
 export const MAX_RAW_BYTES = 200 * 1024 * 1024;
@@ -40,8 +40,6 @@ const AUDIO_TYPES = new Map([
 ]);
 const MODEL3D_TYPES = new Map([
   [".glb", "model/gltf-binary"],
-  [".gltf", "model/gltf+json"],
-  [".obj", "model/obj"],
 ]);
 const TEXT_EXTENSIONS = new Set([
   "",
@@ -51,6 +49,7 @@ const TEXT_EXTENSIONS = new Set([
   ".go", ".java", ".kt", ".c", ".h", ".cpp", ".hpp", ".sql", ".r", ".rb",
   ".php", ".swift", ".vue", ".svelte", ".mdx", ".gitignore", ".dockerignore",
   ".editorconfig", ".srt", ".vtt", ".ass", ".ssa",
+  ".gltf", ".obj",
 ]);
 
 export function previewQueryFromUrl(reqUrl) {
@@ -95,27 +94,25 @@ export async function resolveFilesPreviewFile(requestedPath, deps = {}) {
   }
 }
 
-/**
- * A files-backend address is absolute in its own namespace but looks relative,
- * so the chat view's opener joins the session cwd — the workspace root — onto
- * it before any open gesture reaches this route. Strip that prefix back off.
- */
-function joinedFilesAddress(root, requestedPath) {
-  if (!isAbsolute(requestedPath) || !isInsideWorkspace(root, requestedPath)) return null;
-  const address = relative(root, requestedPath);
-  return isFilesPath(address) ? address : null;
+function joinedFilesAddress(workspacePath, root, requestedPath) {
+  return filesPathAfterPrefix(workspacePath, requestedPath)
+    ?? filesPathAfterPrefix(root, requestedPath);
 }
 
 export async function fileFromPreviewRequest(reqUrl, resolveWorkspace, deps = {}) {
   const { path, sessionId } = previewQueryFromUrl(reqUrl);
-  if (isFilesPath(path)) return resolveFilesPreviewFile(path, deps);
+  if (isFilesNamespace(path)) return resolveFilesPreviewFile(path, deps);
+  const local = await (deps.resolveLocal ?? resolveLocalPreviewFile)(path, deps);
+  if (local) return { ...local, ...previewTypeForName(local.absolutePath) };
   const workspace = await resolveWorkspace(sessionId);
   const root = await resolveWorkspaceRoot(workspace.path);
   try {
     return await resolveWorkspaceFile(root, path);
   } catch (error) {
-    // A real workspace file of the same name wins; only its absence unwraps.
-    const address = error?.code === "file_not_found" ? joinedFilesAddress(root, path) : null;
+    // A real workspace file of the same name wins. dsh joins Files addresses
+    // onto cwd; that prefix may be the lexical workspace path or its realpath.
+    const joined = error?.code === "file_not_found" || error?.code === "path_forbidden";
+    const address = joined ? joinedFilesAddress(workspace.path, root, path) : null;
     if (address === null) throw error;
     return resolveFilesPreviewFile(address, deps);
   }
@@ -353,32 +350,51 @@ async function sendFile(req, res, file, disposition) {
   stream.pipe(res);
 }
 
+function filesDispositionHeaders(file, disposition) {
+  return {
+    "accept-ranges": "bytes",
+    "cache-control": "private, no-cache",
+    "content-type": file.mediaType,
+    "content-disposition": `${disposition}; filename*=UTF-8''${encodeURIComponent(file.name)}`,
+    "x-content-type-options": "nosniff",
+  };
+}
+
 async function sendFilesFile(req, res, file, disposition, deps = {}) {
+  // HEAD is answered from the listing we already did. Files has no HEAD verb;
+  // a 1-byte GET probe must not become the download preflight's size.
+  if (req.method === "HEAD") {
+    const range = parseRange(req.headers.range, file.size);
+    const start = range?.start ?? 0;
+    const end = range?.end ?? Math.max(0, file.size - 1);
+    const headers = {
+      ...filesDispositionHeaders(file, disposition),
+      "content-length": String(file.size === 0 ? 0 : end - start + 1),
+    };
+    if (range) headers["content-range"] = `bytes ${start}-${end}/${file.size}`;
+    res.writeHead(range ? 206 : 200, headers);
+    res.end();
+    return;
+  }
   if (typeof deps.openFilesRaw !== "function") {
     throw new HttpError("files_unavailable", 503, "Olares Files client is unavailable");
   }
   let response;
   try {
     response = await deps.openFilesRaw(file.path, {
-      method: req.method === "HEAD" ? "HEAD" : "GET",
+      method: "GET",
       range: req.headers.range,
     });
   } catch (error) {
     throw asPreviewHttpError(error);
   }
-  const headers = {
-    "cache-control": "private, no-cache",
-    "content-type": file.mediaType,
-    "content-disposition": `${disposition}; filename*=UTF-8''${encodeURIComponent(file.name)}`,
-    "x-content-type-options": "nosniff",
-  };
+  const headers = filesDispositionHeaders(file, disposition);
   for (const name of ["accept-ranges", "content-length", "content-range"]) {
     const value = response.headers.get(name);
     if (value) headers[name] = value;
   }
   res.writeHead(response.status, headers);
-  if (req.method === "HEAD" || !response.body) {
-    await response.body?.cancel().catch(() => {});
+  if (!response.body) {
     res.end();
     return;
   }

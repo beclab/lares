@@ -18,9 +18,14 @@ test("lares-media-create is a produce protocol, not a diagnosis ladder", () => {
   assert.match(skill, /List that family only/);
   assert.match(skill, /Call \*\*once\*\*/);
   assert.match(skill, /next same-family row/);
-  assert.match(skill, /`read_image` that workspace file/);
-  assert.match(skill, /same meaning in English/);
-  assert.match(skill, /POST the \*\*image\*\* route and write `outputs\/<name>\.mp4`/);
+  assert.match(skill, /A FlowStudio scene or workflow is this skill/);
+  assert.match(skill, /not to map a UUID to a title/);
+  assert.match(skill, /`video_generation` \| `\/videos`/);
+  assert.match(skill, /parked under `image_generation` still uses the \*\*image\*\* route/);
+  assert.doesNotMatch(skill, /write `outputs\/<name>\.mp4`/);
+  assert.match(skill, /files_path/);
+  assert.match(skill, /workspace_publish/);
+  assert.doesNotMatch(skill, /write `…\/content` to `outputs\/`/);
   assert.match(skill, /LARES_LLM_BASE_URL/);
   assert.match(skill, /logged-in Olares user/);
   assert.match(skill, /Do not `olares-cli router call` to generate/);
@@ -32,7 +37,7 @@ test("lares-media-create is a produce protocol, not a diagnosis ladder", () => {
   assert.match(skill, /references\/fallback\.md/);
   assert.match(skill, /references\/deliver\.md/);
   assert.doesNotMatch(skill, /1\. \*\*Router capability\*\*/);
-  assert.ok(skill.split("\n").length < 90);
+  assert.ok(skill.split("\n").length < 95);
   assert.ok(existsSync(join(SKILL_DIR, "references/router.md")));
   assert.ok(existsSync(join(SKILL_DIR, "references/flowstudio.md")));
   assert.ok(existsSync(join(SKILL_DIR, "references/fallback.md")));
@@ -50,7 +55,9 @@ test("deliver reference lands bytes through drive tools and refuses internal hos
   assert.match(text, /land `glb`/);
   assert.match(text, /Never curl/);
   assert.match(text, /do \*\*not\*\* `find`/);
-  assert.match(text, /never\*\* `router call … --id`/);
+  assert.match(text, /files_path/);
+  assert.match(text, /drive\/Data\/flowstudio/);
+  assert.match(text, /Never copy a FlowStudio file into Home/);
 });
 
 test("output families map music to music_generation, not speech audio", () => {
@@ -68,7 +75,10 @@ test("router reference forbids calling FlowStudio HTTP and catalog surgery on pr
   assert.match(text, /`speak` is TTS only/);
   assert.match(text, /Never curl FlowStudio/);
   assert.match(text, /\/v1\/images\/generations/);
-  assert.match(text, /parked FlowStudio video/);
+  assert.match(text, /\/videos/);
+  assert.match(text, /do not GET FlowStudio to map them/);
+  assert.match(text, /files_path/);
+  assert.match(text, /\.by-id/);
   assert.match(text, /LARES_LLM_BASE_URL/);
   assert.match(text, /x-bfl-user/);
   assert.match(text, /Never `olares-cli router call … --id`/);
@@ -86,4 +96,5 @@ test("flowstudio reference is empty-catalog only and still submits through Route
   assert.match(text, /ask the user/i);
   assert.match(text, /router provider sync-models flowstudio/);
   assert.match(text, /Do not `curl` `flowstudio-svc`/);
+  assert.match(text, /do not GET `\/api\/projects`/);
 });

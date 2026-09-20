@@ -49,10 +49,9 @@ test("Files preview forwards the request cookie to the authenticated user's entr
         return new Response(JSON.stringify({
           items: [{
             name: "clip.webm",
-            path: "/Home/Downloads/clip.webm",
             size: 491,
-            modified: "2026-09-19T10:00:00Z",
             isDir: false,
+            modified: "2026-09-19T10:00:00.000Z",
           }],
         }), { status: 200 });
       },
@@ -61,7 +60,9 @@ test("Files preview forwards the request cookie to the authenticated user's entr
 
   const info = await client.stat("drive/Home/Downloads/clip.webm");
   assert.equal(info.size, 491);
+  assert.equal(info.modifiedAt, Date.parse("2026-09-19T10:00:00.000Z"));
   assert.equal(calls[0].url, "https://files.alice.olares.com/api/resources/drive/Home/Downloads/");
+  assert.equal(calls[0].init.method, "GET");
   assert.equal(calls[0].init.redirect, "manual");
   assert.equal(calls[0].init.headers.cookie, "auth_token=cookie-jwt; theme=dark");
   assert.equal(calls[0].init.headers["x-authorization"], undefined);
@@ -95,7 +96,9 @@ test("concurrent Files requests keep each browser identity isolated", async () =
   const seen: Array<{ url: string; token: string }> = [];
   const fetchFn = async (url: string, init: any) => {
     seen.push({ url: String(url), token: init.headers["x-authorization"] });
-    return new Response(JSON.stringify({ items: [{ name: "a.txt", size: 1 }] }), { status: 200 });
+    return new Response(JSON.stringify({
+      items: [{ name: "a.txt", size: 1, isDir: false, modified: "2026-09-19T10:00:00Z" }],
+    }), { status: 200 });
   };
   const alice = filesClientFromRequest(
     request({ "remote-user": "alice", "x-authorization": "alice-token" }),
@@ -114,6 +117,64 @@ test("concurrent Files requests keep each browser identity isolated", async () =
     { url: "https://files.alice.olares.com/api/resources/drive/Home/", token: "alice-token" },
     { url: "https://files.bob.olares.com/api/resources/drive/Home/", token: "bob-token" },
   ]);
+});
+
+test("Files stat lists the parent directory and matches the leaf", async () => {
+  const calls: Array<{ url: string; method?: string }> = [];
+  const client = new FilesRequestClient({
+    baseUrl: "https://files.alice.olares.com",
+    credential: { user: "alice", cookie: "", token: "token" },
+    fetchFn: async (url: string, init: any) => {
+      calls.push({ url: String(url), method: init.method });
+      return new Response(JSON.stringify({
+        items: [
+          { name: "clip.mp4", size: 1_761_844_690, isDir: false, modified: "2026-09-20T03:48:49Z" },
+          { name: "other", size: 4096, isDir: true },
+        ],
+      }), { status: 200 });
+    },
+  });
+  const info = await client.stat("drive/Data/flowstudio/userData/luolong01/clip.mp4");
+  assert.equal(info.size, 1_761_844_690);
+  assert.equal(info.name, "clip.mp4");
+  assert.deepEqual(calls, [
+    {
+      url: "https://files.alice.olares.com/api/resources/drive/Data/flowstudio/userData/luolong01/",
+      method: "GET",
+    },
+  ]);
+});
+
+test("Files stat refuses a directory leaf without opening raw", async () => {
+  const client = new FilesRequestClient({
+    baseUrl: "https://files.alice.olares.com",
+    credential: { user: "alice", cookie: "", token: "token" },
+    fetchFn: async () => new Response(JSON.stringify({
+      items: [{ name: "Downloads", size: 4096, isDir: true }],
+    }), { status: 200 }),
+  });
+  await assert.rejects(
+    () => client.stat("drive/Home/Downloads"),
+    { code: "path_not_file", status: 415 },
+  );
+});
+
+test("Files raw reads go through inline=true", async () => {
+  let url = "";
+  let method = "";
+  const client = new FilesRequestClient({
+    baseUrl: "https://files.alice.olares.com",
+    credential: { user: "alice", cookie: "", token: "token" },
+    fetchFn: async (href: string, init: any) => {
+      url = String(href);
+      method = init.method;
+      return new Response("hello", { status: 200 });
+    },
+  });
+  const result = await client.readRaw("drive/Home/notes.txt", 5);
+  assert.equal(url, "https://files.alice.olares.com/api/raw/drive/Home/notes.txt?inline=true");
+  assert.equal(method, "GET");
+  assert.equal(result.bytes.toString(), "hello");
 });
 
 test("raw reads are range-bounded even when Files ignores Range", async () => {

@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   healthPayload,
   isAudioShimPath,
+  isGenerationPoll,
   llmShimSuffix,
   proxyToRouter,
   shimBudget,
@@ -26,6 +27,9 @@ test("llmShimSuffix strips the Host prefix and query stays with the caller", () 
 test("audio shim hops get the STT size and timeout budget", () => {
   assert.equal(isAudioShimPath("audio/transcriptions"), true);
   assert.equal(isAudioShimPath("chat/completions"), false);
+  assert.equal(isGenerationPoll("generations/abc"), true);
+  assert.equal(isGenerationPoll("generations/abc/content"), false);
+  assert.equal(isGenerationPoll("chat/completions"), false);
   assert.deepEqual(shimBudget("audio/transcriptions"), {
     audio: true,
     timeoutMs: SHIM_AUDIO_TIMEOUT_MS,
@@ -134,3 +138,65 @@ test("closing a streaming client cancels the in-flight Router request", { timeou
     ]);
   }
 });
+
+test("generation poll JSON is filled with FlowStudio files_path from the Files pointer", async () => {
+  const outputId = "33333333-3333-3333-3333-333333333333";
+  const filesPath = "drive/Data/flowstudio/userData/demo1001/comfyui/outputs/image/a.delivery.webp";
+  const router = createServer((_req, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({
+      id: "router-gen",
+      status: "completed",
+      outputs: [{ id: outputId, content_url: "/v1/generations/router-gen/content" }],
+    }));
+  });
+  const proxy = createServer((req, res) => {
+    proxyToRouter(
+      req,
+      res,
+      {
+        LLM_GATEWAY_URL: `http://127.0.0.1:${(router.address() as { port: number }).port}/v1`,
+        OLARES_APP_ID: "lares",
+        OLARES_USERNAME: "demo1001",
+      },
+      {
+        catFiles: async () => `${filesPath}\n`,
+      },
+    );
+  });
+
+  try {
+    router.listen(0, "127.0.0.1");
+    await once(router, "listening");
+    proxy.listen(0, "127.0.0.1");
+    await once(proxy, "listening");
+
+    const body = await new Promise<string>((resolve, reject) => {
+      const client = httpRequest({
+        host: "127.0.0.1",
+        port: (proxy.address() as { port: number }).port,
+        path: `/llm/v1/generations/${outputId}`,
+        method: "GET",
+      });
+      client.once("error", reject);
+      client.once("response", (response) => {
+        const chunks: Buffer[] = [];
+        response.on("data", (chunk) => chunks.push(chunk));
+        response.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+        response.once("error", reject);
+      });
+      client.end();
+    });
+
+    const payload = JSON.parse(body) as { outputs: Array<{ files_path?: string }> };
+    assert.equal(payload.outputs[0].files_path, filesPath);
+  } finally {
+    proxy.closeAllConnections();
+    router.closeAllConnections();
+    await Promise.all([
+      new Promise<void>((resolve) => proxy.close(() => resolve())),
+      new Promise<void>((resolve) => router.close(() => resolve())),
+    ]);
+  }
+});
+

@@ -1,3 +1,4 @@
+import { filesPathAfterPrefix, isFilesPath, parseFilesPath } from "../drive/files-path.js";
 import { closeTab, openTab, touchTab } from "./preview-tabs.js";
 
 export class NullScrollport {
@@ -22,9 +23,15 @@ function errorCode(payload) {
   return payload?.error?.code || "file_preview_failed";
 }
 
-function filesAuthFailure(content) {
-  return content.status === "error"
-    && ["files_no_credential", "files_unauthenticated"].includes(content.message);
+/**
+ * The path the preview should ask the Host for. dsh already joined a relative
+ * target onto the session cwd; a Files address must go back to its own
+ * namespace before it becomes a tab key or a query.
+ */
+export function previewOpenPath(cwd, path) {
+  const requested = String(path ?? "");
+  if (isFilesPath(requested)) return parseFilesPath(requested);
+  return filesPathAfterPrefix(cwd, requested) ?? requested;
 }
 
 export async function fetchPreview(sessionId, path) {
@@ -57,7 +64,22 @@ export function workspaceLinkClickPath(sessionId, event) {
   return rawUrlPath(sessionId, anchor.getAttribute("href"));
 }
 
+/**
+ * The agent Reads the application overlay (`/app/packages/…`). That is source,
+ * not a user file: the preview cannot serve it, and treating the path as an
+ * openable chip only produces a dead tab. `/app/name.ext` still probes because
+ * the workspace aliases that basename.
+ */
+export function isUnpreviewableOpenPath(path) {
+  const text = String(path ?? "").trim().replace(/\\/g, "/");
+  if (!text.startsWith("/app")) return false;
+  if (text === "/app" || text === "/app/") return true;
+  const rest = text.slice("/app/".length);
+  return rest.includes("/");
+}
+
 export async function interceptOpenPath(workspace, path, openNative) {
+  if (isUnpreviewableOpenPath(path)) return;
   if (await workspace.openCurrent(path)) return;
   await openNative(path);
 }
@@ -144,8 +166,8 @@ export class FilePreviewWorkspace {
     return () => state.listeners.delete(listener);
   }
 
-  bindCurrent(sessionId) {
-    const binding = { sessionId };
+  bindCurrent(sessionId, cwd) {
+    const binding = { sessionId, cwd };
     this.current = binding;
     return () => {
       if (this.current === binding) this.current = null;
@@ -156,14 +178,19 @@ export class FilePreviewWorkspace {
    * Claim a Host open request, or decline it. The preview serves regular files
    * only, so the target is resolved before any tab exists: a directory stays
    * with the Host's own opener instead of becoming a tab that can never load.
+   * Overlay source is declined without a fetch or a tab — claiming it is what
+   * turned Read rows like `/app/packages/…` into a clickable preview that then
+   * failed. Files errors (auth included) still open a tab so the chat view's
+   * successful claim is not a silent click; Host does not native-open.
    */
   async openCurrent(path) {
     if (!this.current) return false;
-    const { sessionId } = this.current;
-    const content = await this.fetchContent(sessionId, path);
+    const { sessionId, cwd } = this.current;
+    const target = previewOpenPath(cwd, path);
+    if (isUnpreviewableOpenPath(target)) return false;
+    const content = await this.fetchContent(sessionId, target);
     if (content.status === "error" && content.message === "path_not_file") return false;
-    if (filesAuthFailure(content)) return true;
-    this.open(sessionId, path, content);
+    this.open(sessionId, target, content);
     return true;
   }
 

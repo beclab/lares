@@ -53,3 +53,36 @@ export function isFilesPath(value) {
     return false;
   }
 }
+
+/**
+ * A downloadable Files namespace, including directories and other addresses
+ * `parseFilesPath` rejects. Preview origin dispatch uses this so a Files
+ * folder never falls through to a workspace 404.
+ */
+export function isFilesNamespace(value) {
+  const source = canonicalizeFilesAddress(value);
+  if (source === "" || source.includes("\0")) return false;
+  if (source.startsWith("/") || /^[a-z]+:/i.test(source)) return false;
+  return DOWNLOADABLE.has(source.split("/")[0]);
+}
+
+/**
+ * dsh ChatView joins a relative path onto the session cwd before
+ * `workspaces.openPath`. A Files address is relative in its own namespace, so
+ * it arrives as `$cwd/drive/Home/…`. The suffix after `prefix` is that address
+ * when it belongs to a downloadable namespace — a directory stays Files, too.
+ */
+export function filesPathAfterPrefix(prefix, requestedPath) {
+  if (typeof prefix !== "string" || !prefix.trim()) return null;
+  if (typeof requestedPath !== "string" || !requestedPath) return null;
+  const root = prefix.replace(/\\/g, "/").replace(/\/+$/, "");
+  const joined = requestedPath.replace(/\\/g, "/");
+  if (root === "" || !joined.startsWith(`${root}/`)) return null;
+  const rest = joined.slice(root.length + 1);
+  if (!isFilesNamespace(rest)) return null;
+  try {
+    return parseFilesPath(rest);
+  } catch {
+    return canonicalizeFilesAddress(rest);
+  }
+}
