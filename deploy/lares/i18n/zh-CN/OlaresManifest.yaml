@@ -24,10 +24,10 @@ spec:
     2. 确认 Router 已安装。
     3. 打开 Lares 入口开始对话。
   upgradeDescription: |
-    ## Lares 0.26.22
+    ## Lares 0.26.23
 
-    - Files 预览改为从父目录 listing 取 stat，再用 GET raw `inline=true` 取内容。
-      HEAD `/api/raw` 不是 Files 接口，Drive 打开会在出图前 404。
-    - 工作区和 Files 的可播放媒体共用末尾预览区。回复末尾再写路径芯片或行内代码，
-      会和预览重复，现已隐藏。
-    - 发布 Files 目录（`drive/.../`）按 Files 路径拒绝，不再当成工作区缺文件。
+    - olares-cli 在整段对话里都可用。智能体沙箱不允许写会话工作区以外的目录，
+      因此 Olares 为本应用挂载的凭证以前每执行一条命令就丢一次，下一条命令会
+      报「没有配置 profile」。
+    - 智能体现在知道 CLI 已经以你的身份登录，既不需要也无法再登录一次。之前它
+      被告知入口登录会准备好这些，命令一失败就会去找那个登录。

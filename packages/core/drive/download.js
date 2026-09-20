@@ -6,9 +6,9 @@ const STDERR_LIMIT = 2000;
 /**
  * Stream one files-backend file onto local disk.
  *
- * The edge identity is already materialized into `process.env` (HOME /
- * OLARES_CLI_*) by `lares-olares-identity`, which is what the bash tool relies
- * on too, so the child inherits it rather than resolving a profile of its own.
+ * The CLI credential is the one app-service mounts into this container, not
+ * anything this process sets up, so the child inherits `process.env` and
+ * resolves the platform-issued profile the same way the bash tool does.
  * @param spawnFn - seam for tests; the real spawn otherwise.
  */
 export function runOlaresDownload(source, absolutePath, options = {}) {

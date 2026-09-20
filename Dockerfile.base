@@ -106,7 +106,7 @@ USER root
 # The olares-* agent skills come out of this binary (app image runs
 # `olares-cli skills export`), so a pin without the suite has to fail here
 # rather than one layer later.
-RUN npm install -g @olares/cli@1.12.7-cli.8 \
+RUN npm install -g @olares/cli@1.12.7-cli.9 \
   && ln -sf "$(npm root -g)/@olares/cli/bin/olares-cli.js" /usr/local/bin/olares-cli \
   && olares-cli -v \
   && olares-cli skills list -q \

@@ -47,6 +47,22 @@ test("identity prompt keeps user files out of the application overlay", () => {
   assert.match(identityPrompt(), /Do not write them under \/app/);
 });
 
+// The prompt used to claim the entrance login materialized HOME / OLARES_CLI_*,
+// which sent the model looking for a login it cannot perform.
+test("identity prompt sources the olares-cli session from the platform mount", () => {
+  const text = identityPrompt();
+  assert.match(text, /already signed in as the user/);
+  assert.match(text, new RegExp(`${PLATFORM_NAME} mounts this application's credential`));
+  assert.match(text, /Never run profile login or profile import/);
+  assert.doesNotMatch(text, /edge login|materializes/);
+});
+
+test("agents markdown carries the same rule about the olares-cli session", () => {
+  const text = agentsMarkdown();
+  assert.match(text, /already signed in as the user/);
+  assert.match(text, /Never run `profile login` or `profile import`/);
+});
+
 test("surface prompt is product-branded", () => {
   const text = surfacePrompt("http://127.0.0.1:8080");
   assert.match(text, new RegExp(PRODUCT_NAME));
