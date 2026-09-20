@@ -24,12 +24,10 @@ spec:
     2. Ensure Router is installed.
     3. Open the Lares entrance and start a chat.
   upgradeDescription: |
-    ## Lares 0.26.23
+    ## Lares 0.26.24
 
-    - olares-cli keeps working across a whole conversation. The agent sandbox
-      blocks writes outside the session workspace, so the credential Olares
-      mounts for this app used to be lost after every command and the next one
-      reported that no profile was configured.
-    - The agent is told the CLI is already signed in as you, and that a login
-      is neither needed nor possible. It used to be told an entrance login set
-      that up, and would go looking for one when a command failed.
+    - The first olares-cli command of a conversation now finds your account.
+      Most of them — anything under market, cluster, settings, router or
+      knowledge — used to report that no profile was configured until some
+      other command had run first, so a chat that opened with an app-store
+      question failed on its first answer and worked on the second.
