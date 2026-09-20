@@ -7,12 +7,12 @@ metadata:
   title: Lares
   description: Chat on Olares, wired to Router
   icon: https://app.cdn.olares.com/appstore/lares/icon_new.png
-  version: 0.26.22
+  version: 0.26.23
   categories:
     - Utilities_v112
     - AI
 spec:
-  versionName: "0.26.22"
+  versionName: "0.26.23"
   runAsUser: true
   fullDescription: |
     ## Overview
@@ -35,16 +35,15 @@ spec:
     2. Ensure Router is installed.
     3. Open the Lares entrance and start a chat.
   upgradeDescription: |
-    ## Lares 0.26.22
+    ## Lares 0.26.23
 
-    - Files preview now stats a file from its parent listing and serves GET
-      raw with `inline=true`. HEAD `/api/raw` is not a Files verb, so Drive
-      opens were 404ing before any bytes arrived.
-    - Workspace and Files playable media share the turn-tail preview. Closing
-      a reply with the published path as a chip or inline code is a duplicate
-      of that preview and is hidden.
-    - Publishing a Files directory (`drive/.../`) is rejected as a Files path,
-      not as a missing workspace file.
+    - olares-cli keeps working across a whole conversation. The agent sandbox
+      blocks writes outside the session workspace, so the credential Olares
+      mounts for this app used to be lost after every command and the next one
+      reported that no profile was configured.
+    - The agent is told the CLI is already signed in as you, and that a login
+      is neither needed nor possible. It used to be told an entrance login set
+      that up, and would go looking for one when a command failed.
   developer: luolong
   submitter: Olares
   locale:
