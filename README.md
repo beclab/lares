@@ -45,7 +45,7 @@ scripts/package-chart.sh --dev
 scripts/dev-sync/sync.sh 1
 ```
 
-机器 1 默认热更新：`start:watch`，`HOT_RELOAD=true`，挂载 `devsrc`。
+热更新是运行期开关：chart 恒定把 `devsrc` 挂到 `/devsrc`，容器入口启动时读一次 `devsrc/.hotreload`，决定跑镜像码还是 overlay。切换用 `scripts/dev-sync/hot-reload.sh on|off <machine>`（改标记 + 重启 pod），`sync.sh` 会在需要时自动开，**不需要**重新打包或卸载重装；同步完成后由 `kill -HUP` 触发热重载，容器里不轮询任何文件。
 
 ## Release
 

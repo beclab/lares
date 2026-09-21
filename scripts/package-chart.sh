@@ -3,13 +3,14 @@
 #
 # Usage:
 #   scripts/package-chart.sh                  release package（仅明确发版时）
-#   scripts/package-chart.sh --dev            测试用 upload 包（hotReload=true）
+#   scripts/package-chart.sh --dev            测试用 upload 包（只改版本号）
 #   scripts/package-chart.sh --dev 0.10.4     same, with an explicit package version
 #
 # 测试期：--dev → market upload → install -s upload。禁止默认上公共市场。
 # Dev packages take the next patch version so they outrank the released chart in
-# the upload bucket. They keep pointing at the released image tag; runtime code
-# comes from the hot-reload volume (sync.sh), not from daily image pushes.
+# the upload bucket. They are otherwise identical to the release package: hot
+# reload is switched at runtime (scripts/dev-sync/hot-reload.sh), not by values,
+# so there is nothing to patch and nothing to reinstall when switching.
 #
 # The version must be plain MAJOR.MINOR.PATCH. app-service resolves the chart
 # through the Helm index with an empty version, which semver treats as the `*`
@@ -92,7 +93,6 @@ def patch(name: str, *rules: tuple[str, str]) -> None:
     path.write_text(text, encoding="utf-8")
 
 
-patch("values.yaml", (r"^(\s+hotReload:\s*)false\s*$", r"\g<1>true"))
 patch("Chart.yaml", (r"^(version:\s*).+$", rf"\g<1>{version}"))
 patch(
     "OlaresManifest.yaml",

@@ -55,12 +55,16 @@ console.log(\"bundles:\",pj.dsh.profile.bundles.join(\", \"));
 echo "[2/3] 安装（原生模块首次会 node-gyp 编译，约数分钟）"
 # 复用服务端唯一权威入口：npm flags（尤其 --legacy-peer-deps，见 profile.ts）只在一处定义。
 "${SSH[@]}" "$K exec deploy/lares -c lares -- env HOME=/data/home node -e '
-import("/app/dist/service/dsh-web/profile.js")
+import(\"fs\").then((fs) => {
+  const root = fs.existsSync(\"/tmp/lares-hot-reload-active\") ? \"/devsrc\" : \"/app\";
+  return import(root + \"/dist/service/dsh-web/profile.js\");
+})
   .then((m) => m.installProfileDeps(\"$PROFILE\"))
   .catch((err) => { console.error(err); process.exit(1); });
 '"
 
 echo "[3/3] 热重载"
-"${SSH[@]}" "DEVSRC=\$(find /olares/rootfs/userspace /olares/userdata -maxdepth 8 -type d -path '*/Data/lares/devsrc' 2>/dev/null | head -1); [ -n \"\$DEVSRC\" ] && touch \"\$DEVSRC/.lares-reload\" || $K rollout restart deploy/lares"
+# 热更新进程已激活时 SIGHUP 让 supervisor 重起服务；否则重启 pod。
+"${SSH[@]}" "if $K exec deploy/lares -c lares -- test -e /tmp/lares-hot-reload-active; then $K exec deploy/lares -c lares -- sh -c 'kill -HUP 1'; else $K rollout restart deploy/lares; fi"
 
 echo "完成：${BUNDLE}@${VERSION}。浏览器硬刷新查看。"
