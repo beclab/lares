@@ -27,6 +27,9 @@ test("lares-media-create is a produce protocol, not a diagnosis ladder", () => {
   assert.match(skill, /workspace_publish/);
   assert.doesNotMatch(skill, /write `…\/content` to `outputs\/`/);
   assert.match(skill, /LARES_LLM_BASE_URL/);
+  assert.match(skill, /LARES_LLM_BASE_URL\/models/);
+  assert.match(skill, /workspace-write cannot create its refresh lock/);
+  assert.doesNotMatch(skill, /olares-cli router list --mode/);
   assert.match(skill, /logged-in Olares user/);
   assert.match(skill, /Do not `olares-cli router call` to generate/);
   assert.match(skill, /Do not `router call … --id`/);

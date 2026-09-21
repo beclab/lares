@@ -14,7 +14,7 @@ const APP_ROOT = join(HERE, "../../..");
 const DSH_OVERLAY = join(APP_ROOT, "packages", "web", "dsh-overlay");
 const BRAND = join(APP_ROOT, "packages", "web", "brand");
 const COMPOSER_VOICE = join(APP_ROOT, "packages", "web", "composer-voice");
-const COMPOSER_ATTACH = join(APP_ROOT, "packages", "web", "composer-attach");
+const FILE_UPLOAD = join(APP_ROOT, "packages", "web", "file-upload");
 const WORKSPACE_PREVIEW = join(APP_ROOT, "packages", "web", "workspace-preview");
 const WORKSPACE_PREVIEW_3D = join(APP_ROOT, "packages", "web", "workspace-preview-3d");
 const WORKSPACE_ARTIFACTS = join(APP_ROOT, "packages", "web", "workspace-artifacts");
@@ -26,7 +26,7 @@ const LOCAL_PROFILE_PACKAGES = [
   ["@lares/dsh-overlay", DSH_OVERLAY],
   ["@lares/brand", BRAND],
   ["@lares/composer-voice", COMPOSER_VOICE],
-  ["@lares/composer-attach", COMPOSER_ATTACH],
+  ["@lares/file-upload", FILE_UPLOAD],
   ["@lares/workspace-preview", WORKSPACE_PREVIEW],
   ["@lares/workspace-preview-3d", WORKSPACE_PREVIEW_3D],
   ["@lares/workspace-artifacts", WORKSPACE_ARTIFACTS],
@@ -174,21 +174,10 @@ export function linkOwnedProfileDeps(
   }
 }
 
-const CLIENT_LOOPBACK_ANCHOR = "isLoopback: pageLocation === void 0 || isLoopbackHostname(pageLocation.hostname),";
+const CLIENT_LOOPBACK_ANCHOR =
+  "isLoopback: transport?.ownsHost === true || pageLocation === void 0 || isLoopbackHostname(pageLocation.hostname),";
 
 const CLIENT_LOOPBACK_REPLACEMENT = "isLoopback: true,";
-
-const HOST_INTERCEPTOR_ANCHOR =
-  'if (interceptor.options.authority === "loopback" && !isTrustedApiRequest(request, []))';
-
-const HOST_INTERCEPTOR_REPLACEMENT =
-  'if (interceptor.options.authority === "loopback" && !isTrustedApiRequest(request, this.trustedHosts))';
-
-const HOST_PRIVILEGED_ANCHOR =
-  "if (method !== void 0 && PRIVILEGED_METHODS.has(method) && !isTrustedApiRequest(request, []))";
-
-const HOST_PRIVILEGED_REPLACEMENT =
-  "if (method !== void 0 && PRIVILEGED_METHODS.has(method) && !isTrustedApiRequest(request, trustedHosts))";
 
 function replaceRequired(source: string, anchor: string, replacement: string): string {
   if (source.includes(replacement)) return source;
@@ -198,67 +187,43 @@ function replaceRequired(source: string, anchor: string, replacement: string): s
   return source.replace(anchor, replacement);
 }
 
-export function trustOlaresConnectionHost(source: string): string {
-  return replaceRequired(
-    replaceRequired(source, HOST_INTERCEPTOR_ANCHOR, HOST_INTERCEPTOR_REPLACEMENT),
-    HOST_PRIVILEGED_ANCHOR,
-    HOST_PRIVILEGED_REPLACEMENT,
-  );
+export function trustOlaresConnectionClient(source: string): string {
+  return replaceRequired(source, CLIENT_LOOPBACK_ANCHOR, CLIENT_LOOPBACK_REPLACEMENT);
 }
 
 /**
- * dsh pins the browser's whole configuration plane to loopback-same-origin
- * "until a real authentication layer exists": off loopback every settings scope
- * binds in `memory` mode, never issues settings.describe, and renders empty —
- * the Models page, the plugin cards, the configuration-file action, the
- * agent-preset chip, and theme/locale persistence all disappear behind the
- * Olares entrance. That entrance IS the authentication layer (authLevel
- * private, Authelia-terminated, one pod per user), the same judgement the host
- * makes in lares-olares-identity for the privileged /api fence.
- *
- * The flag lives on the connection handle that `@deepseek-ai/dsh-client-connection`
- * builds in its own apply, and each consumer reads it once, at its own
- * `settingsScope.bind()`. A client plugin flipping it afterwards is a race it
- * loses whenever a consumer's bundle is already cached, so the deployment
- * stance belongs in the served bundle instead.
- *
- * The Host has the same restriction twice: strict interceptors (including the
- * API remotes used by model selection) and privileged settings methods both
- * pass an empty trust list. Olares' private entrance is the authentication
- * boundary, so the declared DSH_TRUSTED_HOSTS authorities must reach those
- * channels while the normal Host/Origin/cross-site checks remain intact.
+ * dsh pins the browser's configuration plane to loopback (or a worker that
+ * `ownsHost`). Off loopback every settings scope binds in `memory` mode and
+ * the Models page / plugin cards / theme persistence disappear. Olares'
+ * Authelia entrance is the authentication layer, same judgement as
+ * lares-olares-identity — the served client bundle must report the privileged
+ * surface as reachable. Host-side trustedHosts already flow into
+ * isTrustedApiRequest in 0.1.5; only this client flag still needs a patch.
  *
  * Remove once dsh can be configured with an authenticated remote origin.
  */
 export function patchConnectionTrustFences(): void {
   const clientLib = require.resolve("@deepseek-ai/dsh-client-connection/client");
   const clientSource = readFileSync(clientLib, "utf8");
-  if (!clientSource.includes(CLIENT_LOOPBACK_REPLACEMENT)) {
-    if (!clientSource.includes(CLIENT_LOOPBACK_ANCHOR)) {
-      throw new Error("dsh-client-connection client trust patch anchor not found");
-    }
-    writeFileSync(clientLib, clientSource.replace(CLIENT_LOOPBACK_ANCHOR, CLIENT_LOOPBACK_REPLACEMENT));
-  }
+  const patched = trustOlaresConnectionClient(clientSource);
+  if (patched !== clientSource) writeFileSync(clientLib, patched);
 
-  const hostLib = require.resolve("@deepseek-ai/dsh-client-connection");
-  const hostSource = readFileSync(hostLib, "utf8");
-  const trustedHostSource = trustOlaresConnectionHost(hostSource);
-  if (trustedHostSource !== hostSource) writeFileSync(hostLib, trustedHostSource);
-
-  console.log("[lares] dsh-client-connection trust fences → Olares trusted hosts");
+  console.log("[lares] dsh-client-connection isLoopback → Olares trusted surface");
 }
 
-const LOCALE_DEFAULT_ANCHOR = "this.provisional = resolveInitialLocale();";
+const LOCALE_DEFAULT_ANCHOR = "this.provisional = resolveInitialLocale(locales);";
 const LOCALE_DEFAULT_REPLACEMENT = 'this.provisional = "en";/* lares-default-locale */';
-const EN_DOCUMENT_LANGUAGE_ANCHOR = 'en: "en"';
-const EN_DOCUMENT_LANGUAGE_REPLACEMENT = 'en: "en-US"';
+const EN_DOCUMENT_LANGUAGE_ANCHOR =
+  'document.documentElement.lang = snapshot.active === "zh" ? "zh-CN" : snapshot.active;';
+const EN_DOCUMENT_LANGUAGE_REPLACEMENT =
+  'document.documentElement.lang = snapshot.active === "zh" ? "zh-CN" : snapshot.active === "en" ? "en-US" : snapshot.active;/* lares-document-language */';
 
 export function useEnglishLocaleDefault(source: string): string {
   if (source.includes(LOCALE_DEFAULT_REPLACEMENT)) return source;
   if (!source.includes(LOCALE_DEFAULT_ANCHOR)) {
     throw new Error("dsh-client-locale default patch anchor not found");
   }
-  return source.replace(LOCALE_DEFAULT_ANCHOR, LOCALE_DEFAULT_REPLACEMENT);
+  return source.replaceAll(LOCALE_DEFAULT_ANCHOR, LOCALE_DEFAULT_REPLACEMENT);
 }
 
 export function useOlaresDocumentLanguage(source: string): string {
@@ -266,7 +231,7 @@ export function useOlaresDocumentLanguage(source: string): string {
   if (!source.includes(EN_DOCUMENT_LANGUAGE_ANCHOR)) {
     throw new Error("dsh-client-locale document language patch anchor not found");
   }
-  return source.replace(EN_DOCUMENT_LANGUAGE_ANCHOR, EN_DOCUMENT_LANGUAGE_REPLACEMENT);
+  return source.replaceAll(EN_DOCUMENT_LANGUAGE_ANCHOR, EN_DOCUMENT_LANGUAGE_REPLACEMENT);
 }
 
 /** Leave an explicit dsh language preference in charge; otherwise use English. */
@@ -333,50 +298,6 @@ export function patchSettingsNavIcon(): void {
 
   writeFileSync(lib, patched);
   console.log("[lares] settings nav icons → section component navIcon");
-}
-
-const WEB_BLOCK_COPY = [
-  ["未找到结果", "No results found"],
-  ["来源列表已截断", "Source list truncated"],
-  ["内容已截断", "Content truncated"],
-] as const;
-
-export function localizeWebBlockCopy(source: string): string {
-  let patched = source;
-  for (const [zh, en] of WEB_BLOCK_COPY) {
-    const anchor = `children:"${zh}"`;
-    const replacement =
-      `children:(document.documentElement.lang.startsWith("zh")?"${zh}":"${en}")`;
-    if (patched.includes(replacement)) continue;
-    if (!patched.includes(anchor)) {
-      throw new Error(`dsh WebBlock locale patch anchor not found: ${anchor}`);
-    }
-    patched = patched.replace(anchor, replacement);
-  }
-  return patched;
-}
-
-/**
- * The WebBlock shipped in rc.2 bypasses the locale service for its three state
- * labels. `<html lang>` is maintained by dsh-client-locale and the surrounding
- * locale update re-renders the card, so it is the authoritative language seam
- * available inside this prebuilt primitive.
- *
- * Remove once upstream WebBlock accepts translated labels or a locale face.
- */
-export function patchWebBlockLocale(): void {
-  const indexHtml = require.resolve("@deepseek-ai/dsh-web-frontend/dist/index.html");
-  const html = readFileSync(indexHtml, "utf8");
-  const entry = html.match(/<script\b[^>]*\bsrc="\/assets\/([^"]+\.js)"/)?.[1];
-  if (!entry) throw new Error("dsh frontend entry script not found");
-
-  const lib = join(dirname(indexHtml), "assets", entry);
-  const source = readFileSync(lib, "utf8");
-  const patched = localizeWebBlockCopy(source);
-  if (patched === source) return;
-
-  writeFileSync(lib, patched);
-  console.log("[lares] dsh WebBlock state labels → active locale");
 }
 
 const SIDEBAR_FENCE_ANCHOR =

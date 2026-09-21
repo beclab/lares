@@ -1,0 +1,26 @@
+---
+description: 机器1测试必须走同网段 *.olares.local，禁止 *.olares.com；测试前先对齐 Wi-Fi 并确认 LAN SSH。
+alwaysApply: true
+---
+
+# 机器1本地测试
+
+在机器1上测（无头浏览器、e2e、手动打开入口）一律走 **LAN / `*.olares.local`**，禁止 `*.olares.com`（那是公网 FRP）。
+
+本机 Mac 与机器1必须在 **同一 Wi-Fi /24**。网线 `192.168.88.0/24` 只做 SSH/传文件，不当测试入口。
+
+## 测试前（一键）
+
+```bash
+LAN=~/.cursor/skills/olares-wired-transfer/scripts/prepare-lan.sh
+"$LAN"                      # 看 Mac 网段 → 切机器1 Wi-Fi → 探 LAN SSH
+"$LAN" --entrance .         # 同时把入口 URL 改成 *.olares.local
+```
+
+网段：`192.168.50.0/24` → Byte（`bytetrade_BE13000_5G-1`）；`192.168.31.0/24` → 小米（`bytetrade-xiaomi_5G`）。不通则不要开浏览器。
+
+## URL
+
+- ✅ `https://<entrance>.luolong01.olares.local`
+- ❌ `https://<entrance>.luolong01.olares.com`
+- 只改后缀 `.com` → `.local`，**不要编造** hashed host。无头走 `session.mjs`（机器1会先跑 `prepare-lan.sh`）。

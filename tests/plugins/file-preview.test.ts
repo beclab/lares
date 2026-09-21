@@ -41,6 +41,7 @@ import {
   interceptOpenPath,
   isPrimaryUnmodifiedClick,
   isUnpreviewableOpenPath,
+  parseSessionFileAddress,
   previewOpenPath,
   rawFileUrl,
   rawUrlPath,
@@ -108,6 +109,40 @@ test("turn-tail inline media includes Files media and skips non-media chips", ()
     "drive/Home/Downloads/clip.webm",
   );
   assert.equal(previewOpenPath("/data/workspace", "notes.txt"), "notes.txt");
+});
+
+test("turn-tail media merges official presentations and historical Lares publishes", () => {
+  const owner = {
+    seq: 10,
+    turn: {
+      data: new Map([
+        ["deliverables", {
+          produced: [{ seq: 2, path: "outputs/card.png" }],
+          presented: [
+            { seq: 4, path: "outputs/card.png" },
+            { seq: 5, path: "drive/Data/flowstudio/clip.mp4" },
+          ],
+        }],
+        ["lares-published", {
+          published: [
+            { seq: 6, path: "drive/Data/flowstudio/clip.mp4", callId: "a" },
+            { seq: 7, path: "drive/Data/flowstudio/song.mp3", callId: "b" },
+            { seq: 11, path: "outputs/later.webp", callId: "c" },
+          ],
+        }],
+      ]),
+    },
+  };
+  assert.deepEqual(producedForClosing(owner), [
+    "outputs/card.png",
+    "drive/Data/flowstudio/clip.mp4",
+    "drive/Data/flowstudio/song.mp3",
+  ]);
+  assert.deepEqual(selectInlineTurnMedia(owner), [
+    "outputs/card.png",
+    "drive/Data/flowstudio/clip.mp4",
+    "drive/Data/flowstudio/song.mp3",
+  ]);
 });
 
 test("turn media deduplicates absolute and relative reports by resolved workspace path", () => {
@@ -611,24 +646,48 @@ test("overlay source is not a preview click target", () => {
   assert.equal(isUnpreviewableOpenPath("/data/lares/skills/olares-router/SKILL.md"), false);
 });
 
-test("interceptOpenPath falls back to the native opener when preview declines", async () => {
-  const native: string[] = [];
-  await interceptOpenPath({ openCurrent: async () => false }, "folder/", (path) => {
-    native.push(path);
-  });
-  assert.deepEqual(native, ["folder/"]);
-  await interceptOpenPath({ openCurrent: async () => true }, "notes.md", () => {
+test("a session file address decodes into the session and path it names", () => {
+  assert.deepEqual(
+    parseSessionFileAddress("dsh-resource://file/session/s1/outputs/orange%20cat.mp4"),
+    { sessionId: "s1", path: "outputs/orange cat.mp4" },
+  );
+  assert.deepEqual(
+    parseSessionFileAddress("dsh-resource://file/session/s1/notes.md?line=12"),
+    { sessionId: "s1", path: "notes.md" },
+  );
+  assert.equal(parseSessionFileAddress("dsh-resource://file/absolute/etc/hosts"), null);
+  assert.equal(parseSessionFileAddress("dsh-resource://guide/welcome"), null);
+  assert.equal(parseSessionFileAddress("dsh-resource://file/session/s1/"), null);
+});
+
+test("interceptOpenPath falls back to the right column when preview declines", async () => {
+  const claimed = { openCurrent: async () => true, boundSession: () => "s1" };
+  let native = 0;
+  const countNative = () => {
+    native += 1;
+  };
+
+  await interceptOpenPath(
+    { openCurrent: async () => false, boundSession: () => "s1" },
+    { sessionId: "s1", path: "folder/" },
+    countNative,
+  );
+  assert.equal(native, 1);
+
+  await interceptOpenPath(claimed, { sessionId: "s1", path: "notes.md" }, () => {
     throw new Error("should not fall back");
   });
-  const overlay: string[] = [];
+
   await interceptOpenPath(
-    { openCurrent: async () => true },
-    "/app/packages/core/media/router-images.js",
-    (path) => {
-      overlay.push(path);
+    claimed,
+    { sessionId: "s1", path: "/app/packages/core/media/router-images.js" },
+    () => {
+      throw new Error("overlay source is swallowed, not opened");
     },
   );
-  assert.deepEqual(overlay, []);
+
+  await interceptOpenPath(claimed, { sessionId: "s2", path: "notes.md" }, countNative);
+  assert.equal(native, 2);
 });
 
 test("openCurrent claims workspace files and declines everything else", async () => {

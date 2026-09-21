@@ -80,6 +80,8 @@
     "./files/preview-groups": "./files/preview-groups.js",
     "./files/markdown": "./files/markdown.js",
     "./files/deliverables": "./files/deliverables.js",
+    "./files/published-tools": "./files/published-tools.js",
+    "./files/published-turn-data": "./files/published-turn-data.js",
     "./files/produced-gate": "./files/produced-gate.js",
     "./files/produced-mentions": "./files/produced-mentions.js",
     "./files/disposition": "./files/disposition.js",

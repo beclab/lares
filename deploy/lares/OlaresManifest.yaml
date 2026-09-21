@@ -7,12 +7,12 @@ metadata:
   title: Lares
   description: Chat on Olares, wired to Router
   icon: https://app.cdn.olares.com/appstore/lares/icon_new.png
-  version: 0.26.24
+  version: 0.26.25
   categories:
     - Utilities_v112
     - AI
 spec:
-  versionName: "0.26.24"
+  versionName: "0.26.25"
   runAsUser: true
   fullDescription: |
     ## Overview
@@ -35,13 +35,15 @@ spec:
     2. Ensure Router is installed.
     3. Open the Lares entrance and start a chat.
   upgradeDescription: |
-    ## Lares 0.26.24
+    ## Lares 0.26.25
 
-    - The first olares-cli command of a conversation now finds your account.
-      Most of them — anything under market, cluster, settings, router or
-      knowledge — used to report that no profile was configured until some
-      other command had run first, so a chat that opened with an app-store
-      question failed on its first answer and worked on the second.
+    - Chat kernel 0.1.5-rc.2: Authelia sessions, gzip, native model picker,
+      and native file attachments. The extra Lares paperclip is gone; LarePass
+      still uploads through `/api/lares/files/upload`.
+    - Turn-tail preview again covers `workspace_publish` and historical
+      FlowStudio media, not only write/edit.
+    - Image generation lists models through the in-process Router shim so
+      the workspace-write sandbox cannot block `olares-cli`.
   developer: luolong
   submitter: Olares
   locale:

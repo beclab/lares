@@ -2,8 +2,8 @@
  * An Olares files path (`<fileType>/<extend>/<subPath…>`) names one object on
  * the user's files backend. Preview serves it in place; drive_fetch copies it
  * into the session workspace only when a later edit or transcode needs a local
- * file. A produced-file chip is rendered from `presentCall` before the tool
- * runs, so the path in the arguments is the path the UI opens.
+ * file. The durable preview projection is rebuilt from successful persisted
+ * tool call/result pairs; `presentCall` only describes the transient tool row.
  */
 import { posixBasename as basename, posixExtname as extname, sanitizeFilename } from "../files/filename.js";
 import { isFilesNamespace, parseFilesPath } from "./files-path.js";

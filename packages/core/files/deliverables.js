@@ -1,4 +1,5 @@
 import { isInlineTurnMediaPath } from "./preview-groups.js";
+import { LARES_PUBLISHED_KEY } from "./published-turn-data.js";
 
 /** Same rule as dsh-client-ui-deliverables: only edit/diff call views produce files. */
 export function producedPathsFromView(view) {
@@ -17,10 +18,23 @@ export function producedPathsFromView(view) {
 }
 
 export function producedForClosing(owner) {
-  const produced = owner.turn.data.get("deliverables")?.produced ?? [];
+  const deliverables = owner.turn.data.get("deliverables");
+  const produced = deliverables?.produced ?? [];
+  const presented = deliverables?.presented ?? [];
+  const published = owner.turn.data.get(LARES_PUBLISHED_KEY)?.published ?? [];
   const paths = [];
   const seen = new Set();
   for (const item of produced) {
+    if (item.seq > owner.seq || seen.has(item.path)) continue;
+    seen.add(item.path);
+    paths.push(item.path);
+  }
+  for (const item of presented) {
+    if (item.seq >= owner.seq || seen.has(item.path)) continue;
+    seen.add(item.path);
+    paths.push(item.path);
+  }
+  for (const item of published) {
     if (item.seq > owner.seq || seen.has(item.path)) continue;
     seen.add(item.path);
     paths.push(item.path);

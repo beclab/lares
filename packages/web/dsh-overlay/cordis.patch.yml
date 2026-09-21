@@ -19,6 +19,9 @@
   config:
     host: '0.0.0.0'
     port: !!js Number(process.env.PORT ?? 8080)
+    compression: gzip
+    compressionLevel: 1
+    compressionThresholdBytes: 1024
 
 - id: fs-sandbox
   config:
@@ -125,7 +128,7 @@
 
     - id: lares-olares-identity
       name: '@lares/dsh-overlay/host/olares/olares-identity.js'
-      inject: [webServer]
+      inject: [webServer, connection]
 
     - id: lares-default-workspace
       name: '@lares/dsh-overlay/host/default-workspace.js'
@@ -140,8 +143,8 @@
     #   name: '@lares/composer-voice'
     #   inject: [webServer]
 
-    - id: lares-composer-attach
-      name: '@lares/composer-attach'
+    - id: lares-file-upload
+      name: '@lares/file-upload'
       inject: [webServer, workspaceRegistry, sessionPersistence]
 
     - id: lares-workspace-preview
@@ -153,7 +156,7 @@
 
     - id: lares-workspace-artifacts
       name: '@lares/workspace-artifacts'
-      inject: [tools, systemPrompt]
+      inject: [tools, systemPrompt, sessionProjections]
 
     - id: lares-router-search
       name: '@lares/router-search'

@@ -4,6 +4,7 @@ import { createPreviewOverlay } from "./PreviewOverlay.js";
 import { createPreviewView } from "./PreviewView.js";
 import { createTurnMedia } from "./TurnMedia.js";
 import { selectInlineTurnMedia } from "@olares/lares-core/files/deliverables";
+import { laresPublishedDefinition } from "@olares/lares-core/files/published-turn-data";
 import { EN, ZH } from "./locale.js";
 import { installPathOpener } from "./open.js";
 import styles from "./styles.css";
@@ -22,7 +23,8 @@ export function apply(ctx) {
   installPluginStyle(ctx, "@lares/workspace-preview", styles, "lares-workspace-preview-css");
   installPathOpener(ctx, workspace);
 
-  ctx.inject(["slots", "locale"], (scope) => {
+  ctx.inject(["slots", "locale", "uiConversation"], (scope) => {
+    scope.uiConversation.events.register(laresPublishedDefinition);
     scope.effect(
       () => scope.locale.register(NS, { zh: ZH, en: EN }),
       "lares-workspace-preview-locale",
@@ -58,6 +60,16 @@ export function apply(ctx) {
           label: () => t("preview"),
         },
         FilePreviewSurface,
+      ),
+    );
+    // Files are read in this overlay, not in dsh's right column, so the corner
+    // seat would only offer a way into an empty panel. The seat is laid out
+    // only while its occupant shows something: one that renders nothing empties
+    // the corner and gives the header's edge back to the utilities.
+    scope.slots.inject("conversation.session.header.corner", () =>
+      scope.slots.register(
+        { name: "conversation.session.header.corner", id: "lares-no-right-column", priority: -1 },
+        () => null,
       ),
     );
     scope.slots.inject("conversation.chat.turnTail", () =>

@@ -14,35 +14,30 @@ import { join } from "node:path";
 import {
   ensureLaresWebProfile,
   linkOwnedProfileDeps,
-  localizeWebBlockCopy,
   sectionComponentNavIcon,
-  trustOlaresConnectionHost,
+  trustOlaresConnectionClient,
   useEnglishLocaleDefault,
   useOlaresDocumentLanguage,
 } from "../../packages/service/dsh-web/profile.js";
 
-const INTERCEPTOR =
-  'if (interceptor.options.authority === "loopback" && !isTrustedApiRequest(request, []))';
-const PRIVILEGED =
-  "if (method !== void 0 && PRIVILEGED_METHODS.has(method) && !isTrustedApiRequest(request, []))";
+const CLIENT_LOOPBACK =
+  "isLoopback: transport?.ownsHost === true || pageLocation === void 0 || isLoopbackHostname(pageLocation.hostname),";
 
-test("Olares trusted hosts reach strict interceptors and privileged settings methods", () => {
-  const patched = trustOlaresConnectionHost(`${INTERCEPTOR}\n${PRIVILEGED}`);
-  assert.match(patched, /isTrustedApiRequest\(request, this\.trustedHosts\)/);
-  assert.match(patched, /isTrustedApiRequest\(request, trustedHosts\)/);
-  assert.doesNotMatch(patched, /isTrustedApiRequest\(request, \[\]\)/);
-  assert.equal(trustOlaresConnectionHost(patched), patched);
+test("the served client reports the privileged surface as reachable", () => {
+  const patched = trustOlaresConnectionClient(CLIENT_LOOPBACK);
+  assert.equal(patched, "isLoopback: true,");
+  assert.equal(trustOlaresConnectionClient(patched), patched);
 });
 
 test("connection trust patch fails loudly when upstream anchors drift", () => {
   assert.throws(
-    () => trustOlaresConnectionHost("unrelated upstream source"),
+    () => trustOlaresConnectionClient("unrelated upstream source"),
     /trust patch anchor not found/,
   );
 });
 
 test("an unset language preference defaults to English", () => {
-  const upstream = "this.provisional = resolveInitialLocale();";
+  const upstream = "this.provisional = resolveInitialLocale(locales);";
   const patched = useEnglishLocaleDefault(upstream);
   assert.equal(patched, 'this.provisional = "en";/* lares-default-locale */');
   assert.equal(useEnglishLocaleDefault(patched), patched);
@@ -53,9 +48,13 @@ test("locale default patch fails loudly when upstream anchors drift", () => {
 });
 
 test("document language tags use the same locale symbols as Olares", () => {
-  const upstream = 'zh: "zh-CN",\nen: "en"';
+  const upstream =
+    'document.documentElement.lang = snapshot.active === "zh" ? "zh-CN" : snapshot.active;';
   const patched = useOlaresDocumentLanguage(upstream);
-  assert.equal(patched, 'zh: "zh-CN",\nen: "en-US"');
+  assert.equal(
+    patched,
+    'document.documentElement.lang = snapshot.active === "zh" ? "zh-CN" : snapshot.active === "en" ? "en-US" : snapshot.active;/* lares-document-language */',
+  );
   assert.equal(useOlaresDocumentLanguage(patched), patched);
 });
 
@@ -81,27 +80,6 @@ test("a settings section's own component supplies its nav glyph", () => {
 
 test("nav icon patch fails loudly when the settings shell drifts", () => {
   assert.throws(() => sectionComponentNavIcon("unrelated upstream source"), /anchor not found/);
-});
-
-const WEB_BLOCK = [
-  'c?jsx("div",{children:"未找到结果"}):jsx("ol",{})',
-  'truncated&&jsx("div",{children:"来源列表已截断"})',
-  'truncated&&jsx("span",{children:"内容已截断"})',
-].join("\n");
-
-test("WebBlock state labels follow the active document locale", () => {
-  const patched = localizeWebBlockCopy(WEB_BLOCK);
-  assert.match(
-    patched,
-    /document\.documentElement\.lang\.startsWith\("zh"\)\?"未找到结果":"No results found"/,
-  );
-  assert.match(patched, /"来源列表已截断":"Source list truncated"/);
-  assert.match(patched, /"内容已截断":"Content truncated"/);
-  assert.equal(localizeWebBlockCopy(patched), patched);
-});
-
-test("WebBlock locale patch fails loudly when upstream anchors drift", () => {
-  assert.throws(() => localizeWebBlockCopy("unrelated upstream source"), /anchor not found/);
 });
 
 test("Lares profile packages link to authoritative source directories", () => {
