@@ -33,6 +33,7 @@
     "./tools/json-file": "./tools/json-file.js",
     "./tools/async": "./tools/async.js",
     "./tools/crypto-uuid": "./tools/crypto-uuid.js",
+    "./tools/head-script": "./tools/head-script.js",
     "./brand/identity": "./brand/identity.js",
     "./brand/manifest": "./brand/manifest.js",
     "./icons/mark": "./icons/mark.js",

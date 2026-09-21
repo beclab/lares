@@ -24,11 +24,8 @@ spec:
     2. 确认 Router 已安装。
     3. 打开 Lares 入口开始对话。
   upgradeDescription: |
-    ## Lares 0.26.25
+    ## Lares 0.26.26
 
-    - 聊天内核 0.1.5-rc.2：接入 Authelia 会话、gzip、官方模型选择器和原生附件。
-      多余的 Lares 回形针已去掉；LarePass 仍走 `/api/lares/files/upload`。
-    - 回合预览重新覆盖 `workspace_publish` 和历史 FlowStudio 媒体，不再只认
-      write/edit。
-    - 生图技能改为从进程内 Router shim 列模型，避免 workspace-write 沙箱挡住
-      `olares-cli`。
+    - 修复 0.26.25 起不来的问题：它的 node_modules 来自 0.1.5-rc.2 聊天内核
+      落地之前构建的底座镜像。
+    - Router 控制台链接跟随用户自己的域，不再假定 olares.com / olares.local。

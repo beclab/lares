@@ -13,6 +13,10 @@ test("Files app links keep the current Olares public or LAN zone", () => {
     filesAppUrl("drive/Home/Movies/a.mp4", { entrance: "http://489966aa.alice.olares.local" }),
     "http://files.alice.olares.local/Files/Home/Movies/a.mp4",
   );
+  assert.equal(
+    filesAppUrl("drive/Home/notes.txt", { entrance: "https://489966aa.alice.olares.cn" }),
+    "https://files.alice.olares.cn/Files/Home/notes.txt",
+  );
 });
 
 test("Files app links map every previewable backend namespace", () => {

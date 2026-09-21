@@ -1,0 +1,15 @@
+---
+description: 调试脚本放仓库根 __debug__/（gitignore 整目录），禁止写入 scripts/
+alwaysApply: true
+---
+
+# 调试脚本
+
+机器 1 入口探测、无头场景、e2e 回归等一律写在 `__debug__/`（已整目录 gitignore）。不要提交，也不要拷回 `scripts/`。
+
+现有目录：
+
+- `__debug__/browser-scenarios/` 无头 Chrome 场景
+- `__debug__/e2e/` 机器 1 实机 e2e
+
+`scripts/` 只放项目工程脚本：镜像、chart、dev-sync、client 构建、通用 `browser.mjs` / `lib/chrome-cdp.mjs`。禁止在 `scripts/` 下新增调试场景或 e2e。

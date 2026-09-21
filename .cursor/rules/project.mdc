@@ -27,7 +27,8 @@ packages/
   skills/           lares-* agent skills（olares-* 由构建期导出，不入仓；ha-* 由设置页从 hass-cli 下载）
 tests/              单元测试
 deploy/lares/        Olares chart
-scripts/            镜像、chart 打包、dev-sync
+scripts/            镜像、chart 打包、dev-sync（可复用工程脚本）
+__debug__/          一次性调试脚本（gitignore；禁止放 scripts/）
 _参考/              外部参考（默认忽略；勿当本仓业务）
 ```
 

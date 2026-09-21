@@ -23,6 +23,9 @@ scripts/dev-sync/machines.json
 _参考/
 __tools/
 
+# 一次性调试脚本（入口探测、无头临时场景等）；禁止放 scripts/，整目录不入仓
+__debug__/
+
 # Node / Next
 node_modules/
 **/node_modules/

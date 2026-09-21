@@ -61,7 +61,7 @@ Examples:
   scripts/browser.mjs shot http://127.0.0.1:8080/ -o /tmp/lares.png --wait 5000
   scripts/browser.mjs eval http://127.0.0.1:8080/ 'document.title'
   scripts/browser.mjs probe http://127.0.0.1:8080/ '[data-phase]' --wait 8000
-  scripts/browser.mjs run scripts/browser-scenarios/example.mjs --url http://127.0.0.1:8080/
+  scripts/browser.mjs run __debug__/browser-scenarios/example.mjs --url http://127.0.0.1:8080/
 `;
   process.stderr.write(text);
   process.exit(code);
