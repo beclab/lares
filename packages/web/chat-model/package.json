@@ -3,7 +3,7 @@
   "version": "0.15.0",
   "private": true,
   "type": "module",
-  "description": "Router chat models: default for new sessions and the composer session switcher",
+  "description": "Router chat models: default for new sessions",
   "exports": {
     ".": "./host/index.js",
     "./client": "../../../dist/plugins/chat-model/client.js",

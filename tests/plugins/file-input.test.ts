@@ -13,7 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
-import { createUploadHandler } from "../../packages/web/composer-attach/host/index.js";
+import { createUploadHandler } from "../../packages/web/file-upload/host/index.js";
 import {
   numberedName,
   saveUpload,
@@ -22,15 +22,10 @@ import {
 import { uploadFile } from "@olares/lares-core/files/upload-client";
 import {
   FileIntake,
-  claimComposerBlock,
-  commitComposerImages,
-  composerDropHasDocuments,
-  composerPasteInCard,
-  documentPasteFiles,
   partitionDocumentsBySize,
   splitComposerFiles,
 } from "@olares/lares-core/files/intake";
-import { appendDraftMentions, createUploadCommit, insertUploadReferences, uploadReference } from "@olares/lares-core/files/mention";
+import { appendDraftMentions } from "@olares/lares-core/files/mention";
 import { createPreviewHandler } from "../../packages/web/workspace-preview/host/index.js";
 
 type FakeRequest = Readable & { headers: Record<string, string> };
@@ -39,54 +34,6 @@ function request(body: string, headers: Record<string, string> = {}): FakeReques
   const stream = Readable.from(body ? [Buffer.from(body)] : []) as FakeRequest;
   stream.headers = headers;
   return stream;
-}
-
-type Reference = {
-  source: string;
-  ref: string;
-  label: string;
-  appearance?: string;
-  clipboardText: string;
-};
-
-type Span = { start: number; end: number; draftRev: number };
-
-/** Mirrors the dsh input machine's reference transaction (display text + trailing gap). */
-function composer(draft = "", accepts = true) {
-  let occurrences: { offset: number; length: number; clipboardText: string }[] = [];
-  let draftRev = 0;
-  const snapshot = () => ({ draft, draftRev });
-  return {
-    state: { getSnapshot: snapshot },
-    setDraft(text: string) {
-      draft = text;
-      draftRev += 1;
-    },
-    insertReference(reference: Reference, span: Span) {
-      if (!accepts || span.draftRev !== draftRev) return false;
-      const display = `@${reference.label}`;
-      const tail = draft.slice(span.end);
-      const gap = tail.length === 0 || tail[0] !== " " ? " " : "";
-      occurrences.push({
-        offset: span.start,
-        length: display.length,
-        clipboardText: reference.clipboardText,
-      });
-      draft = draft.slice(0, span.start) + display + gap + tail;
-      draftRev += 1;
-      return true;
-    },
-    /** The draft-persistence projection: occurrences expand to their clipboard text. */
-    persisted() {
-      let out = "";
-      let cursor = 0;
-      for (const entry of occurrences) {
-        out += draft.slice(cursor, entry.offset) + entry.clipboardText;
-        cursor = entry.offset + entry.length;
-      }
-      return out + draft.slice(cursor);
-    },
-  };
 }
 
 function response() {
@@ -230,12 +177,11 @@ test("document intake commits paths only after upload succeeds", async () => {
   const intake = new FileIntake(async () => ({
     path: ".lares/uploads/季度经营分析_2026Q2.md",
   }));
-  const input = composer("分析");
+  let draft = "分析";
   await intake.uploadFiles("s1", [markdown], (paths: string[]) => {
-    assert.deepEqual(insertUploadReferences(input, paths), []);
+    draft = appendDraftMentions(draft, paths);
   });
-  assert.equal(input.state.getSnapshot().draft, "分析 @季度经营分析_2026Q2.md ");
-  assert.equal(input.persisted(), "分析 @.lares/uploads/季度经营分析_2026Q2.md ");
+  assert.equal(draft, "分析 @.lares/uploads/季度经营分析_2026Q2.md");
   assert.deepEqual(intake.getSnapshot("s1"), { pending: 0, failures: [] });
 });
 
@@ -248,55 +194,16 @@ test("appendDraftMentions spaces mentions for a plain composer draft", () => {
   assert.equal(appendDraftMentions("已有 ", [".lares/uploads/c.md"]), "已有 @.lares/uploads/c.md");
 });
 
-test("an uploaded file becomes a file reference the model still sees as a path", () => {
-  assert.deepEqual(uploadReference(".lares/uploads/季度经营分析_2026Q2.md"), {
-    source: "reference",
-    ref: "@.lares/uploads/季度经营分析_2026Q2.md",
-    label: "季度经营分析_2026Q2.md",
-    appearance: "file",
-    clipboardText: "@.lares/uploads/季度经营分析_2026Q2.md",
-  });
-});
-
-test("consecutive uploads stay separated and a refused insert is reported", () => {
-  const input = composer();
-  assert.deepEqual(
-    insertUploadReferences(input, [".lares/uploads/a.md", ".lares/uploads/b.md"]),
-    [],
-  );
-  assert.equal(input.state.getSnapshot().draft, "@a.md @b.md ");
-  assert.equal(input.persisted(), "@.lares/uploads/a.md @.lares/uploads/b.md ");
-
-  const closed = composer("", false);
-  assert.deepEqual(insertUploadReferences(closed, [".lares/uploads/c.md"]), [
-    ".lares/uploads/c.md",
-  ]);
-});
-
-test("document paste consumes files without reading clipboard text", () => {
-  const markdown = { name: "report.md", type: "text/markdown", size: 8 };
-  let textReads = 0;
-  const files = documentPasteFiles({
-    files: [markdown],
-    getData: () => {
-      textReads += 1;
-      return "/Users/me/report.md";
-    },
-  });
-  assert.deepEqual(files, [markdown]);
-  assert.equal(textReads, 0);
-});
-
 test("document intake preserves the draft and exposes a persistent failure", async () => {
   const markdown = { name: "broken.md", type: "text/markdown", size: 8 };
   const intake = new FileIntake(async () => {
     throw new Error("file_empty");
   });
-  const input = composer("before");
+  let draft = "before";
   await intake.uploadFiles("s1", [markdown], (paths: string[]) => {
-    insertUploadReferences(input, paths);
+    draft = appendDraftMentions(draft, paths);
   });
-  assert.equal(input.state.getSnapshot().draft, "before");
+  assert.equal(draft, "before");
   assert.deepEqual(intake.getSnapshot("s1"), {
     pending: 0,
     failures: [{ id: intake.getSnapshot("s1").failures[0].id, name: "broken.md", code: "file_empty" }],
@@ -320,56 +227,6 @@ test("document intake cancellation leaves no path or failure behind", async () =
   await pending;
   assert.equal(committed, false);
   assert.deepEqual(intake.getSnapshot("s1"), { pending: 0, failures: [] });
-});
-
-test("composer paste/drop only claims documents inside the composer card", () => {
-  assert.equal(composerPasteInCard({ closest: (sel: string) => (sel === "[data-composer-card]" ? {} : null) }), true);
-  assert.equal(composerPasteInCard({ closest: () => null }), false);
-  assert.equal(composerDropHasDocuments([{ type: "image/png" }]), false);
-  assert.equal(composerDropHasDocuments([{ type: "text/markdown" }]), true);
-});
-
-test("draft image insert reports blocked and rolls back attachments", () => {
-  const failures: string[] = [];
-  const files = [{ name: "a.png" }];
-  commitComposerImages({
-    createDraftImages: () => [{ id: "img-1" }],
-    addImages: () => false,
-    releaseDraftImages: () => {},
-    reportFailure: (_id: string, _file: unknown, code: string) => failures.push(code),
-  }, files, "s1");
-  assert.deepEqual(failures, ["file_input_blocked"]);
-});
-
-test("createUploadCommit skips a session that has already closed", () => {
-  const notices: string[] = [];
-  const commit = createUploadCommit({
-    scopeSession: () => undefined,
-    inputFor: () => {
-      throw new Error("should not open input");
-    },
-    unlinkedMessage: (path: string) => path,
-  });
-  commit("gone")([".lares/uploads/a.md"]);
-  assert.deepEqual(notices, []);
-});
-
-test("composer upload block clears only when it still owns the block", () => {
-  let current: { reason: string } | undefined;
-  const registry = {
-    storeFor: () => ({ getSnapshot: () => current }),
-    set: (_sessionId: string, block: { reason: string } | undefined) => {
-      current = block;
-    },
-  };
-  const release = claimComposerBlock(registry, "s1", "uploading");
-  assert.deepEqual(current, { reason: "uploading" });
-  release();
-  assert.equal(current, undefined);
-
-  current = { reason: "model unavailable" };
-  claimComposerBlock(registry, "s1", "uploading")();
-  assert.deepEqual(current, { reason: "model unavailable" });
 });
 
 test("uploadFile makes one request and leaves retry to the user", async () => {

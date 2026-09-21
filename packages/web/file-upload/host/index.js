@@ -3,7 +3,12 @@ import { resolveSessionWorkspace } from "@olares/lares-core/workspace/session";
 import { saveUpload } from "@olares/lares-core/files/upload";
 import { parseUploadHeaders, uploadSuccessBody } from "@olares/lares-core/files/upload-http";
 
-export const name = "lares-composer-attach";
+/**
+ * dsh owns composer attachments; the web client has no picker of its own. This
+ * route stays because LarePass mobile uploads through it into the session
+ * workspace and then references the stored path.
+ */
+export const name = "lares-file-upload";
 export const inject = ["webServer", "workspaceRegistry", "sessionPersistence"];
 
 const ROUTE_PREFIX = "/api/lares/files";
@@ -45,6 +50,6 @@ export function apply(ctx) {
   });
   ctx.effect(
     () => ctx.webServer.register({ kind: "prefix", path: ROUTE_PREFIX, handler }),
-    "lares-composer-attach-routes",
+    "lares-file-upload-routes",
   );
 }

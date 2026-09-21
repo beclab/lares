@@ -24,8 +24,11 @@ spec:
     2. 确认 Router 已安装。
     3. 打开 Lares 入口开始对话。
   upgradeDescription: |
-    ## Lares 0.26.24
+    ## Lares 0.26.25
 
-    - 对话里第一条 olares-cli 命令现在就能拿到你的账号。此前 market、cluster、
-      settings、router、knowledge 这些命令都要等别的命令先跑过一次才可用，所以
-      一上来就问应用商店的对话，第一次回答必然失败，第二次才正常。
+    - 聊天内核 0.1.5-rc.2：接入 Authelia 会话、gzip、官方模型选择器和原生附件。
+      多余的 Lares 回形针已去掉；LarePass 仍走 `/api/lares/files/upload`。
+    - 回合预览重新覆盖 `workspace_publish` 和历史 FlowStudio 媒体，不再只认
+      write/edit。
+    - 生图技能改为从进程内 Router shim 列模型，避免 workspace-write 沙箱挡住
+      `olares-cli`。

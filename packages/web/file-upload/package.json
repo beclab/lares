@@ -1,0 +1,14 @@
+{
+  "name": "@lares/file-upload",
+  "version": "0.15.0",
+  "private": true,
+  "type": "module",
+  "description": "Workspace upload endpoint for LarePass clients that have no dsh attachment surface",
+  "exports": {
+    ".": "./host/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "host"
+  ]
+}

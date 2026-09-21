@@ -4,7 +4,7 @@ version: 0.2.5
 description: "Produce image, video, audio, or 3D through Router: list that family, POST the matching shim route, land the file. Use for 生成图片, 生成视频, text-to-image, FlowStudio generate, FlowStudio 场景/工作流, T2V, I2V, R2V, 文生视频, 图生视频. Not for Router install, catalog sync, GPU diagnosis, or curling FlowStudio."
 metadata:
   requires:
-    bins: ["olares-cli"]
+    bins: ["curl"]
 ---
 
 # lares-media-create
@@ -16,13 +16,15 @@ Do not load other skills (including olares-router). Do not curl FlowStudio or Co
 ## Produce
 
 1. Map the ask to **one** family (table below).
-2. List that family only:
+2. List that family only through the in-process shim. This catalog route uses
+   the same Router identity as generation and does not need `olares-cli`'s
+   profile lock outside the workspace sandbox:
 
 ```bash
-olares-cli router list --mode video_generation -o json
+curl -sS "$LARES_LLM_BASE_URL/models"
 ```
 
-   Use the matching `--mode`. For video, if that list is empty, also list `image_generation` (FlowStudio sometimes parks video scenes there). Never probe `--mode audio` for a song.
+   Keep only rows whose `mode` is the matching family. For video, if that list is empty, also inspect `image_generation` (FlowStudio sometimes parks video scenes there). Never probe `audio` for a song. Do not use `olares-cli router list` here: workspace-write cannot create its refresh lock under `/data/home`.
 
 3. Pick one **enabled** row of this family. Prefer a prompt-only scene. Skip a row whose title is clearly another family (a T2V scene is not an image). `--model` is `<provider>/<model>` as listed — FlowStudio's model half is often a UUID; that **is** the id. Use `name` / `title` / `display_name` on the **same JSON row** if you need a label.
 4. Call **once** with the user's prompt unchanged, through `$LARES_LLM_BASE_URL` (in-process Router shim; default `http://127.0.0.1:$PORT/llm/v1`). That stamps the logged-in Olares user, so FlowStudio owns the job as this person — never as the shared chart owner. Do not `olares-cli router call` to generate (in-cluster it presents as the Lares app). Route follows the **picked row's mode**:

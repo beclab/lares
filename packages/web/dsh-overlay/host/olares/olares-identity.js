@@ -12,7 +12,7 @@ import {
 } from "@olares/lares-core/olares/trusted-host";
 
 export const name = "lares-olares-identity";
-export const inject = ["webServer"];
+export const inject = ["webServer", "connection"];
 
 /**
  * A WebSocket handshake arrives as `upgrade`, never as `request`, so listening
@@ -23,10 +23,45 @@ export const inject = ["webServer"];
  */
 const SERVER_EVENTS = ["request", "upgrade"];
 
+const TOKEN_QUERY = "token";
+
+/** @param {{ headers?: import('node:http').IncomingHttpHeaders | Headers }} request */
+export function isOlaresEdgeAuthenticated(request) {
+  const identity = identityFromHeaders(request?.headers ?? {});
+  return Boolean(identity.user && identity.token);
+}
+
+/**
+ * dsh 0.1.5 BrowserAuth requires a process-launch cookie on every index and
+ * /api call. Authelia already authenticated the entrance; treat that identity
+ * as the browser session instead of asking the user to open the printed
+ * `?token=` URL (which is loopback and never reaches them).
+ *
+ * @param {{ requestRejection: Function, authorizeIndex: Function }} connection
+ */
+export function acceptOlaresBrowserSession(connection) {
+  const reject = connection.requestRejection.bind(connection);
+  connection.requestRejection = (request) => {
+    const code = reject(request);
+    if (code === 401 && isOlaresEdgeAuthenticated(request)) return undefined;
+    return code;
+  };
+
+  const authorize = connection.authorizeIndex.bind(connection);
+  connection.authorizeIndex = (req, res) => {
+    const url = new URL(req.url ?? "/", "http://dsh.invalid");
+    if (url.searchParams.has(TOKEN_QUERY)) return authorize(req, res);
+    if (isOlaresEdgeAuthenticated(req)) return true;
+    return authorize(req, res);
+  };
+}
+
 /**
  * @param {import('@deepseek-ai/cordis').Context} ctx
  */
 export function apply(ctx) {
+  if (ctx.connection) acceptOlaresBrowserSession(ctx.connection);
+
   /** @type {import('node:http').Server | undefined} */
   let attached;
 

@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { EventEmitter } from "node:events";
-import { apply } from "../../packages/web/dsh-overlay/host/olares/olares-identity.js";
+import {
+  acceptOlaresBrowserSession,
+  apply,
+} from "../../packages/web/dsh-overlay/host/olares/olares-identity.js";
 
 const ENTRANCE = "489966aa.one3.one2.olaresdomain.space";
 const PORT = 8080;
@@ -139,4 +142,45 @@ test("an untrusted host is left alone on both paths", () => {
       assert.equal(req.headers.origin, "file://");
     }
   });
+});
+
+test("Authelia identity satisfies dsh browser-session 401s", () => {
+  const connection = {
+    requestRejection(request: { headers: Record<string, string> }) {
+      return request.headers.cookie?.includes("dsh=") ? undefined : 401;
+    },
+    authorizeIndex(req: { url?: string }) {
+      return String(req.url ?? "").includes("token=");
+    },
+  };
+  acceptOlaresBrowserSession(connection);
+
+  assert.equal(
+    connection.requestRejection({
+      headers: { "x-bfl-user": "one3", cookie: "auth_token=jwt-value" },
+    }),
+    undefined,
+  );
+  assert.equal(connection.requestRejection({ headers: { host: "127.0.0.1:8080" } }), 401);
+  assert.equal(
+    connection.authorizeIndex({
+      url: "/",
+      headers: incoming().headers,
+    } as never),
+    true,
+  );
+  assert.equal(connection.authorizeIndex({ url: "/?token=abc", headers: {} } as never), true);
+});
+
+test("a Host/Origin 403 is not turned into an auth success", () => {
+  const connection = {
+    requestRejection() {
+      return 403;
+    },
+    authorizeIndex() {
+      return false;
+    },
+  };
+  acceptOlaresBrowserSession(connection);
+  assert.equal(connection.requestRejection({ headers: incoming().headers }), 403);
 });

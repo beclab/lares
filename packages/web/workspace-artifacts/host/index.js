@@ -14,25 +14,41 @@ import {
   findUnopenableProducedPaths,
   producedGateSteerText,
 } from "@olares/lares-core/files/produced-gate";
+import {
+  durablePathFromToolCall,
+} from "@olares/lares-core/files/published-tools";
 
 export const name = "lares-workspace-artifacts";
-export const inject = ["tools", "systemPrompt"];
+export const inject = ["tools", "systemPrompt", "sessionProjections"];
+
+function withPublishedCapture(definition, capture) {
+  if (!capture) return definition;
+  const execute = definition.execute;
+  return {
+    ...definition,
+    async execute(args, exec) {
+      const value = await execute(args, exec);
+      capture(definition.name, args, exec);
+      return value;
+    },
+  };
+}
 
 /** @param download - seam for tests; the real olares-cli download otherwise. */
-export function createFetchTool(download) {
-  return defineTool(driveFetchDefinition(download));
+export function createFetchTool(download, capture) {
+  return defineTool(withPublishedCapture(driveFetchDefinition(download), capture));
 }
 
-export function createUrlFetchTool(download) {
-  return defineTool(urlFetchDefinition(download));
+export function createUrlFetchTool(download, capture) {
+  return defineTool(withPublishedCapture(urlFetchDefinition(download), capture));
 }
 
-export function createWorkspacePublishTool(statFile) {
-  return defineTool(workspacePublishDefinition(statFile));
+export function createWorkspacePublishTool(statFile, capture) {
+  return defineTool(withPublishedCapture(workspacePublishDefinition(statFile), capture));
 }
 
-export function createFfmpegEncodeTool(encode) {
-  return defineTool(ffmpegEncodeDefinition(encode));
+export function createFfmpegEncodeTool(encode, capture) {
+  return defineTool(withPublishedCapture(ffmpegEncodeDefinition(encode), capture));
 }
 
 function sessionCwd(agent) {
@@ -65,11 +81,42 @@ export function installProducedOpenabilityGate(ctx, options = {}) {
   });
 }
 
+/**
+ * Future sessions also publish dsh-native presentation events. Historical
+ * sessions are recovered independently by the client replay projection.
+ */
+export function installArtifactPresentations(ctx) {
+  const pending = new WeakMap();
+  const capture = (name, args, exec) => {
+    const path = durablePathFromToolCall(name, args);
+    if (!path || !exec?.agent?.session) return;
+    const boundary = ctx.sessionProjections.stateOf(exec.agent.session, "turnBoundary");
+    if (boundary === undefined || boundary.openTurnStartSeq === null) return;
+    pending.set(exec, {
+      session: exec.agent.session,
+      turn: boundary.lastTurn,
+      path,
+    });
+  };
+  ctx.on("tools/result", (exec, result) => {
+    const delivery = pending.get(exec);
+    pending.delete(exec);
+    if (delivery === undefined || result.isError) return;
+    delivery.session.append("deliverables/presented", {
+      turn: delivery.turn,
+      callId: exec.callId,
+      files: [{ path: delivery.path }],
+    });
+  });
+  return capture;
+}
+
 export function apply(ctx) {
   ctx.systemPrompt.section({ name: "tool:drive_fetch", order: 115, text: DRIVE_IMPORT_PROMPT });
-  ctx.tools.register(createFetchTool());
-  ctx.tools.register(createUrlFetchTool());
-  ctx.tools.register(createWorkspacePublishTool());
-  ctx.tools.register(createFfmpegEncodeTool());
+  const capture = installArtifactPresentations(ctx);
+  ctx.tools.register(createFetchTool(undefined, capture));
+  ctx.tools.register(createUrlFetchTool(undefined, capture));
+  ctx.tools.register(createWorkspacePublishTool(undefined, capture));
+  ctx.tools.register(createFfmpegEncodeTool(undefined, capture));
   installProducedOpenabilityGate(ctx);
 }

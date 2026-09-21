@@ -1,6 +1,10 @@
 import { stat } from "node:fs/promises";
 import { isFilesPath } from "../drive/files-path.js";
-import { isMediaDeliverablePath } from "./preview-groups.js";
+import {
+  durablePathFromToolCall,
+  parseToolArguments,
+  toolResultIsError,
+} from "./published-tools.js";
 import {
   resolveExistingWorkspacePath,
   resolveWorkspaceRoot,
@@ -10,52 +14,7 @@ import {
 export const PRODUCED_GATE_PLUGIN = "lares-produced-gate";
 export const MAX_PRODUCED_GATE_STEERS = 2;
 
-/**
- * Parse tool-call arguments that arrive as a JSON string or object.
- * @returns {Record<string, unknown> | null}
- */
-export function parseToolArguments(raw) {
-  if (raw && typeof raw === "object" && !Array.isArray(raw)) return raw;
-  if (typeof raw !== "string" || raw.trim() === "") return null;
-  try {
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Paths this tool call would leave as user-facing Produced deliverables.
- * Research fetches (non-media under downloads/) are scratch and excluded.
- */
-export function durablePathFromToolCall(name, args) {
-  if (!args) return null;
-  if (name === "write" || name === "edit") {
-    const path = String(args.file_path ?? "").trim().replace(/\\/g, "/");
-    return path || null;
-  }
-  if (name === "workspace_publish") {
-    const path = String(args.path ?? "").trim().replace(/\\/g, "/");
-    return path || null;
-  }
-  if (name === "url_fetch" || name === "drive_fetch") {
-    const destination = String(args.destination ?? "").trim().replace(/\\/g, "/");
-    if (!destination || !isMediaDeliverablePath(destination)) return null;
-    return destination;
-  }
-  if (name === "ffmpeg_encode") {
-    const destination = String(args.destination ?? "").trim().replace(/\\/g, "/");
-    return destination || null;
-  }
-  return null;
-}
-
-function toolResultIsError(event) {
-  const content = event?.data?.message?.content;
-  if (!Array.isArray(content) || content.length === 0) return true;
-  return content.some((block) => block?.type === "tool-result" && block.isError === true);
-}
+export { durablePathFromToolCall, parseToolArguments } from "./published-tools.js";
 
 /**
  * Successful mutation paths for one turn, in tool order, deduped.

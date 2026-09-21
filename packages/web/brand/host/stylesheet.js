@@ -20,8 +20,9 @@ export const BRAND_CSS = `
   letter-spacing: 0.08em;
 }
 
-/* Hero headline: flex so ::after wordmark baselines correctly; drop preview badge */
-[class*="_headlineText"] { display: flex; align-items: center; font-size: 0; }
-[class*="_headlineText"]::after { content: "${PRODUCT_NAME}"; font-size: 26px; line-height: 32px; }
+/* Hero headline: the title span carries no class, so blank its already-centered
+   flex group and paint the wordmark there; drop preview badge */
+[class*="_titleGroup"] { font-size: 0; }
+[class*="_titleGroup"]::after { content: "${PRODUCT_NAME}"; font-size: 26px; line-height: 32px; }
 [class*="_previewBadge"] { display: none; }
 `;

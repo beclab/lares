@@ -17,6 +17,7 @@ import {
   createFfmpegEncodeTool,
   createUrlFetchTool,
   createWorkspacePublishTool,
+  installArtifactPresentations,
 } from "../../packages/web/workspace-artifacts/host/index.js";
 import { runOlaresDownload } from "@olares/lares-core/drive/download";
 import {
@@ -415,6 +416,44 @@ test("workspace_publish declares an Olares files path without copying it", async
     await tool.execute({ path: "drive/Home/Downloads/clip.webm" }, execContext("/tmp/unused")),
     { path: "drive/Home/Downloads/clip.webm", bytes: 491 },
   );
+});
+
+test("successful Lares artifact tools append dsh-native presented events", () => {
+  let onResult: ((exec: any, result: any) => void) | undefined;
+  const appended: any[] = [];
+  const session = {
+    append(type: string, data: any) {
+      appended.push({ type, data });
+    },
+  };
+  const ctx = {
+    sessionProjections: {
+      stateOf() {
+        return { openTurnStartSeq: 12, lastTurn: 5 };
+      },
+    },
+    on(name: string, listener: (exec: any, result: any) => void) {
+      assert.equal(name, "tools/result");
+      onResult = listener;
+    },
+  };
+  const capture = installArtifactPresentations(ctx as never);
+  const exec = { callId: "publish-1", agent: { session } };
+  capture("workspace_publish", { path: "drive/Data/flowstudio/card.webp" }, exec);
+  onResult?.(exec, { isError: false });
+  assert.deepEqual(appended, [{
+    type: "deliverables/presented",
+    data: {
+      turn: 5,
+      callId: "publish-1",
+      files: [{ path: "drive/Data/flowstudio/card.webp" }],
+    },
+  }]);
+
+  const failed = { callId: "publish-2", agent: { session } };
+  capture("workspace_publish", { path: "outputs/failed.png" }, failed);
+  onResult?.(failed, { isError: true });
+  assert.equal(appended.length, 1);
 });
 
 test("ffmpeg_encode publishes the output and reports encoder and speed", async () => {

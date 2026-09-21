@@ -12,6 +12,11 @@ const DYNAMIC = /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g;
 
 const ENTRIES = [
   "packages/mobile/src/index.js",
+  "packages/web/brand/src/client/index.js",
+  "packages/web/chat-model/src/client/index.js",
+  "packages/web/composer-voice/src/client/index.js",
+  "packages/web/router-search/src/client/index.js",
+  "packages/web/skill-packs/src/client/index.js",
   "packages/web/workspace-preview/src/client/index.js",
   "packages/web/workspace-preview-3d/src/client/index.js",
   "packages/core/drive/paths.js",

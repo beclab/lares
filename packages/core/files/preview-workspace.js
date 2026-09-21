@@ -78,10 +78,40 @@ export function isUnpreviewableOpenPath(path) {
   return rest.includes("/");
 }
 
-export async function interceptOpenPath(workspace, path, openNative) {
-  if (isUnpreviewableOpenPath(path)) return;
-  if (await workspace.openCurrent(path)) return;
-  await openNative(path);
+const FILE_ADDRESS_PREFIX = "dsh-resource://file/session/";
+
+/**
+ * The session and path behind dsh's session file address
+ * (`dsh-resource://file/session/<id>/<path>`), or null for any other resource.
+ * Query and fragment suffixes are dsh's navigation parameters, not the path.
+ * An empty path names the session's workspace root — a directory the preview
+ * never serves — so it reads as no file address at all.
+ */
+export function parseSessionFileAddress(address) {
+  const text = String(address ?? "");
+  if (!text.startsWith(FILE_ADDRESS_PREFIX)) return null;
+  const end = text.search(/[?#]/);
+  const body = text.slice(FILE_ADDRESS_PREFIX.length, end === -1 ? undefined : end);
+  const [id, ...segments] = body.split("/");
+  if (!id || segments.length === 0) return null;
+  let decoded;
+  try {
+    decoded = { sessionId: decodeURIComponent(id), path: segments.map(decodeURIComponent).join("/") };
+  } catch {
+    return null;
+  }
+  return decoded.path === "" ? null : decoded;
+}
+
+/**
+ * @param target - the session and path a Host open request decoded to.
+ * @param openNative - the Host's own opener for a request the preview declines.
+ */
+export async function interceptOpenPath(workspace, target, openNative) {
+  if (target.sessionId !== workspace.boundSession()) return openNative();
+  if (isUnpreviewableOpenPath(target.path)) return;
+  if (await workspace.openCurrent(target.path)) return;
+  await openNative();
 }
 
 const RAW_ROUTE = "/api/lares/file-preview/raw";
@@ -172,6 +202,11 @@ export class FilePreviewWorkspace {
     return () => {
       if (this.current === binding) this.current = null;
     };
+  }
+
+  /** The session the on-screen conversation mounted, or null while none is. */
+  boundSession() {
+    return this.current?.sessionId ?? null;
   }
 
   /**

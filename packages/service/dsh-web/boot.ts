@@ -19,7 +19,6 @@ import {
   patchConnectionTrustFences,
   patchLocaleDefaultToEnglish,
   patchSettingsNavIcon,
-  patchWebBlockLocale,
   resolveDshBin,
 } from "./profile.js";
 
@@ -44,7 +43,6 @@ export async function bootLaresWeb(): Promise<void> {
   patchConnectionTrustFences();
   patchLocaleDefaultToEnglish();
   patchSettingsNavIcon();
-  patchWebBlockLocale();
 
   let catalogModels: RouterModelEntry[] = [];
   try {
