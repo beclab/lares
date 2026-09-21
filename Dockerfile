@@ -25,3 +25,7 @@ RUN npm run build \
   && chown -R node:node /app
 
 USER node
+# Overrides the base image's `npm run start`: the hot-reload supervisor is
+# reloaded with SIGHUP, and npm does not forward that to the script it spawns.
+# This way tini's child is the supervisor itself.
+CMD ["node", "dist/service/launch.js"]

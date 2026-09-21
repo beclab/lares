@@ -3,14 +3,15 @@
 # 测试期一键热更新（Olares 集群内，免重建镜像 / 免走市场）
 # 应用名取自仓库根 project.json（APP_NAME）。
 #
-# 前置：chart 安装时 values.dev.hotReload=true（生产包必须 false）
+# 前置：任意版本的 chart 都行。热更新是运行期开关（devsrc/.hotreload），
+#       未开启时本脚本会自动开启并等容器换模式，见 hot-reload.sh。
 # 机器清单：同目录 machines.json（可从 machines.example.json 复制）
 #
 # 用法：
 #   scripts/dev-sync/sync.sh list
 #   scripts/dev-sync/sync.sh info <n>
 #   scripts/dev-sync/sync.sh sync <n> [all|packages] [选项]
-#   scripts/dev-sync/sync.sh discover <n>
+#   scripts/dev-sync/sync.sh discover <n> [--sh]
 #   scripts/dev-sync/sync.sh help
 #
 # 简写（机器号作首参）：
@@ -47,9 +48,11 @@ usage() {
 CMD=""
 MACHINE=""
 SCOPE="all"
+DISCOVER_SH=0
 DO_BUILD=1
 DO_WATCH=0
 DO_RESTART=0
+WAIT_RELOAD_ACK=0
 
 SYNC_PACKAGES=1
 SYNC_FRONTEND=1
@@ -113,6 +116,10 @@ case "$1" in
     [[ $# -gt 0 ]] || { echo "错误：discover 需要机器号，例如：discover 1" >&2; exit 2; }
     MACHINE="$1"
     shift
+    if [[ "${1-}" == "--sh" ]]; then
+      DISCOVER_SH=1
+      shift
+    fi
     ;;
   sync)
     CMD="sync"
@@ -165,10 +172,11 @@ for m in machines:
     if mid is None:
         sys.exit("机器条目缺少 id")
     name = (m.get("name") or f"机器{mid}").replace("\t", " ")
-    profile = (m.get("profile") or "").replace("\t", " ")
-    olares_id = (m.get("olares_id") or "").replace("\t", " ")
-    ssh = (m.get("ssh") or m.get("lan_ip") or "").replace("\t", " ")
-    # Placeholder keeps empty dest_dir from collapsing under bash IFS=tab read.
+    # Bash treats tab as IFS whitespace and collapses empty columns, so every
+    # optional field needs a non-empty placeholder.
+    profile = (m.get("profile") or "-").replace("\t", " ")
+    olares_id = (m.get("olares_id") or "-").replace("\t", " ")
+    ssh = (m.get("ssh") or m.get("lan_ip") or "(local)").replace("\t", " ")
     dest = (m.get("dest_dir") or "(auto)").replace("\t", " ")
     ns = (m.get("kube_ns") or "-").replace("\t", " ")
     print(f"{mid}\t{name}\t{profile}\t{olares_id}\t{ssh}\t{dest}\t{ns}")
@@ -236,6 +244,7 @@ load_machine() {
       DEST_SSH="${ssh}"
       DEST_DIR="${dest}"
       KUBE_NS="${ns}"
+      [[ "${DEST_SSH}" == "(local)" ]] && DEST_SSH=""
       [[ "${DEST_DIR}" == "(auto)" ]] && DEST_DIR=""
       [[ "${KUBE_NS}" == "-" ]] && KUBE_NS=""
       found=1
@@ -269,8 +278,9 @@ normalize_dest_ssh() {
 _remote_sh() {
   local cmd="$1"
   if [[ -n "${DEST_SSH}" ]]; then
+    # -n: do not steal stdin from `fswatch | while read` under --watch.
     # shellcheck disable=SC2029
-    ssh "${SSH_OPTS[@]}" "${DEST_SSH}" "${cmd}"
+    ssh -n "${SSH_OPTS[@]}" "${DEST_SSH}" "${cmd}"
   else
     bash -lc "${cmd}"
   fi
@@ -281,14 +291,14 @@ _kube() {
   if [[ -z "${KUBE_NS-}" ]]; then
     return 1
   fi
-  local joined
+  local joined request_timeout="${KUBE_REQUEST_TIMEOUT:-20s}"
   printf -v joined '%q ' "${args[@]}"
   if [[ -n "${DEST_SSH}" ]]; then
     # shellcheck disable=SC2029
-    ssh "${SSH_OPTS[@]}" "${DEST_SSH}" \
-      "kubectl -n $(printf '%q' "${KUBE_NS}") --request-timeout=20s ${joined}"
+    ssh -n "${SSH_OPTS[@]}" "${DEST_SSH}" \
+      "kubectl -n $(printf '%q' "${KUBE_NS}") --request-timeout=$(printf '%q' "${request_timeout}") ${joined}"
   else
-    kubectl -n "${KUBE_NS}" --request-timeout=20s "${args[@]}"
+    kubectl -n "${KUBE_NS}" --request-timeout="${request_timeout}" "${args[@]}"
   fi
 }
 
@@ -333,12 +343,38 @@ ensure_dest_dir() {
   if DEST_DIR="$(discover_dest_dir)"; then
     log "自动发现 DEST_DIR=${DEST_DIR}"
   else
-    echo "错误：未设置 dest_dir，且自动发现失败。请先安装 hotReload=true 的 chart，或编辑 ${MACHINES_FILE}" >&2
+    echo "错误：未设置 dest_dir，且自动发现失败。请确认应用已安装，或编辑 ${MACHINES_FILE}" >&2
     exit 1
   fi
 }
 
-# App root layout at DEST_DIR (/app): package.json, dist/, packages/{service,core,web,mobile,skills}
+# Hot reload is the overlay's .hotreload flag. It must be on *before* the first
+# rsync: enabling it makes the container reseed devsrc from the image, which
+# wipes whatever was synced into an empty overlay first.
+ensure_hot_reload() {
+  if [[ -z "${KUBE_NS-}" ]]; then
+    echo "错误：热更新需要 machines.json 配置 kube_ns" >&2
+    exit 1
+  fi
+  if _remote_sh "test -e $(printf '%q' "${DEST_DIR}/.hotreload")" 2>/dev/null \
+    && _kube exec "deploy/${APP_NAME}" -c "${APP_NAME}" -- \
+      test -e /tmp/lares-hot-reload-active >/dev/null 2>&1 \
+    && _kube_exec_health >/dev/null 2>&1; then
+    return 0
+  fi
+  log "热更新未就绪 → 写入 .hotreload 并重启 pod"
+  _remote_sh "touch $(printf '%q' "${DEST_DIR}/.hotreload") && chown 1000:1000 $(printf '%q' "${DEST_DIR}/.hotreload")"
+  _kube rollout restart "deploy/${APP_NAME}" >/dev/null
+  local max_wait=360
+  KUBE_REQUEST_TIMEOUT="$((max_wait + 10))s" \
+    _kube rollout status "deploy/${APP_NAME}" --timeout="${max_wait}s"
+  _kube exec "deploy/${APP_NAME}" -c "${APP_NAME}" -- \
+    test -e /tmp/lares-hot-reload-active
+  _kube_exec_health
+  log "热更新模式已就绪"
+}
+
+# App root layout at DEST_DIR (/devsrc): package.json, dist/, packages/{service,core,web,mobile,skills}
 APP_ROOT="${REPO_ROOT}"
 
 RSYNC_EXCLUDES=(
@@ -358,11 +394,12 @@ RSYNC_EXCLUDES=(
   --exclude '.env.*'
   --exclude '*.md'
   --exclude '*.log'
-  --exclude '.lares-reload'
   --exclude '.lares-lock-sha'
-  # Image identity stamped by seed-dev-src; deleting it makes the next pod
-  # re-seed devsrc from the image and discard everything synced here.
-  --exclude '.lares-image-id'
+  # Runtime hot-reload switch; --delete would turn hot reload off mid-sync.
+  --exclude '.hotreload'
+  # Written only after the image finished seeding. Deleting it would make the
+  # next start re-seed devsrc and discard everything synced here.
+  --exclude '.lares-seeded-image-id'
   # olares-* 技能只存在于镜像里（构建期 olares-cli skills export 写入），本地树
   # 没有；不排除的话 --delete 会在每次热同步时把它们从 /app 删掉。
   --exclude 'packages/skills/olares-*'
@@ -386,17 +423,25 @@ wait_api_ready() {
   if [[ -z "${KUBE_NS-}" ]]; then
     return 0
   fi
-  local max_wait=40
+  local max_wait=120
   log "等待热重载后 API 就绪（最多 ${max_wait}s）"
   local i
   for i in $(seq 1 "${max_wait}"); do
+    if [[ "${WAIT_RELOAD_ACK}" -eq 1 && "${DO_RESTART}" -eq 0 ]] \
+      && ! _kube exec "deploy/${APP_NAME}" -c "${APP_NAME}" -- \
+        test -e /tmp/lares-hot-reload-ack >/dev/null 2>&1; then
+      sleep 1
+      continue
+    fi
     if _kube_exec_health >/dev/null 2>&1; then
       log "API 已就绪（约 ${i}s）"
+      WAIT_RELOAD_ACK=0
       return 0
     fi
     sleep 1
   done
-  log "!! API 就绪等待超时，请稍后手动确认（必要时 --restart）"
+  echo "错误：API 就绪等待超时" >&2
+  return 1
 }
 
 sync_once() {
@@ -408,6 +453,8 @@ sync_once() {
   fi
 
   if [[ "${SYNC_PACKAGES}" -eq 1 ]]; then
+    ensure_hot_reload
+
     if [[ "${DO_BUILD}" -eq 1 ]]; then
       log "本地构建（产物写入 dist/）"
       ( cd "${APP_ROOT}" && npm run build )
@@ -440,8 +487,8 @@ sync_once() {
       lock_hash="$(_remote_sh "cat $(printf '%q' "${DEST_DIR}/.lares-lock-sha") 2>/dev/null || true" | tr -d '[:space:]')"
       if [[ -n "${want_hash}" && "${want_hash}" != "${lock_hash}" ]]; then
         log "package-lock 变更 → 容器内 npm install"
-        if _kube exec "deploy/${APP_NAME}" -c "${APP_NAME}" -- \
-          sh -c 'cd /app && npm install --omit=dev'; then
+        if KUBE_REQUEST_TIMEOUT=300s _kube exec "deploy/${APP_NAME}" -c "${APP_NAME}" -- \
+          sh -c 'cd /devsrc && npm install --omit=dev'; then
           _remote_sh "printf '%s' $(printf '%q' "${want_hash}") > $(printf '%q' "${DEST_DIR}/.lares-lock-sha") && chown 1000:1000 $(printf '%q' "${DEST_DIR}/.lares-lock-sha")"
         else
           echo "错误：容器内 npm install 失败；未触发热重载，避免用不完整依赖启动" >&2
@@ -450,21 +497,32 @@ sync_once() {
       fi
     fi
 
-    # Bump the reload sentinel; the in-container dev supervisor polls its mtime
-    # (inotify does not fire for hostPath writes) and re-execs the server.
-    _remote_sh "touch $(printf '%q' "${DEST_DIR}/.lares-reload")"
+    # Push the reload in: the supervisor re-execs the server on SIGHUP. tini is
+    # pid 1 and forwards it. (Nothing in the container watches the files —
+    # inotify does not fire for hostPath writes made from the host.)
+    if [[ -z "${KUBE_NS-}" ]]; then
+      log "!! 无 kube_ns，无法发送 reload 信号；请自行重启 pod"
+    elif ! _kube exec "deploy/${APP_NAME}" -c "${APP_NAME}" -- \
+      sh -c 'rm -f /tmp/lares-hot-reload-ack && kill -HUP 1'; then
+      echo "错误：reload 信号发送失败；代码已同步但未生效" >&2
+      return 1
+    else
+      WAIT_RELOAD_ACK=1
+    fi
   fi
 
   if [[ "${DO_RESTART}" -eq 1 ]]; then
     if [[ -z "${KUBE_NS-}" ]]; then
       log "!! --restart 需要 kube_ns"
     else
-      log "重启 pod（兜底，绕过 inotify）"
+      log "重启 pod（强制整容器重启）"
       _kube rollout restart "deploy/${APP_NAME}"
+      KUBE_REQUEST_TIMEOUT=370s \
+        _kube rollout status "deploy/${APP_NAME}" --timeout=360s
     fi
   fi
 
-  wait_api_ready
+  wait_api_ready || return 1
 
   log "完成：${remote_prefix}${DEST_DIR}（scope=${SCOPE}）"
 }
@@ -486,6 +544,13 @@ case "${CMD}" in
     apply_scope
     ;;
 esac
+
+if [[ "${CMD}" == "discover" && "${DISCOVER_SH}" -eq 1 ]]; then
+  # Machine resolution for sibling scripts (hot-reload.sh): eval this.
+  ensure_dest_dir >&2
+  printf "DEST_SSH=%q\nDEST_DIR=%q\nKUBE_NS=%q\n" "${DEST_SSH}" "${DEST_DIR}" "${KUBE_NS}"
+  exit 0
+fi
 
 if [[ "${CMD}" == "discover" ]]; then
   log "机器${MACHINE} ${MACHINE_NAME}"

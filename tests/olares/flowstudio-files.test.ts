@@ -90,6 +90,27 @@ test("attachFlowstudioFilesPaths fills completed outputs from the pointer", asyn
   assert.equal(view.outputs[0].files_path, filesPath);
 });
 
+test("attachFlowstudioFilesPaths reads the outputs Router nests under response", async () => {
+  const outputId = "33333333-3333-3333-3333-333333333333";
+  const filesPath = "drive/Data/flowstudio/userData/alice/comfyui/outputs/image/b.delivery.webp";
+  const view = await attachFlowstudioFilesPaths(
+    {
+      id: "router-gen",
+      media_type: "image",
+      status: "completed",
+      response: {
+        object: "flowstudio.generation",
+        status: "completed",
+        outputs: [{ id: outputId }],
+      },
+    },
+    "alice",
+    { cat: async () => `${filesPath}\n` },
+  );
+  assert.equal(view.outputs[0].id, outputId);
+  assert.equal(view.outputs[0].files_path, filesPath);
+});
+
 test("attachFlowstudioFilesPaths leaves in-progress and failed lookups unchanged", async () => {
   const queued = await attachFlowstudioFilesPaths(
     { status: "in_progress", outputs: [{ id: "x" }] },

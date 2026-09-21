@@ -90,8 +90,9 @@ export default {
 
 .lares-turn-media {
   display: flex;
+  box-sizing: border-box;
   width: fit-content;
-  max-width: 100%;
+  max-width: min(100%, 660px);
   flex-direction: column;
   gap: 8px;
   margin: 0;
@@ -139,7 +140,7 @@ export default {
 .lares-turn-media-image,
 .lares-turn-media-video {
   display: block;
-  max-width: min(100%, 640px);
+  max-width: 100%;
   max-height: 420px;
   border-radius: 10px;
   object-fit: contain;
@@ -147,11 +148,14 @@ export default {
 
 .lares-turn-media-audio {
   display: block;
-  width: min(520px, 100%);
+  width: 520px;
+  max-width: 100%;
 }
 
 .lares-turn-media-model3d {
-  width: min(520px, 100%);
+  box-sizing: border-box;
+  width: 520px;
+  max-width: 100%;
   padding: 16px;
   color: var(--q-ink-3);
   font-size: 15px;

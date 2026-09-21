@@ -408,8 +408,9 @@
 
 .lares-turn-media {
   display: flex;
+  box-sizing: border-box;
   width: fit-content;
-  max-width: 100%;
+  max-width: min(100%, 660px);
   flex-direction: column;
   gap: 8px;
   margin: 0;
@@ -441,20 +442,13 @@
 .lares-turn-media-image,
 .lares-turn-media-video {
   display: block;
-  max-width: min(100%, 640px);
+  width: auto;
+  height: auto;
+  max-width: 100%;
   max-height: 420px;
   border-radius: 10px;
   background: var(--dsw-alias-bg-base);
   object-fit: contain;
-}
-
-.lares-turn-media-image {
-  width: auto;
-  height: auto;
-}
-
-.lares-turn-media-video {
-  width: 640px;
 }
 
 .lares-turn-media-audio {
@@ -465,7 +459,8 @@
 
 .lares-turn-media-model3d {
   position: relative;
-  width: min(640px, 100%);
+  width: 640px;
+  max-width: 100%;
   height: 360px;
   overflow: hidden;
   border-radius: 10px;

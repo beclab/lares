@@ -43,13 +43,19 @@ export async function resolveFlowstudioFilesPath(owner, outputId, options = {}) 
 /**
  * On a completed generation view, fill each output's `files_path` from the
  * Files pointer named by `output.id`. Missing pointers stay unchanged.
+ *
+ * Router nests the FlowStudio adapter's untouched snapshot under `response`,
+ * so that is where a FlowStudio job lists its outputs; the filled array is
+ * always published at the top level, which is the contract callers read.
  */
 export async function attachFlowstudioFilesPaths(payload, owner, options = {}) {
   if (payload == null || typeof payload !== "object" || Array.isArray(payload)) {
     return payload;
   }
   if (String(payload.status ?? "").toLowerCase() !== "completed") return payload;
-  const outputs = Array.isArray(payload.outputs) ? payload.outputs : [];
+  const outputs = Array.isArray(payload.outputs)
+    ? payload.outputs
+    : Array.isArray(payload.response?.outputs) ? payload.response.outputs : [];
   if (outputs.length === 0) return payload;
   let changed = false;
   const next = [];

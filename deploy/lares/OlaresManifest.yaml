@@ -7,40 +7,40 @@ metadata:
   title: Lares
   description: Chat on Olares, wired to Router
   icon: https://app.cdn.olares.com/appstore/lares/icon_new.png
-  version: 0.26.26
+  version: 0.26.27
   categories:
     - Utilities_v112
     - AI
 spec:
-  versionName: "0.26.26"
+  versionName: "0.26.27"
   runAsUser: true
   fullDescription: |
-    ## Overview
     Lares is a chat app on Olares.
     It talks to Olares Router for LLM access.
 
-    ## Highlights
+    **Highlights**
     - Three-column chat UI with the Lares product profile
     - Zero-config Router auth via in-cluster app identity (`x-caller-appid`)
     - Bundled client plugins (voice input, web search) when enabled in the build
     - Optional Docker-in-Docker sidecar (`ENABLE_DIND`, default on) so the agent can run `docker` against a pod-local daemon
 
-    ## Requirements
+    **Requirements**
     - Olares >= 1.12.7
     - Router app installed and running (`router` dependency)
     - Arch: amd64, arm64
 
-    ## Getting started
+    **Getting started**
     1. Install Lares from Market (test source: `market.test`).
     2. Ensure Router is installed.
     3. Open the Lares entrance and start a chat.
   upgradeDescription: |
-    ## Lares 0.26.26
+    **Lares 0.26.27**
 
-    - Fixes 0.26.25, which could not start: its node_modules came from a base
-      image built before the 0.1.5-rc.2 chat kernel landed.
-    - Router console links follow the user's own zone instead of assuming
-      olares.com / olares.local.
+    - Hot reload is a runtime switch (flag file + pod restart). The chart no
+      longer carries an install-time hotReload value, so you can turn it on
+      without reinstalling.
+    - FlowStudio file paths still resolve when Router nests outputs under
+      `response`.
   developer: luolong
   submitter: Olares
   locale:
