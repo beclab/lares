@@ -1,3 +1,5 @@
+import { injectHeadScript } from "./head-script.js";
+
 /**
  * Olares LAN zone is plain http, so browsers withhold `crypto.randomUUID`.
  * dsh mints host-RPC ids with it; `getRandomValues` stays available.
@@ -16,11 +18,6 @@ export const UUID_SHIM = `(function () {
   };
 })();`;
 
-const HEAD_OPEN = /<head[^>]*>/i;
-
 export function injectUuidShim(html) {
-  if (html.includes("data-lares-uuid-shim")) return html;
-  const tag = `<script data-lares-uuid-shim>${UUID_SHIM}</script>`;
-  const head = HEAD_OPEN.exec(html);
-  return head === null ? `${tag}${html}` : html.replace(HEAD_OPEN, `${head[0]}${tag}`);
+  return injectHeadScript(html, { marker: "data-lares-uuid-shim", code: UUID_SHIM });
 }

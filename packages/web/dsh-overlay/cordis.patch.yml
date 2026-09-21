@@ -126,6 +126,10 @@
       name: '@lares/dsh-overlay/host/crypto-uuid.js'
       inject: [webServer]
 
+    - id: lares-router-console
+      name: '@lares/dsh-overlay/host/router-console.js'
+      inject: [webServer]
+
     - id: lares-olares-identity
       name: '@lares/dsh-overlay/host/olares/olares-identity.js'
       inject: [webServer, connection]

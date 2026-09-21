@@ -7,12 +7,12 @@ metadata:
   title: Lares
   description: Chat on Olares, wired to Router
   icon: https://app.cdn.olares.com/appstore/lares/icon_new.png
-  version: 0.26.25
+  version: 0.26.26
   categories:
     - Utilities_v112
     - AI
 spec:
-  versionName: "0.26.25"
+  versionName: "0.26.26"
   runAsUser: true
   fullDescription: |
     ## Overview
@@ -35,15 +35,12 @@ spec:
     2. Ensure Router is installed.
     3. Open the Lares entrance and start a chat.
   upgradeDescription: |
-    ## Lares 0.26.25
+    ## Lares 0.26.26
 
-    - Chat kernel 0.1.5-rc.2: Authelia sessions, gzip, native model picker,
-      and native file attachments. The extra Lares paperclip is gone; LarePass
-      still uploads through `/api/lares/files/upload`.
-    - Turn-tail preview again covers `workspace_publish` and historical
-      FlowStudio media, not only write/edit.
-    - Image generation lists models through the in-process Router shim so
-      the workspace-write sandbox cannot block `olares-cli`.
+    - Fixes 0.26.25, which could not start: its node_modules came from a base
+      image built before the 0.1.5-rc.2 chat kernel landed.
+    - Router console links follow the user's own zone instead of assuming
+      olares.com / olares.local.
   developer: luolong
   submitter: Olares
   locale:

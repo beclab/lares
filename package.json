@@ -17,10 +17,10 @@
     "start:watch": "node dist/service/dev-supervisor.js",
     "typecheck": "tsc -p tsconfig.server.json --noEmit",
     "test": "sh -c 'tsx --test tests/olares/*.test.ts tests/plugins/*.test.ts tests/skills/*.test.ts'",
-    "test:e2e:cli": "node scripts/e2e/olares-cli-machine1.mjs",
-    "test:e2e:media": "node scripts/e2e/media-generate-machine1.mjs",
-    "test:e2e:browser": "OLARES_NO_DIALOG=1 node ~/.cursor/skills/olares-browser-login/scripts/session.mjs run scripts/browser-scenarios/lares-regression.mjs --machine 1 --wait 5000 --insecure",
-    "test:e2e:plugins": "OLARES_NO_DIALOG=1 node ~/.cursor/skills/olares-browser-login/scripts/session.mjs run scripts/browser-scenarios/lares-plugin-matrix.mjs --machine 1 --wait 5000 --insecure",
+    "test:e2e:cli": "node __debug__/e2e/olares-cli-machine1.mjs",
+    "test:e2e:media": "node __debug__/e2e/media-generate-machine1.mjs",
+    "test:e2e:browser": "OLARES_NO_DIALOG=1 node ~/.cursor/skills/olares-browser-login/scripts/session.mjs run __debug__/browser-scenarios/lares-regression.mjs --machine 1 --wait 5000 --insecure",
+    "test:e2e:plugins": "OLARES_NO_DIALOG=1 node ~/.cursor/skills/olares-browser-login/scripts/session.mjs run __debug__/browser-scenarios/lares-plugin-matrix.mjs --machine 1 --wait 5000 --insecure",
     "dump-config": "tsx packages/service/dsh-web/dump-config.ts"
   },
   "dependencies": {

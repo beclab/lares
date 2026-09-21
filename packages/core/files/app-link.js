@@ -1,7 +1,7 @@
 import { parseFilesPath } from "../drive/files-path.js";
+import { entranceOrigin, userDomainOf } from "../olares/entrance.js";
 
-const OLARES_ZONES = new Set(["olares.com", "olares.local"]);
-const DNS_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+const FILES_LABEL = "files";
 
 function encoded(parts) {
   return parts.map((part) => encodeURIComponent(part)).join("/");
@@ -35,20 +35,18 @@ function originFromEntrance(entrance) {
   } catch {
     return "";
   }
-  if (!["http:", "https:"].includes(url.protocol)) return "";
-  const labels = url.hostname.toLowerCase().split(".");
-  if (labels.length !== 4 || labels.some((label) => !DNS_LABEL.test(label))) return "";
-  if (!OLARES_ZONES.has(labels.slice(-2).join("."))) return "";
-  return `${url.protocol}//files.${labels.slice(1).join(".")}`;
+  return entranceOrigin(FILES_LABEL, {
+    domain: userDomainOf(url.hostname),
+    protocol: url.protocol,
+    port: url.port,
+  });
 }
 
 function originFromAccount(accountDomain, protocol) {
-  const labels = String(accountDomain ?? "").trim().toLowerCase().split(".");
-  if (labels.length !== 3 || labels.some((label) => !DNS_LABEL.test(label))) return "";
-  if (!OLARES_ZONES.has(labels.slice(-2).join("."))) return "";
-  const scheme = String(protocol ?? "https:").trim().toLowerCase().replace(/\/?\/?$/, "");
-  if (!["http:", "https:"].includes(scheme)) return "";
-  return `${scheme}//files.${labels.join(".")}`;
+  return entranceOrigin(FILES_LABEL, {
+    domain: accountDomain,
+    protocol: String(protocol ?? "https:").trim().toLowerCase(),
+  });
 }
 
 export function filesAppUrl(path, options = {}) {
