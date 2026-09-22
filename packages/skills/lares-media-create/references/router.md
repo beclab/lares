@@ -6,7 +6,7 @@ Never curl FlowStudio (`flowstudio-svc`, `/v1/images/generations`, `/api/v1/gene
 
 ## Pick
 
-`--model` is `<provider>/<model>` as `router list` printed it. Omit it only when `olares-cli router default show` already names **this** mode. FlowStudio's `<model>` is usually the project UUID; `name` / `title` on that same row is the label — do not GET FlowStudio to map them.
+`--model` is `<provider>/<model>` as the catalog printed it. Omit it only when `olares-cli router default show` already names **this** mode. FlowStudio's `<model>` is usually the project UUID; `name` on that same row is the label — do not GET FlowStudio to map them.
 
 Skip disabled rows. Skip a row whose title is another family. A FlowStudio video / 3D / `output=audio` scene may appear under the FlowStudio `image_generation` provider — that is a second place to look **after** the family's own mode is empty, never instead of `video_generation` / `music_generation`.
 
@@ -16,7 +16,7 @@ Skip disabled rows. Skip a row whose title is another family. A FlowStudio video
 
 Prefer `$LARES_LLM_BASE_URL` (the in-process shim). It stamps the logged-in user. Do not `olares-cli router call` to generate: in-cluster that presents as the Lares app, and FlowStudio would own the job as the shared chart owner.
 
-POST the path that matches the **picked row's mode**, with `Prefer: respond-async`. Poll `GET $LARES_LLM_BASE_URL/generations/<id>` until completed. The shim fills `files_path` from FlowStudio's Files pointer — that is the artifact. Router's own GET does not carry it.
+POST the path that matches the **picked row's mode**, with `Prefer: respond-async`. Poll `GET $LARES_LLM_BASE_URL/generations/<id>` until completed. Each output's `files_path` is the artifact: Router carries it and the shim publishes it at the top level of the poll JSON.
 
 | Row mode | Shim path |
 |---|---|
@@ -25,7 +25,9 @@ POST the path that matches the **picked row's mode**, with `Prefer: respond-asyn
 | `music_generation` | `/music/generations` |
 | `model3d_generation` | `/generations` |
 
-If the shim is down, POST the same suffix on **Router's** data plane (`LLM_GATEWAY_URL`, already `/v1/…`) and still send `x-bfl-user` / `remote-user` as the logged-in username. Pass `model` as `router list` printed it. When the poll JSON has no `files_path`, `olares-cli files cat drive/Data/flowstudio/userData/<username>/comfyui/outputs/.by-id/<output id>` — one line, the files address — then `workspace_publish` it. The sync form of `/images/generations` returns `b64_json` — including for a FlowStudio video parked on `image_generation`. Do not POST `/images/generations` for a real `video_generation` / `music_generation` catalog row.
+If the shim is down, POST the same suffix on **Router's** data plane (`LLM_GATEWAY_URL`, already `/v1/…`) and still send `x-bfl-user` / `remote-user` as the logged-in username. Pass `model` as the catalog printed it. The sync form of `/images/generations` returns `b64_json` — including for a FlowStudio video parked on `image_generation`. Do not POST `/images/generations` for a real `video_generation` / `music_generation` catalog row.
+
+A Router old enough to drop `files_path` leaves the poll JSON without one. Its outputs are still addressable by id: `olares-cli files cat drive/Data/flowstudio/userData/<username>/comfyui/outputs/.by-id/<output id>` prints one line, the files address, and that is what to `workspace_publish`. This is the only reason to read that directory; it is not a way to browse for a file.
 
 - Never `olares-cli router call … --id`.
 
