@@ -1,0 +1,19 @@
+{
+  "name": "@lares/mcp",
+  "version": "0.15.0",
+  "private": true,
+  "type": "module",
+  "description": "MCP server management and dsh tool bridge",
+  "exports": {
+    ".": "./host/index.js",
+    "./client": "../../../dist/plugins/mcp/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": ["@deepseek-ai/dsh-client-ui-slots"]
+    }
+  },
+  "files": ["host"]
+}

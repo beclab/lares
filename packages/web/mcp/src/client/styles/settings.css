@@ -1,0 +1,244 @@
+.lares-mcp {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 760px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.lares-mcp-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.lares-mcp-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 14px;
+}
+
+.lares-mcp-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.lares-mcp-card-title {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.lares-mcp-card-title strong {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lares-mcp-transport {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 18px;
+}
+
+.lares-mcp-state {
+  flex: none;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 18px;
+}
+
+.lares-mcp-card.is-disabled .lares-mcp-card-title strong,
+.lares-mcp-card.is-disabled .lares-mcp-endpoint {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.lares-mcp-endpoint {
+  display: block;
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 8px;
+  background: var(--dsw-alias-markdown-code-block);
+  color: var(--dsw-alias-label-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.lares-mcp-runtime-error {
+  margin: 0;
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.lares-mcp-card-actions,
+.lares-mcp-page-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.lares-mcp-page {
+  gap: 0;
+}
+
+.lares-mcp-back {
+  align-self: flex-start;
+  /* 负边距抵消 ghost 按钮内边距，让返回文案与下方标题左对齐。 */
+  margin-left: -11px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+}
+
+.lares-mcp-page-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 0 4px;
+}
+
+.lares-mcp-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.lares-mcp-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.lares-mcp-row.is-block {
+  align-items: stretch;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lares-mcp-row-main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lares-mcp-row-label {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 22px;
+}
+
+.lares-mcp-row-hint {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.lares-mcp-row-control {
+  display: flex;
+  flex: none;
+  justify-content: flex-end;
+  width: 300px;
+}
+
+.lares-mcp-row.is-block .lares-mcp-row-control {
+  display: block;
+  width: auto;
+}
+
+.lares-mcp-row-control > * {
+  width: 100%;
+}
+
+.lares-mcp-json {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  outline: none;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.lares-mcp-json:focus {
+  border-color: var(--dsw-alias-border-l3);
+}
+
+.lares-mcp-json:disabled {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.lares-mcp-page-actions {
+  justify-content: flex-end;
+  padding-top: 20px;
+}
+
+.lares-mcp-page .lares-settings-notice.is-error {
+  padding-top: 12px;
+}
+
+.lares-mcp-spin {
+  animation: lares-mcp-spin 0.8s linear infinite;
+}
+
+@keyframes lares-mcp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lares-mcp-spin {
+    animation: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .lares-mcp-card-head {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .lares-mcp-row {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .lares-mcp-row-control {
+    width: auto;
+  }
+
+  .lares-mcp-card-actions {
+    flex-wrap: wrap;
+  }
+}
