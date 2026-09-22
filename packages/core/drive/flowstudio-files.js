@@ -12,7 +12,8 @@ function safeSegment(value) {
 
 /**
  * Files address of the one-line pointer FlowStudio writes per JobOutput id.
- * Router forwards `outputs[].id` (that UUID) but not `files_path`.
+ * Only needed behind a Router old enough to drop `files_path`; it still
+ * forwards `outputs[].id`, which is that UUID.
  */
 export function flowstudioOutputPointerPath(owner, outputId) {
   const user = safeSegment(owner);
@@ -41,21 +42,28 @@ export async function resolveFlowstudioFilesPath(owner, outputId, options = {}) 
 }
 
 /**
- * On a completed generation view, fill each output's `files_path` from the
- * Files pointer named by `output.id`. Missing pointers stay unchanged.
+ * Publish a completed generation's outputs at the top level with a
+ * `files_path` on each, which is the shape callers read.
  *
- * Router nests the FlowStudio adapter's untouched snapshot under `response`,
- * so that is where a FlowStudio job lists its outputs; the filled array is
- * always published at the top level, which is the contract callers read.
+ * A current Router carries the address on the wire and there is nothing to
+ * resolve. An older one drops it, and the address is then recovered from the
+ * Files pointer named by `output.id`; an output with neither is published
+ * unchanged rather than held back, since `content_url` still fetches it.
+ *
+ * Hoisting is the other half. Router nests the FlowStudio adapter's untouched
+ * snapshot under `response`, so a FlowStudio job can list its outputs there
+ * instead, and those outputs have to reach the top level whether or not this
+ * function had anything to add to them.
  */
 export async function attachFlowstudioFilesPaths(payload, owner, options = {}) {
   if (payload == null || typeof payload !== "object" || Array.isArray(payload)) {
     return payload;
   }
   if (String(payload.status ?? "").toLowerCase() !== "completed") return payload;
-  const outputs = Array.isArray(payload.outputs)
-    ? payload.outputs
-    : Array.isArray(payload.response?.outputs) ? payload.response.outputs : [];
+  const hoisted = !Array.isArray(payload.outputs);
+  const outputs = hoisted
+    ? (Array.isArray(payload.response?.outputs) ? payload.response.outputs : [])
+    : payload.outputs;
   if (outputs.length === 0) return payload;
   let changed = false;
   const next = [];
@@ -64,18 +72,16 @@ export async function attachFlowstudioFilesPaths(payload, owner, options = {}) {
       next.push(output);
       continue;
     }
-    const existing = String(output.files_path ?? output.filesPath ?? "").trim();
-    if (existing) {
-      next.push(output);
-      continue;
-    }
-    const path = await resolveFlowstudioFilesPath(owner, output.id, options);
-    if (!path) {
+    // FlowStudio serializes camelCase and Router relays snake_case, so an
+    // address can arrive under either name; callers read only the one.
+    const onWire = String(output.files_path ?? output.filesPath ?? "").trim();
+    const path = onWire || (await resolveFlowstudioFilesPath(owner, output.id, options));
+    if (!path || path === output.files_path) {
       next.push(output);
       continue;
     }
     changed = true;
     next.push({ ...output, files_path: path });
   }
-  return changed ? { ...payload, outputs: next } : payload;
+  return changed || hoisted ? { ...payload, outputs: next } : payload;
 }
