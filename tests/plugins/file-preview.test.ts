@@ -20,6 +20,7 @@ import {
   buildPreview,
   fileFromPreviewRequest,
   parseRange,
+  previewSizeFromUrl,
   previewTypeForName,
   resolveWorkspaceFile,
   sendFileDownload,
@@ -1279,4 +1280,118 @@ test("Files download HEAD uses stated size and does not open raw", async () => {
   assert.equal(sent.status, 200);
   assert.equal(sent.headers?.["content-length"], "1761844690");
   assert.match(sent.headers?.["content-disposition"] ?? "", /attachment/);
+});
+
+function capturingRes() {
+  const chunks: Buffer[] = [];
+  const sent: { status?: number; headers?: Record<string, string> } = {};
+  const res = new Writable({
+    write(chunk, _encoding, callback) {
+      chunks.push(Buffer.from(chunk));
+      callback();
+    },
+  }) as Writable & { writeHead: (status: number, headers: Record<string, string>) => void };
+  res.writeHead = (status, headers) => {
+    sent.status = status;
+    sent.headers = headers;
+  };
+  return { res, sent, chunks };
+}
+
+const filesImage = {
+  origin: "files",
+  path: "drive/Data/flowstudio/userData/alice/comfyui/outputs/image/a.png",
+  name: "a.png",
+  size: 8_400_000,
+  modifiedAt: 1,
+  kind: "image",
+  mediaType: "image/png",
+};
+
+test("an inline image asking for a size is served the files rendition", async () => {
+  const { res, sent, chunks } = capturingRes();
+  let asked: { source?: string; size?: string } = {};
+  await sendRawFile(
+    { method: "GET", url: "/raw?path=x&size=big", headers: {} } as never,
+    res as never,
+    filesImage as never,
+    {
+      openFilesRaw: async () => {
+        throw new Error("a rendition must not read the stored bytes");
+      },
+      openFilesPreview: async (source: string, options: { size: string }) => {
+        asked = { source, size: options.size };
+        return new Response("rendered", {
+          headers: { "content-type": "image/png", "content-length": "8" },
+        });
+      },
+    },
+  );
+  assert.deepEqual(asked, { source: filesImage.path, size: "big" });
+  assert.equal(sent.status, 200);
+  assert.equal(sent.headers?.["content-length"], "8");
+  assert.match(sent.headers?.["content-disposition"] ?? "", /inline/);
+  // The original's length would be a lie about the body that followed.
+  assert.notEqual(sent.headers?.["content-length"], String(filesImage.size));
+  assert.equal(Buffer.concat(chunks).toString(), "rendered");
+});
+
+test("opening and downloading an image stay on the stored bytes", async () => {
+  for (const [send, url] of [
+    [sendRawFile, "/raw?path=x"],
+    [sendFileDownload, "/download?path=x&size=big"],
+  ] as const) {
+    const { res } = capturingRes();
+    let raw = false;
+    await send(
+      { method: "GET", url, headers: {} } as never,
+      res as never,
+      filesImage as never,
+      {
+        openFilesRaw: async () => {
+          raw = true;
+          return new Response("original", { headers: { "content-length": "8" } });
+        },
+        openFilesPreview: async () => {
+          throw new Error(`${url} must not ask for a rendition`);
+        },
+      },
+    );
+    assert.equal(raw, true, url);
+  }
+});
+
+// Only an image on the files backend has a rendition to ask for. A size on
+// anything else is ignored rather than refused, so one caller can always ask.
+test("a size is ignored for kinds and origins that have no rendition", async () => {
+  const url = "/raw?path=x&size=big";
+  assert.equal(previewSizeFromUrl(url, filesImage), "big");
+  assert.equal(previewSizeFromUrl(url, { ...filesImage, kind: "video" }), null);
+  assert.equal(previewSizeFromUrl(url, { ...filesImage, origin: "workspace" }), null);
+  assert.equal(previewSizeFromUrl("/raw?path=x&size=huge", filesImage), null);
+  assert.equal(previewSizeFromUrl("/raw?path=x", filesImage), null);
+});
+
+// Rendering a copy only to describe its length and throw it away is worse
+// than omitting a header HEAD does not require.
+test("HEAD for a rendition answers without rendering one", async () => {
+  const { res, sent } = capturingRes();
+  await sendRawFile(
+    { method: "HEAD", url: "/raw?path=x&size=big", headers: {} } as never,
+    res as never,
+    filesImage as never,
+    {
+      openFilesPreview: async () => {
+        throw new Error("HEAD must not render");
+      },
+    },
+  );
+  assert.equal(sent.status, 200);
+  assert.equal(sent.headers?.["content-length"], undefined);
+  assert.equal(sent.headers?.["content-type"], "image/png");
+});
+
+test("rawFileUrl carries a requested size and omits it otherwise", () => {
+  assert.match(rawFileUrl("s1", "drive/Home/a.png", 7, "big"), /[?&]size=big(&|$)/);
+  assert.doesNotMatch(rawFileUrl("s1", "drive/Home/a.png", 7), /size=/);
 });

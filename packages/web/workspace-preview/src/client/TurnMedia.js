@@ -15,8 +15,11 @@ function MediaBody({ item, sessionId }) {
     title: item.path,
   };
   if (item.kind === "image") {
+    // A generation is thousands of pixels wide and this renders it at a few
+    // hundred. The tab and the download still serve the original.
     return h("img", {
       ...common,
+      src: rawFileUrl(sessionId, item.path, item.modifiedAt, "big"),
       className: "lares-turn-media-image",
       alt: item.name,
       loading: "lazy",
