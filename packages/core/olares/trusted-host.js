@@ -1,3 +1,5 @@
+import { userDomainOf } from "./entrance.js";
+
 export function trustedEntranceHosts(env = process.env) {
   return (env.DSH_TRUSTED_HOSTS ?? "")
     .split(",")
@@ -14,11 +16,24 @@ export function hostnameOf(authority) {
   }
 }
 
+/**
+ * The rendered entrance hosts pin the user's domain, not the app's third-level
+ * label: Olares re-labels the entrance whenever a custom route ID or a new
+ * default is assigned, and that never re-renders the chart, so the env keeps
+ * the label the install happened to get. Any label under the same user domain
+ * is the same entrance and the same Authelia identity.
+ */
 export function viaOlaresEntrance(hostHeader, entranceHosts) {
   if (!hostHeader) return false;
   const hostname = hostnameOf(hostHeader);
   if (!hostname) return false;
-  return entranceHosts.some((entry) => hostnameOf(entry) === hostname);
+  const domain = userDomainOf(hostname);
+  return entranceHosts.some((entry) => {
+    const trusted = hostnameOf(entry);
+    if (!trusted) return false;
+    if (trusted === hostname) return true;
+    return Boolean(domain) && userDomainOf(trusted) === domain;
+  });
 }
 
 export function shouldRewriteApiLoopback(req, entranceHosts) {
