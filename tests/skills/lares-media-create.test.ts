@@ -38,7 +38,16 @@ test("lares-media-create is a produce protocol, not a diagnosis ladder", () => {
   // The catalog answers both of these per row, and an agent that does not
   // know it asks FlowStudio for the first and guesses at the second.
   assert.match(skill, /`name` on the \*\*same JSON row\*\* is the label/);
-  assert.match(skill, /`canonical_fields`[\s\S]*do not send a field the row did not name/);
+  assert.match(skill, /`flowstudio\.parameters`[\s\S]*exact `key`[\s\S]*human `label`/);
+  assert.match(skill, /under `flowstudio\.params`/);
+  assert.match(skill, /provider-specific object/);
+  assert.match(skill, /option's `value`, not its display label/);
+  assert.match(skill, /absent from both `flowstudio\.parameters` and `canonical_fields`/);
+  // A scene the user named by title outranks the agent's own fit scoring, and
+  // a constraint that scene cannot express is a caveat, not a swap.
+  assert.match(skill, /When the user named a scene, that row \*\*is\*\* the pick/);
+  assert.match(skill, /never a reason to run a scene the user did not ask for/);
+  assert.match(skill, /A named row only moves after its own call failed/);
   assert.match(skill, /Omitting `seed` gives the run a fresh one/);
   assert.match(skill, /references\/router\.md/);
   assert.match(skill, /references\/flowstudio\.md/);

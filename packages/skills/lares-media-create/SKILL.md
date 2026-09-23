@@ -26,7 +26,9 @@ curl -sS "$LARES_LLM_BASE_URL/models"
 
    Keep only rows whose `mode` is the matching family. For video, if that list is empty, also inspect `image_generation` (FlowStudio sometimes parks video scenes there). Never probe `audio` for a song. Do not use `olares-cli router list` here: workspace-write cannot create its refresh lock under `/data/home`.
 
-3. Pick one **enabled** row of this family. Prefer a prompt-only scene. Skip a row whose title is clearly another family (a T2V scene is not an image). `--model` is `<provider>/<model>` as listed — FlowStudio's model half is often a UUID; that **is** the id, and `name` on the **same JSON row** is the label to say it by. Never GET FlowStudio to map a UUID to a title. `canonical_fields`, when the row has it, is the complete set of extra fields that scene accepts (`seed`, `output.size`, …); anything outside it is refused, so do not send a field the row did not name.
+3. Pick one **enabled** row of this family. Prefer a prompt-only scene. Skip a row whose title is clearly another family (a T2V scene is not an image). `--model` is `<provider>/<model>` as listed — FlowStudio's model half is often a UUID; that **is** the id, and `name` on the **same JSON row** is the label to say it by. Never GET FlowStudio to map a UUID to a title. `flowstudio.parameters`, when present, lists that scene's exposed controls. Each entry carries the exact `key` to submit plus its human `label`, type, default, bounds, and options. Match the user's words to `label`; send the chosen values under `flowstudio.params` using `key`. For a select, send the option's `value`, not its display label. Do not invent a key absent from `flowstudio.parameters`. This provider-specific object is only for a row that actually has `flowstudio.parameters`.
+
+   When the user named a scene, that row **is** the pick — match their words against `name` on the listed rows and run that one. A detail absent from both `flowstudio.parameters` and `canonical_fields` is dropped from the body and said in the reply; it is never a reason to run a scene the user did not ask for. Do not switch to a row that "fits better".
 4. Call **once** with the user's prompt unchanged, through `$LARES_LLM_BASE_URL` (in-process Router shim; default `http://127.0.0.1:$PORT/llm/v1`). That stamps the logged-in Olares user, so FlowStudio owns the job as this person — never as the shared chart owner. Do not `olares-cli router call` to generate (in-cluster it presents as the Lares app). Route follows the **picked row's mode**:
 
 | Row mode | POST `$LARES_LLM_BASE_URL/…` |
@@ -43,14 +45,14 @@ curl -sS "$LARES_LLM_BASE_URL/models"
 ```bash
 curl -sS -X POST "$LARES_LLM_BASE_URL/videos" \
   -H 'content-type: application/json' -H 'prefer: respond-async' \
-  -d '{"model":"<provider>/<model>","prompt":"<prompt>"}'
+  -d '{"model":"<provider>/<model>","prompt":"<prompt>","flowstudio":{"params":{"<parameter key>":"<value>"}}}'
 ```
 
    Swap the path from the table. For I2V / R2V, if the user supplied a reference image, send it on that same POST (`image` as a data URL). If they did not, pick a prompt-only T2V row.
 
 5. Land the file ([deliver.md](references/deliver.md)). **Images / video / audio / 3D:** `workspace_publish` the `files_path`; do not `read_image` by first copying the file, and do not close the reply with that path as a link. Do not claim success from the filename or the prompt.
 
-A **single-row** failure (404 unpublished, wrong mode) is still this step: try the **next same-family row**. It is not “Router cannot generate”. Do not sync or rewrite the catalog. Never `--id` refetch.
+A **single-row** failure (404 unpublished, wrong mode) is still this step: try the **next same-family row**. It is not “Router cannot generate”. Do not sync or rewrite the catalog. Never `--id` refetch. A named row only moves after its own call failed, and then the reply says which row ran instead.
 
 Call details and data-plane fallback: [router.md](references/router.md) — only if the shim POST above cannot run.
 

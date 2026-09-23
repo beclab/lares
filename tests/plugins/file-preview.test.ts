@@ -35,10 +35,12 @@ import { producedForClosing, selectInlineTurnMedia } from "@olares/lares-core/fi
 import { isDuplicateProducedMention } from "@olares/lares-core/files/produced-mentions";
 import { filenameFromDisposition } from "@olares/lares-core/files/disposition";
 import { downloadCurrentFile } from "../../packages/web/workspace-preview/src/client/download.js";
+import { installPathOpener } from "../../packages/web/workspace-preview/src/client/open.js";
 import { partitionPreviews } from "@olares/lares-core/files/preview-groups";
 import { hostUrl, PC_TEST_PROXY } from "@olares/lares-core/larepass/host";
 import {
   FilePreviewWorkspace,
+  fetchPreview,
   interceptOpenPath,
   isPrimaryUnmodifiedClick,
   isUnpreviewableOpenPath,
@@ -621,6 +623,23 @@ test("markdown preview clicks only intercept unmodified same-origin workspace li
   );
 });
 
+test("malformed successful metadata is a retryable preview failure", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(JSON.stringify({
+    path: "clip.mp4",
+    kind: "video",
+    size: "unknown",
+  }), { status: 200 })) as typeof fetch;
+  try {
+    await assert.rejects(
+      () => fetchPreview("s1", "clip.mp4"),
+      /file_preview_failed/,
+    );
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
 test("raw preview URLs stay Host-native so PC and LarePass share the same address", () => {
   const href = hostUrl({
     proxyPrefix: PC_TEST_PROXY,
@@ -689,6 +708,38 @@ test("interceptOpenPath falls back to the right column when preview declines", a
 
   await interceptOpenPath(claimed, { sessionId: "s2", path: "notes.md" }, countNative);
   assert.equal(native, 2);
+});
+
+test("path opener cleanup restores the Host method without clobbering newer wrappers", () => {
+  let calls = 0;
+  let receiver: unknown;
+  const original = function original(this: unknown, ..._args: any[]) {
+    calls += 1;
+    receiver = this;
+  };
+  const sidebarRight = { openResource: original };
+  let cleanup = () => {};
+  const ctx = {
+    inject: (_deps: string[], apply: (scope: any) => void) => apply({
+      sidebarRight,
+      effect: (mount: () => () => void) => {
+        cleanup = mount();
+      },
+    }),
+  };
+
+  installPathOpener(ctx, { boundSession: () => null });
+  sidebarRight.openResource("dsh-resource://guide/welcome");
+  assert.equal(calls, 1);
+  assert.equal(receiver, sidebarRight);
+  cleanup();
+  assert.equal(sidebarRight.openResource, original);
+
+  installPathOpener(ctx, { boundSession: () => null });
+  const newer = () => {};
+  sidebarRight.openResource = newer;
+  cleanup();
+  assert.equal(sidebarRight.openResource, newer);
 });
 
 test("openCurrent claims workspace files and declines everything else", async () => {
@@ -837,6 +888,44 @@ test("reopening a path refetches files that were overwritten in place", async ()
     assert.equal(workspace.getSnapshot("s1").content.data.text, "revision 1");
     assert.equal(await workspace.openCurrent("notes.txt"), true);
     assert.equal(workspace.getSnapshot("s1").content.data.text, "revision 2");
+  } finally {
+    unbind();
+    globalThis.fetch = original;
+  }
+});
+
+test("a slower open request cannot steal focus from the latest click", async () => {
+  const original = globalThis.fetch;
+  const pending = new Map<string, (response: Response) => void>();
+  globalThis.fetch = ((url: string) => {
+    const path = new URL(String(url), "http://x").searchParams.get("path") ?? "";
+    return new Promise<Response>((resolve) => pending.set(path, resolve));
+  }) as typeof fetch;
+
+  const workspace = new FilePreviewWorkspace();
+  const unbind = workspace.bindCurrent("s1");
+  try {
+    const first = workspace.openCurrent("slow.txt");
+    const second = workspace.openCurrent("fast.txt");
+    pending.get("fast.txt")?.(new Response(JSON.stringify({
+      path: "fast.txt",
+      name: "fast.txt",
+      kind: "text",
+      size: 4,
+      text: "fast",
+    }), { status: 200 }));
+    assert.equal(await second, true);
+
+    pending.get("slow.txt")?.(new Response(JSON.stringify({
+      path: "slow.txt",
+      name: "slow.txt",
+      kind: "text",
+      size: 4,
+      text: "slow",
+    }), { status: 200 }));
+    assert.equal(await first, true);
+    assert.equal(workspace.getSnapshot("s1").activePath, "fast.txt");
+    assert.deepEqual(workspace.getSnapshot("s1").tabs.map((tab) => tab.path), ["fast.txt"]);
   } finally {
     unbind();
     globalThis.fetch = original;
@@ -1244,6 +1333,33 @@ test("raw preview proxies a Files range instead of materializing a cache", async
   assert.equal(sent.headers?.["content-type"], "video/webm");
   assert.equal(sent.headers?.["content-length"], "5");
   assert.equal(sent.headers?.["content-range"], "bytes 0-4/5");
+});
+
+test("an invalid Files range is rejected before opening the upstream body", async () => {
+  let opened = false;
+  await assert.rejects(
+    () => sendRawFile(
+      { method: "GET", headers: { range: "bytes=5-6" } } as never,
+      { writeHead: () => {}, end: () => {} } as never,
+      {
+        origin: "files",
+        path: "drive/Home/Downloads/clip.webm",
+        name: "clip.webm",
+        size: 5,
+        modifiedAt: 1,
+        kind: "video",
+        mediaType: "video/webm",
+      } as never,
+      {
+        openFilesRaw: async () => {
+          opened = true;
+          throw new Error("invalid ranges must not reach Files");
+        },
+      },
+    ),
+    (error: { code?: string }) => error.code === "range_not_satisfiable",
+  );
+  assert.equal(opened, false);
 });
 
 test("Files download HEAD uses stated size and does not open raw", async () => {

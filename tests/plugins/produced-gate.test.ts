@@ -9,6 +9,8 @@ import {
   durableProducedPathsFromEvents,
   findUnopenableProducedPaths,
   parseToolArguments,
+  unpublishedMediaPathsFromEvents,
+  unpublishedMediaSteerText,
   producedGateSteerText,
 } from "../../packages/core/files/produced-gate.js";
 
@@ -112,6 +114,94 @@ test("findUnopenableProducedPaths reports missing durable files", async () => {
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("generation files_path must be published before the turn closes", () => {
+  const video = "drive/Data/flowstudio/userData/alice/outputs/video/result.mp4";
+  const events: any[] = [
+    {
+      type: "tool/call",
+      data: {
+        turn: 3,
+        callId: "poll",
+        name: "bash",
+        arguments: { command: "curl /generations/id" },
+      },
+    },
+    {
+      type: "tool/result",
+      data: {
+        turn: 3,
+        message: {
+          source: { callId: "poll" },
+          content: [{
+            type: "tool-result",
+            isError: false,
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                status: "completed",
+                outputs: [
+                  { files_path: video },
+                  { files_path: "drive/Data/flowstudio/metadata.json" },
+                ],
+              }),
+            }],
+          }],
+        },
+      },
+    },
+  ];
+
+  assert.deepEqual(unpublishedMediaPathsFromEvents(events, 3), [video]);
+  assert.match(unpublishedMediaSteerText([video]), /workspace_publish/);
+
+  events.push(
+    {
+      type: "tool/call",
+      data: {
+        turn: 3,
+        callId: "publish",
+        name: "workspace_publish",
+        arguments: { path: video },
+      },
+    },
+    {
+      type: "tool/result",
+      data: {
+        turn: 3,
+        message: {
+          source: { callId: "publish" },
+          content: [{ type: "tool-result", isError: false }],
+        },
+      },
+    },
+  );
+  assert.deepEqual(unpublishedMediaPathsFromEvents(events, 3), []);
+});
+
+test("failed and non-JSON tool results do not invent unpublished media", () => {
+  const result = (callId: string, isError: boolean, text: string) => ({
+    type: "tool/result",
+    data: {
+      turn: 5,
+      message: {
+        source: { callId },
+        content: [{
+          type: "tool-result",
+          isError,
+          content: [{ type: "text", text }],
+        }],
+      },
+    },
+  });
+  assert.deepEqual(unpublishedMediaPathsFromEvents([
+    result("failed", true, '{"files_path":"drive/Data/failed.mp4"}'),
+    result("prose", false, "video saved somewhere else"),
+    result("queued", false, '{"status":"in_progress","outputs":[{"files_path":"drive/Data/early.mp4"}]}'),
+    result("untrusted", false, '{"status":"completed","files_path":"https://example.com/out.mp4"}'),
+    result("workspace", false, '{"status":"completed","files_path":"outputs/not-a-files-address.mp4"}'),
+  ], 5), []);
 });
 
 test("turn stopping never probes Olares Files without a browser request", async () => {

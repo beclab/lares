@@ -4,6 +4,7 @@ import { findFilesChild, isDirectoryItem, itemModifiedAt, itemSize } from "../dr
 import { identityFromHeaders, olaresUsername } from "../olares/identity.js";
 
 const MAX_ERROR_BYTES = 256;
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 
 function headerValue(headers, name) {
   if (typeof Headers !== "undefined" && headers instanceof Headers) {
@@ -94,6 +95,10 @@ async function checked(response, method, pathname) {
     await response.body?.cancel().catch(() => {});
     throw new HttpError("file_not_found", 404, "file was not found");
   }
+  if (response.status === 416) {
+    await response.body?.cancel().catch(() => {});
+    throw new HttpError("range_not_satisfiable", 416, "Files rejected the byte range");
+  }
   const detail = await boundedErrorBody(response);
   throw new HttpError(
     "files_unavailable",
@@ -129,11 +134,18 @@ async function readAtMost(response, maxBytes) {
 }
 
 export class FilesRequestClient {
-  constructor({ baseUrl, credential, fetchFn = fetch, signal }) {
+  constructor({
+    baseUrl,
+    credential,
+    fetchFn = fetch,
+    signal,
+    requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+  }) {
     this.baseUrl = baseUrl;
     this.credential = credential;
     this.fetchFn = fetchFn;
     this.signal = signal;
+    this.requestTimeoutMs = requestTimeoutMs;
   }
 
   headers(extra = {}) {
@@ -145,12 +157,17 @@ export class FilesRequestClient {
   }
 
   async fetchRaw(method, pathname, options = {}) {
+    const callerSignal = options.signal ?? this.signal;
+    const timeoutSignal = AbortSignal.timeout(this.requestTimeoutMs);
+    const signal = callerSignal
+      ? AbortSignal.any([callerSignal, timeoutSignal])
+      : timeoutSignal;
     try {
       return await this.fetchFn(`${this.baseUrl}${pathname}`, {
         method,
         headers: this.headers({ "accept-encoding": "identity", ...options.headers }),
         redirect: "manual",
-        signal: options.signal ?? this.signal,
+        signal,
       });
     } catch (error) {
       if (error?.name === "AbortError") throw error;

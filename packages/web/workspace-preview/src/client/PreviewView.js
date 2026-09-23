@@ -22,7 +22,7 @@ function PreviewBody({ data, sessionId, openPath, scroll, t }) {
       { className: "lares-preview-media" },
       h("img", {
         className: "lares-preview-image",
-        src: rawFileUrl(sessionId, data.path, data.modifiedAt),
+        src: rawFileUrl(sessionId, data.path, data.modifiedAt, "big"),
         alt: data.name,
       }),
     );

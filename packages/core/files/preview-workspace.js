@@ -23,6 +23,25 @@ function errorCode(payload) {
   return payload?.error?.code || "file_preview_failed";
 }
 
+const PREVIEW_KINDS = new Set([
+  "image", "video", "audio", "model3d", "pdf", "markdown", "text", "unsupported",
+]);
+
+export function isPreviewPayload(payload) {
+  return Boolean(
+    payload
+    && typeof payload === "object"
+    && typeof payload.path === "string"
+    && payload.path !== ""
+    && typeof payload.name === "string"
+    && PREVIEW_KINDS.has(payload.kind)
+    && Number.isSafeInteger(payload.size)
+    && payload.size >= 0
+    && (payload.modifiedAt === undefined || Number.isFinite(payload.modifiedAt))
+    && (!["text", "markdown"].includes(payload.kind) || typeof payload.text === "string"),
+  );
+}
+
 /**
  * The path the preview should ask the Host for. dsh already joined a relative
  * target onto the session cwd; a Files address must go back to its own
@@ -34,18 +53,21 @@ export function previewOpenPath(cwd, path) {
   return filesPathAfterPrefix(cwd, requested) ?? requested;
 }
 
-export async function fetchPreview(sessionId, path) {
+export async function fetchPreview(sessionId, path, options = {}) {
   const query = new URLSearchParams({ sessionId, path });
-  const response = await fetch(`/api/lares/file-preview/preview?${query}`);
+  const response = await fetch(`/api/lares/file-preview/preview?${query}`, {
+    signal: options.signal,
+  });
   const payload = await response.json().catch(() => null);
   if (!response.ok) throw new Error(errorCode(payload));
+  if (!isPreviewPayload(payload)) throw new Error("file_preview_failed");
   return payload;
 }
 
-export async function fetchPreviewMap(sessionId, paths) {
+export async function fetchPreviewMap(sessionId, paths, options = {}) {
   const entries = await Promise.all(paths.map(async (path) => {
     try {
-      return [path, await fetchPreview(sessionId, path)];
+      return [path, await fetchPreview(sessionId, path, options)];
     } catch {
       return [path, null];
     }
@@ -203,7 +225,7 @@ export class FilePreviewWorkspace {
   }
 
   bindCurrent(sessionId, cwd) {
-    const binding = { sessionId, cwd };
+    const binding = { sessionId, cwd, openVersion: 0 };
     this.current = binding;
     return () => {
       if (this.current === binding) this.current = null;
@@ -226,10 +248,15 @@ export class FilePreviewWorkspace {
    */
   async openCurrent(path) {
     if (!this.current) return false;
-    const { sessionId, cwd } = this.current;
+    const binding = this.current;
+    const { sessionId, cwd } = binding;
+    const version = ++binding.openVersion;
     const target = previewOpenPath(cwd, path);
     if (isUnpreviewableOpenPath(target)) return false;
     const content = await this.fetchContent(sessionId, target);
+    // A later click or session switch owns the surface. The old request was
+    // still claimed, but must not steal focus or open a stale native panel.
+    if (this.current !== binding || binding.openVersion !== version) return true;
     if (content.status === "error" && content.message === "path_not_file") return false;
     this.open(sessionId, target, content);
     return true;

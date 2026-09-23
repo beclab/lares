@@ -1,4 +1,5 @@
 import { producedPathsFromView } from "../files/deliverables.js";
+import { durablePathFromToolCall, parseToolArguments } from "../files/published-tools.js";
 import { contextForm, contextProvenance, isHumanUserSource } from "./context-provenance.js";
 import { toolRowModel } from "./tool-row.js";
 import { createTurnMetrics } from "./turn-metrics.js";
@@ -99,6 +100,7 @@ export function foldTranscript(entries) {
   const items = [];
   const blocks = new Map();
   const tools = new Map();
+  const durableCalls = new Map();
   const metrics = createTurnMetrics();
   const lastReply = new Map();
   const retries = new Map();
@@ -286,7 +288,11 @@ export function foldTranscript(entries) {
         ...model,
       };
       items.push(row);
-      if (data.callId) tools.set(data.callId, items.length - 1);
+      if (data.callId) {
+        tools.set(data.callId, items.length - 1);
+        const path = durablePathFromToolCall(data.name, parseToolArguments(data.arguments));
+        if (path) durableCalls.set(data.callId, path);
+      }
       continue;
     }
 
@@ -300,6 +306,7 @@ export function foldTranscript(entries) {
         if (resultView?.title) tool.title = resultView.title;
         if (tool.status === "done") {
           for (const path of tool.paths) rememberFile(path);
+          rememberFile(durableCalls.get(id));
         }
       }
       continue;

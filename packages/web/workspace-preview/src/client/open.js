@@ -20,18 +20,19 @@ export function installPathOpener(ctx, workspace) {
   ctx.inject(["sidebarRight"], (scope) => {
     scope.effect(() => {
       const sidebar = scope.sidebarRight;
-      const openNative = sidebar.openResource.bind(sidebar);
-      sidebar.openResource = (address, options) => {
-        const open = () => openNative(address, options);
+      const original = sidebar.openResource;
+      const replacement = (address, options) => {
+        const openNative = () => original.call(sidebar, address, options);
         const target = parseSessionFileAddress(address);
         if (target === null) {
-          open();
+          openNative();
           return;
         }
-        void interceptOpenPath(workspace, target, open);
+        void interceptOpenPath(workspace, target, openNative);
       };
+      sidebar.openResource = replacement;
       return () => {
-        delete sidebar.openResource;
+        if (sidebar.openResource === replacement) sidebar.openResource = original;
       };
     }, "lares-file-preview-open");
   });

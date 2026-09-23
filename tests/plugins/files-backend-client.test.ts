@@ -192,3 +192,35 @@ test("raw reads are range-bounded even when Files ignores Range", async () => {
   assert.equal(result.bytes.toString(), "01234");
   assert.equal(result.truncated, true);
 });
+
+test("Files range failures remain a typed 416", async () => {
+  const client = new FilesRequestClient({
+    baseUrl: "https://files.alice.olares.com",
+    credential: { user: "alice", cookie: "", token: "token" },
+    fetchFn: async () => new Response(null, { status: 416 }),
+  });
+  await assert.rejects(
+    () => client.openRaw("drive/Home/clip.mp4", { range: "bytes=9-10" }),
+    { code: "range_not_satisfiable", status: 416 },
+  );
+});
+
+test("Files requests fail within their configured timeout", async () => {
+  const keepEventLoopAlive = setTimeout(() => {}, 100);
+  const client = new FilesRequestClient({
+    baseUrl: "https://files.alice.olares.com",
+    credential: { user: "alice", cookie: "", token: "token" },
+    requestTimeoutMs: 5,
+    fetchFn: async (_url: string, init: any) => new Promise((_resolve, reject) => {
+      init.signal.addEventListener("abort", () => reject(init.signal.reason), { once: true });
+    }),
+  });
+  try {
+    await assert.rejects(
+      () => client.openRaw("drive/Home/clip.mp4"),
+      { code: "files_unavailable", status: 502 },
+    );
+  } finally {
+    clearTimeout(keepEventLoopAlive);
+  }
+});
