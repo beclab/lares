@@ -3,12 +3,6 @@
   order: -1;
 }
 
-/* Retire stats line but keep its 24px bottom clearance under the card. */
-.lares-stats-clearance {
-  flex: none;
-  height: 24px;
-}
-
 .lares-brand-mark {
   display: block;
   flex: none;
