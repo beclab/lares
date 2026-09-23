@@ -5,7 +5,12 @@ import { normalizeReferenceCandidates, referencesUrl } from "@olares/lares-core/
 import { muxWsUrl } from "@olares/lares-core/larepass/mux";
 import { RESPOND_PATH } from "@olares/lares-core/larepass/rpc";
 import { createHostSettings } from "@olares/lares-core/larepass/settings";
-import { downloadFileUrl, previewMetaUrl, rawFileUrl } from "@olares/lares-core/files/preview-workspace";
+import {
+  downloadFileUrl,
+  isPreviewPayload,
+  previewMetaUrl,
+  rawFileUrl,
+} from "@olares/lares-core/files/preview-workspace";
 import { FILES_UPLOAD_PATH, uploadFile } from "@olares/lares-core/files/upload-client";
 import { API as VOICE_API, postTranscribe } from "@olares/lares-core/voice/client";
 
@@ -168,10 +173,11 @@ export function createHostClient(ports = {}) {
         const code = body?.error?.code || "file_preview_failed";
         throw new Error(code);
       }
+      if (!isPreviewPayload(body)) throw new Error("file_preview_failed");
       return body;
     },
-    mediaUrl(sessionId, path, modifiedAt) {
-      return urlFor(rawFileUrl(sessionId, path, modifiedAt));
+    mediaUrl(sessionId, path, modifiedAt, size) {
+      return urlFor(rawFileUrl(sessionId, path, modifiedAt, size));
     },
     downloadUrl(sessionId, path) {
       return urlFor(downloadFileUrl(sessionId, path));

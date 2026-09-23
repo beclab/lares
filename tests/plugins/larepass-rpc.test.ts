@@ -123,6 +123,39 @@ test("foldTranscript keeps reasoning, tools, and produced files", () => {
   assert.deepEqual(folded.items[4].paths, ["out.png"]);
 });
 
+test("foldTranscript keeps successful workspace_publish media without a call view", () => {
+  const path = "drive/Data/flowstudio/userData/alice/outputs/video/clip.mp4";
+  const folded = foldTranscript([
+    { type: "turn/start", seq: 1, data: { turn: 1 } },
+    {
+      type: "tool/call",
+      seq: 2,
+      data: {
+        turn: 1,
+        callId: "publish",
+        name: "workspace_publish",
+        arguments: JSON.stringify({ path }),
+      },
+    },
+    {
+      type: "tool/result",
+      seq: 3,
+      data: {
+        turn: 1,
+        message: {
+          source: { callId: "publish" },
+          content: [{ type: "tool-result", isError: false }],
+        },
+      },
+    },
+    { type: "turn/end", seq: 4, data: { turn: 1, reason: { kind: "completed" } } },
+  ]);
+  assert.deepEqual(
+    folded.items.find((item) => item.type === "files")?.paths,
+    [path],
+  );
+});
+
 test("foldTranscript projects injected context and keeps think/tool/retry order", () => {
   const folded = foldTranscript([
     { type: "turn/start", seq: 1, data: { turn: 1 } },

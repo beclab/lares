@@ -729,8 +729,8 @@ export function createChatRuntime(client) {
       }
       return client.preview(state.sessionId, path);
     },
-    mediaUrl(path, modifiedAt) {
-      return client.mediaUrl?.(state.sessionId, path, modifiedAt) ?? "";
+    mediaUrl(path, modifiedAt, size) {
+      return client.mediaUrl?.(state.sessionId, path, modifiedAt, size) ?? "";
     },
     downloadUrl(path) {
       return client.downloadUrl?.(state.sessionId, path) ?? "";

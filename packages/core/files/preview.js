@@ -361,6 +361,9 @@ function filesDispositionHeaders(file, disposition) {
 }
 
 async function sendFilesFile(req, res, file, disposition, deps = {}) {
+  // Validate against the metadata we just resolved before forwarding. This
+  // keeps malformed and out-of-bounds ranges from becoming an opaque Files 502.
+  parseRange(req.headers.range, file.size);
   // HEAD is answered from the listing we already did. Files has no HEAD verb;
   // a 1-byte GET probe must not become the download preflight's size.
   if (req.method === "HEAD") {

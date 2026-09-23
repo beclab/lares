@@ -5,6 +5,7 @@ import {
   parseToolArguments,
   toolResultIsError,
 } from "./published-tools.js";
+import { isMediaDeliverablePath } from "./preview-groups.js";
 import {
   resolveExistingWorkspacePath,
   resolveWorkspaceRoot,
@@ -42,6 +43,95 @@ export function durableProducedPathsFromEvents(events, turn) {
     paths.push(path);
   }
   return paths;
+}
+
+function resultTexts(value, texts = []) {
+  if (Array.isArray(value)) {
+    for (const item of value) resultTexts(item, texts);
+    return texts;
+  }
+  if (!value || typeof value !== "object") return texts;
+  if (typeof value.text === "string") texts.push(value.text);
+  if ("content" in value) resultTexts(value.content, texts);
+  return texts;
+}
+
+function parseResultJson(text) {
+  const source = String(text ?? "").trim();
+  if (!source) return null;
+  try {
+    return JSON.parse(source);
+  } catch {
+    const start = source.indexOf("{");
+    const end = source.lastIndexOf("}");
+    if (start === -1 || end <= start) return null;
+    try {
+      return JSON.parse(source.slice(start, end + 1));
+    } catch {
+      return null;
+    }
+  }
+}
+
+function collectFilesPaths(value, paths) {
+  if (Array.isArray(value)) {
+    for (const item of value) collectFilesPaths(item, paths);
+    return;
+  }
+  if (!value || typeof value !== "object") return;
+  const status = typeof value.status === "string" ? value.status.toLowerCase() : "";
+  if ([
+    "queued", "pending", "submitted", "starting", "processing", "in_progress", "running",
+    "failed", "error", "canceled", "cancelled",
+  ].includes(status)) {
+    return;
+  }
+  for (const [key, item] of Object.entries(value)) {
+    if ((key === "files_path" || key === "filesPath") && typeof item === "string") {
+      const path = item.trim().replace(/\\/g, "/");
+      if (isFilesPath(path) && isMediaDeliverablePath(path)) paths.push(path);
+      continue;
+    }
+    collectFilesPaths(item, paths);
+  }
+}
+
+/**
+ * Generation is performed through bash/curl, so dsh has no native artifact
+ * event for its result. Recover media addresses from successful tool output and
+ * require the agent to declare each one through workspace_publish.
+ */
+export function unpublishedMediaPathsFromEvents(events, turn) {
+  const published = new Set(durableProducedPathsFromEvents(events, turn));
+  const paths = [];
+  const seen = new Set();
+  for (const event of events) {
+    if (event?.type !== "tool/result" || event?.data?.turn !== turn) continue;
+    if (toolResultIsError(event)) continue;
+    for (const text of resultTexts(event.data?.message?.content)) {
+      const parsed = parseResultJson(text);
+      if (parsed === null) continue;
+      const found = [];
+      collectFilesPaths(parsed, found);
+      for (const path of found) {
+        if (published.has(path) || seen.has(path)) continue;
+        seen.add(path);
+        paths.push(path);
+      }
+    }
+  }
+  return paths;
+}
+
+export function unpublishedMediaSteerText(paths) {
+  const list = paths.map((path) => `- \`${path}\``).join("\n");
+  return [
+    "A completed media generation returned files that are not published to this turn:",
+    list,
+    "Call workspace_publish once for each exact files_path above before replying.",
+    "Do not regenerate, download, or copy these files; they already exist in Olares Files.",
+    "Only claim that the preview is available after workspace_publish succeeds.",
+  ].join("\n");
 }
 
 async function pathIsOpenable(workspaceRoot, path, deps = {}) {

@@ -7,8 +7,8 @@ import {
 
 export const LARES_PUBLISHED_KEY = "lares-published";
 
-function appendSurfaceResult(event) {
-  return event?.type === "tool/result" && event.surfaceOp === "append";
+function durableSurfaceResult(event) {
+  return event?.type === "tool/result" && event.surfaceOp !== "replace";
 }
 
 /**
@@ -28,7 +28,7 @@ export const laresPublishedDefinition = {
     if (event?.type === "tool/call" && LARES_PUBLISH_TOOLS.has(event.data.name)) {
       return { id: String(event.data.turn), role: "update" };
     }
-    if (appendSurfaceResult(event)) {
+    if (durableSurfaceResult(event)) {
       return { id: String(event.data.turn), role: "update" };
     }
     return null;

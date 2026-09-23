@@ -55,12 +55,14 @@ export function createTurnMedia(t) {
 
     useEffect(() => {
       let live = true;
+      const controller = new AbortController();
       setPreviews(new Map());
-      void fetchPreviewMap(sessionId, paths).then((next) => {
+      void fetchPreviewMap(sessionId, paths, { signal: controller.signal }).then((next) => {
         if (live) setPreviews(next);
       });
       return () => {
         live = false;
+        controller.abort();
       };
     }, [key, sessionId]);
 

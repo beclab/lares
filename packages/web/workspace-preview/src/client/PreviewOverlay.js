@@ -19,11 +19,22 @@ export function createPreviewOverlay(workspace, PreviewView) {
     // null and would never retry — the file tab appears, the page does not.
     useLayoutEffect(() => {
       if (!owns) return undefined;
-      const find = () => document.querySelector("[data-conversation-scroll]");
-      setTarget(find());
+      let observer;
+      const find = () => {
+        const node = document.querySelector("[data-conversation-scroll]");
+        if (!node) return false;
+        setTarget(node);
+        observer?.disconnect();
+        return true;
+      };
       if (find()) return undefined;
-      const frame = requestAnimationFrame(() => setTarget(find()));
-      return () => cancelAnimationFrame(frame);
+      const frame = requestAnimationFrame(find);
+      observer = new MutationObserver(find);
+      observer.observe(document.body, { childList: true, subtree: true });
+      return () => {
+        cancelAnimationFrame(frame);
+        observer.disconnect();
+      };
     }, [owns, sessionId]);
 
     // Before paint of the commit that released the scrollport: the flow is

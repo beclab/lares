@@ -13,6 +13,8 @@ import {
   durableProducedPathsFromEvents,
   findUnopenableProducedPaths,
   producedGateSteerText,
+  unpublishedMediaPathsFromEvents,
+  unpublishedMediaSteerText,
 } from "@olares/lares-core/files/produced-gate";
 import {
   durablePathFromToolCall,
@@ -69,6 +71,15 @@ export function installProducedOpenabilityGate(ctx, options = {}) {
     if (cwd === null) return;
     const events = agent.session?.events;
     if (!events) return;
+    const unpublished = unpublishedMediaPathsFromEvents(events, turn);
+    if (unpublished.length > 0) {
+      if (!budget.consume(String(agent.id ?? agent.sessionId ?? ""), turn)) return;
+      agent.steer(createUserMessage({
+        content: [{ type: "text", text: unpublishedMediaSteerText(unpublished) }],
+        source: { kind: "plugin", plugin: PRODUCED_GATE_PLUGIN },
+      }));
+      return;
+    }
     const paths = durableProducedPathsFromEvents(events, turn);
     if (paths.length === 0) return;
     const missing = await findUnopenableProducedPaths(cwd, paths, deps);

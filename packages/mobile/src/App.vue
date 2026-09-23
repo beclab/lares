@@ -426,7 +426,11 @@ export default {
     previewMediaSrc() {
       const data = this.preview.data;
       if (!data) return "";
-      return this.runtime.mediaUrl(data.path, data.modifiedAt);
+      return this.runtime.mediaUrl(
+        data.path,
+        data.modifiedAt,
+        data.kind === "image" ? "big" : undefined,
+      );
     },
     previewDownloadHref() {
       if (!this.preview.path) return "";
@@ -442,7 +446,7 @@ export default {
     },
     previewHref() {
       return (path) => {
-        const href = this.runtime.mediaUrl(path);
+        const href = this.runtime.mediaUrl(path, undefined, "big");
         try {
           return new URL(href, globalThis.location?.origin || "http://localhost").href;
         } catch {
@@ -486,6 +490,7 @@ export default {
   created() {
     // Per-path request tokens: reactive state would re-render on every read.
     this.previewGen = new Map();
+    this.previewOpenGen = 0;
     this.intake = new FileIntake((file, sessionId, options) => this.runtime.upload(file, options, sessionId));
     this.imageUploadControllers = new Map();
     this.voiceCap = createVoiceCapture({
@@ -544,7 +549,11 @@ export default {
   },
   methods: {
     mediaUrl(item) {
-      return this.runtime.mediaUrl(item.path, item.modifiedAt);
+      return this.runtime.mediaUrl(
+        item.path,
+        item.modifiedAt,
+        item.kind === "image" ? "big" : undefined,
+      );
     },
     scrollTop(height, view) {
       return this.runtime.scrollTop(height, view);
@@ -700,19 +709,19 @@ export default {
       this.$refs.shell?.focusComposer?.();
     },
     async hydrateFiles(paths) {
-      const missing = [...new Set(paths)].filter(
-        (path) => !isFilesPath(path) && !(path in this.previews),
-      );
+      const missing = [...new Set(paths)].filter((path) => !Object.hasOwn(this.previews, path));
       if (!missing.length) return;
-      const next = { ...this.previews };
+      const sessionId = this.sessionId;
+      const loaded = Object.create(null);
       await Promise.all(missing.map(async (path) => {
         try {
-          next[path] = await this.runtime.preview(path);
+          loaded[path] = await this.runtime.preview(path);
         } catch {
-          next[path] = null;
+          loaded[path] = null;
         }
       }));
-      this.previews = next;
+      if (this.sessionId !== sessionId) return;
+      this.previews = { ...this.previews, ...loaded };
       this.pinLog();
     },
     async answerQuestion(label, row) {
@@ -758,12 +767,13 @@ export default {
       this.previewMode = "preview";
     },
     async openFile(path) {
+      const openGen = ++this.previewOpenGen;
       if (isFilesPath(path)) {
         const gen = (this.previewGen.get(path) ?? 0) + 1;
         this.previewGen.set(path, gen);
         try {
           const data = await this.runtime.preview(path);
-          if (this.previewGen.get(path) !== gen) return;
+          if (this.previewGen.get(path) !== gen || this.previewOpenGen !== openGen) return;
           this.openPreviewTab(path);
           const canonical = this.adoptPreviewPath(path, data?.path);
           this.previewGen.set(canonical, gen);
@@ -796,6 +806,7 @@ export default {
       if (this.previewPath) this.closePreviewTab(this.previewPath);
     },
     resetPreview() {
+      this.previewOpenGen += 1;
       this.previewTabs = [];
       this.previewLru = [];
       this.previewPath = "";

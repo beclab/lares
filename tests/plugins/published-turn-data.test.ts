@@ -65,6 +65,30 @@ test("historical workspace_publish calls replay into turn data", () => {
   );
 });
 
+test("historical publish replay accepts persisted results without a surface operation", () => {
+  const completed: any = result(1, 3, "publish");
+  delete completed.surfaceOp;
+  const state = replay([
+    { type: "turn/start", seq: 1, data: { turn: 1 } },
+    {
+      type: "tool/call",
+      seq: 2,
+      data: {
+        turn: 1,
+        callId: "publish",
+        name: "workspace_publish",
+        arguments: { path: "drive/Data/flowstudio/clip.mp4" },
+      },
+    },
+    completed,
+  ]);
+  assert.deepEqual(state.published, [{
+    seq: 3,
+    path: "drive/Data/flowstudio/clip.mp4",
+    callId: "publish",
+  }]);
+});
+
 test("replay drops research fetches, failures, replacements, and duplicates", () => {
   const state = replay([
     { type: "turn/start", seq: 1, data: { turn: 2 } },
