@@ -1,7 +1,7 @@
 import shellCss from "./styles/shell.css";
 import historyCss from "./styles/history.css";
 import { BrandMark, BrandName, keepProductTitle } from "./brand.js";
-import { HideOpenDocument, RetireStatsLine } from "./shell-overrides.js";
+import { HideOpenDocument } from "./shell-overrides.js";
 import { installPluginStyle } from "../../../shared/client/plugin-style.js";
 
 export const inject = [];
@@ -38,12 +38,6 @@ ${historyCss}`,
           priority: -1,
         },
         HideOpenDocument,
-      ),
-    );
-    scope.slots.inject("conversation.composer.dock", () =>
-      scope.slots.register(
-        { name: "conversation.composer.dock", id: "stats", priority: -1 },
-        RetireStatsLine,
       ),
     );
   });
