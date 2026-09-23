@@ -401,6 +401,59 @@ async function sendFilesFile(req, res, file, disposition, deps = {}) {
   await pipeline(Readable.fromWeb(response.body), res);
 }
 
+/**
+ * The rendition this request asked for, or null for the stored bytes.
+ *
+ * Only an image on the files backend has one, because only there does a
+ * resized copy already exist: the backend renders it once and caches it. A
+ * conversation showing a 4000px generation at a few hundred pixels wide is
+ * the case this exists for. Opening the file and downloading it both stay on
+ * the original, so what is displayed and what is kept stay separate choices.
+ */
+export function previewSizeFromUrl(reqUrl, file) {
+  if (file?.origin !== "files" || file?.kind !== "image") return null;
+  const size = new URL(reqUrl ?? "/", "http://x").searchParams.get("size");
+  return ["thumb", "big"].includes(size) ? size : null;
+}
+
+/**
+ * A rendition is not the stored bytes, so it carries neither the original's
+ * length nor byte ranges. HEAD is answered without fetching one: the only
+ * honest length is the rendered one, and rendering a copy to describe and
+ * then discard is worse than omitting a header HEAD does not require.
+ */
+async function sendFilesRendition(req, res, file, size, deps = {}) {
+  const headers = {
+    "cache-control": "private, no-cache",
+    "content-type": file.mediaType,
+    "content-disposition": `inline; filename*=UTF-8''${encodeURIComponent(file.name)}`,
+    "x-content-type-options": "nosniff",
+  };
+  if (req.method === "HEAD") {
+    res.writeHead(200, headers);
+    res.end();
+    return;
+  }
+  if (typeof deps.openFilesPreview !== "function") {
+    throw new HttpError("files_unavailable", 503, "Olares Files client is unavailable");
+  }
+  let response;
+  try {
+    response = await deps.openFilesPreview(file.path, { size });
+  } catch (error) {
+    throw asPreviewHttpError(error);
+  }
+  headers["content-type"] = response.headers.get("content-type") || file.mediaType;
+  const length = response.headers.get("content-length");
+  if (length) headers["content-length"] = length;
+  res.writeHead(response.status, headers);
+  if (!response.body) {
+    res.end();
+    return;
+  }
+  await pipeline(Readable.fromWeb(response.body), res);
+}
+
 export async function sendRawFile(req, res, file, deps) {
   if (!["image", "video", "audio", "pdf", "model3d"].includes(file.kind)) {
     throw new HttpError("preview_unsupported", 415, "raw preview is not supported for this file");
@@ -410,6 +463,8 @@ export async function sendRawFile(req, res, file, deps) {
   if (["image", "pdf", "model3d"].includes(file.kind) && file.size > MAX_RAW_BYTES) {
     throw new HttpError("file_too_large", 413, `file exceeds ${MAX_RAW_BYTES} bytes`);
   }
+  const size = previewSizeFromUrl(req.url, file);
+  if (size) return sendFilesRendition(req, res, file, size, deps);
   if (file.origin === "files") return sendFilesFile(req, res, file, "inline", deps);
   return sendFile(req, res, await ensurePreviewBytes(file, deps), "inline");
 }

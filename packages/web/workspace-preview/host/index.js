@@ -30,6 +30,7 @@ function filesDeps(req, res) {
     stat: (source) => current().stat(source),
     readFilesRaw: (source, maxBytes) => current().readRaw(source, maxBytes),
     openFilesRaw: (source, options) => current().openRaw(source, options),
+    openFilesPreview: (source, options) => current().openPreview(source, options),
   };
 }
 

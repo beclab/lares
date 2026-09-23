@@ -211,6 +211,23 @@ export class FilesRequestClient {
     });
   }
 
+  /**
+   * Files renditions are GET `/api/preview/<path>?size=`. The backend resizes
+   * once and caches the result: `big` fits the image inside 1000x1000, `thumb`
+   * is a 256x256 JPEG. A format it cannot resize comes back as the stored
+   * bytes, so this never fails merely for being asked.
+   */
+  previewPath(source, size) {
+    const path = encodeFilesPath(parseFilesPath(source));
+    return `/api/preview/${path}?size=${encodeURIComponent(size)}`;
+  }
+
+  openPreview(source, options = {}) {
+    return this.request("GET", this.previewPath(source, options.size ?? "big"), {
+      signal: options.signal,
+    });
+  }
+
   async readRaw(source, maxBytes, options = {}) {
     const response = await this.openRaw(source, {
       range: `bytes=0-${maxBytes}`,

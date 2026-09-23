@@ -122,9 +122,15 @@ export function previewMetaUrl(sessionId, path) {
   return `/api/lares/file-preview/preview?${query}`;
 }
 
-export function rawFileUrl(sessionId, path, modifiedAt) {
+/**
+ * @param size - ask the files backend for a rendition of this size instead of
+ * the stored bytes. Honored for images on the files backend and ignored
+ * everywhere else, so a caller that wants a small copy may always ask.
+ */
+export function rawFileUrl(sessionId, path, modifiedAt, size) {
   const query = new URLSearchParams({ sessionId, path });
   if (modifiedAt !== undefined) query.set("v", String(modifiedAt));
+  if (size) query.set("size", size);
   return `${RAW_ROUTE}?${query}`;
 }
 

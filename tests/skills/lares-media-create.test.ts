@@ -35,6 +35,11 @@ test("lares-media-create is a produce protocol, not a diagnosis ladder", () => {
   assert.match(skill, /Do not `router call … --id`/);
   assert.match(skill, /Do not run `--help`/);
   assert.match(skill, /Do not `provider sync-models`/);
+  // The catalog answers both of these per row, and an agent that does not
+  // know it asks FlowStudio for the first and guesses at the second.
+  assert.match(skill, /`name` on the \*\*same JSON row\*\* is the label/);
+  assert.match(skill, /`canonical_fields`[\s\S]*do not send a field the row did not name/);
+  assert.match(skill, /Omitting `seed` gives the run a fresh one/);
   assert.match(skill, /references\/router\.md/);
   assert.match(skill, /references\/flowstudio\.md/);
   assert.match(skill, /references\/fallback\.md/);
@@ -57,10 +62,18 @@ test("deliver reference lands bytes through drive tools and refuses internal hos
   assert.match(text, /Three\.js viewer/);
   assert.match(text, /land `glb`/);
   assert.match(text, /Never curl/);
-  assert.match(text, /do \*\*not\*\* `find`/);
   assert.match(text, /files_path/);
   assert.match(text, /drive\/Data\/flowstudio/);
   assert.match(text, /Never copy a FlowStudio file into Home/);
+  // Hunting for the file is what an agent does when the receipt disappoints
+  // it, and browsing turns up a plausible wrong file often enough to pass
+  // unnoticed. Naming the three ways to hunt is the point of the sentence.
+  assert.match(text, /No `find`, no grep, no `olares-cli files ls`/);
+  assert.match(text, /not evidence that this call produced it/);
+  assert.match(text, /One deliverable per turn/);
+  // The unreachable case has to end somewhere. Saying so is the answer, and
+  // the file has to call it one, or the dead end reads as a reason to improvise.
+  assert.match(text, /That is a complete answer/);
 });
 
 test("output families map music to music_generation, not speech audio", () => {
@@ -89,6 +102,11 @@ test("router reference forbids calling FlowStudio HTTP and catalog surgery on pr
   assert.match(text, /Do not\*\* `provider sync-models`/);
   assert.doesNotMatch(text, /olares-cli router list --mode image_generation/);
   assert.doesNotMatch(text, /flowstudio-svc:8080/);
+  // Router carries the address now. Describing the pointer as the only source
+  // sends an agent to the filesystem on the normal path, not just the old one.
+  assert.match(text, /Router carries it/);
+  assert.match(text, /Router old enough to drop `files_path`/);
+  assert.doesNotMatch(text, /Router's own GET does not carry it/);
 });
 
 test("flowstudio reference is empty-catalog only and still submits through Router", () => {
@@ -100,4 +118,8 @@ test("flowstudio reference is empty-catalog only and still submits through Route
   assert.match(text, /router provider sync-models flowstudio/);
   assert.match(text, /Do not `curl` `flowstudio-svc`/);
   assert.match(text, /do not GET `\/api\/projects`/);
+  // Produce refuses `router list` over the workspace lock, and a repair step
+  // that re-lists with it verifies nothing here for the same reason.
+  assert.match(text, /LARES_LLM_BASE_URL\/models/);
+  assert.doesNotMatch(text, /olares-cli router list --mode/);
 });

@@ -111,6 +111,47 @@ test("attachFlowstudioFilesPaths reads the outputs Router nests under response",
   assert.equal(view.outputs[0].files_path, filesPath);
 });
 
+test("attachFlowstudioFilesPaths trusts the address Router already sent", async () => {
+  const filesPath = "drive/Data/flowstudio/userData/alice/comfyui/outputs/image/c.png";
+  const view = await attachFlowstudioFilesPaths(
+    {
+      status: "completed",
+      outputs: [{ id: "44444444-4444-4444-4444-444444444444", files_path: filesPath }],
+    },
+    "alice",
+    { cat: async () => { throw new Error("the wire already answered this"); } },
+  );
+  assert.equal(view.outputs[0].files_path, filesPath);
+});
+
+// FlowStudio serializes camelCase. Its snapshot reaches here unreshaped when
+// Router nests it, and a caller reading `files_path` must not miss an address
+// that arrived spelled the other way.
+test("attachFlowstudioFilesPaths normalizes a camelCase address", async () => {
+  const filesPath = "drive/Data/flowstudio/userData/alice/comfyui/outputs/image/d.png";
+  const view = await attachFlowstudioFilesPaths(
+    { status: "completed", outputs: [{ id: "output-1", filesPath }] },
+    "alice",
+    { cat: async () => { throw new Error("the wire already answered this"); } },
+  );
+  assert.equal(view.outputs[0].files_path, filesPath);
+});
+
+// Hoisting is not conditional on having something to add: nested outputs that
+// already carry their address still have to reach the level callers read.
+test("attachFlowstudioFilesPaths hoists nested outputs it did not change", async () => {
+  const filesPath = "drive/Data/flowstudio/userData/alice/comfyui/outputs/image/e.png";
+  const view = await attachFlowstudioFilesPaths(
+    {
+      status: "completed",
+      response: { status: "completed", outputs: [{ id: "output-1", files_path: filesPath }] },
+    },
+    "alice",
+    { cat: async () => { throw new Error("the wire already answered this"); } },
+  );
+  assert.equal(view.outputs[0].files_path, filesPath);
+});
+
 test("attachFlowstudioFilesPaths leaves in-progress and failed lookups unchanged", async () => {
   const queued = await attachFlowstudioFilesPaths(
     { status: "in_progress", outputs: [{ id: "x" }] },

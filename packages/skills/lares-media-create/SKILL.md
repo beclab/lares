@@ -1,6 +1,6 @@
 ---
 name: lares-media-create
-version: 0.2.5
+version: 0.3.0
 description: "Produce image, video, audio, or 3D through Router: list that family, POST the matching shim route, land the file. Use for 生成图片, 生成视频, text-to-image, FlowStudio generate, FlowStudio 场景/工作流, T2V, I2V, R2V, 文生视频, 图生视频. Not for Router install, catalog sync, GPU diagnosis, or curling FlowStudio."
 metadata:
   requires:
@@ -26,7 +26,7 @@ curl -sS "$LARES_LLM_BASE_URL/models"
 
    Keep only rows whose `mode` is the matching family. For video, if that list is empty, also inspect `image_generation` (FlowStudio sometimes parks video scenes there). Never probe `audio` for a song. Do not use `olares-cli router list` here: workspace-write cannot create its refresh lock under `/data/home`.
 
-3. Pick one **enabled** row of this family. Prefer a prompt-only scene. Skip a row whose title is clearly another family (a T2V scene is not an image). `--model` is `<provider>/<model>` as listed — FlowStudio's model half is often a UUID; that **is** the id. Use `name` / `title` / `display_name` on the **same JSON row** if you need a label.
+3. Pick one **enabled** row of this family. Prefer a prompt-only scene. Skip a row whose title is clearly another family (a T2V scene is not an image). `--model` is `<provider>/<model>` as listed — FlowStudio's model half is often a UUID; that **is** the id, and `name` on the **same JSON row** is the label to say it by. Never GET FlowStudio to map a UUID to a title. `canonical_fields`, when the row has it, is the complete set of extra fields that scene accepts (`seed`, `output.size`, …); anything outside it is refused, so do not send a field the row did not name.
 4. Call **once** with the user's prompt unchanged, through `$LARES_LLM_BASE_URL` (in-process Router shim; default `http://127.0.0.1:$PORT/llm/v1`). That stamps the logged-in Olares user, so FlowStudio owns the job as this person — never as the shared chart owner. Do not `olares-cli router call` to generate (in-cluster it presents as the Lares app). Route follows the **picked row's mode**:
 
 | Row mode | POST `$LARES_LLM_BASE_URL/…` |
@@ -36,7 +36,9 @@ curl -sS "$LARES_LLM_BASE_URL/models"
 | `music_generation` | `/music/generations` |
 | `model3d_generation` | `/generations` |
 
-   A video scene parked under `image_generation` still uses the **image** route. A `video_generation` row uses `/videos`. Set a long bash timeout; poll `GET $LARES_LLM_BASE_URL/generations/<id>` until completed. The shim fills each output's `files_path` (also `filesPath`) from FlowStudio's Files pointer — that is the Olares files address of the **same** bytes already stored. `workspace_publish` it. Do not GET `/content`, do not write `outputs/`, and do not copy the file into Home or anywhere else just to preview. Do not `router call … --id`.
+   A video scene parked under `image_generation` still uses the **image** route. A `video_generation` row uses `/videos`. Set a long bash timeout; poll `GET $LARES_LLM_BASE_URL/generations/<id>` until completed. Each output carries `files_path` — the Olares files address of the **same** bytes already stored, the original rather than a copy. `workspace_publish` it. Do not GET `/content`, do not write `outputs/`, and do not copy the file into Home or anywhere else just to preview. Do not `router call … --id`.
+
+   Omitting `seed` gives the run a fresh one, so "再来一张" is this same call again and returns a different result. Send a seed only to reproduce a specific earlier result, and only if the row's `canonical_fields` names it.
 
 ```bash
 curl -sS -X POST "$LARES_LLM_BASE_URL/videos" \
