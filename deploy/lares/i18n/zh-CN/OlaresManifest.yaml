@@ -23,6 +23,7 @@ spec:
     2. 确认 Router 已安装。
     3. 打开 Lares 入口开始对话。
   upgradeDescription: |
-    **Lares 0.26.30**
+    **Lares 0.26.31**
 
-    - 去掉输入框下方已停用的 stats 行占位。
+    - 更新对话 Agent 所用的 Olares 命令行工具：生成文件的地址现在直接从模型
+      应用的回复里读，不再去你的网盘里翻找。
