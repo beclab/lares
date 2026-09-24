@@ -36,28 +36,15 @@ function incoming(extra: Record<string, string> = {}) {
   };
 }
 
-function withTrustedHosts<T>(run: () => T): T {
-  const previous = process.env.DSH_TRUSTED_HOSTS;
-  process.env.DSH_TRUSTED_HOSTS = ENTRANCE;
-  try {
-    return run();
-  } finally {
-    if (previous === undefined) delete process.env.DSH_TRUSTED_HOSTS;
-    else process.env.DSH_TRUSTED_HOSTS = previous;
-  }
-}
-
 test("a plain /api request on the entrance is rewritten to loopback", () => {
-  withTrustedHosts(() => {
-    const { server, ctx } = fakeContext();
-    apply(ctx as never);
-    const req = incoming();
+  const { server, ctx } = fakeContext();
+  apply(ctx as never);
+  const req = incoming();
 
-    server.emit("request", req);
+  server.emit("request", req);
 
-    assert.equal(req.headers.host, LOOPBACK);
-    assert.equal(req.headers.origin, `http://${LOOPBACK}`);
-  });
+  assert.equal(req.headers.host, LOOPBACK);
+  assert.equal(req.headers.origin, `http://${LOOPBACK}`);
 });
 
 /**
@@ -68,29 +55,25 @@ test("a plain /api request on the entrance is rewritten to loopback", () => {
  * like an auth problem rather than a missing listener.
  */
 test("a websocket upgrade on the entrance is rewritten the same way", () => {
-  withTrustedHosts(() => {
-    const { server, ctx } = fakeContext();
-    apply(ctx as never);
-    const req = incoming();
+  const { server, ctx } = fakeContext();
+  apply(ctx as never);
+  const req = incoming();
 
-    // `upgrade` listeners are called with (req, socket, head); the handler only
-    // reads req, so the extra arguments are passed through as the server would.
-    server.emit("upgrade", req, {}, Buffer.alloc(0));
+  // `upgrade` listeners are called with (req, socket, head); the handler only
+  // reads req, so the extra arguments are passed through as the server would.
+  server.emit("upgrade", req, {}, Buffer.alloc(0));
 
-    assert.equal(req.headers.host, LOOPBACK);
-    assert.equal(req.headers.origin, `http://${LOOPBACK}`);
-  });
+  assert.equal(req.headers.host, LOOPBACK);
+  assert.equal(req.headers.origin, `http://${LOOPBACK}`);
 });
 
 test("both listeners are bound, so neither path can regress on its own", () => {
-  withTrustedHosts(() => {
-    const { server, ctx } = fakeContext();
-    apply(ctx as never);
+  const { server, ctx } = fakeContext();
+  apply(ctx as never);
 
-    for (const event of ["request", "upgrade"]) {
-      assert.equal(server.listenerCount(event), 1, `no listener bound for '${event}'`);
-    }
-  });
+  for (const event of ["request", "upgrade"]) {
+    assert.equal(server.listenerCount(event), 1, `no listener bound for '${event}'`);
+  }
 });
 
 /**
@@ -102,49 +85,71 @@ test("both listeners are bound, so neither path can regress on its own", () => {
  * which is why the plain-http LAN entrance never showed the symptom.
  */
 test("fetch metadata is restated to match the rewritten origin", () => {
-  withTrustedHosts(() => {
-    const { server, ctx } = fakeContext();
-    apply(ctx as never);
+  const { server, ctx } = fakeContext();
+  apply(ctx as never);
 
-    for (const event of ["request", "upgrade"]) {
-      const req = incoming({ "sec-fetch-site": "cross-site", "sec-fetch-mode": "cors" });
-      server.emit(event, req);
-      assert.equal(req.headers["sec-fetch-site"], "same-origin", `not restated on '${event}'`);
-      // Mode and dest describe the call, not its origin; a same-origin fetch
-      // reports `cors` too, so they are left as the browser set them.
-      assert.equal(req.headers["sec-fetch-mode"], "cors");
-    }
-  });
+  for (const event of ["request", "upgrade"]) {
+    const req = incoming({ "sec-fetch-site": "cross-site", "sec-fetch-mode": "cors" });
+    server.emit(event, req);
+    assert.equal(req.headers["sec-fetch-site"], "same-origin", `not restated on '${event}'`);
+    // Mode and dest describe the call, not its origin; a same-origin fetch
+    // reports `cors` too, so they are left as the browser set them.
+    assert.equal(req.headers["sec-fetch-mode"], "cors");
+  }
 });
 
 test("a request without fetch metadata gains none", () => {
-  withTrustedHosts(() => {
-    const { server, ctx } = fakeContext();
-    apply(ctx as never);
+  const { server, ctx } = fakeContext();
+  apply(ctx as never);
+  const req = incoming();
+
+  server.emit("request", req);
+
+  assert.equal("sec-fetch-site" in req.headers, false);
+});
+
+/**
+ * A third-party custom domain is a real entrance the chart could never name,
+ * and Olares only grants one to a `public` entrance, so it arrives with the
+ * edge's user stamp and no Authelia cookie.
+ */
+test("a custom domain entrance is rewritten like any other", () => {
+  const { server, ctx } = fakeContext();
+  apply(ctx as never);
+  const req = incoming({ host: "www.app-test-mayuxing.cn", cookie: "" });
+
+  server.emit("request", req);
+
+  assert.equal(req.headers.host, LOOPBACK);
+});
+
+/** dsh asks its Host fence from more than the /api gateway. */
+test("a fenced route outside /api is rewritten too", () => {
+  const { server, ctx } = fakeContext();
+  apply(ctx as never);
+  const req = incoming();
+  req.url = "/open-in-app/apps";
+
+  server.emit("request", req);
+
+  assert.equal(req.headers.host, LOOPBACK);
+});
+
+test("an unstamped request is left alone on both paths", () => {
+  const { server, ctx } = fakeContext();
+  apply(ctx as never);
+
+  for (const event of ["request", "upgrade"]) {
     const req = incoming();
-
-    server.emit("request", req);
-
-    assert.equal("sec-fetch-site" in req.headers, false);
-  });
+    req.headers.host = "lares.lares-one3";
+    delete req.headers["x-bfl-user"];
+    server.emit(event, req);
+    assert.equal(req.headers.host, "lares.lares-one3");
+    assert.equal(req.headers.origin, "file://");
+  }
 });
 
-test("an untrusted host is left alone on both paths", () => {
-  withTrustedHosts(() => {
-    const { server, ctx } = fakeContext();
-    apply(ctx as never);
-
-    for (const event of ["request", "upgrade"]) {
-      const req = incoming();
-      req.headers.host = "bogus.example.com";
-      server.emit(event, req);
-      assert.equal(req.headers.host, "bogus.example.com");
-      assert.equal(req.headers.origin, "file://");
-    }
-  });
-});
-
-test("Authelia identity satisfies dsh browser-session 401s", () => {
+test("edge identity satisfies dsh browser-session 401s", () => {
   const connection = {
     requestRejection(request: { headers: Record<string, string> }) {
       return request.headers.cookie?.includes("dsh=") ? undefined : 401;

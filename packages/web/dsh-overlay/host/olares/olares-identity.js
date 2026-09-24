@@ -1,14 +1,14 @@
 /**
- * Edge identity → olares-cli profile + treat authenticated /api as loopback.
- * dsh locks config/LLM discover to loopback; Olares entrance (Authelia) is that auth layer.
+ * Edge identity → olares-cli profile + treat entrance traffic as loopback.
+ * dsh locks config/LLM discover to loopback; the Olares entrance is that auth
+ * layer, at whatever level the user set it to.
  */
 import { identityFromHeaders } from "@olares/lares-core/olares/identity";
 import { rememberRequestIdentity } from "@olares/lares-core/olares/session-identity";
 import {
   applyLoopbackHeaders,
   loopbackAuthority,
-  shouldRewriteApiLoopback,
-  trustedEntranceHosts,
+  viaOlaresEntrance,
 } from "@olares/lares-core/olares/trusted-host";
 
 export const name = "lares-olares-identity";
@@ -27,15 +27,14 @@ const TOKEN_QUERY = "token";
 
 /** @param {{ headers?: import('node:http').IncomingHttpHeaders | Headers }} request */
 export function isOlaresEdgeAuthenticated(request) {
-  const identity = identityFromHeaders(request?.headers ?? {});
-  return Boolean(identity.user && identity.token);
+  return viaOlaresEntrance(request?.headers ?? {});
 }
 
 /**
  * dsh 0.1.5 BrowserAuth requires a process-launch cookie on every index and
- * /api call. Authelia already authenticated the entrance; treat that identity
- * as the browser session instead of asking the user to open the printed
- * `?token=` URL (which is loopback and never reaches them).
+ * /api call. The entrance already decided who may reach it; treat the edge's
+ * identity as the browser session instead of asking the user to open the
+ * printed `?token=` URL (which is loopback and never reaches them).
  *
  * @param {{ requestRejection: Function, authorizeIndex: Function }} connection
  */
@@ -69,9 +68,10 @@ export function apply(ctx) {
   const onRequest = (req) => {
     try {
       const identity = identityFromHeaders(req.headers ?? {});
-      const edgeAuthenticated = Boolean(identity.user && identity.token);
-      if (edgeAuthenticated) rememberRequestIdentity(identity);
-      if (!edgeAuthenticated || !shouldRewriteApiLoopback(req, trustedEntranceHosts())) return;
+      if (!identity.user) return;
+      rememberRequestIdentity(identity);
+      // dsh asks its Host fence from more than the /api gateway — open-in-app
+      // asks too — so the whole entrance answers as loopback, not just /api.
       applyLoopbackHeaders(req.headers, loopbackAuthority(ctx.webServer.port));
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
