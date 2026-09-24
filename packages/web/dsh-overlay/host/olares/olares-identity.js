@@ -1,14 +1,13 @@
 /**
- * Edge identity → olares-cli profile + treat entrance traffic as loopback.
- * dsh locks config/LLM discover to loopback; the Olares entrance is that auth
- * layer, at whatever level the user set it to.
+ * Edge identity → olares-cli profile + treat every served request as loopback.
+ * dsh locks config/LLM discover to loopback; in a pod the Olares entrance is
+ * that auth layer, at whatever level the user set it to.
  */
 import { identityFromHeaders } from "@olares/lares-core/olares/identity";
 import { rememberRequestIdentity } from "@olares/lares-core/olares/session-identity";
 import {
   applyLoopbackHeaders,
   loopbackAuthority,
-  viaOlaresEntrance,
 } from "@olares/lares-core/olares/trusted-host";
 
 export const name = "lares-olares-identity";
@@ -25,16 +24,17 @@ const SERVER_EVENTS = ["request", "upgrade"];
 
 const TOKEN_QUERY = "token";
 
-/** @param {{ headers?: import('node:http').IncomingHttpHeaders | Headers }} request */
-export function isOlaresEdgeAuthenticated(request) {
-  return viaOlaresEntrance(request?.headers ?? {});
-}
-
 /**
  * dsh 0.1.5 BrowserAuth requires a process-launch cookie on every index and
- * /api call. The entrance already decided who may reach it; treat the edge's
- * identity as the browser session instead of asking the user to open the
- * printed `?token=` URL (which is loopback and never reaches them).
+ * /api call, because on a laptop the loopback port is the only fence there is.
+ * Here it is not: this server listens inside the pod, so the Olares entrance —
+ * at whatever level the user set it to — has already decided who may reach it.
+ * Accept the session instead of asking the user to open the printed `?token=`
+ * URL, which is loopback and never reaches them.
+ *
+ * No header can stand in for that judgement. A `public` entrance bypasses
+ * Authelia entirely and so arrives with no identity stamp at all, which is
+ * exactly the level a third-party custom domain is forced to.
  *
  * @param {{ requestRejection: Function, authorizeIndex: Function }} connection
  */
@@ -42,16 +42,15 @@ export function acceptOlaresBrowserSession(connection) {
   const reject = connection.requestRejection.bind(connection);
   connection.requestRejection = (request) => {
     const code = reject(request);
-    if (code === 401 && isOlaresEdgeAuthenticated(request)) return undefined;
-    return code;
+    return code === 401 ? undefined : code;
   };
 
   const authorize = connection.authorizeIndex.bind(connection);
   connection.authorizeIndex = (req, res) => {
     const url = new URL(req.url ?? "/", "http://dsh.invalid");
+    // The printed URL still mints its cookie; dsh redirects it off the query.
     if (url.searchParams.has(TOKEN_QUERY)) return authorize(req, res);
-    if (isOlaresEdgeAuthenticated(req)) return true;
-    return authorize(req, res);
+    return true;
   };
 }
 
@@ -68,10 +67,11 @@ export function apply(ctx) {
   const onRequest = (req) => {
     try {
       const identity = identityFromHeaders(req.headers ?? {});
-      if (!identity.user) return;
-      rememberRequestIdentity(identity);
+      // Only Authelia stamps this, so a `public` entrance carries no identity;
+      // it gates nothing here and only names the olares-cli session when present.
+      if (identity.user) rememberRequestIdentity(identity);
       // dsh asks its Host fence from more than the /api gateway — open-in-app
-      // asks too — so the whole entrance answers as loopback, not just /api.
+      // asks too — so every route answers as loopback, not just /api.
       applyLoopbackHeaders(req.headers, loopbackAuthority(ctx.webServer.port));
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

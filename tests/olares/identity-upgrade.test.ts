@@ -110,13 +110,14 @@ test("a request without fetch metadata gains none", () => {
 
 /**
  * A third-party custom domain is a real entrance the chart could never name,
- * and Olares only grants one to a `public` entrance, so it arrives with the
- * edge's user stamp and no Authelia cookie.
+ * and Olares only grants one to a `public` entrance — which bypasses Authelia,
+ * so it arrives with neither a user stamp nor an Authelia cookie.
  */
 test("a custom domain entrance is rewritten like any other", () => {
   const { server, ctx } = fakeContext();
   apply(ctx as never);
   const req = incoming({ host: "www.app-test-mayuxing.cn", cookie: "" });
+  delete req.headers["x-bfl-user"];
 
   server.emit("request", req);
 
@@ -135,21 +136,24 @@ test("a fenced route outside /api is rewritten too", () => {
   assert.equal(req.headers.host, LOOPBACK);
 });
 
-test("an unstamped request is left alone on both paths", () => {
+/**
+ * Only Authelia stamps the user, so a `public` entrance carries nothing to key
+ * on. Keying the rewrite on the stamp is what left the custom domain at 401.
+ */
+test("an unstamped request is rewritten on both paths", () => {
   const { server, ctx } = fakeContext();
   apply(ctx as never);
 
   for (const event of ["request", "upgrade"]) {
-    const req = incoming();
-    req.headers.host = "lares.lares-one3";
+    const req = incoming({ cookie: "" });
     delete req.headers["x-bfl-user"];
     server.emit(event, req);
-    assert.equal(req.headers.host, "lares.lares-one3");
-    assert.equal(req.headers.origin, "file://");
+    assert.equal(req.headers.host, LOOPBACK);
+    assert.equal(req.headers.origin, `http://${LOOPBACK}`);
   }
 });
 
-test("edge identity satisfies dsh browser-session 401s", () => {
+test("the entrance satisfies dsh browser-session 401s, stamp or not", () => {
   const connection = {
     requestRejection(request: { headers: Record<string, string> }) {
       return request.headers.cookie?.includes("dsh=") ? undefined : 401;
@@ -160,20 +164,8 @@ test("edge identity satisfies dsh browser-session 401s", () => {
   };
   acceptOlaresBrowserSession(connection);
 
-  assert.equal(
-    connection.requestRejection({
-      headers: { "x-bfl-user": "one3", cookie: "auth_token=jwt-value" },
-    }),
-    undefined,
-  );
-  assert.equal(connection.requestRejection({ headers: { host: "127.0.0.1:8080" } }), 401);
-  assert.equal(
-    connection.authorizeIndex({
-      url: "/",
-      headers: incoming().headers,
-    } as never),
-    true,
-  );
+  assert.equal(connection.requestRejection({ headers: {} }), undefined);
+  assert.equal(connection.authorizeIndex({ url: "/", headers: {} } as never), true);
   assert.equal(connection.authorizeIndex({ url: "/?token=abc", headers: {} } as never), true);
 });
 
