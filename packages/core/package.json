@@ -111,6 +111,8 @@
     "./router/models-client": "./router/models-client.js",
     "./media/ffmpeg-run": "./media/ffmpeg-run.js",
     "./media/router-images": "./media/router-images.js",
+    "./media/generation": "./media/generation.js",
+    "./media/tool": "./media/tool.js",
     "./mcp/config": "./mcp/config.js",
     "./mcp/client": "./mcp/client.js",
     "./olares/identity": "./olares/identity.js",

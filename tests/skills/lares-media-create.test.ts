@@ -60,6 +60,10 @@ test("lares-media-create is a produce protocol, not a diagnosis ladder", () => {
   assert.doesNotMatch(skill, /`image` as a data URL/);
   assert.match(skill, /Never switch to a T2V row on your own/);
   assert.match(skill, /A second refusal ends the attempt/);
+  // The tool owns submit, wait and publish, which is what keeps a finished
+  // render from being lost when the next model request fails.
+  assert.match(skill, /Call \*\*once\*\* with the `media_generate` tool/);
+  assert.match(skill, /resumed with `generation_id`/);
   assert.ok(skill.split("\n").length < 95);
   assert.ok(existsSync(join(SKILL_DIR, "references/router.md")));
   assert.ok(existsSync(join(SKILL_DIR, "references/flowstudio.md")));

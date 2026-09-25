@@ -11,6 +11,7 @@ Import surfaces (`@olares/lares-core/<export>`):
 - `workspace/*`: workspace boundaries, default seed, and dsh session-to-workspace resolution.
 - `files/*`: intake, preview workspace, markdown rewrite, Host upload/preview HTTP.
 - `drive/*`: path policy, tool execution, present cards, and agent tool definitions.
+- `media/*`: ffmpeg encodes, Router-bound image re-encoding, and `media_generate`: submit, wait, publish, and the session ledger that recovers a generation an earlier turn never saw finish.
 - `voice/*`, `search/*`: STT/search settings, Host payloads, and client API contracts.
 - `olares/*`: Olares entrance identity and trusted-host loopback. The olares-cli session is not one of them: it comes from the credential app-service mounts.
 - `larepass/host`: find the Lares entrance from LarePass `myApps`, PC-test proxy URLs, Host probe, `hostConfigFromEnv` / `hostTarget` / `hostKey`, and `laresPortsFromAccount`.
