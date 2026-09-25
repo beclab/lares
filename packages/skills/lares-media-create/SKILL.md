@@ -1,6 +1,6 @@
 ---
 name: lares-media-create
-version: 0.3.0
+version: 0.4.0
 description: "Produce image, video, audio, or 3D through Router: list that family, POST the matching shim route, land the file. Use for 生成图片, 生成视频, text-to-image, FlowStudio generate, FlowStudio 场景/工作流, T2V, I2V, R2V, 文生视频, 图生视频. Not for Router install, catalog sync, GPU diagnosis, or curling FlowStudio."
 metadata:
   requires:
@@ -48,7 +48,13 @@ curl -sS -X POST "$LARES_LLM_BASE_URL/videos" \
   -d '{"model":"<provider>/<model>","prompt":"<prompt>","flowstudio":{"params":{"<parameter key>":"<value>"}}}'
 ```
 
-   Swap the path from the table. For I2V / R2V, if the user supplied a reference image, send it on that same POST (`image` as a data URL). If they did not, pick a prompt-only T2V row.
+   Swap the path from the table.
+
+   **I2V / R2V / image edit** — the reference goes on that same POST as `reference_images`, an array of `data:image/<type>;base64,…` URLs (the row's `canonical_fields` spells this `inputs.images`; on these routes the body key is `reference_images`). Never `image`, `images`, `input_image`, a bare path, or an `https://` link. Do not send `operation`. Example: [router.md](references/router.md#image-to-video).
+
+   The user asked for I2V (or named an I2V scene) but gave no image → ask for one, or say you will first generate a reference image with an `image_generation` row and then animate it. Never switch to a T2V row on your own.
+
+   `media_input_required` / `media_input_unsupported` / `media_field_unknown`: the error names the key the route wants — fix the body **once** to that spelling and retry. A second refusal ends the attempt: report the error text to the user. Do not try other spellings, do not grep `/app` or the Router source, do not curl Router's data plane to bypass the shim.
 
 5. Land the file ([deliver.md](references/deliver.md)). **Images / video / audio / 3D:** `workspace_publish` the `files_path`; do not `read_image` by first copying the file, and do not close the reply with that path as a link. Do not claim success from the filename or the prompt.
 

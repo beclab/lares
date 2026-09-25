@@ -31,10 +31,26 @@ A Router old enough to drop `files_path` leaves the poll JSON without one. Its o
 
 - Never `olares-cli router call … --id`.
 
+## Image to video
+
+The reference image travels as a data URL in `reference_images`. Build it from the uploaded file, not from a path the upstream cannot read. `--rawfile` keeps a multi-megabyte image off the command line:
+
+```bash
+{ printf 'data:image/png;base64,'; base64 < "$PATH_TO_IMAGE" | tr -d '\n'; } > /tmp/ref.url
+jq -n --arg m "<provider>/<model>" --arg p "<prompt>" --rawfile i /tmp/ref.url \
+  '{model:$m, prompt:$p, reference_images:[$i]}' |
+curl -sS -X POST "$LARES_LLM_BASE_URL/videos" \
+  -H 'content-type: application/json' -H 'prefer: respond-async' --data-binary @-
+```
+
+Use the real subtype (`jpeg`, `webp`, …). The same key works on `/images/generations` for an image edit scene. A newer Router also accepts the catalog's nested form `{"inputs":{"images":[…]}}`; `reference_images` works on both, so use it.
+
 Then land with [deliver.md](deliver.md). A Router JSON body or `--out` path is not preview.
 
 ## Failures
 
 - One row 404 / unpublished / wrong mode → next same-family row. Stay on produce.
+- `media_input_required` / `media_input_unsupported` / `media_field_unknown` → one corrected retry in the spelling the error names, then report. Another row of the same kind needs the same field, so hopping rows does not help.
+- `upstream_capacity_unavailable`, or a failed generation with `retryable: true` → the machine is short of memory or GPU right now. Wait `retry_after_seconds`, retry the same row once, then tell the user the node is busy. Do not fan out across other rows on the same machine.
 - Auth, quota, “application not answering” → Router diagnosis (`router usage list`, `router provider get`). Still do not curl FlowStudio.
 - **Do not** `provider sync-models`, `model add`, `model delete`, or `model update` to “fix” a generate request. Catalog repair is [flowstudio.md](flowstudio.md), and only when the family list is empty.
