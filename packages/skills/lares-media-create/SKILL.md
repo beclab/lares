@@ -1,6 +1,6 @@
 ---
 name: lares-media-create
-version: 0.5.0
+version: 0.5.1
 description: "Produce image, video, audio, or 3D through Router: list that family, POST the matching shim route, land the file. Use for 生成图片, 生成视频, text-to-image, FlowStudio generate, FlowStudio 场景/工作流, T2V, I2V, R2V, 文生视频, 图生视频. Not for Router install, catalog sync, GPU diagnosis, or curling FlowStudio."
 metadata:
   requires:
@@ -24,14 +24,14 @@ Do not load other skills (including olares-router). Do not curl FlowStudio or Co
 curl -sS "$LARES_LLM_BASE_URL/models"
 ```
 
-   Keep only rows whose `mode` is the matching family. For video, if that list is empty, also inspect `image_generation` (FlowStudio sometimes parks video scenes there). Never probe `audio` for a song. Do not use `olares-cli router list` here: workspace-write cannot create its refresh lock under `/data/home`.
+   Keep only rows whose `mode` is the matching family. For video, if that list is empty, also inspect `image_generation` (FlowStudio sometimes parks video scenes there). Never probe `audio` for a song. Do not use `olares-cli router list` here: on an olares-cli older than the one whose `router key current` reports "the host application's proxy", workspace-write cannot create its refresh lock under `/data/home`.
 
 3. Pick one **enabled** row of this family. Prefer a prompt-only scene. Skip a row whose title is clearly another family (a T2V scene is not an image). `--model` is `<provider>/<model>` as listed — FlowStudio's model half is often a UUID; that **is** the id, and `name` on the **same JSON row** is the label to say it by. Never GET FlowStudio to map a UUID to a title. `flowstudio.parameters`, when present, lists that scene's exposed controls. Each entry carries the exact `key` to submit plus its human `label`, type, default, bounds, and options. Match the user's words to `label`; send the chosen values under `flowstudio.params` using `key`. For a select, send the option's `value`, not its display label. Do not invent a key absent from `flowstudio.parameters`. This provider-specific object is only for a row that actually has `flowstudio.parameters`.
 
    When the user named a scene, that row **is** the pick — match their words against `name` on the listed rows and run that one. A detail absent from both `flowstudio.parameters` and `canonical_fields` is dropped from the body and said in the reply; it is never a reason to run a scene the user did not ask for. Do not switch to a row that "fits better".
 4. Call **once** with the `media_generate` tool: `model` and `mode` from the picked row, the user's prompt unchanged, `reference_images` as workspace paths for I2V / R2V / edit, `options` for fields the row's `canonical_fields` names and, on a row with `flowstudio.parameters`, `flowstudio: {params: {...}}` keyed as step 3 says. It submits as the logged-in user, waits however long the run takes, and publishes every output — do not poll, download, or `workspace_publish` its files again. A generation an earlier turn started is resumed with `generation_id` alone; never submit it a second time. Its error text is the Router error; the failure rules below apply to it unchanged.
 
-   Only when `media_generate` is not available, call through `$LARES_LLM_BASE_URL` (in-process Router shim; default `http://127.0.0.1:$PORT/llm/v1`). That stamps the logged-in Olares user, so FlowStudio owns the job as this person — never as the shared chart owner. Do not `olares-cli router call` to generate (in-cluster it presents as the Lares app). Route follows the **picked row's mode**:
+   Only when `media_generate` is not available, call through `$LARES_LLM_BASE_URL` (in-process Router shim; default `http://127.0.0.1:$PORT/llm/v1`). That stamps the logged-in Olares user, so FlowStudio owns the job as this person — never as the shared chart owner. Do not `olares-cli router call` to generate unless `olares-cli router key current` shows `CALLS USE` as the host application's proxy; an older CLI ignores that and presents as the Lares app. Route follows the **picked row's mode**:
 
 | Row mode | POST `$LARES_LLM_BASE_URL/…` |
 |---|---|

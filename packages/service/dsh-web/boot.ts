@@ -100,6 +100,9 @@ export async function bootLaresWeb(): Promise<void> {
     DSH_BUNDLED_SKILL_DIR: skillsDir,
     DSH_SESSION_ROOT: sessionRoot,
     LARES_LLM_BASE_URL: llmBase,
+    // olares-cli's data plane goes through the shim, so `router call` from the
+    // agent's shell is from the logged-in person rather than this app.
+    OLARES_ROUTER_DATA_PLANE_URL: llmBase,
     LLM_GATEWAY_URL: env.routerUrl,
     OLARES_APP_ID: env.olaresAppId,
     LARES_ROUTER_API_KEY: env.routerApiKey ?? "",
