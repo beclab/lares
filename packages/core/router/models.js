@@ -8,6 +8,21 @@ export const LLM_SETTINGS_NS = "llm-pi-ai";
 const NON_CHAT_HINTS = /embed|whisper|tts|speech|ocr|clip|stt|asr|transcri/i;
 const PLACEHOLDER_MODEL = /^(?:default|deepseek-v4-(?:flash|pro))$/i;
 
+/**
+ * Model-request retries on the Router route. The dsh default gives up after
+ * five tries and refuses any Retry-After over ten seconds, which is shorter
+ * than a local single-slot engine stays busy with a title or compaction
+ * request, so a turn failed on a model that was about to be free. Waits here
+ * reach a minute each and several minutes in total; every wait is an
+ * `llm/retry` event the conversation shows while it lasts.
+ */
+export const ROUTER_RETRY_POLICY = Object.freeze({
+  mode: "normal",
+  maxRetries: 12,
+  retryableCodes: ["EMPTY_RESPONSE", "RATE_LIMIT", "SERVER", "TIMEOUT", "TRANSPORT"],
+  backoff: { initialDelayMs: 1_000, maxDelayMs: 60_000, jitterRatio: 0.1 },
+});
+
 export function isChatModelId(id) {
   return !NON_CHAT_HINTS.test(id);
 }

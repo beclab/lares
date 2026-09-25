@@ -8,8 +8,9 @@ export interface RouterCatalogRow {
   reasoningEfforts: Record<string, string> | null;
   /** Tokens one request may span, or null when Router states none. */
   contextWindow: number | null;
-  /** Longest reply the model can produce, or null when Router states none. */
+  /** Output tokens a turn may reserve: Router's limit capped at a quarter of the window. */
   maxTokens: number | null;
 }
 
+export function outputTokenBudget(declared: number | null, contextWindow: number | null): number | null;
 export function routerCatalogRows(payload: unknown): RouterCatalogRow[];

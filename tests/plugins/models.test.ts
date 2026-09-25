@@ -105,6 +105,8 @@ test("Router refresh declares the sizes Router states and omits the ones it does
         { id: "Qwen/sized", mode: "chat", context_size: 104448, max_output_tokens: 8192 },
         { id: "Qwen/unsized", mode: "chat" },
         { id: "Qwen/context-only", mode: "chat", context_size: 32768 },
+        // A local engine reports its whole window as the output limit.
+        { id: "Qwen/whole-window", mode: "chat", context_size: 131072, max_output_tokens: 131072 },
         // Router omits a size it does not know rather than sending zero; a
         // payload that sends one anyway must not size the model at zero.
         { id: "Qwen/zeroed", mode: "chat", context_size: 0, max_output_tokens: -1 },
@@ -115,7 +117,8 @@ test("Router refresh declares the sizes Router states and omits the ones it does
     [
       { id: "Qwen/sized", name: "Qwen/sized", contextWindow: 104448, maxTokens: 8192 },
       { id: "Qwen/unsized", name: "Qwen/unsized" },
-      { id: "Qwen/context-only", name: "Qwen/context-only", contextWindow: 32768 },
+      { id: "Qwen/context-only", name: "Qwen/context-only", contextWindow: 32768, maxTokens: 8192 },
+      { id: "Qwen/whole-window", name: "Qwen/whole-window", contextWindow: 131072, maxTokens: 32768 },
       { id: "Qwen/zeroed", name: "Qwen/zeroed" },
       { id: "Qwen/fractional", name: "Qwen/fractional" },
       { id: "Qwen/stringly", name: "Qwen/stringly" },

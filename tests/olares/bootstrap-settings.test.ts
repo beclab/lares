@@ -52,6 +52,8 @@ test("seeds the Router route and the default model, then leaves the document alo
     assert.equal(profile.baseURL, "http://127.0.0.1:8080/llm/v1");
     assert.equal(profile.apiKeyEnv, "LARES_ROUTER_SHIM_KEY");
     assert.deepEqual(profile.compat, { supportsReasoningEffort: true });
+    assert.equal(profile.retryPolicy.maxRetries, 12);
+    assert.equal(profile.retryPolicy.backoff.maxDelayMs, 60_000);
     assert.deepEqual(profile.models, DECLARED);
     assert.equal(doc["agent-default-model"].provider, "olares-router");
     assert.equal(doc["agent-default-model"].model, "Qwen/chat");
@@ -94,6 +96,8 @@ test("an existing route keeps the user's endpoint but follows the Router catalog
     assert.equal(profile.displayName, "My Router");
     assert.equal(profile.baseURL, "http://127.0.0.1:9999/llm/v1");
     assert.deepEqual(profile.compat, { supportsReasoningEffort: true });
+    // The retry policy is how Router behaves, not a user preference.
+    assert.equal(profile.retryPolicy.maxRetries, 12);
     assert.deepEqual(profile.models, DECLARED);
   });
 });
