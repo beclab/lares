@@ -31,9 +31,9 @@ A Router old enough to drop `files_path` leaves the poll JSON without one. Its o
 
 - Never `olares-cli router call … --id`.
 
-## Image to video
+## Reference images
 
-The reference image travels as a data URL in `reference_images`. Build it from the uploaded file, not from a path the upstream cannot read. `--rawfile` keeps a multi-megabyte image off the command line:
+For I2V/R2V, the reference image travels as a data URL in `reference_images`. Build it from the uploaded file, not from a path the upstream cannot read. `--rawfile` keeps a multi-megabyte image off the command line:
 
 ```bash
 { printf 'data:image/png;base64,'; base64 < "$PATH_TO_IMAGE" | tr -d '\n'; } > /tmp/ref.url
@@ -43,7 +43,7 @@ curl -sS -X POST "$LARES_LLM_BASE_URL/videos" \
   -H 'content-type: application/json' -H 'prefer: respond-async' --data-binary @-
 ```
 
-Use the real subtype (`jpeg`, `webp`, …). The same key works on `/images/generations` for an image edit scene. A newer Router also accepts the catalog's nested form `{"inputs":{"images":[…]}}`; `reference_images` works on both, so use it.
+Use the real subtype (`jpeg`, `webp`, …). Image editing is canonical and explicit: POST `/generations` with `{"model":"…","operation":"edit","prompt":"…","inputs":{"images":[…]}}`; add `inputs.mask` when the user supplied a mask. That request selects a FlowStudio edit workflow or a cloud provider's `/images/edits` adapter without relying on provider-specific inference.
 
 Then land with [deliver.md](deliver.md). A Router JSON body or `--out` path is not preview.
 

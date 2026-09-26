@@ -10,7 +10,7 @@ import {
 } from "../workspace/path.js";
 import { carriesWebpImage, transcodeWebpImages } from "./router-images.js";
 
-/** Catalog mode → Router data-plane route that creates a generation of it. */
+/** Catalog mode → released Router route for the family's default generation. */
 export const MEDIA_GENERATION_ROUTES = Object.freeze({
   image_generation: "images/generations",
   video_generation: "videos",
@@ -56,9 +56,9 @@ export class MediaGenerationError extends Error {
 }
 
 /**
- * Reference images are read from the session workspace and sent as data URLs:
- * the upstream cannot read a path on this pod, and the one spelling every
- * Router media route accepts is `reference_images`.
+ * Input images are read from the session workspace and sent as data URLs: the
+ * upstream cannot read a path on this pod. The request builder chooses the
+ * released `reference_images` spelling or canonical `inputs.images` spelling.
  */
 export async function referenceImageDataUrl(workspaceRoot, path) {
   const type = IMAGE_TYPES[extname(String(path)).toLowerCase()];
@@ -75,8 +75,8 @@ export async function referenceImageDataUrl(workspaceRoot, path) {
 /** @returns {{ mode: string, route: string, body: Record<string, unknown> }} */
 export function mediaGenerationRequest(args, referenceImages = []) {
   const mode = String(args?.mode ?? "").trim();
-  const route = MEDIA_GENERATION_ROUTES[mode];
-  if (!route) {
+  const releasedRoute = MEDIA_GENERATION_ROUTES[mode];
+  if (!releasedRoute) {
     throw new MediaGenerationError(
       `mode must be one of ${Object.keys(MEDIA_GENERATION_ROUTES).join(", ")}`,
     );
@@ -84,22 +84,43 @@ export function mediaGenerationRequest(args, referenceImages = []) {
   const model = String(args?.model ?? "").trim();
   if (!model.includes("/")) throw new MediaGenerationError("model must be <provider>/<model> as the catalog lists it");
   const prompt = String(args?.prompt ?? "");
+  const operation = String(args?.operation ?? "").trim();
   if (referenceImages.length > MAX_REFERENCE_IMAGES) {
     throw new MediaGenerationError(`at most ${MAX_REFERENCE_IMAGES} reference images`);
   }
   const options = args?.options && typeof args.options === "object" && !Array.isArray(args.options)
     ? args.options
     : {};
+  const canonicalImageOperation = mode === "image_generation"
+    && operation !== "" && operation !== "generate";
+  const route = canonicalImageOperation ? "generations" : releasedRoute;
   const body = {};
   for (const [key, value] of Object.entries(options)) {
     if (RESERVED_OPTION_KEYS.has(key)) {
       throw new MediaGenerationError(`options.${key} is set by the tool itself`);
     }
-    body[key] = value;
+    if (canonicalImageOperation && key.startsWith("output.")) {
+      body.output ??= {};
+      body.output[key.slice("output.".length)] = value;
+    } else {
+      body[key] = value;
+    }
   }
   body.model = model;
   if (prompt) body.prompt = prompt;
-  if (referenceImages.length > 0) body.reference_images = referenceImages;
+  if (operation) body.operation = operation;
+  if (canonicalImageOperation) {
+    const mask = String(args?.mask_image_data_url ?? "").trim();
+    if (referenceImages.length > 0 || mask) {
+      body.inputs = {};
+      if (referenceImages.length > 0) body.inputs.images = referenceImages;
+      if (mask) body.inputs.mask = mask;
+    }
+  } else {
+    if (referenceImages.length > 0) body.reference_images = referenceImages;
+    const mask = String(args?.mask_image_data_url ?? "").trim();
+    if (mask) body.maskImage = mask;
+  }
   return { mode, route, body };
 }
 
@@ -401,7 +422,11 @@ export async function runMediaGeneration(args, { session, callId, workspaceRoot,
     const paths = Array.isArray(args?.reference_images) ? args.reference_images : [];
     const images = [];
     for (const path of paths) images.push(await referenceImageDataUrl(workspaceRoot, path));
-    const request = mediaGenerationRequest(args, images);
+    const maskPath = String(args?.mask_image ?? "").trim();
+    const maskImageDataUrl = maskPath
+      ? await referenceImageDataUrl(workspaceRoot, maskPath)
+      : "";
+    const request = mediaGenerationRequest({ ...args, mask_image_data_url: maskImageDataUrl }, images);
     const created = await submitMediaGeneration(request, { ...deps, signal });
     id = String(created.id);
     model = request.body.model;
