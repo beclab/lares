@@ -1,7 +1,12 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type Document, isSeq, parseDocument } from "yaml";
-import { isChatModel, isPlaceholderModelId, type RouterModelEntry } from "./router-models.js";
+import {
+  ROUTER_RETRY_POLICY,
+  isChatModel,
+  isPlaceholderModelId,
+  type RouterModelEntry,
+} from "./router-models.js";
 
 /** The provider route Lares owns: a pi-ai profile key, and what agent-default-model names. */
 const PROVIDER = "olares-router";
@@ -110,6 +115,7 @@ function seedRouterRoute(doc: Document, seed: LaresSettingsSeed): boolean {
     baseURL: seed.baseURL,
     apiKeyEnv: CREDENTIAL_REF,
     compat: ROUTE_COMPAT,
+    retryPolicy: structuredClone(ROUTER_RETRY_POLICY),
     models,
   });
   return true;
@@ -126,6 +132,7 @@ function seedRouterRoute(doc: Document, seed: LaresSettingsSeed): boolean {
 function refreshRouterRoute(doc: Document, seed: LaresSettingsSeed): void {
   const path = [SETTINGS_NS, "providers", PROVIDER];
   doc.setIn([...path, "compat"], ROUTE_COMPAT);
+  doc.setIn([...path, "retryPolicy"], structuredClone(ROUTER_RETRY_POLICY));
   const chat = declarableModels(seed);
   if (chat.length === 0) return;
   doc.setIn([...path, "models"], chat);

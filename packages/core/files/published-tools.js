@@ -49,6 +49,19 @@ export function durablePathFromToolCall(name, args) {
   return null;
 }
 
+/**
+ * Every path one successful artifact tool call published. media_generate is
+ * the one whose paths come from its result, since the outputs do not exist
+ * until the generation finishes.
+ */
+export function publishedPathsFromToolCall(name, args, value) {
+  if (name === "media_generate") {
+    return Array.isArray(value?.files) ? value.files.filter((path) => typeof path === "string" && path) : [];
+  }
+  const path = durablePathFromToolCall(name, args);
+  return path ? [path] : [];
+}
+
 export function toolResultIsError(event) {
   const content = event?.data?.message?.content;
   if (!Array.isArray(content) || content.length === 0) return true;

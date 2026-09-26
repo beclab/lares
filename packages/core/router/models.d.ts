@@ -1,6 +1,12 @@
 import type { RouterCatalogRow } from "./catalog.js";
 
 export type RouterModelEntry = RouterCatalogRow;
+export const ROUTER_RETRY_POLICY: Readonly<{
+  mode: "normal";
+  maxRetries: number;
+  retryableCodes: string[];
+  backoff: { initialDelayMs: number; maxDelayMs: number; jitterRatio: number };
+}>;
 export function isChatModelId(id: string): boolean;
 export function isChatModel(model: RouterModelEntry): boolean;
 export function modelsFromRouterCatalog(payload: unknown): RouterModelEntry[];

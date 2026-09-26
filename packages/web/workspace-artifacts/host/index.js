@@ -8,6 +8,11 @@ import {
 } from "@olares/lares-core/drive/tools";
 import { DRIVE_IMPORT_PROMPT } from "@olares/lares-core/drive/paths";
 import {
+  recoverMediaGenerations,
+  recoveredGenerationsNote,
+} from "@olares/lares-core/media/generation";
+import { MEDIA_GENERATE_PROMPT, mediaGenerateDefinition } from "@olares/lares-core/media/tool";
+import {
   PRODUCED_GATE_PLUGIN,
   createProducedGateBudget,
   durableProducedPathsFromEvents,
@@ -17,7 +22,7 @@ import {
   unpublishedMediaSteerText,
 } from "@olares/lares-core/files/produced-gate";
 import {
-  durablePathFromToolCall,
+  publishedPathsFromToolCall,
 } from "@olares/lares-core/files/published-tools";
 
 export const name = "lares-workspace-artifacts";
@@ -30,7 +35,7 @@ function withPublishedCapture(definition, capture) {
     ...definition,
     async execute(args, exec) {
       const value = await execute(args, exec);
-      capture(definition.name, args, exec);
+      capture(definition.name, args, exec, value);
       return value;
     },
   };
@@ -51,6 +56,10 @@ export function createWorkspacePublishTool(statFile, capture) {
 
 export function createFfmpegEncodeTool(encode, capture) {
   return defineTool(withPublishedCapture(ffmpegEncodeDefinition(encode), capture));
+}
+
+export function createMediaGenerateTool(deps, capture) {
+  return defineTool(withPublishedCapture(mediaGenerateDefinition(deps), capture));
 }
 
 function sessionCwd(agent) {
@@ -98,15 +107,15 @@ export function installProducedOpenabilityGate(ctx, options = {}) {
  */
 export function installArtifactPresentations(ctx) {
   const pending = new WeakMap();
-  const capture = (name, args, exec) => {
-    const path = durablePathFromToolCall(name, args);
-    if (!path || !exec?.agent?.session) return;
+  const capture = (name, args, exec, value) => {
+    const paths = publishedPathsFromToolCall(name, args, value);
+    if (paths.length === 0 || !exec?.agent?.session) return;
     const boundary = ctx.sessionProjections.stateOf(exec.agent.session, "turnBoundary");
     if (boundary === undefined || boundary.openTurnStartSeq === null) return;
     pending.set(exec, {
       session: exec.agent.session,
       turn: boundary.lastTurn,
-      path,
+      paths,
     });
   };
   ctx.on("tools/result", (exec, result) => {
@@ -116,10 +125,45 @@ export function installArtifactPresentations(ctx) {
     delivery.session.append("deliverables/presented", {
       turn: delivery.turn,
       callId: exec.callId,
-      files: [{ path: delivery.path }],
+      files: delivery.paths.map((path) => ({ path })),
     });
   });
   return capture;
+}
+
+/**
+ * At the first step of each turn, settle generations an earlier turn started
+ * but never saw finish, and tell the model what happened to them.
+ */
+export function installMediaRecovery(ctx, deps = {}) {
+  const lastTurn = new WeakMap();
+  return ctx.on("agent/pre-step", async ({ agent, turn, signal }, next) => {
+    const decision = await next();
+    if (decision.kind !== "enter" || lastTurn.get(agent) === turn) return decision;
+    lastTurn.set(agent, turn);
+    const cwd = sessionCwd(agent);
+    if (cwd === null || !agent.session) return decision;
+    let recovered;
+    try {
+      recovered = await recoverMediaGenerations(agent.session, { turn, workspaceRoot: cwd }, { ...deps, signal });
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      console.warn(`[lares] media recovery skipped: ${error instanceof Error ? error.message : String(error)}`);
+      return decision;
+    }
+    const note = recoveredGenerationsNote(recovered);
+    if (!note) return decision;
+    return {
+      kind: "enter",
+      messages: [
+        ...decision.messages,
+        createUserMessage({
+          content: [{ type: "text", text: note }],
+          source: { kind: "plugin", plugin: "lares-media-recovery" },
+        }),
+      ],
+    };
+  });
 }
 
 export function apply(ctx) {
@@ -129,5 +173,8 @@ export function apply(ctx) {
   ctx.tools.register(createUrlFetchTool(undefined, capture));
   ctx.tools.register(createWorkspacePublishTool(undefined, capture));
   ctx.tools.register(createFfmpegEncodeTool(undefined, capture));
+  ctx.systemPrompt.section({ name: "tool:media_generate", order: 116, text: MEDIA_GENERATE_PROMPT });
+  ctx.tools.register(createMediaGenerateTool(undefined, capture));
   installProducedOpenabilityGate(ctx);
+  installMediaRecovery(ctx);
 }

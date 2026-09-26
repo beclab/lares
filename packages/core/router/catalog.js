@@ -49,6 +49,19 @@ function tokenCount(value) {
   return Number.isInteger(value) && value > 0 ? value : null;
 }
 
+/**
+ * Output tokens a turn may ask for. A local engine reports its whole context
+ * as max_output_tokens, and a request that reserves all of it cannot fit
+ * beside its own prompt: the engine's KV budget refuses it or, worse, admits
+ * it and evicts every other request. A quarter of the window leaves room for
+ * the prompt and still exceeds any reply a chat turn writes.
+ */
+export function outputTokenBudget(declared, contextWindow) {
+  if (contextWindow === null) return declared;
+  const cap = Math.max(1, Math.floor(contextWindow / 4));
+  return declared === null ? cap : Math.min(declared, cap);
+}
+
 export function routerCatalogRows(payload) {
   if (!payload || typeof payload !== "object" || !Array.isArray(payload.data)) return [];
   const rows = [];
@@ -59,14 +72,15 @@ export function routerCatalogRows(payload) {
     if (!SAFE_MODEL_ID.test(id) || seen.has(id)) continue;
     seen.add(id);
     const flags = capabilities(item);
+    const contextWindow = tokenCount(item.context_size);
     rows.push({
       id,
       name: id,
       mode: String(item.mode ?? "").trim().toLowerCase() || null,
       supportsVision: flags.has("vision"),
       reasoningEfforts: reasoningEfforts(item, flags),
-      contextWindow: tokenCount(item.context_size),
-      maxTokens: tokenCount(item.max_output_tokens),
+      contextWindow,
+      maxTokens: outputTokenBudget(tokenCount(item.max_output_tokens), contextWindow),
     });
   }
   return rows;

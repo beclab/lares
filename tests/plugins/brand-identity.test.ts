@@ -41,6 +41,11 @@ test("identity prompt points media creation at the dedicated skill", () => {
   assert.match(identityPrompt(), /lares-media-create skill/);
   assert.match(identityPrompt(), /FlowStudio scenes and workflows/);
   assert.match(identityPrompt(), /Do not curl FlowStudio/);
+  assert.match(identityPrompt(), /call media_generate/);
+});
+
+test("identity prompt keeps progress updates in the user's language", () => {
+  assert.match(identityPrompt(), /progress updates as well as the final answer — in the language of the user's latest message/);
 });
 
 test("identity prompt keeps user files out of the application overlay", () => {

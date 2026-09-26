@@ -7,6 +7,7 @@ import {
   isPlaceholderModelId,
   modelsFromRouterCatalog,
   pickChatModelId,
+  ROUTER_RETRY_POLICY,
 } from "@olares/lares-core/router/models";
 
 export type RouterModelEntry = RouterCatalogRow;
@@ -17,6 +18,7 @@ export {
   isPlaceholderModelId,
   modelsFromRouterCatalog,
   pickChatModelId,
+  ROUTER_RETRY_POLICY,
 };
 
 export function fetchRouterModels(env: RouterModelsEnv): Promise<RouterModelEntry[]> {
