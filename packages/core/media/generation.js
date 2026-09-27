@@ -222,7 +222,10 @@ export async function submitMediaGeneration(request, deps = {}) {
       ...t.headers,
       "content-type": "application/json",
       prefer: "respond-async",
-      ...(deps.idempotencyKey ? { "idempotency-key": deps.idempotencyKey } : {}),
+      ...(deps.idempotencyKey ? {
+        "idempotency-key": deps.idempotencyKey,
+        "x-olares-idempotency-key": deps.idempotencyKey,
+      } : {}),
     },
     body,
     signal: deps.signal,
