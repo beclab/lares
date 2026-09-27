@@ -12,7 +12,8 @@ export const MEDIA_GENERATE_PROMPT = [
   "Generate images, video, music, and 3D with media_generate, not with curl and a sleep loop.",
   "It submits through Router as the logged-in user, waits for the result, and publishes every",
   "output itself, so do not workspace_publish or download its files again. Pick model and mode",
-  "from one catalog row; put only fields that row's canonical_fields names into options.",
+  "from one catalog row; use its declared operation and put only fields that row's",
+  "canonical_fields names into options.",
   "If a turn ended before a generation finished, the next turn is told; resume it with",
   "generation_id instead of generating it again.",
 ].join(" ");
@@ -40,13 +41,23 @@ export function mediaGenerateDefinition(deps = {}) {
         type: "string",
         description: "The user's prompt, unchanged.",
       },
+      operation: {
+        type: "string",
+        description:
+          "Creative operation declared by the catalog row. Omit for text generation; use edit for image editing.",
+      },
       reference_images: {
         type: "array",
         items: { type: "string" },
         description: "Workspace-relative image paths (png, jpeg, webp, gif) to condition on: I2V, R2V, image edit.",
       },
+      mask_image: {
+        type: "string",
+        description: "Optional workspace-relative mask image path for an image edit.",
+      },
       options: {
         type: "object",
+        additionalProperties: true,
         description:
           "Extra request fields the row's canonical_fields names, e.g. {\"seed\": 7}."
           + " Omit seed for a fresh result.",

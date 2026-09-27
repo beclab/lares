@@ -54,7 +54,11 @@ function recordingSession(events: any[] = []) {
 
 const noSleep = async () => {};
 
-test("the request sends a reference as reference_images and refuses fields the tool owns", () => {
+test("media options explicitly admit catalog-declared fields", () => {
+  assert.equal(mediaGenerateDefinition().parameters.options.additionalProperties, true);
+});
+
+test("released routes send reference_images and image edits use the canonical route", () => {
   const request = mediaGenerationRequest(
     { mode: "video_generation", model: "flowstudio/abc", prompt: "a cat", options: { seed: 7 } },
     ["data:image/png;base64,AAAA"],
@@ -66,12 +70,76 @@ test("the request sends a reference as reference_images and refuses fields the t
     prompt: "a cat",
     reference_images: ["data:image/png;base64,AAAA"],
   });
+  const edit = mediaGenerationRequest(
+    {
+      mode: "image_generation",
+      model: "flowstudio/edit",
+      operation: "edit",
+      prompt: "make it blue",
+      mask_image_data_url: "data:image/png;base64,MASK",
+      options: { seed: 9, "output.quality": "high", flowstudio: { params: { strength: 0.7 } } },
+    },
+    ["data:image/png;base64,IMAGE"],
+  );
+  assert.equal(edit.route, "generations");
+  assert.deepEqual(edit.body, {
+    seed: 9,
+    output: { quality: "high" },
+    flowstudio: { params: { strength: 0.7 } },
+    model: "flowstudio/edit",
+    prompt: "make it blue",
+    operation: "edit",
+    inputs: {
+      images: ["data:image/png;base64,IMAGE"],
+      mask: "data:image/png;base64,MASK",
+    },
+  });
   assert.throws(
     () => mediaGenerationRequest({ mode: "video_generation", model: "a/b", options: { inputs: {} } }),
     /options\.inputs is set by the tool itself/,
   );
   assert.throws(() => mediaGenerationRequest({ mode: "chat", model: "a/b" }), /mode must be one of/);
   assert.throws(() => mediaGenerationRequest({ mode: "image_generation", model: "b" }), /<provider>\/<model>/);
+});
+
+test("an image edit reads references and mask from the workspace once", async () => {
+  const root = mkdtempSync(join(tmpdir(), "lares-media-edit-"));
+  try {
+    writeFileSync(join(root, "source.png"), Buffer.from([1, 2, 3]));
+    writeFileSync(join(root, "mask.png"), Buffer.from([4, 5, 6]));
+    const { fetch, calls } = fakeFetch({
+      "POST /generations": { status: 202, body: { id: "edit-1", status: "queued" } },
+      "GET /generations/edit-1": {
+        body: { id: "edit-1", status: "completed", outputs: [{ id: "o1", files_path: "drive/Data/flowstudio/edit.png" }] },
+      },
+    });
+    const result = await runMediaGeneration(
+      {
+        mode: "image_generation",
+        model: "flowstudio/edit",
+        operation: "edit",
+        prompt: "make it blue",
+        reference_images: ["source.png"],
+        mask_image: "mask.png",
+      },
+      { session: recordingSession(), callId: "edit-call", workspaceRoot: root },
+      { env, fetch, sleep: noSleep },
+    );
+    assert.deepEqual(result.files, ["drive/Data/flowstudio/edit.png"]);
+    const posted = JSON.parse(calls[0].init.body.toString("utf8"));
+    assert.equal(posted.operation, "edit");
+    assert.match(calls[0].init.headers["idempotency-key"], /^lares-[0-9a-f]{64}$/);
+    assert.equal(
+      calls[0].init.headers["x-olares-idempotency-key"],
+      calls[0].init.headers["idempotency-key"],
+    );
+    assert.deepEqual(posted.inputs, {
+      images: [`data:image/png;base64,${Buffer.from([1, 2, 3]).toString("base64")}`],
+      mask: `data:image/png;base64,${Buffer.from([4, 5, 6]).toString("base64")}`,
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("polling waits out a busy Router and a dropped connection instead of failing", async () => {
@@ -129,6 +197,14 @@ test("a run records its id before waiting and settles it with the files", async 
     const posted = JSON.parse(calls[0].init.body.toString("utf8"));
     assert.deepEqual(posted.reference_images, [`data:image/png;base64,${Buffer.from([1, 2, 3]).toString("base64")}`]);
     assert.equal(calls[0].init.headers["x-bfl-user"], "alice");
+    assert.equal(
+      calls[0].init.headers["idempotency-key"],
+      "lares-d0f631ca1ddba8db3bcfcb9e057cdc98d0379f1bee00e75a545147a27dadd982",
+    );
+    assert.equal(
+      calls[0].init.headers["x-olares-idempotency-key"],
+      calls[0].init.headers["idempotency-key"],
+    );
     assert.deepEqual(session.events.map((event) => event.type), [MEDIA_SUBMITTED_EVENT, MEDIA_SETTLED_EVENT]);
     assert.deepEqual(pendingMediaGenerations(session.events), []);
   } finally {

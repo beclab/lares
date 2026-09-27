@@ -27,7 +27,7 @@ test("lares-media-create is a produce protocol, not a diagnosis ladder", () => {
   assert.match(skill, /workspace_publish/);
   assert.doesNotMatch(skill, /write `…\/content` to `outputs\/`/);
   assert.match(skill, /LARES_LLM_BASE_URL/);
-  assert.match(skill, /LARES_LLM_BASE_URL\/models/);
+  assert.match(skill, /LARES_LLM_BASE_URL\/models\?detail=capabilities/);
   assert.match(skill, /workspace-write cannot create its refresh lock/);
   assert.doesNotMatch(skill, /olares-cli router list --mode/);
   assert.match(skill, /logged-in Olares user/);
@@ -54,9 +54,11 @@ test("lares-media-create is a produce protocol, not a diagnosis ladder", () => {
   assert.match(skill, /references\/fallback\.md/);
   assert.match(skill, /references\/deliver\.md/);
   assert.doesNotMatch(skill, /1\. \*\*Router capability\*\*/);
-  // The catalog spells the reference `inputs.images`; the shim routes read
-  // `reference_images`. An agent told `image` tried nineteen spellings.
-  assert.match(skill, /reference goes on that same POST as `reference_images`/);
+  assert.match(skill, /`creative\.operations` to include `edit`/);
+  assert.match(skill, /never apply that fallback to a cloud model/);
+  assert.match(skill, /`operation: "edit"` for image editing/);
+  assert.match(skill, /Image edit.*`\/generations`/);
+  assert.match(skill, /`inputs\.images`/);
   assert.doesNotMatch(skill, /`image` as a data URL/);
   assert.match(skill, /Never switch to a T2V row on your own/);
   assert.match(skill, /A second refusal ends the attempt/);
@@ -118,8 +120,10 @@ test("router reference forbids calling FlowStudio HTTP and catalog surgery on pr
   assert.match(text, /x-bfl-user/);
   assert.match(text, /Never `olares-cli router call … --id`/);
   assert.match(text, /One row 404/);
-  assert.match(text, /## Image to video/);
+  assert.match(text, /## Reference images/);
   assert.match(text, /reference_images:\[\$i\]/);
+  assert.match(text, /operation.*edit/);
+  assert.match(text, /inputs.*images/);
   assert.match(text, /one corrected retry/);
   assert.match(text, /retry_after_seconds/);
   assert.match(text, /Do not\*\* `provider sync-models`/);
