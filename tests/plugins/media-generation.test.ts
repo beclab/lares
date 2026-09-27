@@ -128,6 +128,7 @@ test("an image edit reads references and mask from the workspace once", async ()
     assert.deepEqual(result.files, ["drive/Data/flowstudio/edit.png"]);
     const posted = JSON.parse(calls[0].init.body.toString("utf8"));
     assert.equal(posted.operation, "edit");
+    assert.match(calls[0].init.headers["idempotency-key"], /^lares-[0-9a-f]{64}$/);
     assert.deepEqual(posted.inputs, {
       images: [`data:image/png;base64,${Buffer.from([1, 2, 3]).toString("base64")}`],
       mask: `data:image/png;base64,${Buffer.from([4, 5, 6]).toString("base64")}`,
@@ -192,6 +193,10 @@ test("a run records its id before waiting and settles it with the files", async 
     const posted = JSON.parse(calls[0].init.body.toString("utf8"));
     assert.deepEqual(posted.reference_images, [`data:image/png;base64,${Buffer.from([1, 2, 3]).toString("base64")}`]);
     assert.equal(calls[0].init.headers["x-bfl-user"], "alice");
+    assert.equal(
+      calls[0].init.headers["idempotency-key"],
+      "lares-d0f631ca1ddba8db3bcfcb9e057cdc98d0379f1bee00e75a545147a27dadd982",
+    );
     assert.deepEqual(session.events.map((event) => event.type), [MEDIA_SUBMITTED_EVENT, MEDIA_SETTLED_EVENT]);
     assert.deepEqual(pendingMediaGenerations(session.events), []);
   } finally {
