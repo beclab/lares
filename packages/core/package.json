@@ -115,6 +115,7 @@
     "./media/tool": "./media/tool.js",
     "./mcp/config": "./mcp/config.js",
     "./mcp/client": "./mcp/client.js",
+    "./mcp/approval": "./mcp/approval.js",
     "./olares/identity": "./olares/identity.js",
     "./olares/session-identity": "./olares/session-identity.js",
     "./olares/entrance": "./olares/entrance.js",

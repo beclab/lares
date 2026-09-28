@@ -5,9 +5,10 @@ import {
   normalizeMcpServer,
   saveMcpServers,
 } from "@olares/lares-core/mcp/config";
+import { installMcpToolApproval } from "./approval.js";
 
 export const name = "lares-mcp";
-export const inject = ["webServer", "tools"];
+export const inject = ["webServer", "tools", "sandboxPolicy"];
 
 const ROUTE_PREFIX = "/api/lares/mcp";
 
@@ -82,9 +83,11 @@ class McpManager {
 
   async deactivate(serverName) {
     const fiber = this.fibers.get(serverName);
-    if (!fiber) return;
-    this.fibers.delete(serverName);
-    await fiber.dispose();
+    if (fiber) {
+      this.fibers.delete(serverName);
+      await fiber.dispose();
+    }
+    this.annotations?.drop(serverName);
   }
 
   save(body) {
@@ -147,6 +150,7 @@ function routes(manager) {
 
 export async function apply(ctx) {
   const manager = new McpManager(ctx);
+  manager.annotations = installMcpToolApproval(ctx, () => manager.servers);
   await manager.start();
   ctx.effect(() => () => manager.dispose(), "lares-mcp-runtime");
   ctx.effect(
