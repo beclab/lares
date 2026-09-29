@@ -31,7 +31,7 @@ curl -sS "$LARES_LLM_BASE_URL/models?detail=capabilities"
    When the user named a scene, that row **is** the pick — match their words against `name` on the listed rows and run that one. A detail absent from both `flowstudio.parameters` and `canonical_fields` is dropped from the body and said in the reply; it is never a reason to run a scene the user did not ask for. Do not switch to a row that "fits better".
 4. Call **once** with the `media_generate` tool: `model` and `mode` from the picked row, the user's prompt unchanged, `operation: "edit"` for image editing, `reference_images` as workspace paths for I2V / R2V / edit, optional `mask_image`, and `options` for fields the row's `canonical_fields` names. On a row with `flowstudio.parameters`, put its values in `flowstudio: {params: {...}}` as step 3 says. It submits as the logged-in user, waits however long the run takes, and publishes every output — do not poll, download, or `workspace_publish` its files again. A generation an earlier turn started is resumed with `generation_id` alone; never submit it a second time. Its error text is the Router error; the failure rules below apply to it unchanged.
 
-   Only when `media_generate` is not available, call through `$LARES_LLM_BASE_URL` (in-process Router shim; default `http://127.0.0.1:$PORT/llm/v1`). That stamps the logged-in Olares user, so FlowStudio owns the job as this person — never as the shared chart owner. Do not `olares-cli router call` to generate unless `olares-cli router key current` shows `CALLS USE` as the host application's proxy; an older CLI ignores that and presents as the Lares app. Route follows the **picked row's mode**:
+   Only when `media_generate` is not available, call through `$LARES_LLM_BASE_URL` (in-process Router shim; default `http://127.0.0.1:$PORT/llm/v1`). That stamps the logged-in Olares user, so FlowStudio owns the job as this person — never as the shared chart owner. These two are the **only** ways to generate: never POST Router's data plane (`$LLM_GATEWAY_URL`) or FlowStudio directly, not even as a fallback — Lares refuses those shell calls, and a refusal is not a cue to try another route. Do not `olares-cli router call` to generate unless `olares-cli router key current` shows `CALLS USE` as the host application's proxy; an older CLI ignores that and presents as the Lares app. Route follows the **picked row's mode**:
 
 | Row mode | POST `$LARES_LLM_BASE_URL/…` |
 |---|---|
@@ -62,7 +62,7 @@ curl -sS -X POST "$LARES_LLM_BASE_URL/videos" \
 
 A **single-row** failure (404 unpublished, wrong mode) is still this step: try the **next same-family row**. It is not “Router cannot generate”. Do not sync or rewrite the catalog. Never `--id` refetch. A named row only moves after its own call failed, and then the reply says which row ran instead.
 
-Call details and data-plane fallback: [router.md](references/router.md) — only if the shim POST above cannot run.
+Call details: [router.md](references/router.md) — only if the shim POST above cannot run. There is no data-plane fallback.
 
 Empty list, or every same-family row failed: [flowstudio.md](references/flowstudio.md). If that cannot help: [fallback.md](references/fallback.md).
 

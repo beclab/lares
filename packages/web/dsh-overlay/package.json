@@ -8,6 +8,7 @@
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./host/crypto-uuid.js": "./host/crypto-uuid.js",
     "./host/router-console.js": "./host/router-console.js",
+    "./host/generation-guard.js": "./host/generation-guard.js",
     "./host/llm-routes.js": "./host/llm-routes.js",
     "./host/olares/olares-identity.js": "./host/olares/olares-identity.js",
     "./host/default-workspace.js": "./host/default-workspace.js",

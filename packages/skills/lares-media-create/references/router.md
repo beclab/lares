@@ -1,6 +1,6 @@
 # Router: call contract
 
-Load this only when the front-door call line cannot run (missing verb, no `--out`, or you need the image data-plane). Produce already listed the family — do not list again, and do not run `--help`.
+Load this only when the front-door call line cannot run (missing verb or no `--out`). Produce already listed the family — do not list again, and do not run `--help`.
 
 Never curl FlowStudio (`flowstudio-svc`, `/v1/images/generations`, `/api/v1/generations`, `/api/projects`), ComfyUI, or `router local` just to generate or to resolve a scene name. Router's list row is the scene.
 
@@ -14,7 +14,7 @@ Skip disabled rows. Skip a row whose title is another family. A FlowStudio video
 
 ## Call
 
-Prefer `$LARES_LLM_BASE_URL` (the in-process shim). It stamps the logged-in user. Do not `olares-cli router call` to generate: in-cluster that presents as the Lares app, and FlowStudio would own the job as the shared chart owner.
+Call only through `$LARES_LLM_BASE_URL` (the in-process shim). It stamps the logged-in user. Do not `olares-cli router call` to generate: in-cluster that presents as the Lares app, and FlowStudio would own the job as the shared chart owner.
 
 POST the path that matches the **picked row's mode**, with `Prefer: respond-async`. Poll `GET $LARES_LLM_BASE_URL/generations/<id>` until completed. Each output's `files_path` is the artifact: Router carries it and the shim publishes it at the top level of the poll JSON.
 
@@ -25,7 +25,7 @@ POST the path that matches the **picked row's mode**, with `Prefer: respond-asyn
 | `music_generation` | `/music/generations` |
 | `model3d_generation` | `/generations` |
 
-If the shim is down, POST the same suffix on **Router's** data plane (`LLM_GATEWAY_URL`, already `/v1/…`) and still send `x-bfl-user` / `remote-user` as the logged-in username. Pass `model` as the catalog printed it. The sync form of `/images/generations` returns `b64_json` — including for a FlowStudio video parked on `image_generation`. Do not POST `/images/generations` for a real `video_generation` / `music_generation` catalog row.
+If the shim is down, stop: tell the user generation is unavailable right now and name the error. Never POST Router's data plane (`$LLM_GATEWAY_URL`, `router.<zone>`, `router-svc`) or FlowStudio yourself — only the shim stamps the logged-in user, and a job without it lands under the shared app owner where this user cannot open it. Lares refuses such shell calls. The sync form of `/images/generations` returns `b64_json` — including for a FlowStudio video parked on `image_generation`. Do not POST `/images/generations` for a real `video_generation` / `music_generation` catalog row.
 
 A Router old enough to drop `files_path` leaves the poll JSON without one. Its outputs are still addressable by id: `olares-cli files cat drive/Data/flowstudio/userData/<username>/comfyui/outputs/.by-id/<output id>` prints one line, the files address, and that is what to `workspace_publish`. This is the only reason to read that directory; it is not a way to browse for a file.
 

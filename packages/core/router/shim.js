@@ -6,6 +6,7 @@ import { catalogCache } from "./catalog-cache.js";
 import { carriesWebpImage, transcodeWebpImages } from "../media/router-images.js";
 import { routerAuthHeaders, routerEndUser, routerGatewayUrl } from "./gateway.js";
 import { STT_MAX_AUDIO_BYTES } from "./stt.js";
+import { isGenerationCreateRoute, withSrefBuffer } from "./sref.js";
 
 export const SHIM_PATH = "/llm/v1";
 export const SHIM_CHAT_TIMEOUT_MS = 120_000;
@@ -245,6 +246,9 @@ export function proxyToRouter(req, res, env = process.env, deps = {}) {
         message: budget.tooLargeMessage,
       });
       if (!budget.audio && carriesWebpImage(body)) body = await transcodeWebpImages(body);
+      if (method === "POST" && isGenerationCreateRoute(suffix)) {
+        body = withSrefBuffer(body, routerEndUser(env, req.headers), env);
+      }
       headers["content-length"] = String(body.length);
     }
     if (cancellation.signal.aborted) return;

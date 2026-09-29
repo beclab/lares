@@ -130,6 +130,11 @@
       name: '@lares/dsh-overlay/host/router-console.js'
       inject: [webServer]
 
+    # FlowStudio generation only through the shim, which stamps the user (sref).
+    - id: lares-generation-guard
+      name: '@lares/dsh-overlay/host/generation-guard.js'
+      inject: [tools]
+
     - id: lares-olares-identity
       name: '@lares/dsh-overlay/host/olares/olares-identity.js'
       inject: [webServer, connection]

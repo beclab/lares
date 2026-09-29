@@ -117,7 +117,9 @@ test("router reference forbids calling FlowStudio HTTP and catalog surgery on pr
   assert.match(text, /files_path/);
   assert.match(text, /\.by-id/);
   assert.match(text, /LARES_LLM_BASE_URL/);
-  assert.match(text, /x-bfl-user/);
+  // No data-plane fallback: only the shim stamps the user (sref) FlowStudio files the job under.
+  assert.match(text, /Never POST Router's data plane/);
+  assert.doesNotMatch(text, /POST the same suffix on \*\*Router's\*\* data plane/);
   assert.match(text, /Never `olares-cli router call … --id`/);
   assert.match(text, /One row 404/);
   assert.match(text, /## Reference images/);

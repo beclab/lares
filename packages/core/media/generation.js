@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { extname } from "node:path";
 import { attachFlowstudioFilesPaths } from "../drive/flowstudio-files.js";
 import { routerEndUser, routerGatewayUrl, routerHeaders } from "../router/gateway.js";
+import { withSref } from "../router/sref.js";
 import {
   prepareWorkspaceTarget,
   resolveExistingWorkspacePath,
@@ -214,7 +215,8 @@ function mediaIdempotencyKey(callId) {
 /** @returns {Promise<Record<string, any>>} the created generation, carrying its id. */
 export async function submitMediaGeneration(request, deps = {}) {
   const t = transport(deps);
-  let body = Buffer.from(JSON.stringify(request.body), "utf8");
+  const stamped = withSref(request.body, routerEndUser(t.env), t.env);
+  let body = Buffer.from(JSON.stringify(stamped), "utf8");
   if (carriesWebpImage(body)) body = await transcodeWebpImages(body);
   const response = await t.fetch(`${t.base}/${request.route}`, {
     method: "POST",
