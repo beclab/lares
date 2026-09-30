@@ -538,6 +538,31 @@ export async function recoverMediaGenerations(session, { turn, workspaceRoot }, 
 }
 
 /**
+ * The skill passes images as `reference_images`. A FlowStudio row names those
+ * files as parameter slots, so an unfilled image slot takes the next path and
+ * the slot copy into Home/FlowStudio does the rest. Paths already in params
+ * stay put. Leftover paths stay `reference_images` for a row with no slot.
+ */
+function placeReferenceImages(contract, args) {
+  const paths = Array.isArray(args?.reference_images)
+    ? args.reference_images.map((path) => String(path ?? "").trim()).filter(Boolean)
+    : [];
+  const params = args?.params && typeof args.params === "object" && !Array.isArray(args.params)
+    ? { ...args.params }
+    : {};
+  const open = mediaSlots(contract).filter((slot) => (
+    (slot.media === "image" || slot.type === "image") && (params[slot.key] == null || params[slot.key] === "")
+  ));
+  let used = 0;
+  for (const slot of open) {
+    if (used >= paths.length) break;
+    params[slot.key] = paths[used];
+    used += 1;
+  }
+  return { ...args, params, reference_images: paths.slice(used) };
+}
+
+/**
  * Run one generation to completion inside a tool call: submit (or pick up an
  * id an earlier turn submitted), record it in the session ledger before
  * waiting, and settle the ledger with what came back. A wait that is aborted
@@ -549,19 +574,20 @@ export async function runMediaGeneration(args, { session, callId, workspaceRoot,
   let model = String(args?.model ?? "").trim();
   let mode = "";
   if (!resumeId) {
-    const paths = Array.isArray(args?.reference_images) ? args.reference_images : [];
+    if (!model.includes("/")) throw new MediaGenerationError("model must be <provider>/<model> as the catalog lists it");
+    const contract = rowContract(await fetchCatalogRow(model, { ...deps, signal }));
+    const placed = placeReferenceImages(contract, args);
+    const paths = Array.isArray(placed.reference_images) ? placed.reference_images : [];
     const images = [];
     for (const path of paths) images.push(await referenceImageDataUrl(workspaceRoot, path));
-    const maskPath = String(args?.mask_image ?? "").trim();
+    const maskPath = String(placed.mask_image ?? "").trim();
     const maskImageDataUrl = maskPath
       ? await referenceImageDataUrl(workspaceRoot, maskPath)
       : "";
-    if (!model.includes("/")) throw new MediaGenerationError("model must be <provider>/<model> as the catalog lists it");
-    const contract = rowContract(await fetchCatalogRow(model, { ...deps, signal }));
-    const params = await slotParams(contract, args?.params, workspaceRoot, deps.env ?? process.env, deps);
+    const params = await slotParams(contract, placed.params, workspaceRoot, deps.env ?? process.env, deps);
     const request = mediaGenerationRequest(
       contract,
-      { ...args, ...(params === undefined ? {} : { params }), mask_image_data_url: maskImageDataUrl },
+      { ...placed, ...(params === undefined ? {} : { params }), mask_image_data_url: maskImageDataUrl },
       images,
     );
     const created = await submitMediaGeneration(request, {

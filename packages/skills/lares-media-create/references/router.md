@@ -18,22 +18,20 @@ POST to `$LARES_LLM_BASE_URL` (in-process shim; default `http://127.0.0.1:$PORT/
 
 An image edit is never posted to `/images/generations`, and a real `video_generation` / `music_generation` row is never posted there either.
 
-The body is the same one the tool would build: `model`, `operation` when the table names one, and every input the workflow takes under `flowstudio.params`, keyed by `flowstudio.parameters[].key` and unchanged — the prompt under its `associateRole: "prompt"` key, and each media slot as a `drive/Home/FlowStudio/…` Files path — FlowStudio reads only that folder, so a workspace file is first copied into `Home/FlowStudio/uploads` (mounted in Lares at `$LARES_FLOWSTUDIO_FILES_DIR/uploads`). Router checks three top-level fields before it forwards, and FlowStudio never reads them: a `prompt` (send the same text), `inputs.images` / `reference_images` on an edit-only row, and `inputs.mask` when a required `editMask` slot exists — send a 1×1 PNG data URL for the last two. Nothing else goes at the top level.
-
-For a row without `flowstudio.parameters` (a cloud model), images travel as data URLs instead, as below.
+The body is the same one the tool would build: `model`, `prompt`, `operation` when the table names one, the images, and every tunable under `flowstudio.params` keyed by `flowstudio.parameters[].key`. Nothing else goes at the top level.
 
 Images are `data:image/<subtype>;base64,…` URLs built from the workspace file, with its real subtype — never a bare path or an `https://` link. `--rawfile` keeps a large image off the command line:
 
 ```bash
 { printf 'data:image/png;base64,'; base64 < "$SOURCE_IMAGE" | tr -d '\n'; } > /tmp/src.url
 jq -n --arg m "<provider>/<model>" --arg p "<prompt>" --rawfile i /tmp/src.url \
-  --argjson params '{"<prompt key>":"<prompt>","<parameter key>":"<value>"}' \
+  --argjson params '{"<parameter key>":"<value>"}' \
   '{model:$m, prompt:$p, operation:"edit", inputs:{images:[$i]}, flowstudio:{params:$params}}' |
 curl -sS -X POST "$LARES_LLM_BASE_URL/generations" \
   -H 'content-type: application/json' -H 'prefer: respond-async' --data-binary @-
 ```
 
-For I2V / R2V swap the route to `/videos`, drop `operation`, and send `reference_images:[$i]` instead of `inputs`. Without images, drop `--rawfile` and the image field. A row without `flowstudio.parameters` drops `flowstudio`.
+For I2V / R2V swap the route to `/videos`, drop `operation`, and send `reference_images:[$i]` instead of `inputs`. Without images, drop `--rawfile` and the image field. Without params, drop `flowstudio`.
 
 ## Wait
 

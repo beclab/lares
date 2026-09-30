@@ -34,26 +34,20 @@ test("lares-media-create is a produce protocol, not a diagnosis ladder", () => {
   }
 });
 
-test("one params channel: FlowStudio's own parameter list, prompt included, passed through unchanged", () => {
+test("one params channel: tunables in params, images as reference_images, the tool places them", () => {
   const skill = read("SKILL.md");
-  assert.match(skill, /`flowstudio\.parameters` is FlowStudio's own list of every input this workflow takes: its prompt/);
-  // Media slots are parameters too: a file path per slot, in the shape valueFormat names.
-  assert.match(skill, /its media slots \(entries with `media` and `valueFormat`\)/);
-  assert.match(skill, /`filesPath` is one path, `filesPathBySlot` is `\{option value: path\}`, `sourceAndMask` is `\{source, mask\}`/);
-  assert.match(skill, /FlowStudio checks everything else/);
-  assert.match(skill, /`associateRole: "prompt"`/);
-  assert.match(skill, /the tool sends it as `flowstudio\.params` unchanged/);
-  assert.match(skill, /Put the user's prompt, unchanged, under the prompt key/);
-  assert.match(skill, /Never invent a key, and add nothing the list does not name/);
+  assert.match(skill, /Every tunable goes in `params`, which the tool sends as `flowstudio\.params`/);
+  assert.match(skill, /`flowstudio\.parameters\[\]\.key`/);
+  assert.match(skill, /not its label/);
+  assert.match(skill, /set it only to reproduce an earlier result/);
+  assert.match(skill, /the user's images as `reference_images` \(workspace paths\)/);
+  assert.match(skill, /a supplied image on an `image_generation` row makes it an edit/);
+  assert.match(skill, /Never invent a key/);
   assert.match(skill, /A row without `flowstudio\.parameters` takes no `params`/);
-  assert.match(skill, /For a row without `flowstudio\.parameters` \(a cloud model\), pass `prompt`, and `reference_images`/);
-  assert.match(skill, /FlowStudio never reads/);
   assert.match(skill, /never a reason to change rows/);
   assert.doesNotMatch(skill, /`options`/);
   const router = read("references/router.md");
-  assert.match(router, /the prompt under its `associateRole: "prompt"` key, and each media slot as a `drive\/Home\/FlowStudio\/…` Files path/);
-  assert.match(router, /Router checks three top-level fields before it forwards, and FlowStudio never reads them/);
-  assert.match(router, /Home\/FlowStudio\/uploads/);
+  assert.match(router, /`model`, `prompt`, `operation` when the table names one, the images, and every tunable under `flowstudio\.params`/);
   assert.match(router, /Nothing else goes at the top level/);
   assert.match(router, /flowstudio:\{params:\$params\}/);
 });

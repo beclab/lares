@@ -6,11 +6,10 @@ export const MEDIA_GENERATE_TOOL = "media_generate";
 
 export const MEDIA_GENERATE_PROMPT = [
   "Generate or edit images, video, music, and 3D with media_generate, not with curl and a sleep loop.",
-  "Name the catalog row by model; the tool reads that row from Router and takes the route and",
-  "the operation from it. For a FlowStudio row, every input the workflow takes goes in params",
-  "under its flowstudio.parameters key, unchanged: the prompt (associateRole \"prompt\"), each",
-  "control, and each media slot (an entry with media / valueFormat) as a file path. FlowStudio",
-  "checks all of it; fix the call from its error once.",
+  "Name the catalog row by model. Pass the user's prompt unchanged, images as reference_images",
+  "(workspace paths) for an edit or I2V / R2V, an optional mask_image, and params for the row's",
+  "tunables, keyed by flowstudio.parameters[].key. The tool reads the row and takes the route,",
+  "the operation, and where each file goes. A supplied image on an image_generation row is an edit.",
   "It submits as the logged-in user, waits, and publishes every output itself: do not",
   "workspace_publish or download its files again. If a turn ended before a generation",
   "finished, resume it with generation_id instead of generating it again.",
@@ -34,33 +33,25 @@ export function mediaGenerateDefinition(deps = {}) {
       },
       prompt: {
         type: "string",
-        description:
-          "The user's prompt, unchanged, for a row without flowstudio.parameters. A FlowStudio row"
-          + " takes its prompt in params instead; omit this and the tool sends Router the"
-          + " top-level copy it requires.",
+        description: "The user's prompt, unchanged.",
       },
       reference_images: {
         type: "array",
         items: { type: "string" },
         description:
-          "Only for a row whose parameters list no media slot (a cloud model): workspace images"
-          + " to condition on. A FlowStudio row names its media slots in params instead.",
+          "Workspace image paths for an edit or I2V / R2V. The tool places them on the row.",
       },
       mask_image: {
         type: "string",
-        description: "Only for a row whose parameters list no media slot: a workspace mask image.",
+        description: "Optional workspace mask image.",
       },
       params: {
         type: "object",
         additionalProperties: true,
         description:
-          "Every input a FlowStudio workflow takes, keyed exactly as the row's"
-          + " flowstudio.parameters lists them, values unchanged; sent as flowstudio.params."
-          + " The prompt goes under the associateRole \"prompt\" key. A media slot takes a file:"
-          + " valueFormat filesPath is one path, filesPathBySlot is {option value: path},"
-          + " sourceAndMask is {source, mask}. A path is a workspace file (the tool copies it to"
-          + " Home/FlowStudio/uploads) or a drive/Home/FlowStudio/… address such as an earlier"
-          + " output. Omit a parameter to keep its default.",
+          "Tunables keyed by the row's flowstudio.parameters[].key. The tool sends them as"
+          + " flowstudio.params. Match the user's words to each entry's label; for a select send"
+          + " the option's value. A row without flowstudio.parameters takes no params.",
       },
       generation_id: {
         type: "string",

@@ -505,6 +505,46 @@ test("a FlowStudio row takes its media by slot in params; Router only sees pass-
   }
 });
 
+test("reference_images on a slot row are placed into the image slot", async () => {
+  const volume = mkdtempSync(join(tmpdir(), "lares-volume-"));
+  try {
+    const session = join(volume, "project");
+    mkdirSync(session);
+    writeFileSync(join(session, "face.png"), Buffer.from([1]));
+    const row = {
+      id: "Olares/94fcee8a-c8a4-456f-b28e-40a0b107be9a",
+      mode: "video_generation",
+      name: "MiniMax H3 · Reference to Audio-Video",
+      creative: { operations: ["edit"] },
+      canonical_fields: ["seed", "prompt", "inputs.images"],
+      flowstudio: {
+        parameters: [
+          { key: "text", label: "Prompt", type: "textarea", associateRole: "prompt", required: true },
+          { key: "image__12", label: "参考人物", type: "image", required: true, media: "image", valueFormat: "filesPath" },
+        ],
+      },
+    };
+    const { fetch, calls } = fakeFetch({
+      "GET /models?detail=capabilities": { body: { data: [row] } },
+      "POST /videos": { status: 202, body: { id: "r2av-2", status: "queued" } },
+      "GET /generations/r2av-2": { body: { id: "r2av-2", status: "completed", outputs: [{ id: "o1", files_path: "drive/Home/FlowStudio/outputs/video/a.mp4" }] } },
+    });
+    await runMediaGeneration(
+      { model: row.id, prompt: "她在唱歌", reference_images: ["face.png"], params: {} },
+      { session: recordingSession(), callId: "place-call", workspaceRoot: session },
+      { env: { ...env, LARES_FLOWSTUDIO_FILES_DIR: join(volume, "FlowStudio") }, fetch, sleep: noSleep },
+    );
+    const posted = JSON.parse(calls[1].init.body.toString("utf8"));
+    const uploaded = readdirSync(join(volume, "FlowStudio", "uploads"));
+    assert.equal(uploaded.length, 1);
+    assert.equal(posted.prompt, "她在唱歌");
+    assert.equal(posted.flowstudio.params.image__12, `drive/Home/FlowStudio/uploads/${uploaded[0]}`);
+    assert.deepEqual(posted.reference_images, [PASS_CHECK_IMAGE]);
+  } finally {
+    rmSync(volume, { recursive: true, force: true });
+  }
+});
+
 test("an image edit row with slots goes canonical with a pass-check inputs.images", () => {
   const edit = rowContract({
     id: "Olares/7499312d-5fa5-48a0-832d-ea2d016abc46",
