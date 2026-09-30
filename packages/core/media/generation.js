@@ -1,6 +1,6 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
-import { extname } from "node:path";
+import { basename, extname, join } from "node:path";
 import { attachFlowstudioFilesPaths } from "../drive/flowstudio-files.js";
 import { routerEndUser, routerGatewayUrl, routerHeaders } from "../router/gateway.js";
 import { withSref } from "../router/sref.js";
@@ -11,14 +11,17 @@ import {
   workspaceCandidate,
 } from "../workspace/path.js";
 import { carriesWebpImage, transcodeWebpImages } from "./router-images.js";
+import {
+  MEDIA_GENERATION_ROUTES,
+  bindParams,
+  fetchCatalogRow,
+  mediaSlots,
+  planGeneration,
+  promptParameterKey,
+  rowContract,
+} from "./catalog-row.js";
 
-/** Catalog mode → released Router route for the family's default generation. */
-export const MEDIA_GENERATION_ROUTES = Object.freeze({
-  image_generation: "images/generations",
-  video_generation: "videos",
-  music_generation: "music/generations",
-  model3d_generation: "generations",
-});
+export { MEDIA_GENERATION_ROUTES };
 
 /** A long video on a busy local GPU has been measured at nine minutes. */
 export const MEDIA_GENERATION_TIMEOUT_MS = 60 * 60 * 1000;
@@ -26,7 +29,6 @@ export const MEDIA_POLL_INTERVAL_MS = 5_000;
 const MAX_REFERENCE_IMAGES = 4;
 const MAX_REFERENCE_BYTES = 10 * 1024 * 1024;
 const MAX_TRANSIENT_FAILURES = 12;
-const RESERVED_OPTION_KEYS = new Set(["model", "prompt", "reference_images", "inputs", "operation"]);
 
 export const MEDIA_SUBMITTED_EVENT = "media/generation-submitted";
 export const MEDIA_SETTLED_EVENT = "media/generation-settled";
@@ -40,6 +42,61 @@ const IMAGE_TYPES = Object.freeze({
 });
 
 const TERMINAL = new Set(["completed", "failed", "canceled", "cancelled"]);
+
+/**
+ * A 1×1 PNG for Router's pass-check fields. Router refuses an edit row without
+ * inputs.images before it forwards; FlowStudio ignores these once the media are
+ * named by slot in flowstudio.params. It never reaches a workflow.
+ */
+export const PASS_CHECK_IMAGE =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+/** Home/FlowStudio: the Files folder Lares and FlowStudio share (mounted from userData). */
+export const FLOWSTUDIO_UPLOADS_FILES_PATH = "drive/Home/FlowStudio/uploads";
+
+/**
+ * A slot value as FlowStudio reads it: a file in the user's Home/FlowStudio.
+ * A `drive/…` address is passed as given (an earlier output under
+ * Home/FlowStudio/outputs, or an upload already there). A workspace file — an
+ * upload into this chat, a file the agent made — is copied into
+ * Home/FlowStudio/uploads first, named by its content so a second run reuses it.
+ */
+export async function slotFilesPath(workspaceRoot, value, env = process.env, deps = {}) {
+  const raw = String(value ?? "").trim();
+  if (!raw || raw.startsWith("drive/")) return raw;
+  const shared = String(env.LARES_FLOWSTUDIO_FILES_DIR ?? "").trim();
+  if (!shared) {
+    throw new MediaGenerationError("Home/FlowStudio is not mounted in Lares; cannot hand this file to FlowStudio");
+  }
+  const root = await resolveWorkspaceRoot(workspaceRoot);
+  const absolute = await resolveExistingWorkspacePath(root, workspaceCandidate(root, raw));
+  const bytes = await readFile(absolute);
+  const digest = createHash("sha256").update(bytes).digest("hex").slice(0, 16);
+  const name = `${digest}_${basename(absolute).replace(/[^\w.\-\u4e00-\u9fff]+/g, "_")}`;
+  const target = join(shared, "uploads", name);
+  await (deps.mkdir ?? mkdir)(join(shared, "uploads"), { recursive: true });
+  await (deps.writeFile ?? writeFile)(target, bytes, { flag: "wx" }).catch((error) => {
+    if (error?.code !== "EEXIST") throw error;
+  });
+  return `${FLOWSTUDIO_UPLOADS_FILES_PATH}/${name}`;
+}
+
+async function slotParams(contract, params, workspaceRoot, env, deps = {}) {
+  if (!params || typeof params !== "object" || Array.isArray(params)) return params;
+  const out = { ...params };
+  for (const slot of mediaSlots(contract)) {
+    if (!(slot.key in out)) continue;
+    const value = out[slot.key];
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      const mapped = {};
+      for (const [name, path] of Object.entries(value)) mapped[name] = await slotFilesPath(workspaceRoot, path, env, deps);
+      out[slot.key] = mapped;
+    } else {
+      out[slot.key] = await slotFilesPath(workspaceRoot, value, env, deps);
+    }
+  }
+  return out;
+}
 
 export class MediaGenerationError extends Error {
   /**
@@ -74,45 +131,40 @@ export async function referenceImageDataUrl(workspaceRoot, path) {
   return `data:${type};base64,${bytes.toString("base64")}`;
 }
 
-/** @returns {{ mode: string, route: string, body: Record<string, unknown> }} */
-export function mediaGenerationRequest(args, referenceImages = []) {
-  const mode = String(args?.mode ?? "").trim();
-  const releasedRoute = MEDIA_GENERATION_ROUTES[mode];
-  if (!releasedRoute) {
-    throw new MediaGenerationError(
-      `mode must be one of ${Object.keys(MEDIA_GENERATION_ROUTES).join(", ")}`,
-    );
-  }
+/**
+ * Build the Router request for one catalog row.
+ *
+ * Nothing about the workflow is decided here: the row's contract (see
+ * catalog-row.js) supplies the route, the operation, where images go, and the
+ * parameters `params` may name. Every tunable travels as `flowstudio.params`.
+ *
+ * @param {ReturnType<typeof rowContract>} contract
+ * @returns {{ mode: string, route: string, body: Record<string, unknown> }}
+ */
+export function mediaGenerationRequest(contract, args, referenceImages = []) {
   const model = String(args?.model ?? "").trim();
   if (!model.includes("/")) throw new MediaGenerationError("model must be <provider>/<model> as the catalog lists it");
-  const prompt = String(args?.prompt ?? "");
-  const operation = String(args?.operation ?? "").trim();
+  if (args?.options !== undefined) {
+    throw new MediaGenerationError("options is not a media_generate field; put the row's parameters in params");
+  }
   if (referenceImages.length > MAX_REFERENCE_IMAGES) {
     throw new MediaGenerationError(`at most ${MAX_REFERENCE_IMAGES} reference images`);
   }
-  const options = args?.options && typeof args.options === "object" && !Array.isArray(args.options)
-    ? args.options
-    : {};
-  const canonicalImageOperation = mode === "image_generation"
-    && operation !== "" && operation !== "generate";
-  const route = canonicalImageOperation ? "generations" : releasedRoute;
-  const body = {};
-  for (const [key, value] of Object.entries(options)) {
-    if (RESERVED_OPTION_KEYS.has(key)) {
-      throw new MediaGenerationError(`options.${key} is set by the tool itself`);
-    }
-    if (canonicalImageOperation && key.startsWith("output.")) {
-      body.output ??= {};
-      body.output[key.slice("output.".length)] = value;
-    } else {
-      body[key] = value;
-    }
-  }
-  body.model = model;
+  const mask = String(args?.mask_image_data_url ?? "").trim();
+  const params = bindParams(contract, args?.params ?? {});
+  const slotMedia = mediaSlots(contract).some((slot) => slot.key in params);
+  const plan = planGeneration(contract, { images: referenceImages.length, mask: Boolean(mask), slotMedia });
+  // A FlowStudio workflow reads its prompt from params like any other
+  // parameter. Router still wants a top-level prompt before it forwards; that
+  // copy is only its pass-check and FlowStudio never reads it.
+  const promptKey = promptParameterKey(contract);
+  const fromParams = promptKey && typeof params[promptKey] === "string" ? params[promptKey] : "";
+  const prompt = String(args?.prompt ?? "") || fromParams;
+  const body = { model };
   if (prompt) body.prompt = prompt;
-  if (operation) body.operation = operation;
-  if (canonicalImageOperation) {
-    const mask = String(args?.mask_image_data_url ?? "").trim();
+  if (plan.operation) body.operation = plan.operation;
+  if (Object.keys(params).length > 0) body.flowstudio = { params };
+  if (plan.canonical) {
     if (referenceImages.length > 0 || mask) {
       body.inputs = {};
       if (referenceImages.length > 0) body.inputs.images = referenceImages;
@@ -120,10 +172,17 @@ export function mediaGenerationRequest(args, referenceImages = []) {
     }
   } else {
     if (referenceImages.length > 0) body.reference_images = referenceImages;
-    const mask = String(args?.mask_image_data_url ?? "").trim();
     if (mask) body.maskImage = mask;
   }
-  return { mode, route, body };
+  if (plan.passCheck.images || plan.passCheck.mask) {
+    const placeholder = plan.canonical ? (body.inputs ??= {}) : body;
+    if (plan.passCheck.images) placeholder[plan.canonical ? "images" : "reference_images"] = [PASS_CHECK_IMAGE];
+    if (plan.passCheck.mask) {
+      if (plan.canonical) placeholder.mask = PASS_CHECK_IMAGE;
+      else body.maskImage = PASS_CHECK_IMAGE;
+    }
+  }
+  return { mode: contract.mode, route: plan.route, body };
 }
 
 function retryAfterSeconds(response, payload) {
@@ -143,10 +202,66 @@ async function readJson(response) {
   }
 }
 
+const MAX_ERROR_TEXT = 500;
+
+function clip(text) {
+  const value = String(text ?? "").trim();
+  return value.length > MAX_ERROR_TEXT ? `${value.slice(0, MAX_ERROR_TEXT)}…` : value;
+}
+
+/**
+ * Readable text for an error field of any shape Router or an upstream sends:
+ * a string, `{ message }` (possibly nested, e.g. an upstream body relayed as
+ * the message), FastAPI's `{ detail }` / validation `[{ loc, msg }]`, or
+ * anything else as compact JSON. Never "[object Object]".
+ */
+export function errorText(value, depth = 0) {
+  if (value === undefined || value === null) return "";
+  if (typeof value === "string") return clip(value);
+  if (typeof value !== "object") return clip(String(value));
+  if (depth > 4) return clip(safeJson(value));
+  if (Array.isArray(value)) {
+    return clip(value.map((item) => {
+      if (item && typeof item === "object" && ("msg" in item || "loc" in item)) {
+        const loc = Array.isArray(item.loc) ? item.loc.join(".") : String(item.loc ?? "");
+        const msg = errorText(item.msg, depth + 1);
+        return loc && msg ? `${loc}: ${msg}` : loc || msg;
+      }
+      return errorText(item, depth + 1);
+    }).filter(Boolean).join("; "));
+  }
+  for (const key of ["message", "error", "detail", "msg", "reason", "description"]) {
+    const text = errorText(value[key], depth + 1);
+    if (text) return text;
+  }
+  // `code` / `type` are reported separately; JSON only what else is there.
+  const rest = Object.fromEntries(
+    Object.entries(value).filter(([key]) => !["code", "type", "status"].includes(key)),
+  );
+  return clip(safeJson(rest));
+}
+
+function safeJson(value) {
+  try {
+    const text = JSON.stringify(value);
+    return text === "{}" || text === "[]" ? "" : text;
+  } catch {
+    return "";
+  }
+}
+
+function errorCode(error) {
+  if (!error || typeof error !== "object" || Array.isArray(error)) return "";
+  const code = error.code ?? error.type ?? "";
+  return typeof code === "string" || typeof code === "number" ? String(code).trim() : "";
+}
+
 function errorFromResponse(response, payload, id) {
   const error = payload?.error && typeof payload.error === "object" ? payload.error : {};
-  const code = String(error.code ?? error.type ?? "").trim();
-  const message = String(error.message ?? payload?.error ?? `Router answered HTTP ${response.status}`);
+  const code = errorCode(error) || errorCode(payload);
+  const text = errorText(payload?.error) || errorText(payload?.detail) || errorText(payload?.message);
+  const fallback = `Router answered HTTP ${response.status}`;
+  const message = text && text !== code ? text : fallback;
   const after = retryAfterSeconds(response, payload);
   return new MediaGenerationError(code ? `${code}: ${message}` : message, {
     code,
@@ -159,10 +274,9 @@ function errorFromResponse(response, payload, id) {
 
 /** Failed generation → error naming the code and whether waiting helps. */
 export function generationFailure(payload) {
-  const code = String(payload?.error_code ?? payload?.error?.code ?? "").trim();
-  const text = typeof payload?.error === "string"
-    ? payload.error
-    : String(payload?.error?.message ?? "");
+  const code = String(payload?.error_code ?? "").trim() || errorCode(payload?.error);
+  const raw = errorText(payload?.error);
+  const text = raw === code ? "" : raw;
   const status = String(payload?.status ?? "failed");
   const detail = [code, text].filter(Boolean).join(": ") || `generation ${status}`;
   const retryable = payload?.retryable === true;
@@ -433,7 +547,7 @@ export async function runMediaGeneration(args, { session, callId, workspaceRoot,
   const resumeId = String(args?.generation_id ?? "").trim();
   let id = resumeId;
   let model = String(args?.model ?? "").trim();
-  let mode = String(args?.mode ?? "").trim();
+  let mode = "";
   if (!resumeId) {
     const paths = Array.isArray(args?.reference_images) ? args.reference_images : [];
     const images = [];
@@ -442,7 +556,14 @@ export async function runMediaGeneration(args, { session, callId, workspaceRoot,
     const maskImageDataUrl = maskPath
       ? await referenceImageDataUrl(workspaceRoot, maskPath)
       : "";
-    const request = mediaGenerationRequest({ ...args, mask_image_data_url: maskImageDataUrl }, images);
+    if (!model.includes("/")) throw new MediaGenerationError("model must be <provider>/<model> as the catalog lists it");
+    const contract = rowContract(await fetchCatalogRow(model, { ...deps, signal }));
+    const params = await slotParams(contract, args?.params, workspaceRoot, deps.env ?? process.env, deps);
+    const request = mediaGenerationRequest(
+      contract,
+      { ...args, ...(params === undefined ? {} : { params }), mask_image_data_url: maskImageDataUrl },
+      images,
+    );
     const created = await submitMediaGeneration(request, {
       ...deps,
       signal,

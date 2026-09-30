@@ -1,56 +1,48 @@
-# Router: call contract
+# Router shim: when `media_generate` is absent
 
-Load this only when the front-door call line cannot run (missing verb or no `--out`). Produce already listed the family — do not list again, and do not run `--help`.
+Load this only when `media_generate` is not in your tool list. An error from that tool is not absence — handle it with the Failures table in SKILL.md.
 
-Never curl FlowStudio (`flowstudio-svc`, `/v1/images/generations`, `/api/v1/generations`, `/api/projects`), ComfyUI, or `router local` just to generate or to resolve a scene name. Router's list row is the scene.
+Produce steps 1–4 are unchanged: same catalog read, same row, same `params`. This file replaces step 5 and step 6 only.
 
-## Pick
+## Submit
 
-`--model` is `<provider>/<model>` as the catalog printed it. Omit it only when `olares-cli router default show` already names **this** mode. FlowStudio's `<model>` is usually the project UUID; `name` on that same row is the label — do not GET FlowStudio to map them.
+POST to `$LARES_LLM_BASE_URL` (in-process shim; default `http://127.0.0.1:$PORT/llm/v1`) with `prefer: respond-async`. The route follows the row's `mode` and the operation:
 
-Skip disabled rows. Skip a row whose title is another family. A FlowStudio video / 3D / `output=audio` scene may appear under the FlowStudio `image_generation` provider — that is a second place to look **after** the family's own mode is empty, never instead of `video_generation` / `music_generation`.
+| Row `mode` + operation | Shim route | Images go in |
+|---|---|---|
+| `image_generation`, edit | `/generations` | `inputs.images`; optional `inputs.mask` |
+| `image_generation`, generate (including a video scene parked there) | `/images/generations` | — |
+| `video_generation` | `/videos` | `reference_images` |
+| `music_generation` | `/music/generations` | — |
+| `model3d_generation` | `/generations` | — |
 
-`speak` is TTS only — never use it for music.
+An image edit is never posted to `/images/generations`, and a real `video_generation` / `music_generation` row is never posted there either.
 
-## Call
+The body is the same one the tool would build: `model`, `operation` when the table names one, and every input the workflow takes under `flowstudio.params`, keyed by `flowstudio.parameters[].key` and unchanged — the prompt under its `associateRole: "prompt"` key, and each media slot as a `drive/Home/FlowStudio/…` Files path — FlowStudio reads only that folder, so a workspace file is first copied into `Home/FlowStudio/uploads` (mounted in Lares at `$LARES_FLOWSTUDIO_FILES_DIR/uploads`). Router checks three top-level fields before it forwards, and FlowStudio never reads them: a `prompt` (send the same text), `inputs.images` / `reference_images` on an edit-only row, and `inputs.mask` when a required `editMask` slot exists — send a 1×1 PNG data URL for the last two. Nothing else goes at the top level.
 
-Call only through `$LARES_LLM_BASE_URL` (the in-process shim). It stamps the logged-in user. Do not `olares-cli router call` to generate: in-cluster that presents as the Lares app, and FlowStudio would own the job as the shared chart owner.
+For a row without `flowstudio.parameters` (a cloud model), images travel as data URLs instead, as below.
 
-POST the path that matches the **picked row's mode**, with `Prefer: respond-async`. Poll `GET $LARES_LLM_BASE_URL/generations/<id>` until completed. Each output's `files_path` is the artifact: Router carries it and the shim publishes it at the top level of the poll JSON.
-
-| Row mode | Shim path |
-|---|---|
-| `image_generation` (cloud image **and** a FlowStudio scene parked here, including video / 3D parked on this mode) | `/images/generations` |
-| `video_generation` | `/videos` |
-| `music_generation` | `/music/generations` |
-| `model3d_generation` | `/generations` |
-
-If the shim is down, stop: tell the user generation is unavailable right now and name the error. Never POST Router's data plane (`$LLM_GATEWAY_URL`, `router.<zone>`, `router-svc`) or FlowStudio yourself — only the shim stamps the logged-in user, and a job without it lands under the shared app owner where this user cannot open it. Lares refuses such shell calls. The sync form of `/images/generations` returns `b64_json` — including for a FlowStudio video parked on `image_generation`. Do not POST `/images/generations` for a real `video_generation` / `music_generation` catalog row.
-
-A Router old enough to drop `files_path` leaves the poll JSON without one. Its outputs are still addressable by id: `olares-cli files cat drive/Data/flowstudio/userData/<username>/comfyui/outputs/.by-id/<output id>` prints one line, the files address, and that is what to `workspace_publish`. This is the only reason to read that directory; it is not a way to browse for a file.
-
-- Never `olares-cli router call … --id`.
-
-## Reference images
-
-For I2V/R2V, the reference image travels as a data URL in `reference_images`. Build it from the uploaded file, not from a path the upstream cannot read. `--rawfile` keeps a multi-megabyte image off the command line:
+Images are `data:image/<subtype>;base64,…` URLs built from the workspace file, with its real subtype — never a bare path or an `https://` link. `--rawfile` keeps a large image off the command line:
 
 ```bash
-{ printf 'data:image/png;base64,'; base64 < "$PATH_TO_IMAGE" | tr -d '\n'; } > /tmp/ref.url
-jq -n --arg m "<provider>/<model>" --arg p "<prompt>" --rawfile i /tmp/ref.url \
-  '{model:$m, prompt:$p, reference_images:[$i]}' |
-curl -sS -X POST "$LARES_LLM_BASE_URL/videos" \
+{ printf 'data:image/png;base64,'; base64 < "$SOURCE_IMAGE" | tr -d '\n'; } > /tmp/src.url
+jq -n --arg m "<provider>/<model>" --arg p "<prompt>" --rawfile i /tmp/src.url \
+  --argjson params '{"<prompt key>":"<prompt>","<parameter key>":"<value>"}' \
+  '{model:$m, prompt:$p, operation:"edit", inputs:{images:[$i]}, flowstudio:{params:$params}}' |
+curl -sS -X POST "$LARES_LLM_BASE_URL/generations" \
   -H 'content-type: application/json' -H 'prefer: respond-async' --data-binary @-
 ```
 
-Use the real subtype (`jpeg`, `webp`, …). Image editing is canonical and explicit: POST `/generations` with `{"model":"…","operation":"edit","prompt":"…","inputs":{"images":[…]}}`; add `inputs.mask` when the user supplied a mask. That request selects a FlowStudio edit workflow or a cloud provider's `/images/edits` adapter without relying on provider-specific inference.
+For I2V / R2V swap the route to `/videos`, drop `operation`, and send `reference_images:[$i]` instead of `inputs`. Without images, drop `--rawfile` and the image field. A row without `flowstudio.parameters` drops `flowstudio`.
 
-Then land with [deliver.md](deliver.md). A Router JSON body or `--out` path is not preview.
+## Wait
 
-## Failures
+Submit once. Use a long bash timeout and poll `GET $LARES_LLM_BASE_URL/generations/<id>` every few seconds until `status` is `completed`, `failed`, or `canceled`. A dropped connection or a 503 while polling is not a failure — keep polling the same id; never submit again. A failed status goes to the Failures table in SKILL.md.
 
-- One row 404 / unpublished / wrong mode → next same-family row. Stay on produce.
-- `media_input_required` / `media_input_unsupported` / `media_field_unknown` → one corrected retry in the spelling the error names, then report. Another row of the same kind needs the same field, so hopping rows does not help.
-- `upstream_capacity_unavailable`, or a failed generation with `retryable: true` → the machine is short of memory or GPU right now. Wait `retry_after_seconds`, retry the same row once, then tell the user the node is busy. Do not fan out across other rows on the same machine.
-- Auth, quota, “application not answering” → Router diagnosis (`router usage list`, `router provider get`). Still do not curl FlowStudio.
-- **Do not** `provider sync-models`, `model add`, `model delete`, or `model update` to “fix” a generate request. Catalog repair is [flowstudio.md](flowstudio.md), and only when the family list is empty.
+## Land
+
+Each output of the completed poll carries `files_path`, the Olares files address of the original bytes (`drive/Home/FlowStudio/outputs/…`). `workspace_publish` that address and stop — see [deliver.md](deliver.md). Do not GET `/content`, write `outputs/`, or copy the file.
+
+An older Router may omit `files_path`. The output is still addressable by its id: `olares-cli files cat drive/Data/flowstudio/userData/<username>/comfyui/outputs/.by-id/<output id>` prints one line, the files address to publish. That is the only reason to read that directory.
+
+If the shim itself is down, stop: tell the user generation is unavailable right now and name the error.

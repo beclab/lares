@@ -1,29 +1,26 @@
 # Deliver into the conversation
 
-Load this after **any** successful generate — Router, FlowStudio-via-Router, or a fallback that actually wrote a file. The user did not have to say "preview".
+Load this only when the bytes did **not** come from `media_generate` — that tool publishes its own outputs, and publishing them again duplicates the preview. The cases here are the shim path ([router.md](router.md)), speech, and a fallback that wrote a file.
 
-Do not reply until one drive tool has published a path. `url_fetch` and `ffmpeg_encode` already publish; `workspace_publish` is for a file that already exists. Do not call `workspace_publish` after `url_fetch` or `ffmpeg_encode`.
+Do not reply until one drive tool has published the output. `url_fetch` and `ffmpeg_encode` publish by themselves; `workspace_publish` is for a file that already exists. Never publish the same bytes twice.
 
-If `--out` did not appear in the workspace, do **not** go looking for the file. No `find`, no grep, no `olares-cli files ls` down `drive/Data/…` to spot something with a recent timestamp — a file you found by browsing is not evidence that this call produced it. Never `router call … --id` or sleep-loop a re-collect either. Use that same call's receipt: `files_path` / `filesPath` first, else `b64_json` / `data:` → `url_fetch` as below.
-
-One deliverable per turn. Publish the output this call returned and stop; do not also publish a neighbour, an older generation, or a second copy of the same bytes.
+One deliverable per turn: publish what this call returned and stop — not a neighbour, an older generation, or a second copy.
 
 ## How the bytes arrive
 
-Pick the first row that matches. Never curl, wget, or open FlowStudio / ComfyUI to "just download it". Never copy a FlowStudio file into Home or `outputs/` so you can preview a second copy.
+Take the first row that matches.
 
 | What you have | Do this |
 |---|---|
-| Poll JSON `files_path` / `filesPath` (`drive/Data/flowstudio/…`) | `workspace_publish` that files path. It is the original file on the Olares files backend — full resolution, not a rendition; the conversation asks the backend for a smaller copy by itself. Do not `drive_fetch`, do not GET `/content`, do not copy it. |
-| `b64_json`, raw base64, or a `data:` URL | `url_fetch` a `data:<mediaType>;base64,...` URL. Give `destination` a real name and extension (`downloads/portrait.png`, `outputs/line.mp3`). |
-| Public `https://` file URL (no credentials) | `url_fetch` that URL. Same destination rule if the path has no extension. |
-| Workspace file (`router call … --out`, a write, a CLI download into the session cwd) | `workspace_publish` that relative path. `--out` does **not** publish by itself. |
-| Olares files path (`drive/…`, `sync/…`, …) | `workspace_publish` that files path. Do not `drive_fetch` only to preview. |
-| Cluster / internal URL (`flowstudio-svc`, `*.svc`, RFC1918, `localhost`, `/api/v1/generations/…/content`) | **Do not** `url_fetch` — it will refuse a non-public host — and do not curl it either, same boundary. Take the first branch that applies: the poll JSON's `files_path` / `filesPath` row above; its `b64_json` / `data:` row; the `.by-id` pointer in [router.md](router.md) when an older Router carried neither. Only if all three are absent, say the generation completed but its file is not reachable for preview, name the generation id, and ask for a workspace path or public URL. That is a complete answer — do not go hunting for the bytes instead of giving it. |
+| A poll output's `files_path` (`drive/Home/FlowStudio/outputs/…`) | `workspace_publish` that address. It is the original file, full resolution; the conversation asks the backend for a smaller copy itself. Do not `drive_fetch`, GET `/content`, or copy it into Home or `outputs/`. |
+| `b64_json`, raw base64, or a `data:` URL | `url_fetch` a `data:<mediaType>;base64,…` URL with a real `destination` name and extension (`downloads/portrait.png`). |
+| A public `https://` file URL (no credentials) | `url_fetch` it, same destination rule. |
+| A file this turn wrote into the workspace (e.g. `outputs/speech.mp3`) | `workspace_publish` that relative path. |
+| Any other Olares files path (`drive/…`, `sync/…`) | `workspace_publish` it. |
+| A cluster or internal URL (`*.svc`, RFC1918, `localhost`, `…/content`) | Do not `url_fetch` it (it refuses non-public hosts) or curl it. Use the `files_path`, `b64_json`, or `.by-id` pointer ([router.md](router.md)) from the same receipt. If none exists, say the generation completed but its file is not reachable for preview, name the generation id, and ask for a workspace path or public URL. That is a complete answer. |
 
-## After the tool returns
+If the receipt does not name the file, do not go looking for it — no `find`, no grep, no `olares-cli files ls` for something with a recent timestamp. A file found by browsing is not evidence that this call produced it.
 
-Stop after the drive tool publishes. The turn-tail preview under the reply is the surface. Do **not** also write the path as markdown inline code, a hyperlink, or a trailing file chip — that duplicates the player.
+## After publishing
 
-- Image / video / audio: the conversation plays them under the reply.
-- 3D: land `glb` when the backend can emit it. The conversation and the preview tab mount a Three.js viewer for `glb` / `gltf` / `obj`. `gltf` with sidecar `.bin` / textures often cannot load from the raw-file URL. Other mesh types stay a file chip.
+Stop. The preview under the reply is the surface; do not also write the path as inline code, a hyperlink, or a file chip. Image, video, and audio play there. For 3D, land `glb` when the backend can emit it: the conversation mounts a Three.js viewer for `glb` / `gltf` / `obj`, though a `gltf` with sidecar `.bin` or textures often cannot load. Other mesh types stay a file chip.

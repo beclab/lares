@@ -1,85 +1,79 @@
 ---
 name: lares-media-create
-version: 0.5.1
-description: "Produce image, video, audio, or 3D through Router: list that family, POST the matching shim route, land the file. Use for 生成图片, 生成视频, text-to-image, FlowStudio generate, FlowStudio 场景/工作流, T2V, I2V, R2V, 文生视频, 图生视频. Not for Router install, catalog sync, GPU diagnosis, or curling FlowStudio."
+version: 0.6.0
+description: "Produce or edit an image, video, music, speech, or 3D model through Router with the media_generate tool: list the family, pick one catalog row, submit once, and the output is published. Use for 生成图片, 编辑图片, 改图, 修图, 生成视频, 文生视频, 图生视频, 生成音乐, 语音合成, 生成3D, text-to-image, image edit, T2V, I2V, R2V, TTS, FlowStudio 场景/工作流. Not for Router install, catalog sync, or GPU diagnosis."
 metadata:
   requires:
-    bins: ["curl"]
+    bins: ["curl", "jq"]
 ---
 
 # lares-media-create
 
-A generate / create request is **produce**, not platform diagnosis. A FlowStudio scene or workflow is this skill.
+A generate, create, or edit request is **produce**, not platform diagnosis. A FlowStudio scene or workflow is this skill. Do not narrate this protocol and do not load other skills.
 
-Do not load other skills (including olares-router). Do not curl FlowStudio or ComfyUI — not to generate, not to list scenes, not to map a UUID to a title. Do not run `--help`. Do not `provider sync-models`, `model add`, `model delete`, or `market status` unless the family list is **empty**. Do not narrate this protocol.
+## Boundaries
 
-## Produce
+These hold for every step and every reference file; they are not repeated there.
 
-1. Map the ask to **one** family (table below).
-2. List that family only through the in-process shim. This catalog route uses
-   the same Router identity as generation and does not need `olares-cli`'s
-   profile lock outside the workspace sandbox:
-
-```bash
-curl -sS "$LARES_LLM_BASE_URL/models?detail=capabilities"
-```
-
-   Keep only rows whose `mode` is the matching family. For video, if that list is empty, also inspect `image_generation` (FlowStudio sometimes parks video scenes there). Never probe `audio` for a song. Do not use `olares-cli router list` here: on an olares-cli older than the one whose `router key current` reports "the host application's proxy", workspace-write cannot create its refresh lock under `/data/home`.
-
-3. Pick one **enabled** row of this family. Prefer a prompt-only scene. Skip a row whose title is clearly another family (a T2V scene is not an image). For image editing, require `creative.operations` to include `edit`; for text-to-image require `generate`. On an older Router that omits `creative`, use only these conservative FlowStudio fallbacks: an edit row must have `canonical_fields` containing `inputs.images` **and** a `name` that clearly says image edit; never apply that fallback to a cloud model. A text-to-image row must not expose `inputs.images` and its `name` must clearly say text to image; this fallback is FlowStudio-only too. `--model` is `<provider>/<model>` as listed — FlowStudio's model half is often a UUID; that **is** the id, and `name` on the **same JSON row** is the label to say it by. Never GET FlowStudio to map a UUID to a title. `flowstudio.parameters`, when present, lists that scene's exposed controls. Each entry carries the exact `key` to submit plus its human `label`, type, default, bounds, and options. Match the user's words to `label`; send the chosen values under `flowstudio.params` using `key`. For a select, send the option's `value`, not its display label. Do not invent a key absent from `flowstudio.parameters`. This provider-specific object is only for a row that actually has `flowstudio.parameters`.
-
-   When the user named a scene, that row **is** the pick — match their words against `name` on the listed rows and run that one. A detail absent from both `flowstudio.parameters` and `canonical_fields` is dropped from the body and said in the reply; it is never a reason to run a scene the user did not ask for. Do not switch to a row that "fits better".
-4. Call **once** with the `media_generate` tool: `model` and `mode` from the picked row, the user's prompt unchanged, `operation: "edit"` for image editing, `reference_images` as workspace paths for I2V / R2V / edit, optional `mask_image`, and `options` for fields the row's `canonical_fields` names. On a row with `flowstudio.parameters`, put its values in `flowstudio: {params: {...}}` as step 3 says. It submits as the logged-in user, waits however long the run takes, and publishes every output — do not poll, download, or `workspace_publish` its files again. A generation an earlier turn started is resumed with `generation_id` alone; never submit it a second time. Its error text is the Router error; the failure rules below apply to it unchanged.
-
-   Only when `media_generate` is not available, call through `$LARES_LLM_BASE_URL` (in-process Router shim; default `http://127.0.0.1:$PORT/llm/v1`). That stamps the logged-in Olares user, so FlowStudio owns the job as this person — never as the shared chart owner. These two are the **only** ways to generate: never POST Router's data plane (`$LLM_GATEWAY_URL`) or FlowStudio directly, not even as a fallback — Lares refuses those shell calls, and a refusal is not a cue to try another route. Do not `olares-cli router call` to generate unless `olares-cli router key current` shows `CALLS USE` as the host application's proxy; an older CLI ignores that and presents as the Lares app. Route follows the **picked row's mode**:
-
-| Row mode | POST `$LARES_LLM_BASE_URL/…` |
-|---|---|
-| `image_generation` | `/images/generations` |
-| `video_generation` | `/videos` |
-| `music_generation` | `/music/generations` |
-| `model3d_generation` | `/generations` |
-
-   Image edit is the exception: POST canonical JSON to `/generations` with `operation: "edit"` and `inputs.images`; this works for both FlowStudio and cloud edit providers. A video scene parked under `image_generation` still uses the **image** route. A `video_generation` row uses `/videos`. Set a long bash timeout; poll `GET $LARES_LLM_BASE_URL/generations/<id>` until completed. Each output carries `files_path` — the Olares files address of the **same** bytes already stored, the original rather than a copy. `workspace_publish` it. Do not GET `/content`, do not write `outputs/`, and do not copy the file into Home or anywhere else just to preview. Do not `router call … --id`.
-
-   Omitting `seed` gives the run a fresh one, so "再来一张" is this same call again and returns a different result. Send a seed only to reproduce a specific earlier result, and only if the row's `canonical_fields` names it.
-
-```bash
-curl -sS -X POST "$LARES_LLM_BASE_URL/videos" \
-  -H 'content-type: application/json' -H 'prefer: respond-async' \
-  -d '{"model":"<provider>/<model>","prompt":"<prompt>","flowstudio":{"params":{"<parameter key>":"<value>"}}}'
-```
-
-   Swap the path from the table.
-
-   **I2V / R2V** — the reference goes on the family POST as `reference_images`, an array of `data:image/<type>;base64,…` URLs. **Image edit** instead uses `/generations`, `operation: "edit"`, and `inputs.images`; optional mask is `inputs.mask`. Never send a bare path or `https://` link. Examples: [router.md](references/router.md#reference-images).
-
-   The user asked for I2V (or named an I2V scene) but gave no image → ask for one, or say you will first generate a reference image with an `image_generation` row and then animate it. Never switch to a T2V row on your own.
-
-   `media_input_required` / `media_input_unsupported` / `media_field_unknown`: the error names the key the route wants — fix the body **once** to that spelling and retry. A second refusal ends the attempt: report the error text to the user. Do not try other spellings, do not grep `/app` or the Router source, do not curl Router's data plane to bypass the shim.
-
-5. Land the file ([deliver.md](references/deliver.md)). **Images / video / audio / 3D:** `workspace_publish` the `files_path`; do not `read_image` by first copying the file, and do not close the reply with that path as a link. Do not claim success from the filename or the prompt.
-
-A **single-row** failure (404 unpublished, wrong mode) is still this step: try the **next same-family row**. It is not “Router cannot generate”. Do not sync or rewrite the catalog. Never `--id` refetch. A named row only moves after its own call failed, and then the reply says which row ran instead.
-
-Call details: [router.md](references/router.md) — only if the shim POST above cannot run. There is no data-plane fallback.
-
-Empty list, or every same-family row failed: [flowstudio.md](references/flowstudio.md). If that cannot help: [fallback.md](references/fallback.md).
+- Generate only through the `media_generate` tool, or — only when that tool is not in your tool list — the in-process shim `$LARES_LLM_BASE_URL` ([router.md](references/router.md)). Both stamp the logged-in Olares user, so the job and its files belong to this person.
+- Never call FlowStudio, ComfyUI, `router local`, Router's data plane (`$LLM_GATEWAY_URL`), or `olares-cli router call` to generate, list scenes, map a UUID to a title, or fetch a file. Lares refuses those shell calls; a refusal is not a cue to try another route.
+- Never repair the catalog (`provider sync-models`, `model add` / `delete` / `update`) during produce. That is [flowstudio.md](references/flowstudio.md), and only for an empty family.
+- Do not run `--help`, grep `/app` or the Router source, or browse the drive for a file.
 
 ## Families
 
-Router **mode** is the catalog key. User words like “音频 / 声音” are not that key.
+The catalog `mode` is the key; the user's words ("音频", "声音") are not.
 
-| User wants | Router mode | Also a hit |
+| User wants | Row `mode` | `creative.operations` has |
 |---|---|---|
-| Image generate or edit | `image_generation` | FlowStudio `output=image` |
-| Video | `video_generation` | FlowStudio `output=video` (may also appear under the FlowStudio `image_generation` provider) |
-| Speech / TTS | `audio` with TTS flags | shim `/audio/speech` |
-| Music / song / generative audio | `music_generation` | FlowStudio `output=audio` |
-| 3D / mesh / glb | `model3d_generation` | FlowStudio `output=model3d` |
+| Text-to-image | `image_generation` | `generate` |
+| Image edit (source image supplied) | `image_generation` | `edit` |
+| Video: T2V, I2V, R2V | `video_generation` | — |
+| Music, song, generative audio | `music_generation` | — |
+| 3D, mesh, glb | `model3d_generation` | — |
+| Speech / TTS | `audio` with a TTS model | not `media_generate` — see [Speech](#speech) |
 
-An empty `audio` list is not a miss for a song. Chat with vision is not generation. Transcribe is not TTS. `ffmpeg_encode` is transcode, not a generative model.
+An empty `audio` list is not a miss for a song. Chat with vision is not generation; transcription is not TTS; `ffmpeg_encode` is a transcode, not a model.
 
-Never curl FlowStudio, ComfyUI, or `router local` to generate. Router owns GPU scheduling.
+## Produce
 
-Image, video, audio, and glb/gltf/obj preview under the reply after landing. Never reply with only a hyperlink.
+1. **Family.** Map the ask to one row of the table.
+2. **List.** One catalog read, through the shim:
+
+   ```bash
+   curl -sS "$LARES_LLM_BASE_URL/models?detail=capabilities"
+   ```
+
+   Keep rows whose `mode` is the family. For video only, if none remain, also consider `image_generation` rows whose `name` is clearly a video scene (FlowStudio sometimes parks video there); such a row keeps `mode: image_generation`.
+3. **Pick one enabled row.**
+   - The user named a scene → the row whose `name` matches **is** the pick. Never swap it for one that "fits better".
+   - Otherwise the row's `creative.operations` must contain the operation from the table (`edit` / `generate`). A Router that omits `creative`: accept a FlowStudio row only — for edit its `canonical_fields` has `inputs.images` and its `name` says image edit; for text-to-image it has no `inputs.images` and its `name` says text to image. Never apply this to a cloud row.
+   - Skip a row whose `name` is clearly another family. When the user supplied no media, prefer a prompt-only scene.
+   - `model` is `<provider>/<model>` exactly as listed; FlowStudio's model half is usually a UUID and **is** the id. Refer to the row by its `name`.
+4. **Params.** For a FlowStudio row, `flowstudio.parameters` is FlowStudio's own list of every input this workflow takes: its prompt (the entry with `associateRole: "prompt"`), its controls, and its media slots (entries with `media` and `valueFormat`). Put every value in `params`, keyed by that list's `key`, exactly as FlowStudio defines it; the tool sends it as `flowstudio.params` unchanged. Put the user's prompt, unchanged, under the prompt key. Match the user's words to each entry's `label`; for a select send the option's `value`. A media slot takes the user's file as a path: a workspace file (the tool copies it into `Home/FlowStudio/uploads`, the folder FlowStudio reads) or a `drive/Home/FlowStudio/…` address such as an earlier output; `filesPath` is one path, `filesPathBySlot` is `{option value: path}`, `sourceAndMask` is `{source, mask}`. Never invent a key, and add nothing the list does not name. A row without `flowstudio.parameters` takes no `params`. A detail the row cannot express is dropped and said in the reply — it is never a reason to change rows. Leave any seed parameter out so each run is fresh ("再来一张" is the same call again).
+5. **Call `media_generate` once** with the row's `model` and `params`. For a row without `flowstudio.parameters` (a cloud model), pass `prompt`, and `reference_images` / `mask_image` for an edit or I2V instead. The tool reads the row from Router, takes the route and the operation from it, and fills the top-level fields Router checks before it forwards; FlowStudio never reads those. FlowStudio checks everything else — required slots, file types, values — and its error names the key; fix the call from that once. An I2V or edit ask without a file → ask for one, or say you will first generate one with an `image_generation` row; never fall back to a T2V row.
+6. **Reply.** The tool waits however long the run takes and publishes every output; the preview appears under the reply. Do not `workspace_publish`, download, copy, or link its files again, and do not claim success beyond what the result lists.
+
+A generation an earlier turn started is resumed with `generation_id` alone — never submit it again.
+
+## Failures
+
+A `media_generate` error is the Router error. Handle it here; it never means the tool is unavailable, and it is never retried through the shim.
+
+| Error | Do |
+|---|---|
+| `media_input_required`, `media_input_unsupported`, `media_field_unknown` | Fix the request once in the spelling the error names and call again. If the named field is not one you sent (for example `sref`), the tool built it: report the error text and stop. A second refusal ends the attempt: report the error text. Another row of the same kind needs the same field, so do not hop rows. |
+| `upstream_capacity_unavailable`, or `retryable` / a retry-after | The node is short of memory or GPU. Wait the stated seconds (30 if none), call the same row once more, then tell the user the node is busy. Do not fan out to other rows. |
+| One row 404, unpublished, or wrong mode | Try the next same-family row. A row the user named only moves after its own call failed, and the reply says which row ran instead. |
+| Auth, quota, "application not answering" | Report it; diagnosis is `olares-cli router usage list` / `router provider get`, not a new route. |
+| Every same-family row failed, or the list was empty | [flowstudio.md](references/flowstudio.md), then [fallback.md](references/fallback.md). |
+
+## Speech
+
+TTS is not a media generation. POST the TTS row's model to the shim, then `workspace_publish` the file it wrote ([deliver.md](references/deliver.md)); on an HTTP error the body is the Router error — report it, do not publish it:
+
+```bash
+jq -n --arg m "<provider>/<model>" --arg t "<text>" '{model:$m, input:$t}' |
+curl -sS --fail-with-body -X POST "$LARES_LLM_BASE_URL/audio/speech" -H 'content-type: application/json' \
+  --data-binary @- -o outputs/speech.mp3
+```

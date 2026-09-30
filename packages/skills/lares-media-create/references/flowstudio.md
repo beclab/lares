@@ -1,10 +1,8 @@
-# FlowStudio: empty catalog only
+# FlowStudio: empty family only
 
-Load this only after produce listed the family and found **no usable row** (empty list, or every same-family row already failed). One stale 404 is not an empty catalog — go back and try the next row.
+Load this only when the family had **no usable row**: the list was empty, or every same-family row already failed. One stale 404 is not an empty family — go back and try the next row.
 
-Finding a workflow here does **not** authorize calling FlowStudio HTTP. Submit through Router. Produce already has the scene id and its `name` from the catalog — do not GET `/api/projects` to map UUID ↔ title.
-
-Lifecycle verbs: [`olares-market`](../../olares-market/SKILL.md). Provider register / sync: [`olares-router`](../../olares-router/SKILL.md).
+Nothing here authorizes calling FlowStudio itself. Whatever this finds, generation still goes through produce.
 
 ## Is it installed?
 
@@ -12,33 +10,22 @@ Lifecycle verbs: [`olares-market`](../../olares-market/SKILL.md). Provider regis
 olares-cli market status flowstudio -o json
 ```
 
-- App id is `flowstudio`. `running` (and other produce-ready states from the market skill) counts as installed.
-- Missing, uninstalled, or stopped → this step is not a hit. Return to the front door (offer install only in [fallback.md](fallback.md)).
-- Installed **and** this family's Router list is empty: **ask the user** before register / sync. Sync replaces the provider catalog and can delete working rows. Do not guess the provider name as `flowstudio` when the catalog already showed `flowstudio-manual`.
+`running` counts as installed. Missing, uninstalled, or stopped → not a hit; go to [fallback.md](fallback.md), which is where an install is offered.
+
+## Installed, family still empty
+
+A sync replaces the provider's catalog and can delete working rows, so **ask the user first**. Use the provider name the catalog already shows for FlowStudio rows of other families (for example `flowstudio-manual`); use `flowstudio` only when no FlowStudio row is listed at all. `provider register` is only for an installed application with no Router provider yet — never install a second copy.
 
 ```bash
-olares-cli router provider register flowstudio
-olares-cli router provider sync-models flowstudio
-curl -sS "$LARES_LLM_BASE_URL/models"
+olares-cli router provider register <provider>
+olares-cli router provider sync-models <provider>
+curl -sS "$LARES_LLM_BASE_URL/models?detail=capabilities"
 ```
 
-Re-list through the shim, not `olares-cli router list`: the reason produce avoids it holds here too, and a catalog read that fails on a lock looks exactly like a sync that fixed nothing.
+Re-list through the shim with `detail=capabilities`, as produce does: pick needs `creative`, `canonical_fields`, and `flowstudio.parameters`, and `olares-cli router list` can fail on the workspace lock and look like a sync that fixed nothing.
 
-`provider register` is only for an application that is already installed and has no Router row. Do not install a second copy. After a sync the user approved, return to produce (list → pick → call). Do not keep repairing modes with `model add` / `model delete`.
+After a sync the user approved, return to produce (list → pick → call). Sync once; do not keep repairing modes with `model add` / `model delete`.
 
-## Matching workflow?
+## Still nothing
 
-FlowStudio is a channel of published scenes. Match **output family**, not title poetry:
-
-| Need | Workflow `output` / kind |
-|---|---|
-| Image | `image` (`t2i`, `i2i`, …) |
-| Video | `video` (`t2v`, `i2v`, …) |
-| Generative audio | `audio` |
-| 3D | `model3d` |
-
-A workflow that `needs_reference` / `needs_mask` is still a hit when the user supplied the media; otherwise pick a prompt-only scene.
-
-If a match exists → start the job with the front-door **Call**. Do not `curl` `flowstudio-svc`.
-
-If FlowStudio is running but has no published, produce-ready scene for this family → say so. Installing a recommended scene is an admin action inside FlowStudio; do not author a Comfy graph as the first move. Then [fallback.md](fallback.md).
+FlowStudio serves published scenes only. If it is running but the re-list still has no row whose output is this family (`image`, `video`, `audio`, `model3d`), say so: publishing or installing a scene is an admin action inside FlowStudio, and authoring a Comfy graph is not the first move. Then [fallback.md](fallback.md).

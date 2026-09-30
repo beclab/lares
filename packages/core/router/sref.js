@@ -87,8 +87,14 @@ export function isGenerationCreateRoute(suffix) {
  * Other providers, or no user / no key, get the body back untouched. A `sref`
  * the caller put there itself is always replaced, so it cannot name someone else.
  *
+ * It rides in `flowstudio.params`, which Router forwards to FlowStudio as
+ * `params` on every creation route. A top-level field would not survive:
+ * Router's canonical `/generations` refuses unknown top-level fields
+ * (`json: unknown field "sref"`). FlowStudio pops it before the workflow runs.
+ *
  * @param {Record<string, any>} body
  * @param {string} user
+ * @param {{ now?: number, nonce?: Buffer }} [options]
  */
 export function withSref(body, user, env = process.env, options = {}) {
   if (body == null || typeof body !== "object" || Array.isArray(body)) return body;
@@ -96,7 +102,15 @@ export function withSref(body, user, env = process.env, options = {}) {
   const secret = srefKey(env);
   const name = String(user ?? "").trim();
   if (!secret || !name) return body;
-  return { ...body, [SREF_FIELD]: encodeSref(name, secret, options) };
+  const token = encodeSref(name, secret, options);
+  const { [SREF_FIELD]: _dropped, ...rest } = body;
+  const flowstudio = rest.flowstudio && typeof rest.flowstudio === "object" && !Array.isArray(rest.flowstudio)
+    ? rest.flowstudio
+    : {};
+  const params = flowstudio.params && typeof flowstudio.params === "object" && !Array.isArray(flowstudio.params)
+    ? flowstudio.params
+    : {};
+  return { ...rest, flowstudio: { ...flowstudio, params: { ...params, [SREF_FIELD]: token } } };
 }
 
 /** Same as `withSref` for a raw JSON request body; non-JSON is returned as is. */

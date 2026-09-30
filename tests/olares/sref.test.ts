@@ -40,23 +40,39 @@ test("only FlowStudio workflows on create routes are stamped", () => {
   const cloud = { model: "openai/gpt-image-1", prompt: "x" };
   assert.equal(withSref(cloud, "yuxing001", env), cloud);
   const stamped = withSref({ model: WORKFLOW, prompt: "x" }, "yuxing001", env);
-  assert.match(stamped.sref, /^1\./);
+  assert.match(stamped.flowstudio.params.sref, /^1\./);
+  assert.equal("sref" in stamped, false);
   assert.equal(stamped.prompt, "x");
 });
 
 test("a caller-supplied sref is replaced and missing user or key skips", () => {
   const env = { SREF_KEY: "k" };
   const body = { model: WORKFLOW, prompt: "x", sref: "1.forged" };
-  assert.notEqual(withSref(body, "yuxing001", env).sref, "1.forged");
-  assert.equal(withSref({ model: WORKFLOW }, "", env).sref, undefined);
-  assert.equal(withSref({ model: WORKFLOW }, "yuxing001", { SREF_KEY: " " }).sref, undefined);
+  assert.notEqual(withSref(body, "yuxing001", env).flowstudio.params.sref, "1.forged");
+  assert.equal("sref" in withSref(body, "yuxing001", env), false);
+  assert.equal(withSref({ model: WORKFLOW }, "", env).flowstudio, undefined);
+  assert.equal(withSref({ model: WORKFLOW }, "yuxing001", { SREF_KEY: " " }).flowstudio, undefined);
   assert.equal(srefKey({}), DEFAULT_SREF_KEY);
 });
 
 test("raw bodies are stamped only when they are JSON", () => {
   const env = { SREF_KEY: "k" };
   const raw = Buffer.from(JSON.stringify({ model: WORKFLOW, prompt: "x" }));
-  assert.match(JSON.parse(withSrefBuffer(raw, "yuxing001", env).toString()).sref, /^1\./);
+  assert.match(JSON.parse(withSrefBuffer(raw, "yuxing001", env).toString()).flowstudio.params.sref, /^1\./);
   const form = Buffer.from("--boundary\r\n");
   assert.equal(withSrefBuffer(form, "yuxing001", env), form);
+});
+
+test("sref rides in flowstudio.params beside the workflow's own params, on every route", () => {
+  const env = { SREF_KEY: "k" };
+  // Router's canonical /generations refused a top-level sref: `json: unknown field "sref"`.
+  const edit = withSref(
+    { model: WORKFLOW, prompt: "x", operation: "edit", sref: "1.forged", flowstudio: { params: { megapixels: "0.92", sref: "1.forged" } } },
+    "yuxing001",
+    env,
+  );
+  assert.equal("sref" in edit, false);
+  assert.equal(edit.flowstudio.params.megapixels, "0.92");
+  assert.match(edit.flowstudio.params.sref, /^1\./);
+  assert.notEqual(edit.flowstudio.params.sref, "1.forged");
 });

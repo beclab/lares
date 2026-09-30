@@ -1,21 +1,19 @@
 import { producedEditCard } from "../drive/execute.js";
 import { workspaceRootFromSession } from "../workspace/env.js";
-import {
-  MEDIA_GENERATION_ROUTES,
-  MEDIA_GENERATION_TIMEOUT_MS,
-  runMediaGeneration,
-} from "./generation.js";
+import { MEDIA_GENERATION_TIMEOUT_MS, runMediaGeneration } from "./generation.js";
 
 export const MEDIA_GENERATE_TOOL = "media_generate";
 
 export const MEDIA_GENERATE_PROMPT = [
-  "Generate images, video, music, and 3D with media_generate, not with curl and a sleep loop.",
-  "It submits through Router as the logged-in user, waits for the result, and publishes every",
-  "output itself, so do not workspace_publish or download its files again. Pick model and mode",
-  "from one catalog row; use its declared operation and put only fields that row's",
-  "canonical_fields names into options.",
-  "If a turn ended before a generation finished, the next turn is told; resume it with",
-  "generation_id instead of generating it again.",
+  "Generate or edit images, video, music, and 3D with media_generate, not with curl and a sleep loop.",
+  "Name the catalog row by model; the tool reads that row from Router and takes the route and",
+  "the operation from it. For a FlowStudio row, every input the workflow takes goes in params",
+  "under its flowstudio.parameters key, unchanged: the prompt (associateRole \"prompt\"), each",
+  "control, and each media slot (an entry with media / valueFormat) as a file path. FlowStudio",
+  "checks all of it; fix the call from its error once.",
+  "It submits as the logged-in user, waits, and publishes every output itself: do not",
+  "workspace_publish or download its files again. If a turn ended before a generation",
+  "finished, resume it with generation_id instead of generating it again.",
 ].join(" ");
 
 /** @param deps - seams for tests: fetch, sleep, env, cat. */
@@ -30,37 +28,39 @@ export function mediaGenerateDefinition(deps = {}) {
     parameters: {
       model: {
         type: "string",
-        description: "<provider>/<model> exactly as the catalog row lists it. Required unless generation_id is set.",
-      },
-      mode: {
-        type: "string",
-        enum: Object.keys(MEDIA_GENERATION_ROUTES),
-        description: "The catalog row's mode; it decides the Router route. Required unless generation_id is set.",
+        description:
+          "<provider>/<model> exactly as the catalog row lists it. The row decides everything else"
+          + " about the call. Required unless generation_id is set.",
       },
       prompt: {
         type: "string",
-        description: "The user's prompt, unchanged.",
-      },
-      operation: {
-        type: "string",
         description:
-          "Creative operation declared by the catalog row. Omit for text generation; use edit for image editing.",
+          "The user's prompt, unchanged, for a row without flowstudio.parameters. A FlowStudio row"
+          + " takes its prompt in params instead; omit this and the tool sends Router the"
+          + " top-level copy it requires.",
       },
       reference_images: {
         type: "array",
         items: { type: "string" },
-        description: "Workspace-relative image paths (png, jpeg, webp, gif) to condition on: I2V, R2V, image edit.",
+        description:
+          "Only for a row whose parameters list no media slot (a cloud model): workspace images"
+          + " to condition on. A FlowStudio row names its media slots in params instead.",
       },
       mask_image: {
         type: "string",
-        description: "Optional workspace-relative mask image path for an image edit.",
+        description: "Only for a row whose parameters list no media slot: a workspace mask image.",
       },
-      options: {
+      params: {
         type: "object",
         additionalProperties: true,
         description:
-          "Extra request fields the row's canonical_fields names, e.g. {\"seed\": 7}."
-          + " Omit seed for a fresh result.",
+          "Every input a FlowStudio workflow takes, keyed exactly as the row's"
+          + " flowstudio.parameters lists them, values unchanged; sent as flowstudio.params."
+          + " The prompt goes under the associateRole \"prompt\" key. A media slot takes a file:"
+          + " valueFormat filesPath is one path, filesPathBySlot is {option value: path},"
+          + " sourceAndMask is {source, mask}. A path is a workspace file (the tool copies it to"
+          + " Home/FlowStudio/uploads) or a drive/Home/FlowStudio/… address such as an earlier"
+          + " output. Omit a parameter to keep its default.",
       },
       generation_id: {
         type: "string",
@@ -96,6 +96,6 @@ export function mediaGenerateDefinition(deps = {}) {
 export function presentMediaGenerate(args) {
   const target = String(args?.generation_id ?? "").trim()
     ? `generation ${args.generation_id}`
-    : `${String(args?.mode ?? "media").replace(/_generation$/, "")} with ${String(args?.model ?? "")}`;
+    : `media with ${String(args?.model ?? "")}`;
   return producedEditCard(`Generate ${target}`.slice(0, 160));
 }
