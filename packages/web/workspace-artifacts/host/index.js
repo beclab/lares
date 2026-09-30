@@ -1,4 +1,5 @@
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
+import { KNOWN_SESSION_EVENT_TYPES } from "@deepseek-ai/dsh-session";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import {
   driveFetchDefinition,
@@ -10,6 +11,7 @@ import { DRIVE_IMPORT_PROMPT } from "@olares/lares-core/drive/paths";
 import {
   recoverMediaGenerations,
   recoveredGenerationsNote,
+  registerMediaSessionEvents,
 } from "@olares/lares-core/media/generation";
 import { MEDIA_GENERATE_PROMPT, mediaGenerateDefinition } from "@olares/lares-core/media/tool";
 import {
@@ -24,6 +26,10 @@ import {
 import {
   publishedPathsFromToolCall,
 } from "@olares/lares-core/files/published-tools";
+
+// At module load, before any session is read: a log holding the media ledger's
+// events must reload in this harness (see MEDIA_SESSION_EVENT_TYPES).
+registerMediaSessionEvents(KNOWN_SESSION_EVENT_TYPES);
 
 export const name = "lares-workspace-artifacts";
 export const inject = ["tools", "systemPrompt", "sessionProjections"];

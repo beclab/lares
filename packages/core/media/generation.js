@@ -33,6 +33,25 @@ const MAX_TRANSIENT_FAILURES = 12;
 export const MEDIA_SUBMITTED_EVENT = "media/generation-submitted";
 export const MEDIA_SETTLED_EVENT = "media/generation-settled";
 
+/**
+ * The session events the media ledger writes. dsh refuses to read a log that
+ * holds an event type it does not know and that is not marked `ignorable`, and
+ * `Session.append` cannot mark one — so every session that ran media_generate
+ * failed to reload with "unknown to this harness". The dsh host that loads
+ * Lares registers these as known (see registerMediaSessionEvents); nothing in
+ * their data changes how the rest of the log is read.
+ */
+export const MEDIA_SESSION_EVENT_TYPES = Object.freeze([MEDIA_SUBMITTED_EVENT, MEDIA_SETTLED_EVENT]);
+
+/** @param {{ add(type: string): unknown }} known dsh's KNOWN_SESSION_EVENT_TYPES */
+export function registerMediaSessionEvents(known) {
+  if (!known || typeof known.add !== "function") {
+    throw new TypeError("KNOWN_SESSION_EVENT_TYPES is not a mutable set; media sessions would not reload");
+  }
+  for (const type of MEDIA_SESSION_EVENT_TYPES) known.add(type);
+  return known;
+}
+
 const IMAGE_TYPES = Object.freeze({
   ".png": "image/png",
   ".jpg": "image/jpeg",
@@ -290,10 +309,44 @@ export function generationFailure(payload) {
   });
 }
 
+/** An abort reason as an Error: dsh aborts with whatever its caller gave it. */
+function abortError(reason) {
+  if (reason instanceof Error) return reason;
+  const text = errorText(reason);
+  return new MediaGenerationError(text ? `the call was aborted: ${text}` : "the call was aborted", {});
+}
+
+/**
+ * Any thrown value as an Error whose message says what happened. The tool
+ * harness shows `Error: ${message}`, and a thrown object or an Error carrying
+ * an object as its message reads as "[object Object]" — which tells neither
+ * the model nor the user anything. `stage` names where the call was.
+ */
+export function describedMediaError(error, stage = "") {
+  const prefix = stage ? `media_generate ${stage}: ` : "";
+  if (error instanceof Error) {
+    const message = typeof error.message === "string" ? error.message : "";
+    if (message && !message.includes("[object Object]")) {
+      if (error instanceof MediaGenerationError || !prefix) return error;
+      // A bare runtime error ("fetch failed") says nothing about where it came from.
+      const located = new MediaGenerationError(`${prefix}${message}`, error);
+      located.cause = error;
+      return located;
+    }
+    const text = errorText(error.cause) || errorText({ ...error, name: undefined, stack: undefined });
+    const described = new MediaGenerationError(`${prefix}${text || error.name || "failed without a message"}`, error);
+    described.cause = error;
+    return described;
+  }
+  const described = new MediaGenerationError(`${prefix}${errorText(error) || String(error)}`, {});
+  described.cause = error;
+  return described;
+}
+
 function defaultSleep(ms, signal) {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
-      reject(signal.reason ?? new Error("aborted"));
+      reject(abortError(signal.reason));
       return;
     }
     const timer = setTimeout(() => {
@@ -302,7 +355,7 @@ function defaultSleep(ms, signal) {
     }, ms);
     const onAbort = () => {
       clearTimeout(timer);
-      reject(signal.reason ?? new Error("aborted"));
+      reject(abortError(signal.reason));
     };
     signal?.addEventListener("abort", onAbort, { once: true });
   });
@@ -568,7 +621,17 @@ function placeReferenceImages(contract, args) {
  * waiting, and settle the ledger with what came back. A wait that is aborted
  * or times out leaves the entry pending for {@link recoverMediaGenerations}.
  */
-export async function runMediaGeneration(args, { session, callId, workspaceRoot, signal }, deps = {}) {
+export async function runMediaGeneration(args, context, deps = {}) {
+  const stage = { name: "" };
+  try {
+    return await runMediaGenerationStages(args, context, deps, stage);
+  } catch (error) {
+    throw describedMediaError(error, stage.name);
+  }
+}
+
+async function runMediaGenerationStages(args, { session, callId, workspaceRoot, signal }, deps, stage) {
+  stage.name = "catalog";
   const resumeId = String(args?.generation_id ?? "").trim();
   let id = resumeId;
   let model = String(args?.model ?? "").trim();
@@ -590,6 +653,7 @@ export async function runMediaGeneration(args, { session, callId, workspaceRoot,
       { ...placed, ...(params === undefined ? {} : { params }), mask_image_data_url: maskImageDataUrl },
       images,
     );
+    stage.name = "submit";
     const created = await submitMediaGeneration(request, {
       ...deps,
       signal,
@@ -603,6 +667,7 @@ export async function runMediaGeneration(args, { session, callId, workspaceRoot,
   if (!known) session?.append(MEDIA_SUBMITTED_EVENT, { id, model, mode, callId });
 
   let final;
+  stage.name = `wait (${id})`;
   try {
     final = await awaitMediaGeneration(id, { ...deps, signal });
   } catch (error) {
@@ -616,6 +681,7 @@ export async function runMediaGeneration(args, { session, callId, workspaceRoot,
     session?.append(MEDIA_SETTLED_EVENT, settledRecord(id, failure));
     throw failure;
   }
+  stage.name = `publish (${id})`;
   const files = await settledFiles(final, workspaceRoot, { ...deps, signal });
   session?.append(MEDIA_SETTLED_EVENT, settledRecord(id, { status, files }));
   return { id, status, files };

@@ -571,3 +571,33 @@ test("an image edit row with slots goes canonical with a pass-check inputs.image
     inputs: { images: [PASS_CHECK_IMAGE] },
   });
 });
+
+test("a session holding the media ledger's events reloads: the host registers them as known", async () => {
+  const { KNOWN_SESSION_EVENT_TYPES } = await import("@deepseek-ai/dsh-session");
+  await import("../../packages/web/workspace-artifacts/host/index.js");
+  assert.ok(KNOWN_SESSION_EVENT_TYPES.has(MEDIA_SUBMITTED_EVENT));
+  assert.ok(KNOWN_SESSION_EVENT_TYPES.has(MEDIA_SETTLED_EVENT));
+  // dsh-session-persistence refuses a stored event unless KNOWN_SESSION_EVENT_TYPES
+  // has its type or it is marked ignorable; the ledger's events are never marked.
+});
+
+test("nothing leaves media_generate as [object Object]", async () => {
+  const { describedMediaError } = await import("@olares/lares-core/media/generation");
+  const plain = describedMediaError({ kind: "cancelled", reason: "user stopped the turn" }, "wait (g1)");
+  assert.equal(plain.message, "media_generate wait (g1): user stopped the turn");
+  const objectMessage = new Error("x");
+  Object.defineProperty(objectMessage, "message", { value: { code: "boom" } });
+  assert.doesNotMatch(describedMediaError(objectMessage, "submit").message, /\[object Object\]/);
+  assert.equal(describedMediaError(new TypeError("fetch failed"), "submit").message, "media_generate submit: fetch failed");
+  const ours = new MediaGenerationError("media_field_unknown: nope");
+  assert.equal(describedMediaError(ours, "submit"), ours);
+  // A thrown non-Error from the transport ends as a described MediaGenerationError.
+  const fetch = async (url: string) => {
+    if (url.includes("/models")) return { ok: true, status: 200, headers: new Headers(), text: async () => JSON.stringify({ data: CATALOG }) };
+    throw { code: "ECONNRESET", detail: { message: "socket hang up" } };
+  };
+  await assert.rejects(
+    runMediaGeneration({ model: "a/b", prompt: "p" }, { session: recordingSession() }, { env, fetch, sleep: noSleep }),
+    (error: any) => error instanceof MediaGenerationError && /^media_generate submit: .*socket hang up/.test(error.message),
+  );
+});
