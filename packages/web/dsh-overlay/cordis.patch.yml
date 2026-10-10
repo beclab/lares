@@ -59,6 +59,24 @@
 - id: ui-settings-plugin-inventory
   disabled: true
 
+# dsh 0.2 puts bundle management on a sidebar page that replaces the
+# conversation, and a read-only "Built-in plugins" row in Settings. Lares
+# does not surface either.
+- id: ui-plugin-manager
+  disabled: true
+
+- id: ui-settings-plugins
+  disabled: true
+
+# "Upload session logs to help improve DeepSeek" is the official API's
+# request extension. Lares does not call that API, so neither the General
+# row nor the uploader belongs in the profile.
+- id: session-log-deepseek
+  disabled: true
+
+- id: ui-settings-session-log
+  disabled: true
+
 # Agent-preset switcher (hero chip, session header, Settings). Sessions still
 # mount the deployment default from `agent-presets` (standard); re-enable when
 # mode switching is a product surface again.
@@ -139,6 +157,16 @@
       name: '@lares/dsh-overlay/host/olares/olares-identity.js'
       inject: [webServer, connection]
 
+    # Phone browsers on this same entrance get the mobile shell. Desktop stays
+    # on the dsh fallback. Choice is ?ui= / cookie / Client Hints / User-Agent.
+    - id: lares-mobile-surface
+      name: '@lares/dsh-overlay/host/mobile-surface.js'
+      inject: [webServer, connection]
+
+    - id: lares-client-log
+      name: '@lares/dsh-overlay/host/client-log.js'
+      inject: [webServer]
+
     - id: lares-default-workspace
       name: '@lares/dsh-overlay/host/default-workspace.js'
       inject: [workspaceRegistry]
@@ -147,10 +175,9 @@
       name: '@lares/brand'
       inject: [webServer]
 
-    # Voice input parked: mic in composer + Settings → 语音输入.
-    # - id: lares-composer-voice
-    #   name: '@lares/composer-voice'
-    #   inject: [webServer]
+    - id: lares-composer-voice
+      name: '@lares/composer-voice'
+      inject: [webServer]
 
     - id: lares-file-upload
       name: '@lares/file-upload'

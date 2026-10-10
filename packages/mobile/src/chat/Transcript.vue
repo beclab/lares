@@ -35,7 +35,7 @@
       <LaresQuestionCard
         v-else-if="!questionTakeover && row.type === 'tool' && row.name === 'ask_user_question' && row.status === 'running'"
         :questions="questionItems(row)"
-        :rpc-id="question?.rpcId || ''"
+        :answerable="Boolean(question?.eventId)"
         :busy="questionBusy"
         :t="t"
         @pick="$emit('answer', $event, row)"
@@ -69,14 +69,19 @@
           @react="setReaction(index, $event)"
         />
       </template>
-      <LaresDeliverables
+        <LaresDeliverables
         v-else-if="row.type === 'files'"
         :group="fileGroup(row.paths)"
         :media-url="mediaUrl"
+        :popup="popup"
         :t="t"
         @open="$emit('open', $event)"
         @media="$emit('media')"
       />
+    </li>
+    <li v-if="running" class="lares-log__running" data-chat-running="true">
+      <span class="lares-log__sr" role="status" aria-live="polite" aria-atomic="true">{{ t("chat.deepDiving") }}</span>
+      <span class="lares-log__running-text" aria-hidden="true">{{ runningText }}</span>
     </li>
   </ol>
 </template>
@@ -85,7 +90,7 @@
 import { partitionPreviews } from "@olares/lares-core/files/preview-groups";
 import { parseAskUserQuestions } from "@olares/lares-core/larepass/questions";
 import { STAGE_COPY } from "@olares/lares-core/larepass/stage-copy";
-import { retryStatus as formatRetry, thinkSummary } from "./format.js";
+import { retryStatus as formatRetry, runningLabel, thinkSummary } from "./format.js";
 import { renderMarkdown } from "./markdown.js";
 import LaresDeliverables from "./Deliverables.vue";
 import LaresQuestionCard from "./QuestionCard.vue";
@@ -98,6 +103,7 @@ export default {
   props: {
     items: { type: Array, default: () => [] },
     running: { type: Boolean, default: false },
+    runningSince: { type: Number, default: 0 },
     loading: { type: Boolean, default: false },
     previews: { type: Object, default: () => ({}) },
     mediaUrl: { type: Function, required: true },
@@ -105,6 +111,7 @@ export default {
     rememberScroll: { type: Function, required: true },
     sticking: { type: Function, required: true },
     sessionId: { type: String, default: "" },
+    popup: { type: Boolean, default: false },
     question: { type: Object, default: null },
     questionBusy: { type: Boolean, default: false },
     questionTakeover: { type: Boolean, default: false },
@@ -118,23 +125,43 @@ export default {
       logPin: 0,
       stageCopy: STAGE_COPY,
       reactions: {},
+      now: Date.now(),
+      clock: 0,
     };
+  },
+  computed: {
+    runningText() {
+      return runningLabel(this.runningSince, this.t, this.now);
+    },
   },
   watch: {
     sessionId() {
       this.reactions = {};
     },
+    running: "syncClock",
+    runningSince: "syncClock",
   },
   mounted() {
     this.bindLog();
     this.restoreLog();
+    this.syncClock();
   },
   beforeUnmount() {
     this.captureLog();
     this.unbindLog();
     if (this.logPin) cancelAnimationFrame(this.logPin);
+    clearInterval(this.clock);
   },
   methods: {
+    syncClock() {
+      clearInterval(this.clock);
+      this.clock = 0;
+      this.now = Date.now();
+      if (!this.running || !this.runningSince) return;
+      this.clock = setInterval(() => {
+        this.now = Date.now();
+      }, 1000);
+    },
     renderMarkdown,
     thinkSummary,
     questionItems(row) {
@@ -270,9 +297,34 @@ export default {
 
 @media (prefers-reduced-motion: reduce) {
   .lares-sk,
+  .lares-log__running-text,
   .lares-log__item[data-pending="true"] {
     animation: none;
   }
+}
+
+.lares-log__running {
+  margin-top: 4px;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.lares-log__running-text {
+  color: var(--q-blue-default);
+  animation: lares-running-shimmer 1.6s ease-in-out infinite;
+}
+
+@keyframes lares-running-shimmer {
+  50% { opacity: 0.5; }
+}
+
+.lares-log__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 .lares-log__item {

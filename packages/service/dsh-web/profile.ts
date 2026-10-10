@@ -213,19 +213,31 @@ export function patchConnectionTrustFences(): void {
   console.log("[lares] dsh-client-connection isLoopback → Olares trusted surface");
 }
 
-const LOCALE_DEFAULT_ANCHOR = "this.provisional = resolveInitialLocale(locales);";
+const LOCALE_DEFAULT_ANCHORS = [
+  "this.provisional = resolveInitialLocale(locales, bootstrap?.languages);",
+  "this.provisional = resolveInitialLocale(locales, this.bootstrap?.languages);",
+] as const;
 const LOCALE_DEFAULT_REPLACEMENT = 'this.provisional = "en";/* lares-default-locale */';
 const EN_DOCUMENT_LANGUAGE_ANCHOR =
-  'document.documentElement.lang = snapshot.active === "zh" ? "zh-CN" : snapshot.active;';
+  'const language = snapshot.active === "zh" ? "zh-CN" : snapshot.active;';
 const EN_DOCUMENT_LANGUAGE_REPLACEMENT =
-  'document.documentElement.lang = snapshot.active === "zh" ? "zh-CN" : snapshot.active === "en" ? "en-US" : snapshot.active;/* lares-document-language */';
+  'const language = snapshot.active === "zh" ? "zh-CN" : snapshot.active === "en" ? "en-US" : snapshot.active;/* lares-document-language */';
 
 export function useEnglishLocaleDefault(source: string): string {
-  if (source.includes(LOCALE_DEFAULT_REPLACEMENT)) return source;
-  if (!source.includes(LOCALE_DEFAULT_ANCHOR)) {
-    throw new Error("dsh-client-locale default patch anchor not found");
+  if (
+    source.includes(LOCALE_DEFAULT_REPLACEMENT) &&
+    LOCALE_DEFAULT_ANCHORS.every((anchor) => !source.includes(anchor))
+  ) {
+    return source;
   }
-  return source.replaceAll(LOCALE_DEFAULT_ANCHOR, LOCALE_DEFAULT_REPLACEMENT);
+  let next = source;
+  for (const anchor of LOCALE_DEFAULT_ANCHORS) {
+    if (!next.includes(anchor)) {
+      throw new Error("dsh-client-locale default patch anchor not found");
+    }
+    next = next.replaceAll(anchor, LOCALE_DEFAULT_REPLACEMENT);
+  }
+  return next;
 }
 
 export function useOlaresDocumentLanguage(source: string): string {

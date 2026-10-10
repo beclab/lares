@@ -51,7 +51,7 @@ export function hostConfigFromEnv(env = {}) {
  * object, so a key that exists in one place and not the other is dropped in
  * silence — which is how `socketProtocol` shipped inert once already.
  */
-export const HOST_PORT_KEYS = ["baseUrl", "proxyPrefix", "env", "request", "socketProtocol"];
+export const HOST_PORT_KEYS = ["baseUrl", "proxyPrefix", "env", "request", "socketProtocol", "missing"];
 
 /** Collect the port keys off any carrier (a component instance included). */
 export function pickHostPorts(source = {}) {
@@ -86,7 +86,12 @@ export function laresPortsFromAccount({ env, apps } = {}) {
     return { env, proxyPrefix: fromEnv.proxyPrefix, baseUrl: undefined };
   }
   const baseUrl = findLaresEntrance(apps);
-  return { baseUrl: baseUrl || undefined, env: undefined, proxyPrefix: undefined };
+  if (!baseUrl) {
+    // LarePass lives on another origin. No myApps hit means there is no Host
+    // to call. The entrance page never uses this function: it is already there.
+    return { baseUrl: undefined, env: undefined, proxyPrefix: undefined, missing: true };
+  }
+  return { baseUrl, env: undefined, proxyPrefix: undefined };
 }
 
 export function hostUrl({ baseUrl = "", proxyPrefix = "", path }) {

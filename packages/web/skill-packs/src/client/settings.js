@@ -1,5 +1,5 @@
 import React from "react";
-import { Button, IconLoadingOutline16 } from "@deepseek-ai/dsh-client-ui-primitives";
+import { Button, IconLoadingOutlineMedium } from "@deepseek-ai/dsh-client-ui-primitives";
 import { OFFICIAL_PACKS } from "@olares/lares-core/skills/packs";
 import { controlsCss } from "../../../shared/client/settings-controls.js";
 import { useLatest, useMountedRef } from "../../../shared/client/react-lifecycle.js";
@@ -54,12 +54,12 @@ function PackCard({ id, status, busy, t, ...handlers }) {
               variant: action.variant,
               size: "sm",
               disabled: Boolean(busy),
-              icon: pending ? h(IconLoadingOutline16, { size: 14, className: "lares-skills-spin" }) : undefined,
+              icon: pending ? h(IconLoadingOutlineMedium, { size: 14, className: "lares-skills-spin" }) : undefined,
               onClick: handlers[action.handler],
             },
             t(pending ? action.pending : action.idle),
           )
-        : h(IconLoadingOutline16, {
+        : h(IconLoadingOutlineMedium, {
             className: "lares-skills-spin",
             role: "status",
             "aria-label": t("settings.initializing"),

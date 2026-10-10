@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
-import { HOST_PORT_KEYS, pickHostPorts } from "@olares/lares-core/larepass/host";
+import { HOST_PORT_KEYS, laresPortsFromAccount, pickHostPorts } from "@olares/lares-core/larepass/host";
 import { uploadFile } from "@olares/lares-core/files/upload-client";
 import { postTranscribe } from "@olares/lares-core/voice/client";
 import { createHostClient } from "../../packages/mobile/src/host.js";
@@ -211,7 +211,7 @@ test("openMux offers the host's token as the mux subprotocol", async () => {
 
     assert.equal(res.ok, true);
     assert.deepEqual(opened, [
-      { url: "wss://489966aa.alice.olares.com/api/events.mux", protocols: "tok-ws" },
+      { url: "wss://489966aa.alice.olares.com/api/remote.mux", protocols: "tok-ws" },
     ]);
   });
 });
@@ -269,7 +269,7 @@ test("openMux opens a bare socket when the host offers no protocol", async () =>
  * These cover the plumbing rather than the client.
  */
 test("the canonical port list carries every port the client reads", () => {
-  for (const key of ["baseUrl", "proxyPrefix", "env", "request", "socketProtocol"]) {
+  for (const key of ["baseUrl", "proxyPrefix", "env", "request", "socketProtocol", "missing"]) {
     assert.ok(HOST_PORT_KEYS.includes(key), `HOST_PORT_KEYS is missing ${key}`);
   }
 });
@@ -327,4 +327,15 @@ test("LaresApp declares every port as a prop, or the host's value never lands", 
       `App.vue does not declare the '${key}' prop, so v-bind="ports" drops it into attrs`,
     );
   }
+});
+
+test("the phone shell probes this page; an unbound LarePass account stays missing", async () => {
+  const page = recorder({ ok: true, status: 200, body: { ok: true } });
+  const phone = createHostClient({ request: page.request });
+  assert.equal((await phone.probe()).status, "ok");
+  assert.equal(page.calls[0]?.url, "/api/lares/models");
+
+  const embedded = createHostClient(laresPortsFromAccount({ apps: [] }));
+  assert.deepEqual(await embedded.probe(), { status: "missing" });
+  assert.equal(page.calls.length, 1);
 });

@@ -78,6 +78,8 @@ export function routerCatalogRows(payload) {
       name: id,
       mode: String(item.mode ?? "").trim().toLowerCase() || null,
       supportsVision: flags.has("vision"),
+      supportsStt: flags.has("stt") || flags.has("stt_stream"),
+      supportsTts: flags.has("tts"),
       reasoningEfforts: reasoningEfforts(item, flags),
       contextWindow,
       maxTokens: outputTokenBudget(tokenCount(item.max_output_tokens), contextWindow),

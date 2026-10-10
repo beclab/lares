@@ -3,9 +3,11 @@ import test from "node:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { classifyFailure, pickSttModelId, retryable } from "@olares/lares-core/router/stt";
-import { postTranscribe, TranscriptQueue } from "@olares/lares-core/voice/client";
-import { isComposerVoiceReady, isRecordingTooShort } from "@olares/lares-core/voice/recorder";
+import { classifyFailure, isSttModel, isTtsModel, pickSttModelId, retryable } from "@olares/lares-core/router/stt";
+import { reduceSpeechEvent } from "@olares/lares-core/voice/speech";
+import { speechScript } from "@olares/lares-core/voice/script";
+import { postTranscribe } from "@olares/lares-core/voice/client";
+import { frameHasAudio, isRecordingTooShort, openRecordingStream, pickInputDevice } from "@olares/lares-core/voice/recorder";
 import {
   EMPTY_VOICE_CONFIG,
   STT_LANGUAGE_CHOICES,
@@ -22,12 +24,45 @@ test("a take is too short when it is only a container header", () => {
   assert.equal(isRecordingTooShort(800, 1024), false);
 });
 
+test("recording opens the headset Chrome lists, not the silent Default input", async () => {
+  const devices = [
+    { kind: "audioinput", deviceId: "default", label: "Default" },
+    { kind: "audioinput", deviceId: "dolphin", label: "Dolphin520" },
+    { kind: "audiooutput", deviceId: "out", label: "Dolphin520" },
+  ];
+  assert.equal(pickInputDevice(devices, "Dolphin520"), "dolphin");
+  assert.equal(pickInputDevice(devices, ""), "");
+  assert.equal(pickInputDevice(devices, "Missing"), "");
+
+  const calls: { audio: Record<string, unknown> }[] = [];
+  const media = {
+    async enumerateDevices() {
+      return devices;
+    },
+    async getUserMedia(constraints: { audio: Record<string, unknown> }) {
+      calls.push(constraints);
+      return { getTracks: () => [] };
+    },
+  };
+  await openRecordingStream({ label: "Dolphin520" }, media as never);
+  await openRecordingStream({}, media as never);
+  assert.equal(calls[0].audio.deviceId && (calls[0].audio.deviceId as { exact: string }).exact, "dolphin");
+  assert.equal("deviceId" in calls[1].audio, false);
+});
+
+test("the headset link is audible only after the opening silence ends", () => {
+  assert.equal(frameHasAudio(new Float32Array(4096)), false);
+  const live = new Float32Array(8);
+  live[3] = 0.001;
+  assert.equal(frameHasAudio(live), true);
+});
+
 test("voice settings map the auto sentinel to an empty stored value", () => {
   assert.equal(voiceMenuValue(""), "auto");
   assert.equal(voiceValueFromMenu("auto"), "");
   assert.equal(voiceValueFromMenu("zh"), "zh");
   assert.deepEqual(STT_LANGUAGE_CHOICES.map((item) => item.id), ["zh", "en", "ja", "ko"]);
-  assert.deepEqual(EMPTY_VOICE_CONFIG, { model: "", language: "" });
+  assert.deepEqual(EMPTY_VOICE_CONFIG, { model: "", ttsModel: "", language: "", speak: false });
   assert.equal(voiceLanguageItems("Auto")[0].label, "Auto");
   assert.deepEqual(voiceModelItems(["whisper-a"], "Auto"), [
     { id: "auto", label: "Auto" },
@@ -56,18 +91,54 @@ test("postTranscribe posts the blob to the Host voice URL", async () => {
   }
 });
 
-test("transcript queue waits until the composer is writable", () => {
-  const drafts: string[] = [];
-  const queue = new TranscriptQueue();
-  queue.apply("hello", false, "", (next: string) => drafts.push(next));
-  assert.deepEqual(drafts, []);
-  queue.flush(true, "hi", (next: string) => drafts.push(next));
-  assert.deepEqual(drafts, ["hi hello"]);
+test("speech playback keeps only the text that survives the last tool call", () => {
+  let state = { pending: "", text: "" };
+  const steps = [
+    { type: "turn/start", data: { turn: 1 } },
+    { type: "assistant/message", data: { turn: 1, message: { content: [{ type: "reasoning", text: "thinking" }, { type: "text", text: "I will look that up." }] } } },
+    { type: "tool/call", data: { turn: 1, name: "search" } },
+    { type: "assistant/message", data: { turn: 1, message: { content: [{ type: "text", text: "The answer is ready." }] } } },
+    { type: "turn/end", data: { turn: 1 } },
+  ];
+  for (const event of steps) state = reduceSpeechEvent(state, event);
+  assert.equal(state.text, "The answer is ready.");
+  assert.equal(speechScript("See `docs` and ```\ncode\n``` please."), "See docs and please.");
 });
 
-test("voice input only writes the draft while the composer is plain", () => {
-  assert.equal(isComposerVoiceReady("plain", () => {}), true);
-  assert.equal(isComposerVoiceReady("streaming", () => {}), false);
+test("speech script keeps abbreviations and decimals inside the sentence", () => {
+  assert.equal(
+    speechScript("Pi is 3.14. **Done!** Next?\nYes"),
+    "Pi is 3.14.\nDone!\nNext?\nYes",
+  );
+  assert.equal(
+    speechScript("Mr. Smith left the U.S. He went home."),
+    "Mr. Smith left the U.S.\nHe went home.",
+  );
+  assert.equal(speechScript("See e.g. this. It works."), "See e.g. this.\nIt works.");
+});
+
+test("recognition includes flagged models whose names are not whisper-like", () => {
+  assert.equal(isSttModel({ id: "parakeet/nvidia/parakeet-unified-en-0.6b", mode: "audio", supportsStt: true }), true);
+  assert.equal(isTtsModel({ id: "kokoro/hexgrad/Kokoro-82M", mode: "tts", supportsTts: true }), true);
+  assert.equal(isTtsModel({ id: "parakeet/nvidia/parakeet-unified-en-0.6b", mode: "audio", supportsStt: true }), false);
+});
+
+test("install requests the uploaded chart for the missing kind", async () => {
+  const { installVoiceChart } = await import(`../../packages/core/voice/install.js?install=${Date.now()}`);
+  const calls: string[][] = [];
+  const spawnFn = ((_cmd: string, args: string[]) => {
+    calls.push(args);
+    return {
+      stdout: { on() {} },
+      stderr: { on() {} },
+      on(event: string, listener: (code?: number) => void) {
+        if (event === "close") listener(0);
+      },
+    };
+  }) as unknown as typeof import("node:child_process").spawn;
+  const installed = await installVoiceChart("tts", { spawnFn });
+  assert.equal(installed.app, "kokoro");
+  assert.deepEqual(calls[0]?.slice(0, 4), ["market", "install", "kokoro", "-s"]);
 });
 
 test("pickSttModelId honors a listed preference, else the first whisper/stt row", () => {
@@ -159,10 +230,11 @@ test("readConfig / writeConfig round-trip through DSH_HOME", async () => {
     const { readConfig, validateConfigPatch, writeConfig } = await import(
       `../../packages/core/voice/config.js?cfg=${Date.now()}`
     );
-    assert.deepEqual(readConfig(), { model: "", language: "" });
+    assert.deepEqual(readConfig(), { model: "", ttsModel: "", language: "", speak: false });
     const saved = writeConfig({ model: "  whisper-x  ", language: "zh" });
     assert.equal(saved.model, "whisper-x");
     assert.equal(saved.language, "zh");
+    assert.equal(writeConfig({ speak: true, ttsModel: "kokoro/hexgrad/Kokoro-82M" }).speak, true);
     assert.equal(readConfig().model, "whisper-x");
     for (const patch of [
       { ignored: "value" },

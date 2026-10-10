@@ -2,7 +2,7 @@ import { hostTarget, hostUrl, MODELS_PATH, probeHost } from "@olares/lares-core/
 import { callRpc, consumeMux, ensureSession, loadTranscript, MUX_PATH, sendPrompt } from "@olares/lares-core/larepass/chat";
 import { commandsUrl, normalizeCommands } from "@olares/lares-core/larepass/commands";
 import { normalizeReferenceCandidates, referencesUrl } from "@olares/lares-core/larepass/references";
-import { muxWsUrl } from "@olares/lares-core/larepass/mux";
+import { muxWsUrl, remoteStreamOpen, workspaceBaseline } from "@olares/lares-core/larepass/mux";
 import { RESPOND_PATH } from "@olares/lares-core/larepass/rpc";
 import { createHostSettings } from "@olares/lares-core/larepass/settings";
 import {
@@ -13,6 +13,7 @@ import {
 } from "@olares/lares-core/files/preview-workspace";
 import { FILES_UPLOAD_PATH, uploadFile } from "@olares/lares-core/files/upload-client";
 import { API as VOICE_API, postTranscribe } from "@olares/lares-core/voice/client";
+import { postReport, REPORT_PATH } from "@olares/lares-core/log/report";
 
 function pageOrigin() {
   try {
@@ -38,6 +39,72 @@ function socketProtocols(ports) {
     : ports.socketProtocol;
   if (Array.isArray(value)) return value.length > 0 ? value : undefined;
   return value ? String(value) : undefined;
+}
+
+function listWorkspaces(ports) {
+  const Socket = globalThis.WebSocket;
+  if (typeof Socket !== "function") {
+    return Promise.resolve({
+      ok: false,
+      status: "error",
+      error: { code: "no-websocket", message: "WebSocket is not available" },
+    });
+  }
+  const streamId = typeof globalThis.crypto?.randomUUID === "function"
+    ? globalThis.crypto.randomUUID()
+    : `ws-${Date.now()}`;
+  return openMuxSocket(hostUrl({
+    baseUrl: hostTarget(ports).baseUrl,
+    proxyPrefix: hostTarget(ports).proxyPrefix,
+    path: MUX_PATH,
+  }), undefined, socketProtocols(ports)).then((opened) => {
+    if (!opened.ok || !opened.body) {
+      return {
+        ok: false,
+        status: opened.status || "error",
+        error: opened.error || { code: "workspace", message: "workspace follow failed" },
+      };
+    }
+    const socket = opened.body;
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (result) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        try {
+          socket.send(JSON.stringify({ type: "cancel", streamId }));
+        } catch {
+          // already closing
+        }
+        try {
+          socket.close();
+        } catch {
+          // already closing
+        }
+        resolve(result);
+      };
+      const timer = setTimeout(() => {
+        finish({
+          ok: false,
+          status: "error",
+          error: { code: "workspace", message: "workspace follow timed out" },
+        });
+      }, 8000);
+      socket.addEventListener("message", (event) => {
+        let message;
+        try {
+          message = JSON.parse(String(event.data ?? ""));
+        } catch {
+          return;
+        }
+        const baseline = workspaceBaseline(message);
+        if (!baseline) return;
+        finish({ ok: true, status: "ok", value: baseline });
+      });
+      socket.send(JSON.stringify(remoteStreamOpen(streamId, "workspace/follow")));
+    });
+  });
 }
 
 function openMuxSocket(httpUrl, signal, protocols) {
@@ -87,19 +154,24 @@ function openMuxSocket(httpUrl, signal, protocols) {
   });
 }
 
+/** Audio and file bodies go out as bytes; only plain objects are JSON. */
+function isBinaryBody(body) {
+  return (typeof Blob !== "undefined" && body instanceof Blob)
+    || body instanceof ArrayBuffer
+    || ArrayBuffer.isView(body)
+    || (typeof FormData !== "undefined" && body instanceof FormData);
+}
+
 export async function defaultRequest(url, init = {}) {
+  const raw = init.body === undefined || typeof init.body === "string" || isBinaryBody(init.body);
   const res = await fetch(url, {
     method: init.method ?? "GET",
-    body: init.body === undefined
-      ? undefined
-      : typeof init.body === "string"
-        ? init.body
-        : JSON.stringify(init.body),
+    body: raw ? init.body : JSON.stringify(init.body),
     credentials: "include",
     redirect: "manual",
     signal: init.signal,
     headers: {
-      ...(init.body === undefined ? {} : { "content-type": "application/json" }),
+      ...(init.body === undefined || isBinaryBody(init.body) ? {} : { "content-type": "application/json" }),
       ...init.headers,
     },
   });
@@ -123,14 +195,20 @@ export function createHostClient(ports = {}) {
   const { baseUrl, proxyPrefix } = hostTarget(ports);
   const send = ports.request ?? defaultRequest;
   const urlFor = (path) => hostUrl({ baseUrl, proxyPrefix, path });
-  const request = (path, init) => send(urlFor(path), init);
-  const rpc = (method, payload) => callRpc(request, method, payload);
+  const direct = (url, init) => {
+    if (ports.missing) {
+      return Promise.resolve({ ok: false, status: 0, body: { error: { code: "missing" } } });
+    }
+    return send(url, init);
+  };
+  const request = (path, init) => direct(urlFor(path), init);
+  const rpc = (method, payload) => (
+    method === "workspace.list" ? listWorkspaces(ports) : callRpc(request, method, payload)
+  );
   return {
     urlFor,
     probe() {
-      if (!proxyPrefix && !baseUrl) {
-        return Promise.resolve({ status: "missing" });
-      }
+      if (ports.missing) return Promise.resolve({ status: "missing" });
       return probeHost((path) => request(path), MODELS_PATH);
     },
     rpc,
@@ -182,24 +260,45 @@ export function createHostClient(ports = {}) {
     downloadUrl(sessionId, path) {
       return urlFor(downloadFileUrl(sessionId, path));
     },
-    // Both carry a binary body, so neither can go through `request` as an RPC —
-    // but both must still ride the host's auth. `ports.request` is passed
-    // through rather than called here so a host that supplies none keeps the
-    // cookie `fetch` these two used before.
+    // Binary bodies stay off the JSON path. `direct` still uses the host's
+    // auth port, or cookie fetch when none was given, and does not call out
+    // when LarePass has no entrance.
     upload(sessionId, file, options) {
       return uploadFile(file, sessionId, {
         ...options,
         url: urlFor(FILES_UPLOAD_PATH),
-        request: ports.request,
+        request: direct,
       });
     },
     transcribe(blob, language, signal) {
       return postTranscribe(blob, language, signal, {
         baseUrl: urlFor(VOICE_API),
-        request: ports.request,
+        request: direct,
       });
     },
+    reportLog(scope, event, fields) {
+      return postReport({ scope, event, ...(fields ?? {}) }, {
+        request,
+        url: urlFor(REPORT_PATH),
+      });
+    },
+    async speak(text) {
+      const res = await request(`${VOICE_API}/speak`, { method: "POST", body: { text } });
+      const body = res?.body;
+      if (!res?.ok || !body || typeof body.audio !== "string") return null;
+      return {
+        bluetooth: body.bluetooth === "played" ? "played" : "skipped",
+        audio: body.audio,
+      };
+    },
+    async interruptSpeech() {
+      const res = await request(`${VOICE_API}/playback/stop`, { method: "POST" });
+      return Boolean(res?.ok);
+    },
     async openMux(signal) {
+      if (ports.missing) {
+        return { ok: false, status: "missing", error: { code: "missing", message: "no entrance" } };
+      }
       try {
         return await openMuxSocket(urlFor(MUX_PATH), signal, socketProtocols(ports));
       } catch (err) {

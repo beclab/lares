@@ -55,3 +55,32 @@ export function selectInlineTurnMedia(owner) {
   const paths = producedForClosing(owner).filter(isInlineTurnMediaPath);
   return paths.length === 0 ? null : paths;
 }
+
+function listedPaths(files) {
+  if (!Array.isArray(files)) return [];
+  const paths = [];
+  for (const file of files) {
+    const path = typeof file === "string" ? file : file?.path;
+    if (typeof path !== "string") continue;
+    const normalized = path.trim().replace(/\\/g, "/");
+    if (normalized) paths.push(normalized);
+  }
+  return paths;
+}
+
+/**
+ * Playable media a turn published. The web turn tail reads the projection of
+ * these events; a client that only has the session log has to read the events.
+ * media_generate names its files when the call returns, so they are not on the
+ * tool-call arguments.
+ */
+export function turnMediaPathsFromEvent(event) {
+  const data = event?.data;
+  if (event?.type === "deliverables/presented" || (
+    event?.type === "media/generation-settled"
+    && String(data?.status ?? "").toLowerCase() === "completed"
+  )) {
+    return listedPaths(data?.files).filter(isInlineTurnMediaPath);
+  }
+  return [];
+}

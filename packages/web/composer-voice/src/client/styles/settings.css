@@ -43,3 +43,60 @@
   font-size: 12px;
   line-height: 18px;
 }
+
+.lares-voice-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.lares-voice-bluetooth {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.lares-voice-bluetooth-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lares-voice-devices {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lares-voice-device {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 12px;
+}
+
+.lares-voice-device-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.lares-voice-device-address {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.lares-voice-device-state {
+  flex: none;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.lares-voice-bluetooth .lares-settings-notice {
+  padding-top: 12px;
+}

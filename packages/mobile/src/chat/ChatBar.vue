@@ -40,7 +40,7 @@ export default {
   align-items: center;
   flex-shrink: 0;
   min-height: 56px;
-  padding: 6px 8px;
+  padding: calc(6px + env(safe-area-inset-top, 0px)) 8px 6px;
 }
 
 .lares-bar__title {

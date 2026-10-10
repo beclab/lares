@@ -82,6 +82,12 @@ export function createSessionCache() {
       pages.delete(sessionId);
       loads.delete(sessionId);
     },
+    dropLive(sessionId) {
+      const page = peek(sessionId);
+      if (!page?.events?.some((event) => event?.live)) return false;
+      page.events = page.events.filter((event) => !event?.live);
+      return true;
+    },
     setScroll(sessionId, scroll) {
       if (!sessionId || !scroll) return;
       ensure(sessionId).scroll = scroll;

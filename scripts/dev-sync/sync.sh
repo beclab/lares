@@ -27,7 +27,7 @@
 #   --restart   同步后强制重启 pod
 #   --no-build  跳过本地构建（默认会先 npm run build 再同步产物）
 #
-# ssh 可只写 IP（自动补 root@）；dest_dir 可留空，按 kube_ns 自动发现。
+# ssh 可只写 IP（自动补 root@）。命名空间和目录只读机器上的 apps 映射表。
 # ==============================================================================
 set -euo pipefail
 
@@ -35,7 +35,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 # shellcheck source=scripts/lib/project.sh
 source "${REPO_ROOT}/scripts/lib/project.sh"
-MACHINES_FILE="${DEV_SYNC_MACHINES:-${SCRIPT_DIR}/machines.json}"
+if [[ -n "${DEV_SYNC_MACHINES:-}" ]]; then
+  MACHINES_FILE="${DEV_SYNC_MACHINES}"
+elif [[ -f "${SCRIPT_DIR}/machines.json" ]]; then
+  MACHINES_FILE="${SCRIPT_DIR}/machines.json"
+else
+  MACHINES_FILE="${HOME}/.olares/machines.json"
+fi
 
 log() {
   printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*"
@@ -241,9 +247,11 @@ load_machine() {
   while IFS=$'\t' read -r id name profile olares_id ssh dest ns; do
     if [[ "${id}" == "${want}" ]]; then
       MACHINE_NAME="${name}"
+      MACHINE_OLARES_ID="${olares_id}"
       DEST_SSH="${ssh}"
       DEST_DIR="${dest}"
       KUBE_NS="${ns}"
+      [[ "${MACHINE_OLARES_ID}" == "-" ]] && MACHINE_OLARES_ID=""
       [[ "${DEST_SSH}" == "(local)" ]] && DEST_SSH=""
       [[ "${DEST_DIR}" == "(auto)" ]] && DEST_DIR=""
       [[ "${KUBE_NS}" == "-" ]] && KUBE_NS=""
@@ -255,6 +263,45 @@ load_machine() {
     echo "错误：machines.json 中没有 id=${want} 的机器。可用：scripts/dev-sync/sync.sh list" >&2
     exit 1
   fi
+  bind_app_target
+}
+
+# Namespace and overlay path come from machines[].apps.<app>, probed on that
+# machine. A missing row is an error; do not invent one.
+bind_app_target() {
+  local parsed
+  if ! parsed="$(python3 - "${MACHINES_FILE}" "${MACHINE}" "${APP_NAME}" <<'PY'
+import json, sys
+path, want, app = sys.argv[1:]
+data = json.load(open(path, encoding="utf-8"))
+row = next((m for m in data.get("machines") or [] if str(m.get("id")) == want or str(m.get("name") or "") == want), None)
+if row is None:
+    sys.exit(f"machines.json 中没有 id={want} 的机器")
+apps = row.get("apps") if isinstance(row.get("apps"), dict) else {}
+spec = apps.get(app)
+if not isinstance(spec, dict):
+    known = ", ".join(apps) or "(无)"
+    sys.exit(f"机器 {want} 的映射表没有 {app}。已有: {known}。在这台机器上探查后写入 apps.{app} 的 kube_ns 和 dest_dir。")
+ns = str(spec.get("kube_ns") or "").strip()
+dest = str(spec.get("dest_dir") or "").strip()
+if not ns:
+    sys.exit(f"apps.{app}.kube_ns 为空")
+print(f"{ns}\t{dest}")
+PY
+)"; then
+    exit 1
+  fi
+  IFS=$'\t' read -r KUBE_NS DEST_DIR <<< "${parsed}"
+}
+
+refuse_foreign_dest() {
+  case "${DEST_DIR}" in
+    */Data/"${APP_NAME}"|*/Data/"${APP_NAME}"/*) ;;
+    *)
+      echo "错误：同步目标 ${DEST_DIR} 不是 Data/${APP_NAME}，已拒绝" >&2
+      exit 1
+      ;;
+  esac
 }
 
 SSH_OPTS=(
@@ -307,45 +354,12 @@ _kube_exec_health() {
     node -e 'fetch("http://127.0.0.1:8080/api/health").then((r)=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))'
 }
 
-discover_dest_dir() {
-  local ns_suffix=""
-  if [[ -n "${KUBE_NS-}" && "${KUBE_NS}" == "${APP_NAME}-"* ]]; then
-    ns_suffix="${KUBE_NS#${APP_NAME}-}"
-  fi
-
-  local find_cmd
-  if [[ -n "${ns_suffix}" ]]; then
-    find_cmd="find /olares/rootfs/userspace /olares/userdata /data -maxdepth 8 -type d -path '*${ns_suffix}*/Data/${APP_NAME}/devsrc' 2>/dev/null | head -n 5"
-  else
-    find_cmd="find /olares/rootfs/userspace /olares/userdata /data -maxdepth 8 -type d -path '*/Data/${APP_NAME}/devsrc' 2>/dev/null | head -n 5"
-  fi
-
-  local found
-  found="$(_remote_sh "${find_cmd}" || true)"
-  if [[ -z "${found}" ]]; then
-    return 1
-  fi
-  local first count
-  first="$(printf '%s\n' "${found}" | head -n 1)"
-  count="$(printf '%s\n' "${found}" | grep -c . || true)"
-  if [[ "${count}" -gt 1 ]]; then
-    log "!! 发现多个 devsrc，使用第一条；请在 machines.json 显式写 dest_dir："
-    printf '%s\n' "${found}" | sed 's/^/    /' >&2
-  fi
-  echo "${first}"
-}
-
 ensure_dest_dir() {
   if [[ -n "${DEST_DIR}" ]]; then
     return 0
   fi
-  log "dest_dir 未设置，尝试自动发现…"
-  if DEST_DIR="$(discover_dest_dir)"; then
-    log "自动发现 DEST_DIR=${DEST_DIR}"
-  else
-    echo "错误：未设置 dest_dir，且自动发现失败。请确认应用已安装，或编辑 ${MACHINES_FILE}" >&2
-    exit 1
-  fi
+  echo "错误：apps.${APP_NAME}.dest_dir 为空。这台机器上没有该应用的热更新目录，不能靠搜索猜路径。" >&2
+  exit 1
 }
 
 # Hot reload is the overlay's .hotreload flag. It must be on *before* the first
@@ -548,6 +562,7 @@ esac
 if [[ "${CMD}" == "discover" && "${DISCOVER_SH}" -eq 1 ]]; then
   # Machine resolution for sibling scripts (hot-reload.sh): eval this.
   ensure_dest_dir >&2
+  refuse_foreign_dest
   printf "DEST_SSH=%q\nDEST_DIR=%q\nKUBE_NS=%q\n" "${DEST_SSH}" "${DEST_DIR}" "${KUBE_NS}"
   exit 0
 fi
@@ -556,20 +571,14 @@ if [[ "${CMD}" == "discover" ]]; then
   log "机器${MACHINE} ${MACHINE_NAME}"
   log "DEST_SSH=${DEST_SSH:-"(local)"}"
   log "KUBE_NS=${KUBE_NS:-"(unset)"}"
-  if [[ -n "${DEST_DIR}" ]]; then
-    log "DEST_DIR=${DEST_DIR}（已配置）"
-  else
-    if d="$(discover_dest_dir)"; then
-      log "DEST_DIR=${d}（自动发现）"
-    else
-      log "DEST_DIR=未能自动发现"
-      exit 1
-    fi
-  fi
+  ensure_dest_dir
+  refuse_foreign_dest
+  log "DEST_DIR=${DEST_DIR}（映射表）"
   exit 0
 fi
 
 ensure_dest_dir
+refuse_foreign_dest
 
 log "目标 机器${MACHINE}(${MACHINE_NAME}) scope=${SCOPE}  DEST_SSH=${DEST_SSH:-"(local)"}  DEST_DIR=${DEST_DIR}  KUBE_NS=${KUBE_NS:-"(unset)"}"
 sync_once

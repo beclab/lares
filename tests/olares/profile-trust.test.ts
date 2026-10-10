@@ -37,9 +37,18 @@ test("connection trust patch fails loudly when upstream anchors drift", () => {
 });
 
 test("an unset language preference defaults to English", () => {
-  const upstream = "this.provisional = resolveInitialLocale(locales);";
+  const upstream = [
+    "this.provisional = resolveInitialLocale(locales, bootstrap?.languages);",
+    "this.provisional = resolveInitialLocale(locales, this.bootstrap?.languages);",
+  ].join("\n");
   const patched = useEnglishLocaleDefault(upstream);
-  assert.equal(patched, 'this.provisional = "en";/* lares-default-locale */');
+  assert.equal(
+    patched,
+    [
+      'this.provisional = "en";/* lares-default-locale */',
+      'this.provisional = "en";/* lares-default-locale */',
+    ].join("\n"),
+  );
   assert.equal(useEnglishLocaleDefault(patched), patched);
 });
 
@@ -48,12 +57,11 @@ test("locale default patch fails loudly when upstream anchors drift", () => {
 });
 
 test("document language tags use the same locale symbols as Olares", () => {
-  const upstream =
-    'document.documentElement.lang = snapshot.active === "zh" ? "zh-CN" : snapshot.active;';
+  const upstream = 'const language = snapshot.active === "zh" ? "zh-CN" : snapshot.active;';
   const patched = useOlaresDocumentLanguage(upstream);
   assert.equal(
     patched,
-    'document.documentElement.lang = snapshot.active === "zh" ? "zh-CN" : snapshot.active === "en" ? "en-US" : snapshot.active;/* lares-document-language */',
+    'const language = snapshot.active === "zh" ? "zh-CN" : snapshot.active === "en" ? "en-US" : snapshot.active;/* lares-document-language */',
   );
   assert.equal(useOlaresDocumentLanguage(patched), patched);
 });

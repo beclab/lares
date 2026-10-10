@@ -11,8 +11,52 @@ export function mintRpcId() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
+/**
+ * Call sites use `namespace.method`. The Host gateway claims `namespace/method`
+ * and 404s a single path segment such as `session.list`.
+ */
+export function hostEndpoint(method) {
+  const name = String(method ?? "");
+  if (name.includes("/")) return name;
+  const dot = name.indexOf(".");
+  if (dot <= 0 || dot === name.length - 1) return name;
+  return `${name.slice(0, dot)}/${name.slice(dot + 1)}`;
+}
+
+/**
+ * Wire body for one call. `session.history` is `session/page`. `session/list`
+ * names its argument `_request`; every other claimed method uses `request`.
+ * Prompt requires a `requestId` the call site does not carry.
+ */
+export function hostCall(method, payload = {}) {
+  let endpoint = hostEndpoint(method);
+  const body = payload && typeof payload === "object" ? payload : {};
+  if (endpoint === "session/history") {
+    endpoint = "session/page";
+    const throughSeq = Number.isInteger(body.throughSeq) ? body.throughSeq : -1;
+    return {
+      endpoint,
+      args: {
+        request: {
+          address: { kind: "session", sessionId: body.sessionId },
+          throughSeq,
+        },
+      },
+    };
+  }
+  if (endpoint === "session/list") return { endpoint, args: { _request: body } };
+  if (endpoint === "$events/result") return { endpoint, args: body };
+  if (endpoint === "session/prompt") {
+    return {
+      endpoint,
+      args: { request: { requestId: body.requestId || mintRpcId(), ...body } },
+    };
+  }
+  return { endpoint, args: { request: body } };
+}
+
 export function rpcPath(method) {
-  return `/api/${method}`;
+  return `/api/${hostCall(method).endpoint}`;
 }
 
 export const RESPOND_PATH = "/api/respond";
@@ -26,11 +70,12 @@ export function wrapClientResponse(rpcId, result) {
 }
 
 export function wrapClientRequest(method, payload = {}) {
+  const call = hostCall(method, payload);
   return {
     type: "client-request",
     rpcId: mintRpcId(),
-    method,
-    payload,
+    method: call.endpoint,
+    payload: { args: call.args },
   };
 }
 

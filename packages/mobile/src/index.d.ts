@@ -30,6 +30,8 @@ export type HostPorts = {
    * carry `X-Authorization`. Pass a function to have it read per connect.
    */
   socketProtocol?: string | string[] | (() => string | string[] | undefined);
+  /** LarePass sets this when myApps has no Lares app. The entrance page leaves it unset. */
+  missing?: boolean;
 };
 
 export const PC_TEST_PROXY: string;
@@ -50,6 +52,7 @@ export function laresPortsFromAccount(input?: {
   baseUrl?: string;
   env?: HostEnv;
   proxyPrefix?: string;
+  missing?: boolean;
 };
 
 export function defaultRequest(url: string, init?: HostRequestInit): Promise<HostResponse>;
@@ -72,6 +75,7 @@ export const LaresApp: DefineComponent<{
   env?: HostEnv;
   request?: (url: string, init?: HostRequestInit) => Promise<HostResponse>;
   socketProtocol?: HostPorts["socketProtocol"];
+  missing?: boolean;
 }>;
 
 export const LaresAgentSettings: DefineComponent<{
@@ -81,4 +85,5 @@ export const LaresAgentSettings: DefineComponent<{
   proxyPrefix?: string;
   env?: HostEnv;
   request?: (url: string, init?: HostRequestInit) => Promise<HostResponse>;
+  missing?: boolean;
 }>;

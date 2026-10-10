@@ -6,7 +6,9 @@ export { STT_LANGUAGE_CHOICES, VOICE_AUTO, voiceMenuValue, voiceValueFromMenu } 
 
 const DEFAULTS = {
   model: "",
+  ttsModel: "",
   language: "",
+  speak: false,
 };
 
 const WRITABLE = new Set(Object.keys(DEFAULTS));
@@ -23,9 +25,14 @@ export function validateConfigPatch(raw) {
   const patch = {};
   for (const [key, value] of Object.entries(raw)) {
     if (!WRITABLE.has(key)) invalid(`unknown voice setting: ${key}`);
+    if (key === "speak") {
+      if (typeof value !== "boolean") invalid("speak must be a boolean");
+      patch.speak = value;
+      continue;
+    }
     if (typeof value !== "string") invalid(`${key} must be a string`);
     const normalized = value.trim();
-    if (key === "model" && !SAFE_MODEL.test(normalized)) invalid("invalid voice model");
+    if ((key === "model" || key === "ttsModel") && !SAFE_MODEL.test(normalized)) invalid("invalid voice model");
     if (key === "language" && !SUPPORTED_LANGUAGES.has(normalized)) invalid("unsupported recognition language");
     patch[key] = normalized;
   }
@@ -41,9 +48,12 @@ export function readConfig() {
   const stored = readJsonFile(configPath());
   const merged = { ...DEFAULTS };
   const model = typeof stored?.model === "string" ? stored.model.trim() : "";
+  const ttsModel = typeof stored?.ttsModel === "string" ? stored.ttsModel.trim() : "";
   const language = typeof stored?.language === "string" ? stored.language.trim() : "";
   if (SAFE_MODEL.test(model)) merged.model = model;
+  if (SAFE_MODEL.test(ttsModel)) merged.ttsModel = ttsModel;
   if (SUPPORTED_LANGUAGES.has(language)) merged.language = language;
+  if (stored?.speak === true) merged.speak = true;
   return merged;
 }
 

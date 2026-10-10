@@ -90,8 +90,8 @@
             @effort="$emit('open-effort')"
             @files="$emit('files', $event)"
             @voice="$emit('voice')"
-            @hold-start="$emit('hold-start')"
-            @hold-end="$emit('hold-end')"
+            @hold-start="$emit('hold-start', $event)"
+            @hold-end="$emit('hold-end', $event)"
             @open-commands="$emit('open-commands')"
             @open-references="$emit('open-references', $event)"
             @pick-command="$emit('pick-command', $event)"
@@ -104,6 +104,7 @@
             ref="transcript"
             :items="state.viewItems"
             :running="state.running"
+            :running-since="state.runningSince"
             :loading="state.historyLoading || state.starting"
             :previews="state.previews"
             :media-url="mediaUrl"
@@ -111,12 +112,20 @@
             :remember-scroll="rememberScroll"
             :sticking="sticking"
             :session-id="state.sessionId"
+            popup
             :question="state.question"
             :question-busy="state.questionBusy"
             :t="t"
             @open="$emit('open-file', $event)"
             @media="pinLog"
             @answer="forwardAnswer"
+          />
+          <LaresDesktopQueue
+            :items="state.queue"
+            :running="state.running"
+            :busy="state.queueBusy"
+            :t="t"
+            @action="(itemId, action) => $emit('queue-action', itemId, action)"
           />
           <LaresComposer
             ref="composer"
@@ -146,8 +155,8 @@
             @effort="$emit('open-effort')"
             @files="$emit('files', $event)"
             @voice="$emit('voice')"
-            @hold-start="$emit('hold-start')"
-            @hold-end="$emit('hold-end')"
+            @hold-start="$emit('hold-start', $event)"
+            @hold-end="$emit('hold-end', $event)"
             @open-commands="$emit('open-commands')"
             @open-references="$emit('open-references', $event)"
             @pick-command="$emit('pick-command', $event)"
@@ -222,6 +231,7 @@ import LaresChatBar from "../chat/ChatBar.vue";
 import LaresHistoryPanel from "../chat/HistoryPanel.vue";
 import LaresTranscript from "../chat/Transcript.vue";
 import LaresComposer from "../chat/Composer.vue";
+import LaresDesktopQueue from "../desktop/DesktopQueue.vue";
 import LaresPreview from "../preview/Preview.vue";
 import LaresSheet from "../settings/Sheet.vue";
 import LaresSettingRow from "../settings/SettingRow.vue";
@@ -236,6 +246,7 @@ export default {
     LaresHistoryPanel,
     LaresTranscript,
     LaresComposer,
+    LaresDesktopQueue,
     LaresPreview,
     LaresSheet,
     LaresSettingRow,
@@ -255,7 +266,7 @@ export default {
   },
   emits: [
     "history", "create", "close-history", "pick-session", "retry", "open-file",
-    "answer", "update-draft", "send", "open-model", "open-effort", "files",
+    "answer", "update-draft", "send", "queue-action", "open-model", "open-effort", "files",
     "voice", "hold-start", "hold-end", "close-model", "choose-model",
     "close-effort", "choose-effort", "close-preview",
     "open-commands", "open-references", "pick-command", "remove-image",

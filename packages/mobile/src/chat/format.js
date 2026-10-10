@@ -87,6 +87,17 @@ export function metricsLine(metrics, t, now = Date.now()) {
   return parts.join(" · ");
 }
 
+/** The open turn's live clock; dsh never shows less than one second. */
+export function runningLabel(since, t, now = Date.now()) {
+  if (!since) return t("chat.deepDiving");
+  const { minutes, seconds } = durationParts(Math.max(1000, now - since));
+  return t("chat.deepDivingFor", {
+    duration: minutes > 0
+      ? t("duration.minutes", { minutes, seconds })
+      : t("duration.seconds", { seconds }),
+  });
+}
+
 export function retryStatus(row) {
   const copy = STAGE_COPY.retry;
   const label = row.retryState === "started"

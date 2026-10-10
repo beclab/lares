@@ -5,22 +5,47 @@
       <figure v-for="item in group.media" :key="item.path" class="lares-turn-media">
         <figcaption class="lares-turn-media-caption">
           <span :title="item.path">{{ item.name }}</span>
-          <button type="button" class="lares-turn-open" @click="$emit('open', item.path)">{{ t("openInTab") }}</button>
+          <button type="button" class="lares-turn-open" @click="$emit('open', item.path)">{{ t(popup ? "viewMedia" : "openInTab") }}</button>
         </figcaption>
-        <img
+        <button
           v-if="item.kind === 'image'"
-          class="lares-turn-media-image"
-          :src="mediaUrl(item)"
-          :alt="item.name"
-          @load="$emit('media')"
+          type="button"
+          class="lares-turn-media-frame"
+          :aria-label="t('viewMedia')"
           @click="$emit('open', item.path)"
-        />
+        >
+          <img
+            class="lares-turn-media-image"
+            :src="mediaUrl(item)"
+            :alt="item.name"
+            @load="$emit('media')"
+          />
+        </button>
+        <button
+          v-else-if="item.kind === 'video' && popup"
+          type="button"
+          class="lares-turn-media-frame"
+          :aria-label="t('viewMedia')"
+          @click="$emit('open', item.path)"
+        >
+          <video
+            class="lares-turn-media-video"
+            :src="mediaUrl(item)"
+            playsinline
+            muted
+            preload="metadata"
+            @loadedmetadata="$emit('media')"
+          />
+          <span class="lares-turn-media-play" aria-hidden="true" />
+        </button>
         <video
           v-else-if="item.kind === 'video'"
           class="lares-turn-media-video"
           :src="mediaUrl(item)"
           controls
           playsinline
+          preload="metadata"
+          @loadedmetadata="$emit('media')"
         />
         <audio
           v-else-if="item.kind === 'audio'"
@@ -60,6 +85,7 @@ export default {
   props: {
     group: { type: Object, required: true },
     mediaUrl: { type: Function, required: true },
+    popup: { type: Boolean, default: false },
     t: { type: Function, required: true },
   },
   emits: ["open", "media"],
@@ -135,6 +161,48 @@ export default {
 
 .lares-turn-open:hover {
   background: var(--q-background-hover);
+}
+
+.lares-turn-media-frame {
+  position: relative;
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.lares-turn-media-frame:active {
+  opacity: 0.86;
+}
+
+.lares-turn-media-frame img,
+.lares-turn-media-frame video {
+  pointer-events: none;
+}
+
+.lares-turn-media-play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 52px;
+  height: 52px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 55%);
+  transform: translate(-50%, -50%);
+}
+
+.lares-turn-media-play::before {
+  content: "";
+  position: absolute;
+  top: 16px;
+  left: 20px;
+  border-width: 10px 0 10px 16px;
+  border-style: solid;
+  border-color: transparent transparent transparent #fff;
 }
 
 .lares-turn-media-image,

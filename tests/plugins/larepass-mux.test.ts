@@ -4,13 +4,37 @@ import {
   consumeMux,
   consumeMuxFrames,
   classifyMuxEnvelope,
+  classifyStreamFrame,
+  createSessionFollow,
   iterateSseJson,
   muxSessionEvent,
   muxWsUrl,
+  remoteStreamOpen,
+  sessionFollowOpen,
   splitSseBlocks,
   sseData,
+  workspaceBaseline,
 } from "@olares/lares-core/larepass/mux";
 import { foldTranscript, mergeEvents } from "@olares/lares-core/larepass/transcript";
+
+test("workspace follow opens on the remote mux and the first item is the baseline", () => {
+  const open = remoteStreamOpen("s1", "workspace/follow");
+  assert.deepEqual(open, {
+    type: "open",
+    streamId: "s1",
+    endpoint: "workspace/follow",
+    payload: { args: {} },
+  });
+  assert.equal(workspaceBaseline({ type: "item", value: { type: "ready" } }), null);
+  assert.deepEqual(
+    workspaceBaseline({
+      type: "item",
+      streamId: "s1",
+      value: { type: "baseline", value: { items: [{ workspaceId: "w1" }], archivedSessionIds: [] } },
+    }),
+    { items: [{ workspaceId: "w1" }], archivedSessionIds: [] },
+  );
+});
 
 test("muxWsUrl turns the Host HTTP path into a websocket URL", () => {
   assert.equal(
@@ -308,6 +332,68 @@ test("classifyMuxEnvelope preserves pending tool approvals", () => {
     }),
     { kind: "approval-resolved", sessionId: "s1", approvalId: "ap1", outcome: "allowed-once" },
   );
+});
+
+test("session follow opens the same stream the dsh web client uses", () => {
+  assert.deepEqual(sessionFollowOpen("stream-1", "s1"), {
+    type: "open",
+    streamId: "stream-1",
+    endpoint: "session/follow",
+    payload: {
+      args: {
+        request: {
+          address: { kind: "session", sessionId: "s1" },
+          assistantStream: true,
+        },
+      },
+    },
+  });
+});
+
+test("session follow frames become the live think and reply", () => {
+  const follow = createSessionFollow();
+  const opened = follow.push({
+    type: "snapshot",
+    cursor: 1,
+    records: [{ type: "event", event: { type: "turn/start", seq: 1, data: { turn: 1 } } }],
+    hasMore: false,
+    assistantStream: { revision: 0 },
+  });
+  follow.push({
+    type: "assistant-stream",
+    frame: { type: "start", attemptId: "a", revision: 1, startedAfterSeq: 1, turn: 1, step: 0 },
+  });
+  const think = follow.push({
+    type: "assistant-stream",
+    frame: {
+      type: "chunk",
+      attemptId: "a",
+      revision: 2,
+      index: 0,
+      time: 1,
+      chunk: { type: "reasoning-delta", index: 0, text: "adding" },
+    },
+  });
+  const reply = follow.push({
+    type: "assistant-stream",
+    frame: {
+      type: "chunk",
+      attemptId: "a",
+      revision: 3,
+      index: 1,
+      time: 2,
+      chunk: { type: "text-delta", index: 1, text: "4" },
+    },
+  });
+  const folded = foldTranscript([...(opened?.events ?? []), ...(think?.events ?? []), ...(reply?.events ?? [])]);
+  assert.equal(folded.running, true);
+  assert.equal(folded.items.find((row) => row.type === "reasoning")?.text, "adding");
+  assert.equal(folded.items.find((row) => row.type === "assistant")?.text, "4");
+  assert.deepEqual(classifyStreamFrame({ type: "item", streamId: "stream-1", value: { type: "event" } }), {
+    kind: "stream",
+    streamId: "stream-1",
+    value: { type: "event" },
+  });
 });
 
 test("mergeEvents is seq-idempotent and ordered", () => {

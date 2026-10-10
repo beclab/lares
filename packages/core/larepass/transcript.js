@@ -1,5 +1,6 @@
-import { producedPathsFromView } from "../files/deliverables.js";
+import { producedPathsFromView, turnMediaPathsFromEvent } from "../files/deliverables.js";
 import { durablePathFromToolCall, parseToolArguments } from "../files/published-tools.js";
+import { concludingReply } from "../voice/speech.js";
 import { contextForm, contextProvenance, isHumanUserSource } from "./context-provenance.js";
 import { toolRowModel } from "./tool-row.js";
 import { createTurnMetrics } from "./turn-metrics.js";
@@ -108,7 +109,9 @@ export function foldTranscript(entries) {
   let files = [];
   let filesAt = -1;
   let running = false;
+  let runningSince = 0;
   let error = "";
+  let reply = null;
   let streamCursor = { loc: "", kind: "", index: 0 };
 
   const rememberFile = (path) => {
@@ -235,7 +238,9 @@ export function foldTranscript(entries) {
       fileSeen.clear();
       filesAt = -1;
       running = true;
+      runningSince = Number(event.time) || 0;
       error = "";
+      reply = null;
       continue;
     }
 
@@ -266,6 +271,8 @@ export function foldTranscript(entries) {
 
     if (event.type === "assistant/message") {
       applyAssistantMessage(data);
+      const text = concludingReply(event);
+      if (text) reply = { seq: event.seq, text };
       continue;
     }
 
@@ -293,6 +300,12 @@ export function foldTranscript(entries) {
         const path = durablePathFromToolCall(data.name, parseToolArguments(data.arguments));
         if (path) durableCalls.set(data.callId, path);
       }
+      continue;
+    }
+
+    const publishedMedia = turnMediaPathsFromEvent(event);
+    if (publishedMedia.length > 0) {
+      for (const path of publishedMedia) rememberFile(path);
       continue;
     }
 
@@ -345,6 +358,8 @@ export function foldTranscript(entries) {
     items,
     messages: messagesFromItems(items),
     running,
+    runningSince: running ? runningSince : 0,
     error,
+    reply,
   };
 }

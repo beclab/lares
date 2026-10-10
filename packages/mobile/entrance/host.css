@@ -1,0 +1,78 @@
+/* LarePass paints these --q-* tokens on the host page. The entrance is its own
+   document, so the phone shell needs the same light and dark set here. */
+
+:root {
+  color-scheme: light;
+  --q-background-1: #ffffff;
+  --q-background-2: #ffffff;
+  --q-background-3: #f6f6f6;
+  --q-background-hover: rgba(0, 0, 0, 0.03);
+  --q-background-selected: rgba(0, 0, 0, 0.1);
+  --q-separator: rgba(0, 0, 0, 0.1);
+  --q-ink-1: #1f1f1f;
+  --q-ink-2: #5c5c5c;
+  --q-ink-3: #adadad;
+  --q-ink-on-brand: #ffffff;
+  --q-input-stroke: rgba(0, 0, 0, 0.1);
+  --q-input-bg-disabled: rgba(0, 0, 0, 0.03);
+  --q-btn-bg-hover: rgba(0, 0, 0, 0.02);
+  --q-btn-bg-pressed: rgba(0, 0, 0, 0.04);
+  --q-btn-stroke: rgba(0, 0, 0, 0.1);
+  --q-blue-default: #3377ff;
+  --q-blue-alpha: rgba(51, 119, 255, 0.1);
+  --q-blue-hover: #0d5eff;
+  --q-blue-pressed: #004de5;
+  --q-orange-default: #ff7733;
+  --q-orange-alpha: rgba(255, 119, 51, 0.1);
+  --q-red-default: #ff4d4d;
+  --q-green-default: #29cc5f;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --q-background-1: #1f1f1f;
+    --q-background-2: #252525;
+    --q-background-3: #3d3d3d;
+    --q-background-hover: rgba(255, 255, 255, 0.06);
+    --q-background-selected: rgba(255, 255, 255, 0.1);
+    --q-separator: rgba(255, 255, 255, 0.1);
+    --q-ink-1: #dbdbdb;
+    --q-ink-2: #adadad;
+    --q-ink-3: #707070;
+    --q-ink-on-brand: #ffffff;
+    --q-input-stroke: rgba(255, 255, 255, 0.2);
+    --q-input-bg-disabled: rgba(255, 255, 255, 0.06);
+    --q-btn-bg-hover: rgba(255, 255, 255, 0.04);
+    --q-btn-bg-pressed: rgba(255, 255, 255, 0.08);
+    --q-btn-stroke: rgba(255, 255, 255, 0.2);
+    --q-blue-default: #316ee7;
+    --q-blue-alpha: rgba(49, 110, 231, 0.1);
+    --q-blue-hover: #3377ff;
+    --q-blue-pressed: #5990ff;
+    --q-orange-default: #e96e30;
+    --q-orange-alpha: rgba(233, 110, 48, 0.1);
+    --q-red-default: #e94847;
+    --q-green-default: #28ba58;
+  }
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--q-background-1);
+  color: var(--q-ink-1);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+#app {
+  display: flex;
+  min-height: 100%;
+  min-height: 100dvh;
+  flex-direction: column;
+}

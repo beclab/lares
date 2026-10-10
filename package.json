@@ -8,10 +8,11 @@
     "packages/mobile"
   ],
   "scripts": {
-    "predev": "npm run build:client",
+    "predev": "npm run build:client && npm run build:mobile",
     "dev": "tsx watch packages/service/index.ts",
-    "build": "npm run build:client && npm run build:server",
+    "build": "npm run build:client && npm run build:mobile && npm run build:server",
     "build:client": "node scripts/build-client.mjs",
+    "build:mobile": "vite build --config packages/mobile/vite.config.js",
     "build:server": "tsc -p tsconfig.server.json",
     "start": "node dist/service/launch.js",
     "typecheck": "tsc -p tsconfig.server.json --noEmit",
@@ -24,21 +25,26 @@
   },
   "dependencies": {
     "@deepseek-ai/cordis": "^4.0.2",
-    "@deepseek-ai/dsh": "0.1.5-rc.2",
-    "@deepseek-ai/dsh-app-boot": "0.1.5-rc.2",
-    "@deepseek-ai/dsh-base": "0.1.5-rc.2",
-    "@deepseek-ai/dsh-mcp-client": "0.1.5-rc.2",
-    "@deepseek-ai/dsh-web-app": "0.1.5-rc.2",
+    "@deepseek-ai/dsh": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-app-boot": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-base": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-mcp-client": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-web-app": "0.2.0-rc.2",
     "@nats-io/transport-node": "^3.4.0",
     "@olares/lares-core": "*",
+    "@ricky0123/vad-web": "^0.0.31",
+    "sentencex": "^1.0.32",
     "sharp": "^0.35.3",
     "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@types/node": "^22.15.21",
+    "@vitejs/plugin-vue": "^6.0.9",
     "esbuild": "^0.28.2",
     "three": "^0.181.2",
     "tsx": "^4.19.4",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vite": "^7.3.7",
+    "vue": "^3.5.43"
   }
 }

@@ -1,13 +1,13 @@
 # syntax=docker/dockerfile:1.7
 # App image: compile and ship Lares code on top of the environment image.
 # Default `scripts/build-image.sh` rebuilds only this file.
-ARG BASE_IMAGE=docker.io/beclab/lares-base:20
+ARG BASE_IMAGE=docker.io/beclab/lares-base:21
 FROM ${BASE_IMAGE}
 
 USER root
 WORKDIR /app
 
-COPY tsconfig.base.json tsconfig.server.json ./
+COPY package.json package-lock.json tsconfig.base.json tsconfig.server.json ./
 COPY scripts/build-client.mjs ./scripts/
 COPY packages/ ./packages/
 RUN mkdir -p node_modules/@olares \
@@ -19,7 +19,10 @@ RUN mkdir -p node_modules/@olares \
 # from hass-cli (Settings → Skills), never copied from git.
 RUN olares-cli skills export packages/skills
 
-RUN npm run build \
+# vue/vite land here, not in the base image: the phone shell is built in this
+# layer. Drop the extra install once the base image's npm ci includes them.
+RUN npm install --no-save --no-package-lock --ignore-scripts --no-audit --no-fund --include=dev vue vite @vitejs/plugin-vue sentencex \
+  && npm run build \
   && rm -rf packages/service \
   && date -u +%Y%m%d%H%M%S > .lares-image-id \
   && chown -R node:node /app

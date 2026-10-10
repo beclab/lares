@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
+import { Context, Service } from "@deepseek-ai/cordis";
+import { createScope, scopeOf } from "@deepseek-ai/dsh-scope";
 import {
   bindMcpClientCapture,
   createMcpAnnotationIndex,
@@ -8,6 +10,7 @@ import {
   mcpPublicToolName,
   mcpServerNameForTransport,
 } from "@olares/lares-core/mcp/approval";
+import { installMcpToolApproval } from "../../packages/web/mcp/host/approval.js";
 
 const allow = { kind: "allow" as const };
 
@@ -108,4 +111,57 @@ test("tool-list capture follows the connected server and ignores other methods",
     mcpServerNameForTransport({ _serverParams: { command: "concat-mcp", args: [], cwd: "" } }, servers),
     undefined,
   );
+});
+
+test("tool registration stays on the calling agent scope", async () => {
+  class Tools extends Service {
+    constructor(ctx: ConstructorParameters<typeof Service>[0]) {
+      super(ctx, "tools");
+      this.layers = new Map<unknown, Set<string>>();
+    }
+
+    layers: Map<unknown, Set<string>>;
+
+    register(definition: { name: string }) {
+      const scope = scopeOf(this.ctx);
+      const key = scope ?? "global";
+      const layer = this.layers.get(key) ?? new Set<string>();
+      if (layer.has(definition.name)) {
+        throw new Error(
+          scope === undefined
+            ? `tool "${definition.name}" is already registered (for a per-agent variant, register through that agent's \`agent.ctx\` instead)`
+            : `tool "${definition.name}" is already registered in this scope`,
+        );
+      }
+      layer.add(definition.name);
+      this.layers.set(key, layer);
+    }
+  }
+
+  let host: { tools: Tools };
+  let annotations: ReturnType<typeof installMcpToolApproval>;
+  class Host {
+    static inject = ["tools"];
+
+    constructor(ctx: { tools: Tools }) {
+      host = ctx;
+      annotations = installMcpToolApproval(ctx as never, () => []);
+    }
+  }
+
+  const root = new Context();
+  await root.plugin(Tools);
+  await root.plugin(Host);
+  annotations.stage("concat", {
+    first: true,
+    tools: [{ name: "concat_status", annotations: { readOnlyHint: true } }],
+  });
+  const first = createScope(host!, { id: "a" });
+  const second = createScope(host!, { id: "b" });
+  first.ctx.tools.register({ name: "subagent" });
+  second.ctx.tools.register({ name: "subagent" });
+  first.ctx.tools.register({ name: "mcp__concat__concat_status" });
+  assert.equal(host!.tools.layers.has("global"), false);
+  assert.equal(host!.tools.layers.size, 2);
+  assert.deepEqual(annotations.get("mcp__concat__concat_status"), { readOnlyHint: true });
 });

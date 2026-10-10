@@ -1,6 +1,6 @@
 import React from "react";
 import {
-  IconGlobeOutline14,
+  IconGlobeOutlineRegular,
 } from "@deepseek-ai/dsh-client-ui-primitives";
 import {
   controlsCss,
@@ -141,4 +141,4 @@ export function WebSearchSettings() {
 }
 
 /** Settings nav glyph, read off the component by the shell's row projection. */
-WebSearchSettings.navIcon = IconGlobeOutline14;
+WebSearchSettings.navIcon = IconGlobeOutlineRegular;

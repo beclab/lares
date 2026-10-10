@@ -84,10 +84,10 @@
       @answer="answerQuestion"
       @update-draft="updateDraft"
       @send="send"
+      @queue-action="updateQueue"
       @open-model="openModelSheet"
       @open-effort="openEffortSheet"
       @files="attachFiles"
-      @voice="toggleVoice"
       @hold-start="onHoldStart"
       @hold-end="onHoldEnd"
       @close-model="modelSheet = false"
@@ -109,6 +109,11 @@ import { connectChat } from "./runtime.js";
 import { createT } from "./i18n.js";
 import { failText, withPendingUser } from "./chat/format.js";
 import { createVoiceCapture } from "./chat/voice.js";
+import { createAnswerPlayer } from "./chat/playback.js";
+import { createReplySpeaker } from "@olares/lares-core/voice/speech";
+import { wavBlob } from "@olares/lares-core/voice/client";
+import { captureSource } from "@olares/lares-core/voice/input";
+import { browserPlays } from "@olares/lares-core/voice/playback";
 import { appendDraftMentions } from "@olares/lares-core/files/mention";
 import { FileIntake, partitionDocumentsBySize, splitComposerFiles } from "@olares/lares-core/files/intake";
 import {
@@ -123,7 +128,7 @@ import { messageFromCode } from "@olares/lares-core/i18n/t";
 import { parseAskUserQuestions, singleSelectAnswer } from "@olares/lares-core/larepass/questions";
 import { applyCommand } from "@olares/lares-core/larepass/commands";
 import { permissionOption, presetDescription, presetLabel } from "@olares/lares-core/larepass/permissions";
-import { DEFAULT_BUSY_ENTER } from "@olares/lares-core/larepass/submission-settings";
+import { DEFAULT_BUSY_ENTER, resolveSubmitMode } from "@olares/lares-core/larepass/submission-settings";
 import { subscribeConversationSettings } from "@olares/lares-core/larepass/settings";
 import { markSeen, pruneSeen, readSeen, SEEN_STORAGE_KEY, unseenSessions } from "@olares/lares-core/larepass/unread";
 import { fileName } from "@olares/lares-core/files/filename";
@@ -164,6 +169,8 @@ export default {
     // Vue drops an undeclared prop into attrs, so a port missing from this list
     // never reaches `ports` below no matter what the host passes.
     socketProtocol: { type: [Function, String, Array], default: undefined },
+    // Set only by laresPortsFromAccount when myApps has no Lares app.
+    missing: { type: Boolean, default: false },
   },
   data() {
     return {
@@ -173,6 +180,7 @@ export default {
       hostGen: 0,
       modelGen: 0,
       running: false,
+      runningSince: 0,
       sessionId: "",
       draft: "",
       draftBySession: {},
@@ -274,6 +282,7 @@ export default {
         stopping: this.stopping,
         starting: this.starting,
         running: this.running,
+        runningSince: this.runningSince,
         sessionId: this.sessionId,
         sessionTitle: this.sessionTitle,
         draft: this.draft,
@@ -493,16 +502,27 @@ export default {
     this.previewOpenGen = 0;
     this.intake = new FileIntake((file, sessionId, options) => this.runtime.upload(file, options, sessionId));
     this.imageUploadControllers = new Map();
+    this.player = createAnswerPlayer();
+    this.voiceSpeak = false;
+    this.replySpeaker = createReplySpeaker();
+    this.speakGen = 0;
     this.voiceCap = createVoiceCapture({
       transcribe: (blob, signal) => this.runtime.transcribe(blob, this.voiceLanguage, signal),
-      getDraft: () => this.draft,
-      setDraft: (text) => {
-        this.draft = text;
-      },
       onPhase: (phase, extra = {}) => {
         this.voicePhase = phase;
         if (extra.elapsed != null) this.voiceElapsed = extra.elapsed;
         if (extra.error != null) this.voiceError = extra.error;
+      },
+      onTrace: (event, fields) => {
+        void this.runtime.reportLog?.("voice", event, fields);
+      },
+      submit: (text) => {
+        void this.runtime.reportLog?.("voice", "submit", {
+          chars: String(text ?? "").trim().length,
+          running: Boolean(this.running),
+          session: Boolean(this.sessionId),
+        });
+        void this.sendTranscript(text);
       },
     });
     this.bindIntake(this.sessionId);
@@ -596,9 +616,21 @@ export default {
         this.commands = null;
         this.commandsError = "";
       }
+      if (sessionChanged) {
+        this.speakGen += 1;
+        this.player?.stop();
+      }
+      const answer = this.replySpeaker.observe({
+        sessionChanged,
+        wasRunning: this.running,
+        running: snap.running,
+        reply: snap.reply,
+      });
       this.sessionId = snap.sessionId;
       this.items = snap.items;
       this.running = snap.running;
+      this.runningSince = snap.runningSince || 0;
+      if (answer) void this.speakReply(answer, ++this.speakGen);
       this.failed = snap.failed;
       this.error = snap.error;
       this.sessions = snap.sessions ?? this.sessions;
@@ -984,8 +1016,10 @@ export default {
       try {
         const voice = await settings.voice();
         this.voiceLanguage = voice.config?.language || "";
+        this.voiceSpeak = voice.config?.speak === true;
       } catch {
         this.voiceLanguage = "";
+        this.voiceSpeak = false;
       }
     },
     async loadSessionModels(sessionId) {
@@ -1187,15 +1221,31 @@ export default {
       this.draftImages = [];
       this.imagesBySession = {};
     },
-    onHoldStart() {
-      if (this.voicePhase === "idle" || this.voicePhase === "error") this.voiceCap?.start();
+    onHoldStart(detail) {
+      void this.runtime.reportLog?.("voice", "hold-start", {
+        via: detail?.via || "",
+        phase: this.voicePhase,
+      });
+      if (captureSource("mobile") !== "device") return;
+      if (this.voicePhase === "idle" || this.voicePhase === "error") void this.voiceCap?.start();
+      this.speakGen += 1;
+      this.player?.stop();
+      this.player?.unlock();
+      void this.runtime.interruptSpeech?.();
     },
-    onHoldEnd() {
-      if (this.voicePhase === "recording") this.voiceCap?.stop();
-      else this.voiceCap?.stop(true);
+    onHoldEnd(detail) {
+      void this.runtime.reportLog?.("voice", "hold-end", {
+        via: detail?.via || "",
+        phase: this.voicePhase,
+      });
+      this.voiceCap?.stop(false);
     },
-    toggleVoice() {
-      this.voiceCap?.toggle();
+    async speakReply(text, gen) {
+      if (!this.voiceSpeak) return;
+      const result = await this.runtime.speak?.(text).catch(() => null);
+      if (gen !== this.speakGen || !result?.audio) return;
+      if (!browserPlays("mobile", result.bluetooth)) return;
+      await this.player?.play(wavBlob(result.audio));
     },
     toggleHistory() {
       if (this.panel === "history") {
@@ -1341,9 +1391,31 @@ export default {
       if (!sessionId) return;
       return this.runtime.archiveSession(sessionId);
     },
+    async sendTranscript(text) {
+      const spoken = String(text ?? "").trim();
+      if (!spoken || !this.sessionId || this.modelBlocked || this.historyLoading || this.upload?.pending) return;
+      const mode = resolveSubmitMode(this.running, false, true, this.busyEnter);
+      this.sending = true;
+      this.pendingUser = this.running ? "" : spoken;
+      this.runtime.pinToBottom();
+      this.pinLog();
+      try {
+        const sent = await this.runtime.send([{ type: "text", text: spoken }], mode);
+        if (!sent.ok) {
+          this.pendingUser = "";
+          this.failed = sent.error?.message || sent.error?.code || "send";
+        }
+      } catch (err) {
+        this.pendingUser = "";
+        this.failed = err instanceof Error ? err.message : "send";
+      } finally {
+        this.sending = false;
+      }
+    },
     async send(mode = "queue") {
       const text = this.draft.trim();
       if (!this.canSend) return;
+      this.player?.unlock();
       const sessionId = this.sessionId;
       const images = this.draftImages.filter((row) => draftImageStatus(row) === "ready");
       const wasRunning = this.running;

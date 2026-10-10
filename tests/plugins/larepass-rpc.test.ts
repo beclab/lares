@@ -1,19 +1,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { callRpc, ensureSession, groupSessionsByRecency, loadTranscript, navigableSessions, sendPrompt, summarizeSession, visibleHistorySessions } from "@olares/lares-core/larepass/chat";
-import { promptPayload, RESPOND_PATH, rpcPath, unwrapServerResponse, wrapClientRequest, wrapClientResponse } from "@olares/lares-core/larepass/rpc";
+import { promptPayload, RESPOND_PATH, hostCall, rpcPath, unwrapServerResponse, wrapClientRequest, wrapClientResponse } from "@olares/lares-core/larepass/rpc";
 import { parseAskUserQuestions, singleSelectAnswer } from "@olares/lares-core/larepass/questions";
 import { STAGE_COPY } from "@olares/lares-core/larepass/stage-copy";
 import { foldTranscript, textFromBlocks } from "@olares/lares-core/larepass/transcript";
 import { toolRowModel, toolVariantIcon } from "@olares/lares-core/larepass/tool-row";
 
-test("rpc envelope wraps POST /api/<method> and unwraps server-response", () => {
-  const req = wrapClientRequest("session.prompt", { sessionId: "s1" });
+test("rpc envelope uses the Host namespace/method path and args object", () => {
+  const req = wrapClientRequest("session.prompt", { sessionId: "s1", mode: "queue", content: [] });
   assert.equal(req.type, "client-request");
-  assert.equal(req.method, "session.prompt");
-  assert.equal(typeof req.rpcId, "string");
-  assert.ok(req.rpcId.length > 0);
-  assert.equal(rpcPath("session.list"), "/api/session.list");
+  assert.equal(req.method, "session/prompt");
+  assert.equal(req.payload.args.request.sessionId, "s1");
+  assert.equal(typeof req.payload.args.request.requestId, "string");
+  assert.equal(rpcPath("session.list"), "/api/session/list");
+  assert.deepEqual(hostCall("session.list", {}).args, { _request: {} });
+  assert.equal(rpcPath("session.history"), "/api/session/page");
+  assert.deepEqual(hostCall("session.history", { sessionId: "s1", throughSeq: 4 }).args, {
+    request: { address: { kind: "session", sessionId: "s1" }, throughSeq: 4 },
+  });
   assert.deepEqual(
     unwrapServerResponse({
       type: "server-response",
@@ -156,6 +161,56 @@ test("foldTranscript keeps successful workspace_publish media without a call vie
   );
 });
 
+test("foldTranscript shows generated images and video from the same events as the web turn tail", () => {
+  const image = "drive/Data/flowstudio/userData/alice/outputs/image/card.png";
+  const video = "drive/Data/flowstudio/userData/alice/outputs/video/clip.mp4";
+  const folded = foldTranscript([
+    { type: "turn/start", seq: 1, data: { turn: 1 } },
+    {
+      type: "tool/call",
+      seq: 2,
+      data: { turn: 1, callId: "gen", name: "media_generate", arguments: "{\"model\":\"flowstudio/t2v\"}" },
+    },
+    {
+      type: "media/generation-settled",
+      seq: 3,
+      data: { id: "g1", status: "completed", files: [image, video] },
+    },
+    {
+      type: "tool/result",
+      seq: 4,
+      data: {
+        turn: 1,
+        message: {
+          source: { callId: "gen" },
+          content: [{ type: "tool-result", isError: false }],
+        },
+      },
+    },
+    {
+      type: "deliverables/presented",
+      seq: 5,
+      data: { turn: 1, callId: "gen", files: [{ path: image }, { path: video }] },
+    },
+    { type: "assistant/message", seq: 6, data: { turn: 1, message: { content: [{ type: "text", text: "done" }] } } },
+    { type: "turn/end", seq: 7, data: { turn: 1, reason: { kind: "completed" } } },
+  ]);
+  assert.deepEqual(folded.items.find((item) => item.type === "files")?.paths, [image, video]);
+});
+
+test("foldTranscript ignores a generation that did not finish", () => {
+  const folded = foldTranscript([
+    { type: "turn/start", seq: 1, data: { turn: 1 } },
+    {
+      type: "media/generation-settled",
+      seq: 2,
+      data: { id: "g2", status: "failed", files: ["outputs/nope.png"] },
+    },
+    { type: "turn/end", seq: 3, data: { turn: 1, reason: { kind: "completed" } } },
+  ]);
+  assert.equal(folded.items.some((item) => item.type === "files"), false);
+});
+
 test("foldTranscript projects injected context and keeps think/tool/retry order", () => {
   const folded = foldTranscript([
     { type: "turn/start", seq: 1, data: { turn: 1 } },
@@ -217,10 +272,11 @@ test("callRpc maps auth redirects and business errors", async () => {
   );
   const ok = await callRpc(
     async (path, init) => {
-      assert.equal(path, "/api/session.create");
+      assert.equal(path, "/api/session/create");
       assert.equal(init.method, "POST");
       assert.equal(init.body.type, "client-request");
-      assert.equal(init.body.method, "session.create");
+      assert.equal(init.body.method, "session/create");
+      assert.deepEqual(init.body.payload.args, { request: {} });
       return {
         status: 200,
         body: {

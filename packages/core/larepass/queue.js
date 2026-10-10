@@ -31,3 +31,47 @@ export function normalizeQueueItems(items) {
     }];
   });
 }
+
+/**
+ * dsh `inbox` projection per session: the latest baseline (`projections` on a
+ * follow snapshot or history page) with later `agent/inbox/spliced` events
+ * replayed on top. Its `next-turn` list is the queue.
+ */
+export function createInboxTracker() {
+  const inboxes = new Map();
+
+  return {
+    seed(sessionId, projections) {
+      const inbox = projections?.values?.inbox;
+      const asOfSeq = projections?.asOfSeq;
+      if (!sessionId || !Array.isArray(inbox?.["next-turn"]) || !Number.isInteger(asOfSeq)) return false;
+      const current = inboxes.get(sessionId);
+      if (current && current.seq > asOfSeq) return false;
+      inboxes.set(sessionId, { seq: asOfSeq, nextTurn: inbox["next-turn"] });
+      return true;
+    },
+    apply(sessionId, events) {
+      let changed = false;
+      for (const event of Array.isArray(events) ? events : []) {
+        if (event?.type !== "agent/inbox/spliced" || event.data?.target !== "next-turn") continue;
+        const current = inboxes.get(sessionId) ?? { seq: -1, nextTurn: [] };
+        if (typeof event.seq !== "number" || event.seq <= current.seq) continue;
+        const { start = 0, removedCount = 0, inserted = [] } = event.data;
+        inboxes.set(sessionId, {
+          seq: event.seq,
+          nextTurn: current.nextTurn.toSpliced(start, removedCount, ...inserted),
+        });
+        changed = true;
+      }
+      return changed;
+    },
+    queue(sessionId) {
+      const nextTurn = inboxes.get(sessionId)?.nextTurn ?? [];
+      return normalizeQueueItems(nextTurn.map((message) => ({
+        id: message?.id,
+        content: message?.content,
+        placement: "queued",
+      })));
+    },
+  };
+}

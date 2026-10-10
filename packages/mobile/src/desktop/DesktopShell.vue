@@ -44,6 +44,7 @@
           ref="transcript"
           :items="state.viewItems"
           :running="state.running"
+          :running-since="state.runningSince"
           :loading="state.historyLoading || state.starting"
           :previews="state.previews"
           :media-url="mediaUrl"

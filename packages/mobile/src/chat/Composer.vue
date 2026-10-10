@@ -92,12 +92,9 @@
         @click="onCaretMove"
         @keyup="onCaretMove"
         @select="onCaretMove"
-        @pointerdown="onHoldDown"
-        @pointerup="onHoldUp"
-        @pointercancel="onHoldUp"
         @contextmenu="onContextMenu"
       />
-      <p v-if="holding" class="lares-composer__hold">{{ t("composer.hold") }} · {{ elapsed }}</p>
+      <p v-if="holdCaption" class="lares-composer__hold">{{ holdCaption }}</p>
       <div class="lares-composer__bar">
         <div v-if="!hero" class="lares-composer__pills">
           <button
@@ -150,6 +147,27 @@
             </svg>
           </button>
           <button
+            type="button"
+            class="lares-composer__icon"
+            data-kind="voice"
+            :data-phase="voicePhase"
+            :disabled="voiceBlocked"
+            :aria-label="voiceLabel"
+            @pointerdown="onVoiceDown"
+            @touchstart.prevent="onVoiceTouchStart"
+            @contextmenu.prevent
+          >
+            <span v-if="voicePhase === 'recording'" class="lares-composer__live">{{ elapsed }}</span>
+            <svg v-else-if="voicePhase === 'preparing' || voicePhase === 'transcribing'" class="lares-composer__spin" viewBox="0 0 16 16" aria-hidden="true">
+              <circle cx="8" cy="8" r="6" />
+            </svg>
+            <svg v-else class="lares-composer__wave" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6.5 9v6" />
+              <path d="M12 4.5v15" />
+              <path d="M17.5 9v6" />
+            </svg>
+          </button>
+          <button
             type="submit"
             class="lares-composer__icon"
             data-kind="send"
@@ -160,32 +178,10 @@
               <path d="M12 19V7M6.5 12.5 12 7l5.5 5.5" />
             </svg>
           </button>
-          <!-- Voice input parked.
-          <button
-            v-if="!showSend"
-            type="button"
-            class="lares-composer__icon"
-            data-kind="voice"
-            :data-phase="voicePhase"
-            :disabled="voiceBlocked"
-            :aria-label="voiceLabel"
-            @click="$emit('voice')"
-          >
-            <span v-if="voicePhase === 'recording'" class="lares-composer__live">{{ elapsed }}</span>
-            <svg v-else-if="voicePhase === 'transcribing'" class="lares-composer__spin" viewBox="0 0 16 16" aria-hidden="true">
-              <circle cx="8" cy="8" r="6" />
-            </svg>
-            <svg v-else class="lares-composer__wave" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M6.5 9v6" />
-              <path d="M12 4.5v15" />
-              <path d="M17.5 9v6" />
-            </svg>
-          </button>
-          -->
         </div>
       </div>
     </div>
-    <!-- <p v-if="voiceError" class="lares-composer__hint" data-status="error">{{ voiceError }}</p> -->
+    <p v-if="voiceError && voicePhase === 'error'" class="lares-composer__hint" data-status="error">{{ voiceError }}</p>
     <p v-for="item in failures" :key="item.id" class="lares-composer__hint" data-status="error">
       {{ t("upload.failed", { name: item.name, reason: t(`error.${item.code}`) }) }}
     </p>
@@ -203,8 +199,6 @@ import {
   visibleCommands,
 } from "./composer-tokens.js";
 import { draftImageStatus } from "@olares/lares-core/files/draft-images";
-
-const HOLD_MS = 240;
 
 export default {
   name: "LaresComposer",
@@ -238,7 +232,6 @@ export default {
   data() {
     return {
       holding: false,
-      holdTimer: 0,
       commandsOpen: false,
       commandTyped: false,
       commandIndex: 0,
@@ -249,11 +242,14 @@ export default {
     };
   },
   computed: {
-    showSend() {
-      return Boolean(this.draft.trim()) && this.voicePhase !== "recording" && !this.holding;
-    },
     elapsed() {
       return formatElapsed(this.voiceElapsed);
+    },
+    holdCaption() {
+      if (this.voicePhase === "preparing") return this.t("composer.opening");
+      if (this.voicePhase === "recording") return `${this.t("composer.hold")} · ${this.elapsed}`;
+      if (this.holding) return this.t("composer.hold");
+      return "";
     },
     modelAria() {
       return this.modelLabel ? this.t("model.switchAria", { label: this.modelLabel }) : this.t("model.select");
@@ -269,8 +265,9 @@ export default {
       return this.t("chat.placeholder");
     },
     voiceLabel() {
-      if (this.voiceError) return this.voiceError;
-      if (this.voicePhase === "recording") return this.t("mic.stop");
+      if (this.voicePhase === "error" && this.voiceError) return this.voiceError;
+      if (this.voicePhase === "preparing") return this.t("composer.opening");
+      if (this.voicePhase === "recording") return this.t("composer.hold");
       if (this.voicePhase === "transcribing") return this.t("mic.transcribing");
       return this.t("composer.voice");
     },
@@ -432,40 +429,59 @@ export default {
       event.preventDefault();
       this.onSend();
     },
-    canHold(event) {
-      // Voice input parked (hold-to-record).
-      return false;
-      if (this.draft.trim() || this.sending || this.voiceBlocked) return false;
-      if (event.pointerType === "mouse") return false;
-      return true;
-    },
     onContextMenu(event) {
       if (typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches) {
         event.preventDefault();
       }
     },
-    onHoldDown(event) {
-      if (!this.canHold(event)) return;
+    onVoiceDown(event) {
+      if (event.pointerType === "touch") return;
+      if (event.button > 0 || this.voiceBlocked || this.holding) return;
+      event.preventDefault();
       event.currentTarget.setPointerCapture?.(event.pointerId);
-      this.holdTimer = window.setTimeout(() => {
-        this.holding = true;
-        this.$refs.input?.blur();
-        this.$emit("hold-start");
-      }, HOLD_MS);
+      this.beginHold("mouse");
     },
-    onHoldUp(event) {
-      event.currentTarget.releasePointerCapture?.(event.pointerId);
-      this.clearHold(true);
+    onVoiceTouchStart() {
+      if (this.voiceBlocked || this.holdKind === "touch") return;
+      this.beginHold("touch");
     },
-    clearHold(emitEnd = false) {
-      if (this.holdTimer) {
-        clearTimeout(this.holdTimer);
-        this.holdTimer = 0;
-      }
-      if (this.holding) {
+    beginHold(kind) {
+      const starting = !this.holding;
+      this.detachHold();
+      this.holding = true;
+      this.holdKind = kind;
+      if (starting) this.$refs.input?.blur();
+      const end = (event) => {
+        if (kind === "touch" && event.type.startsWith("pointer")) return;
+        if (kind === "mouse" && event.type.startsWith("touch")) return;
+        this.detachHold();
+        if (!this.holding) return;
         this.holding = false;
-        if (emitEnd) this.$emit("hold-end");
+        this.holdKind = "";
+        this.$emit("hold-end", { via: event.type });
+      };
+      this.holdEnd = end;
+      if (kind === "touch") {
+        window.addEventListener("touchend", end);
+        window.addEventListener("touchcancel", end);
+      } else {
+        window.addEventListener("pointerup", end, true);
+        window.addEventListener("pointercancel", end, true);
       }
+      if (starting) this.$emit("hold-start", { via: kind });
+    },
+    detachHold() {
+      if (!this.holdEnd) return;
+      window.removeEventListener("touchend", this.holdEnd);
+      window.removeEventListener("touchcancel", this.holdEnd);
+      window.removeEventListener("pointerup", this.holdEnd, true);
+      window.removeEventListener("pointercancel", this.holdEnd, true);
+      this.holdEnd = null;
+    },
+    clearHold() {
+      this.detachHold();
+      this.holding = false;
+      this.holdKind = "";
     },
     pickFiles() {
       this.$refs.picker?.click();
@@ -831,6 +847,15 @@ export default {
 
 .lares-composer__icon[data-kind="voice"] {
   background: var(--q-ink-1);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* The glyph is swapped per phase; a touch that started on a removed node never delivers touchend. */
+.lares-composer__icon[data-kind="voice"] > * {
+  pointer-events: none;
 }
 
 .lares-composer__icon svg {

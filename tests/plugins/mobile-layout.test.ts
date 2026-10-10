@@ -223,6 +223,16 @@ test("the desktop composer exposes the host conversation controls", () => {
   assert.match(app, /draftBySession/);
 });
 
+test("the mobile composer exposes dsh queued submissions", () => {
+  const shell = readFileSync(new URL("../../packages/mobile/src/mobile/MobileShell.vue", import.meta.url), "utf8");
+  const app = readFileSync(new URL("../../packages/mobile/src/App.vue", import.meta.url), "utf8");
+
+  assert.match(shell, /<LaresDesktopQueue/);
+  assert.match(shell, /:items="state\.queue"/);
+  assert.match(shell, /@action="\(itemId, action\) => \$emit\('queue-action', itemId, action\)"/);
+  assert.match(app, /<LaresMobileShell[\s\S]*@queue-action="updateQueue"/);
+});
+
 test("composer menus open upward and only flip when the space runs out", () => {
   const composer = readFileSync(new URL("../../packages/mobile/src/desktop/DesktopComposer.vue", import.meta.url), "utf8");
   // Both chips sit right above the input box, so a downward menu covers it.

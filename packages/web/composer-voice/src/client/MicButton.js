@@ -1,15 +1,15 @@
 import React from "react";
 import { Tooltip } from "@deepseek-ai/dsh-client-ui-primitives";
-import { postTranscribe, TranscriptQueue } from "@olares/lares-core/voice/client";
+import {
+  getCapture,
+  postCaptureCancel,
+  postCaptureStart,
+  postCaptureStop,
+} from "@olares/lares-core/voice/client";
+import { captureSource } from "@olares/lares-core/voice/input";
 import { MicGlyph, Spinner } from "./icons.js";
 import { messageFor, useT } from "./locale.js";
-import {
-  formatElapsed,
-  isComposerVoiceReady,
-  isRecordingTooShort,
-  pickRecordingMime,
-  RECORDING_AUDIO,
-} from "@olares/lares-core/voice/recorder";
+import { formatElapsed } from "@olares/lares-core/voice/recorder";
 import micCss from "./styles/mic.css";
 
 const { useCallback, useEffect, useRef, useState } = React;
@@ -19,31 +19,23 @@ export { micCss };
 
 export function MicButton(props) {
   const t = useT();
-  const inputActions = props.inputActions;
-  const draft = props.useInput ? props.useInput((state) => state?.draft ?? "") : "";
-  const draftRef = useRef(draft);
-  draftRef.current = draft;
+  const sessionIdRef = useRef(props.sessionId);
+  sessionIdRef.current = props.sessionId;
+  const sendRef = useRef(props.send);
+  sendRef.current = props.send;
+  const canSend = Boolean(props.sessionId && props.send);
 
-  // Outside `plain`, setDraft is dropped — queue until composer is writable again.
-  const inputPhase = props.useInput ? props.useInput((state) => state?.phase ?? null) : null;
-  const composerReady = isComposerVoiceReady(inputPhase, inputActions?.setDraft);
-  const composerReadyRef = useRef(composerReady);
-  composerReadyRef.current = composerReady;
-  const queueRef = useRef(new TranscriptQueue());
-
-  const [phase, setPhase] = useState("idle"); // idle | recording | transcribing | error
+  const [phase, setPhase] = useState("idle"); // idle | preparing | recording | transcribing | error
   const [error, setError] = useState(null);
   const [elapsed, setElapsed] = useState(0);
 
-  const recorderRef = useRef(null);
-  const streamRef = useRef(null);
-  const chunksRef = useRef([]);
   const startedRef = useRef(0);
   const timerRef = useRef(0);
-  const cancelRef = useRef(false);
   const mountedRef = useRef(true);
   const errorTimerRef = useRef(0);
-  const transcribeRef = useRef(null);
+  const hostRef = useRef(false);
+  const pollRef = useRef(0);
+  const startAbortRef = useRef(null);
 
   const stopTimer = useCallback(() => {
     if (timerRef.current) {
@@ -52,11 +44,11 @@ export function MicButton(props) {
     }
   }, []);
 
-  const releaseStream = useCallback(() => {
-    const stream = streamRef.current;
-    if (stream) stream.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
-    recorderRef.current = null;
+  const stopHostPoll = useCallback(() => {
+    if (pollRef.current) {
+      clearTimeout(pollRef.current);
+      pollRef.current = 0;
+    }
   }, []);
 
   useEffect(() => {
@@ -64,11 +56,12 @@ export function MicButton(props) {
     return () => {
       mountedRef.current = false;
       stopTimer();
-      releaseStream();
+      stopHostPoll();
+      if (hostRef.current) void postCaptureCancel();
+      hostRef.current = false;
       if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
-      transcribeRef.current?.abort();
     };
-  }, [stopTimer, releaseStream]);
+  }, [stopHostPoll, stopTimer]);
 
   const failWith = useCallback((code) => {
     if (!mountedRef.current) return;
@@ -83,91 +76,116 @@ export function MicButton(props) {
     }, 3200);
   }, [t]);
 
-  const finish = useCallback(async () => {
-    stopTimer();
-    const took = Date.now() - startedRef.current;
-    const chunks = chunksRef.current;
-    chunksRef.current = [];
-    const type = recorderRef.current?.mimeType || "audio/webm";
-    releaseStream();
-    if (!mountedRef.current) return;
-    if (cancelRef.current) {
-      setPhase("idle");
-      return;
-    }
-    const blob = new Blob(chunks, { type });
-    if (isRecordingTooShort(took, blob.size)) {
-      failWith("voice_too_short");
-      return;
-    }
-    setPhase("transcribing");
-    const controller = new AbortController();
-    transcribeRef.current = controller;
-    try {
-      const text = await postTranscribe(blob, props.language, controller.signal);
-      if (!mountedRef.current) return;
-      setPhase("idle");
-      queueRef.current.apply(text, composerReadyRef.current, draftRef.current, inputActions.setDraft);
-    } catch (err) {
-      if (!mountedRef.current || controller.signal.aborted) return;
-      failWith(err instanceof Error ? err.message : "voice_failed");
-    } finally {
-      if (transcribeRef.current === controller) transcribeRef.current = null;
-    }
-  }, [failWith, inputActions, props.language, releaseStream, stopTimer]);
-
-  useEffect(() => {
-    queueRef.current.flush(composerReady, draftRef.current, inputActions.setDraft);
-  }, [composerReady, inputActions]);
+  const watchHost = useCallback(() => {
+    const tick = async () => {
+      if (!mountedRef.current || !hostRef.current) return;
+      let status;
+      try {
+        status = await getCapture();
+      } catch (err) {
+        if (!mountedRef.current || !hostRef.current) return;
+        hostRef.current = false;
+        failWith(err instanceof Error ? err.message : "voice_failed");
+        return;
+      }
+      if (!mountedRef.current || !hostRef.current) return;
+      if (status.phase === "transcribing") {
+        stopTimer();
+        setPhase("transcribing");
+      }
+      if (status.phase === "done") {
+        hostRef.current = false;
+        stopTimer();
+        const text = String(status.text ?? "").trim();
+        if (!text) {
+          failWith("voice_no_input");
+          return;
+        }
+        try {
+          await sendRef.current?.(sessionIdRef.current, text);
+        } catch (err) {
+          failWith(err instanceof Error ? err.message : "voice_failed");
+          return;
+        }
+        if (!mountedRef.current) return;
+        setPhase("idle");
+        return;
+      }
+      if (status.phase === "idle") {
+        hostRef.current = false;
+        stopTimer();
+        setPhase("idle");
+        return;
+      }
+      if (status.phase === "error") {
+        hostRef.current = false;
+        stopTimer();
+        failWith(status.error || "voice_failed");
+        return;
+      }
+      pollRef.current = setTimeout(tick, 200);
+    };
+    stopHostPoll();
+    pollRef.current = setTimeout(tick, 200);
+  }, [failWith, stopHostPoll, stopTimer]);
 
   const start = useCallback(async () => {
-    if (!composerReady) return;
-    if (phase === "recording" || phase === "transcribing") return;
-    if (typeof MediaRecorder === "undefined" || !navigator.mediaDevices?.getUserMedia) {
-      failWith("voice_unsupported");
-      return;
-    }
+    if (captureSource("pc") !== "headset") return;
+    if (!sessionIdRef.current || !sendRef.current) return;
+    if (phase === "preparing" || phase === "recording" || phase === "transcribing") return;
     setError(null);
-    cancelRef.current = false;
-    let stream;
+    hostRef.current = false;
+    setPhase("preparing");
+    const controller = new AbortController();
+    startAbortRef.current = controller;
+    let opened;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: RECORDING_AUDIO });
-    } catch {
-      failWith("voice_permission_denied");
+      opened = await postCaptureStart(controller.signal);
+    } catch (err) {
+      if (!mountedRef.current || controller.signal.aborted) {
+        if (mountedRef.current) setPhase("idle");
+        return;
+      }
+      failWith(err instanceof Error ? err.message : "voice_failed");
+      return;
+    } finally {
+      if (startAbortRef.current === controller) startAbortRef.current = null;
+    }
+    if (!mountedRef.current || opened?.cancelled) {
+      if (!mountedRef.current && opened?.recording) void postCaptureCancel();
+      if (mountedRef.current) setPhase("idle");
       return;
     }
-    if (!mountedRef.current) {
-      stream.getTracks().forEach((track) => track.stop());
+    if (opened?.skipped || !opened?.recording) {
+      failWith("voice_bluetooth_not_ready");
       return;
     }
-    streamRef.current = stream;
-    chunksRef.current = [];
-    const mime = pickRecordingMime();
-    const recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
-    recorderRef.current = recorder;
-    recorder.ondataavailable = (event) => {
-      if (event.data && event.data.size > 0) chunksRef.current.push(event.data);
-    };
-    recorder.onstop = () => {
-      void finish();
-    };
-    startedRef.current = Date.now();
+    hostRef.current = true;
+    startedRef.current = opened?.at || Date.now();
     setElapsed(0);
     setPhase("recording");
-    recorder.start();
     timerRef.current = setInterval(() => setElapsed(Date.now() - startedRef.current), 200);
-  }, [composerReady, failWith, finish, phase]);
+    watchHost();
+  }, [failWith, phase, watchHost]);
 
   const stop = useCallback((cancel) => {
-    cancelRef.current = Boolean(cancel);
-    const recorder = recorderRef.current;
-    if (recorder && recorder.state !== "inactive") recorder.stop();
-    else {
+    if (!hostRef.current) {
       stopTimer();
-      releaseStream();
       setPhase("idle");
+      return;
     }
-  }, [releaseStream, stopTimer]);
+    if (cancel) {
+      hostRef.current = false;
+      stopHostPoll();
+      stopTimer();
+      void postCaptureCancel();
+      setPhase("idle");
+      return;
+    }
+    stopTimer();
+    setPhase("transcribing");
+    void postCaptureStop();
+  }, [stopHostPoll, stopTimer]);
 
   const onClick = useCallback(() => {
     if (phase === "recording") stop(false);
@@ -175,16 +193,18 @@ export function MicButton(props) {
   }, [phase, start, stop]);
 
   const recording = phase === "recording";
-  const busy = phase === "transcribing";
-  // Allow stop while recording even if the composer locks mid-take.
-  const disabled = busy || (!composerReady && !recording);
+  const preparing = phase === "preparing";
+  const busy = phase === "transcribing" || preparing;
+  const disabled = busy || (!canSend && !recording);
   const title = error
     ? error
-    : recording
-      ? t("mic.stop")
-      : busy
-        ? t("mic.transcribing")
-        : composerReady
+    : preparing
+      ? t("mic.preparing")
+      : recording
+        ? t("mic.stop")
+        : busy
+          ? t("mic.transcribing")
+        : canSend
           ? t("mic.idle")
           : t("mic.blocked");
 
