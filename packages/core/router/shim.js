@@ -6,6 +6,7 @@ import { catalogCache } from "./catalog-cache.js";
 import { carriesWebpImage, transcodeWebpImages } from "../media/router-images.js";
 import { routerAuthHeaders, routerEndUser, routerGatewayUrl } from "./gateway.js";
 import { STT_MAX_AUDIO_BYTES } from "./stt.js";
+import { adaptGeminiChatBuffer } from "./gemini-schema.js";
 import { isGenerationCreateRoute, withSrefBuffer } from "./sref.js";
 
 export const SHIM_PATH = "/llm/v1";
@@ -248,6 +249,9 @@ export function proxyToRouter(req, res, env = process.env, deps = {}) {
       if (!budget.audio && carriesWebpImage(body)) body = await transcodeWebpImages(body);
       if (method === "POST" && isGenerationCreateRoute(suffix)) {
         body = withSrefBuffer(body, routerEndUser(env, req.headers), env);
+      }
+      if (method === "POST" && suffix.replace(/\/+$/, "") === "chat/completions") {
+        body = adaptGeminiChatBuffer(body);
       }
       headers["content-length"] = String(body.length);
     }

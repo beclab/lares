@@ -291,6 +291,29 @@ test("callRpc maps auth redirects and business errors", async () => {
   );
   assert.equal(ok.status, "ok");
   assert.equal(ok.value.sessionId, "s1");
+  const paged = await callRpc(
+    async (_path, init) => ({
+      status: 200,
+      body: {
+        type: "server-response",
+        rpcId: init.body.rpcId,
+        result: {
+          ok: true,
+          value: {
+            records: [
+              { event: { type: "user/message", seq: 1 } },
+              { event: null },
+              { note: "no event" },
+            ],
+          },
+        },
+      },
+    }),
+    "session.page",
+    {},
+  );
+  assert.equal(paged.status, "ok");
+  assert.deepEqual(paged.value.events, [{ type: "user/message", seq: 1 }]);
 });
 
 test("ensureSession reuses a top-level row before creating", async () => {

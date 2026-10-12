@@ -1,0 +1,70 @@
+--- a/node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js
++++ b/node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js
+@@ -97,6 +97,31 @@
+     catch {
+         return undefined;
+     }
++}
++function googleThoughtSignature(toolCall) {
++    const fromExtra = toolCall?.extra_content?.google?.thought_signature;
++    if (typeof fromExtra === "string" && fromExtra.length > 0)
++        return fromExtra;
++    const direct = toolCall?.thought_signature;
++    if (typeof direct === "string" && direct.length > 0)
++        return direct;
++    return undefined;
++}
++function retainGoogleThoughtSignature(block, toolCall) {
++    const signature = googleThoughtSignature(toolCall);
++    if (signature)
++        block.thoughtSignature = signature;
++}
++function withGoogleThoughtSignature(payload, thoughtSignature) {
++    if (typeof thoughtSignature !== "string" || thoughtSignature.length === 0)
++        return payload;
++    // OpenRouter stores encrypted reasoning in this same slot. That JSON is not a Gemini signature.
++    if (parseLegacyEncryptedReasoningDetail(thoughtSignature))
++        return payload;
++    return {
++        ...payload,
++        extra_content: { google: { thought_signature: thoughtSignature } },
++    };
+ }
+ function parseLegacyEncryptedReasoningDetail(signature) {
+     if (!signature)
+@@ -348,6 +373,7 @@
+                     };
+                     delete block.partialArgs;
+                 }
++                retainGoogleThoughtSignature(block, toolCall);
+                 return block;
+             };
+             for await (const chunk of openaiStream) {
+@@ -1019,23 +1045,23 @@
+                 assistantMsg.tool_calls = toolCalls.map((tc) => {
+                     const customInputProperty = options?.grammarToolInputProperties?.get(tc.name);
+                     if (customInputProperty !== undefined) {
+-                        return {
++                        return withGoogleThoughtSignature({
+                             id: tc.id,
+                             type: "custom",
+                             custom: {
+                                 name: tc.name,
+                                 input: sanitizeSurrogates(getGrammarToolInput(tc.name, tc.arguments, customInputProperty)),
+                             },
+-                        };
++                        }, tc.thoughtSignature);
+                     }
+-                    return {
++                    return withGoogleThoughtSignature({
+                         id: tc.id,
+                         type: "function",
+                         function: {
+                             name: tc.name,
+                             arguments: JSON.stringify(tc.arguments),
+                         },
+-                    };
++                    }, tc.thoughtSignature);
+                 });
+             }
+             if (preservedReasoningDetails) {

@@ -11,6 +11,7 @@ dist
 artifacts
 scripts
 !scripts/build-client.mjs
+!scripts/apply-vendor-patches.mjs
 deploy
 *.md
 !**/.env.example
