@@ -3,7 +3,6 @@ import { createHeaderTabs } from "./HeaderTabs.js";
 import { createPreviewOverlay } from "./PreviewOverlay.js";
 import { createPreviewView } from "./PreviewView.js";
 import { createTurnMedia } from "./TurnMedia.js";
-import { selectInlineTurnMedia } from "@olares/lares-core/files/deliverables";
 import { laresPublishedDefinition } from "@olares/lares-core/files/published-turn-data";
 import { EN, ZH } from "./locale.js";
 import { installPathOpener } from "./open.js";
@@ -72,12 +71,14 @@ export function apply(ctx) {
         () => null,
       ),
     );
+    // dsh 0.2 made this a list seat: every entry renders, and a registration
+    // without `id` is rejected. The component reads the closing turn itself.
     scope.slots.inject("conversation.chat.turnTail", () =>
       scope.slots.register(
         {
           name: "conversation.chat.turnTail",
-          priority: -100,
-          select: selectInlineTurnMedia,
+          id: "lares-turn-media",
+          order: -10,
         },
         TurnMedia,
       ),

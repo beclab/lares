@@ -60,6 +60,7 @@
     },
     "./router/search": "./router/search.js",
     "./router/shim": "./router/shim.js",
+    "./router/gemini-schema": "./router/gemini-schema.js",
     "./router/generation-guard": "./router/generation-guard.js",
     "./router/sref": "./router/sref.js",
     "./router/stt": "./router/stt.js",

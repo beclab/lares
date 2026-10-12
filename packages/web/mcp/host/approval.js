@@ -1,4 +1,4 @@
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { Client } from "@modelcontextprotocol/client";
 import {
   bindMcpClientCapture,
   createMcpAnnotationIndex,
@@ -19,10 +19,13 @@ function sandboxMode(ctx, exec) {
 
 function ensureRegisterCommits(ctx) {
   if (ctx.tools.register[REGISTERED]) return;
-  const register = ctx.tools.register.bind(ctx.tools);
+  // Keep the caller as `this`. Cordis rebinds it so agent.ctx registrations
+  // stay on that agent's layer; pinning the host receiver puts every
+  // session's tools on the global layer.
+  const register = ctx.tools.register;
   const wrapped = function registerTool(definition) {
     if (typeof definition?.name === "string") slot.annotations?.commit(definition.name);
-    return register(definition);
+    return register.call(this, definition);
   };
   wrapped[REGISTERED] = true;
   ctx.tools.register = wrapped;

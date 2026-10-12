@@ -1,8 +1,8 @@
 import React from "react";
 import {
   Button,
-  IconDownloadOutline16,
-  IconLoadingOutline16,
+  IconDownloadOutlineMedium,
+  IconLoadingOutlineMedium,
   MarkdownText,
 } from "@deepseek-ai/dsh-client-ui-primitives";
 import { errorMessage } from "./locale.js";
@@ -164,7 +164,7 @@ export function createPreviewView(workspace, t) {
               );
             },
           },
-          h(IconDownloadOutline16, { size: 14 }),
+          h(IconDownloadOutlineMedium, { size: 14 }),
           t("download"),
         ),
       ),
@@ -174,7 +174,7 @@ export function createPreviewView(workspace, t) {
         (content.status === "idle" || content.status === "loading") && h(
           "div",
           { className: "lares-preview-empty" },
-          h(IconLoadingOutline16, { className: "lares-preview-spinner" }),
+          h(IconLoadingOutlineMedium, { className: "lares-preview-spinner" }),
           h("span", null, t("loading")),
         ),
         content.status === "error" && h(

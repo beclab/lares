@@ -1,7 +1,7 @@
 import React from "react";
 import {
-  IconCheckOutline16,
-  IconLoadingOutline16,
+  IconCheckOutlineMedium,
+  IconLoadingOutlineMedium,
 } from "@deepseek-ai/dsh-client-ui-primitives";
 import {
   controlsCss,
@@ -39,12 +39,12 @@ function ModelRow({ model, selected, busy, disabled, onSelect, t }) {
       model.description ? h("span", { className: "lares-models-item-desc" }, model.description) : null,
     ),
     busy
-      ? h(IconLoadingOutline16, { className: "lares-models-spinner" })
+      ? h(IconLoadingOutlineMedium, { className: "lares-models-spinner" })
       : selected
         ? h(
             "span",
             { className: "lares-models-badge" },
-            h(IconCheckOutline16, null),
+            h(IconCheckOutlineMedium, null),
             h("span", null, t("settings.default")),
           )
         : null,

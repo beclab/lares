@@ -35,6 +35,7 @@ import { producedForClosing, selectInlineTurnMedia } from "@olares/lares-core/fi
 import { isDuplicateProducedMention } from "@olares/lares-core/files/produced-mentions";
 import { filenameFromDisposition } from "@olares/lares-core/files/disposition";
 import { downloadCurrentFile } from "../../packages/web/workspace-preview/src/client/download.js";
+import { hideDuplicateProducedMentions } from "../../packages/web/workspace-preview/src/client/hide-produced-mentions.js";
 import { installPathOpener } from "../../packages/web/workspace-preview/src/client/open.js";
 import { partitionPreviews } from "@olares/lares-core/files/preview-groups";
 import { hostUrl, PC_TEST_PROXY } from "@olares/lares-core/larepass/host";
@@ -194,6 +195,77 @@ test("in-message chips that only name a produced path are duplicates", () => {
   assert.equal(isDuplicateProducedMention("`orange-cat-jump.mp4`", paths), true);
   assert.equal(isDuplicateProducedMention("@cover.webp", paths), true);
   assert.equal(isDuplicateProducedMention("需要大图可打开同组的 delivery.webp", paths), false);
+});
+
+test("a presented-file card for an inline preview hides with its desktop notice", () => {
+  const name = { textContent: "red-circle-on-white.webp" };
+  const kind = { textContent: "WEBP" };
+  const button = {
+    textContent: "",
+    attrs: {
+      title: "/data/workspace/red-circle-on-white.webp",
+      "aria-label": "在侧边栏打开 red-circle-on-white.webp",
+    },
+    getAttribute(attr) {
+      return this.attrs[attr] || "";
+    },
+    closest() {
+      return null;
+    },
+  };
+  const media = {
+    hidden: false,
+    querySelector(selector) {
+      return selector === "button" ? button : null;
+    },
+    querySelectorAll(selector) {
+      return selector === "span" ? [name, kind] : [];
+    },
+  };
+  const notice = { hidden: false };
+  const mediaRow = {
+    parentElement: notice,
+    querySelectorAll() {
+      return [media];
+    },
+  };
+  const notes = {
+    hidden: false,
+    querySelector() {
+      return null;
+    },
+    querySelectorAll() {
+      return [{ textContent: "notes.txt" }];
+    },
+  };
+  const notesBox = { hidden: false };
+  const notesRow = {
+    parentElement: notesBox,
+    querySelectorAll() {
+      return [notes];
+    },
+  };
+  const tail = {
+    querySelectorAll(selector) {
+      if (selector === "[data-presented-file]") return [media, notes];
+      if (selector === "[data-presented-files-row]") return [mediaRow, notesRow];
+      return [];
+    },
+  };
+  const scope = { querySelectorAll() { return []; } };
+  hideDuplicateProducedMentions(
+    {
+      parentElement: scope,
+      closest(selector) {
+        return selector.includes("data-turn-tail") ? tail : scope;
+      },
+    },
+    ["outputs/red-circle-on-white.webp"],
+  );
+  assert.equal(media.hidden, true);
+  assert.equal(notice.hidden, true);
+  assert.equal(notes.hidden, false);
+  assert.equal(notesBox.hidden, false);
 });
 
 test("turn media treats produced glb as inline media", () => {

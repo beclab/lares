@@ -1,9 +1,9 @@
 import React from "react";
 import {
   Button,
-  IconChevronDownOutline14,
-  IconRefreshOutline14,
-  IconRightUpOutline16,
+  IconChevronDownOutlineRegular,
+  IconRefreshOutlineRegular,
+  IconRightUpOutlineMedium,
   Menu,
   StateDot,
 } from "@deepseek-ai/dsh-client-ui-primitives";
@@ -30,7 +30,7 @@ export function SettingsHeader({ title, refreshing, disabled, onRefresh, routerR
           variant: "outline",
           size: "sm",
           className: "lares-settings-action",
-          icon: h(IconRefreshOutline14),
+          icon: h(IconRefreshOutlineRegular),
           disabled,
           onClick: onRefresh,
         },
@@ -44,7 +44,7 @@ export function SettingsHeader({ title, refreshing, disabled, onRefresh, routerR
               size: "sm",
               className: "lares-settings-action",
               // 该图标满幅且笔画更重，取 10 才与 14 的刷新图标墨量相当。
-              icon: h(IconRightUpOutline16, { size: 10 }),
+              icon: h(IconRightUpOutlineMedium, { size: 10 }),
               onClick: () => openRouterConsole(routerRoute),
             },
             t("settings.router"),
@@ -89,7 +89,7 @@ export function SettingsSelector({ value, items, disabled, onSelect }) {
         },
       },
       h("span", { className: "lares-settings-selector-label" }, selected?.label ?? value),
-      h(IconChevronDownOutline14, { className: "lares-settings-selector-chevron" }),
+      h(IconChevronDownOutlineRegular, { className: "lares-settings-selector-chevron" }),
     ),
   });
 }

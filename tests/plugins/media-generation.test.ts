@@ -574,9 +574,12 @@ test("an image edit row with slots goes canonical with a pass-check inputs.image
 
 test("a session holding the media ledger's events reloads: the host registers them as known", async () => {
   const { KNOWN_SESSION_EVENT_TYPES } = await import("@deepseek-ai/dsh-session");
+  const { RELEASED_V3_EVENT_TYPES } = await import("@deepseek-ai/dsh-session-format-v3-to-v4");
   await import("../../packages/web/workspace-artifacts/host/index.js");
   assert.ok(KNOWN_SESSION_EVENT_TYPES.has(MEDIA_SUBMITTED_EVENT));
   assert.ok(KNOWN_SESSION_EVENT_TYPES.has(MEDIA_SETTLED_EVENT));
+  assert.ok(RELEASED_V3_EVENT_TYPES.has(MEDIA_SUBMITTED_EVENT));
+  assert.ok(RELEASED_V3_EVENT_TYPES.has(MEDIA_SETTLED_EVENT));
   // dsh-session-persistence refuses a stored event unless KNOWN_SESSION_EVENT_TYPES
   // has its type or it is marked ignorable; the ledger's events are never marked.
 });

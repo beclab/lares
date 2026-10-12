@@ -59,6 +59,24 @@
 - id: ui-settings-plugin-inventory
   disabled: true
 
+# dsh 0.2 puts bundle management on a sidebar page that replaces the
+# conversation, and a read-only "Built-in plugins" row in Settings. Lares
+# does not surface either.
+- id: ui-plugin-manager
+  disabled: true
+
+- id: ui-settings-plugins
+  disabled: true
+
+# "Upload session logs to help improve DeepSeek" is the official API's
+# request extension. Lares does not call that API, so neither the General
+# row nor the uploader belongs in the profile.
+- id: session-log-deepseek
+  disabled: true
+
+- id: ui-settings-session-log
+  disabled: true
+
 # Agent-preset switcher (hero chip, session header, Settings). Sessions still
 # mount the deployment default from `agent-presets` (standard); re-enable when
 # mode switching is a product surface again.

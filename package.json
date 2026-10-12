@@ -20,15 +20,16 @@
     "test:e2e:media": "node __debug__/e2e/media-generate-machine1.mjs",
     "test:e2e:browser": "OLARES_NO_DIALOG=1 node ~/.cursor/skills/olares-browser-login/scripts/session.mjs run __debug__/browser-scenarios/lares-regression.mjs --machine 1 --wait 5000 --insecure",
     "test:e2e:plugins": "OLARES_NO_DIALOG=1 node ~/.cursor/skills/olares-browser-login/scripts/session.mjs run __debug__/browser-scenarios/lares-plugin-matrix.mjs --machine 1 --wait 5000 --insecure",
-    "dump-config": "tsx packages/service/dsh-web/dump-config.ts"
+    "dump-config": "tsx packages/service/dsh-web/dump-config.ts",
+    "postinstall": "node scripts/apply-vendor-patches.mjs"
   },
   "dependencies": {
     "@deepseek-ai/cordis": "^4.0.2",
-    "@deepseek-ai/dsh": "0.1.5-rc.2",
-    "@deepseek-ai/dsh-app-boot": "0.1.5-rc.2",
-    "@deepseek-ai/dsh-base": "0.1.5-rc.2",
-    "@deepseek-ai/dsh-mcp-client": "0.1.5-rc.2",
-    "@deepseek-ai/dsh-web-app": "0.1.5-rc.2",
+    "@deepseek-ai/dsh": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-app-boot": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-base": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-mcp-client": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-web-app": "0.2.0-rc.2",
     "@nats-io/transport-node": "^3.4.0",
     "@olares/lares-core": "*",
     "sharp": "^0.35.3",

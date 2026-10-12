@@ -1,5 +1,6 @@
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import { KNOWN_SESSION_EVENT_TYPES } from "@deepseek-ai/dsh-session";
+import { RELEASED_V3_EVENT_TYPES } from "@deepseek-ai/dsh-session-format-v3-to-v4";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import {
   driveFetchDefinition,
@@ -9,6 +10,7 @@ import {
 } from "@olares/lares-core/drive/tools";
 import { DRIVE_IMPORT_PROMPT } from "@olares/lares-core/drive/paths";
 import {
+  MEDIA_SESSION_EVENT_TYPES,
   recoverMediaGenerations,
   recoveredGenerationsNote,
   registerMediaSessionEvents,
@@ -28,8 +30,11 @@ import {
 } from "@olares/lares-core/files/published-tools";
 
 // At module load, before any session is read: a log holding the media ledger's
-// events must reload in this harness (see MEDIA_SESSION_EVENT_TYPES).
+// events must reload in this harness (see MEDIA_SESSION_EVENT_TYPES). The v3
+// reader keeps its own released-type set and refuses the migration otherwise,
+// which is what leaves these sessions on the "history failed to load" error.
 registerMediaSessionEvents(KNOWN_SESSION_EVENT_TYPES);
+for (const type of MEDIA_SESSION_EVENT_TYPES) RELEASED_V3_EVENT_TYPES.add(type);
 
 export const name = "lares-workspace-artifacts";
 export const inject = ["tools", "systemPrompt", "sessionProjections"];

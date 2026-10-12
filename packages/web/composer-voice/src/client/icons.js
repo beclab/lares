@@ -1,14 +1,14 @@
 import React from "react";
-import { IconLoadingOutline16 } from "@deepseek-ai/dsh-client-ui-primitives";
+import { IconLoadingOutlineMedium } from "@deepseek-ai/dsh-client-ui-primitives";
 import spinCss from "./styles/spin.css";
 
 const h = React.createElement;
 
 export { spinCss };
 
-/** IconLoadingOutline16 is a static glyph; the rotation is ours (spin.css). */
+/** IconLoadingOutlineMedium is a static glyph; the rotation is ours (spin.css). */
 export function Spinner(size) {
-  return h(IconLoadingOutline16, { size, className: "lares-voice-spin" });
+  return h(IconLoadingOutlineMedium, { size, className: "lares-voice-spin" });
 }
 
 /** Sized on the ic_ds_* 16-grid so it carries the same visual weight in a row of them. */

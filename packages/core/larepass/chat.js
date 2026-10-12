@@ -29,6 +29,13 @@ export async function callRpc(request, method, payload = {}) {
   }
   const parsed = unwrapServerResponse(res.body);
   if (!parsed.ok) return { ...parsed, status: "rpc-error", http };
+  // dsh 0.2 session/page returns records. Callers still read `events`.
+  if (Array.isArray(parsed.value?.records) && !Array.isArray(parsed.value?.events)) {
+    parsed.value = {
+      ...parsed.value,
+      events: parsed.value.records.map((record) => record?.event).filter(Boolean),
+    };
+  }
   return { ...parsed, status: "ok", http };
 }
 

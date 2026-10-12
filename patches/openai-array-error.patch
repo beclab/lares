@@ -1,0 +1,51 @@
+--- a/node_modules/openai/core/error.mjs
++++ b/node_modules/openai/core/error.mjs
+@@ -1,5 +1,13 @@
+ // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
+ import { castToError } from "../internal/errors.mjs";
++function googleArrayError(errorResponse) {
++    if (!Array.isArray(errorResponse))
++        return errorResponse?.['error'];
++    const nested = errorResponse.find((item) => item && typeof item === "object" && item.error !== undefined);
++    if (nested)
++        return nested.error;
++    return errorResponse.length > 0 ? errorResponse : undefined;
++}
+ export class OpenAIError extends Error {
+ }
+ export class APIError extends OpenAIError {
+@@ -36,7 +44,7 @@
+         if (!status || !headers) {
+             return new APIConnectionError({ message, cause: castToError(errorResponse) });
+         }
+-        const error = errorResponse?.['error'];
++        const error = googleArrayError(errorResponse);
+         if (status === 400) {
+             return new BadRequestError(status, error, message, headers);
+         }
+--- a/node_modules/openai/core/error.js
++++ b/node_modules/openai/core/error.js
+@@ -3,6 +3,14 @@
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.SubjectTokenProviderError = exports.OAuthError = exports.InvalidWebhookSignatureError = exports.ContentFilterFinishReasonError = exports.LengthFinishReasonError = exports.InternalServerError = exports.RateLimitError = exports.UnprocessableEntityError = exports.ConflictError = exports.NotFoundError = exports.PermissionDeniedError = exports.AuthenticationError = exports.BadRequestError = exports.APIConnectionTimeoutError = exports.APIConnectionError = exports.APIUserAbortError = exports.APIError = exports.OpenAIError = void 0;
+ const errors_1 = require("../internal/errors.js");
++function googleArrayError(errorResponse) {
++    if (!Array.isArray(errorResponse))
++        return errorResponse?.['error'];
++    const nested = errorResponse.find((item) => item && typeof item === "object" && item.error !== undefined);
++    if (nested)
++        return nested.error;
++    return errorResponse.length > 0 ? errorResponse : undefined;
++}
+ class OpenAIError extends Error {
+ }
+ exports.OpenAIError = OpenAIError;
+@@ -40,7 +48,7 @@
+         if (!status || !headers) {
+             return new APIConnectionError({ message, cause: (0, errors_1.castToError)(errorResponse) });
+         }
+-        const error = errorResponse?.['error'];
++        const error = googleArrayError(errorResponse);
+         if (status === 400) {
+             return new BadRequestError(status, error, message, headers);
+         }

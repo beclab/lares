@@ -1,5 +1,6 @@
 import React from "react";
-import { Button, IconLoadingOutline16 } from "@deepseek-ai/dsh-client-ui-primitives";
+import { Button, IconLoadingOutlineMedium } from "@deepseek-ai/dsh-client-ui-primitives";
+import { selectInlineTurnMedia } from "@olares/lares-core/files/deliverables";
 import { fileName } from "@olares/lares-core/files/filename";
 import { partitionPreviews } from "@olares/lares-core/files/preview-groups";
 import { fetchPreviewMap, rawFileUrl } from "@olares/lares-core/files/preview-workspace";
@@ -7,7 +8,7 @@ import { hideDuplicateProducedMentions } from "./hide-produced-mentions.js";
 import { Model3dHost } from "./Model3dHost.js";
 
 const h = React.createElement;
-const { useEffect, useMemo, useState } = React;
+const { useEffect, useMemo, useRef, useState } = React;
 
 function MediaBody({ item, sessionId }) {
   const common = {
@@ -49,8 +50,11 @@ function MediaBody({ item, sessionId }) {
 }
 
 export function createTurnMedia(t) {
-  return function TurnMedia({ matched: paths, openFile, sessionId }) {
+  return function TurnMedia(props) {
+    const { openFile, sessionId } = props;
+    const paths = selectInlineTurnMedia(props) ?? [];
     const [previews, setPreviews] = useState(new Map());
+    const rootRef = useRef(null);
     const key = paths.join("\0");
 
     useEffect(() => {
@@ -76,21 +80,28 @@ export function createTurnMedia(t) {
     );
 
     useEffect(() => {
-      const id = requestAnimationFrame(() => {
-        const nodes = document.querySelectorAll(".lares-turn-deliverables");
-        for (const node of nodes) hideDuplicateProducedMentions(node, shown);
-      });
-      return () => cancelAnimationFrame(id);
+      const node = rootRef.current;
+      if (!node) return undefined;
+      const run = () => hideDuplicateProducedMentions(node, shown);
+      // The official file card mounts after its host check, later than this tail.
+      const frame = requestAnimationFrame(run);
+      const tail = node.closest("[data-turn-tail]");
+      const observer = tail === null ? null : new MutationObserver(run);
+      observer?.observe(tail, { childList: true, subtree: true });
+      return () => {
+        cancelAnimationFrame(frame);
+        observer?.disconnect();
+      };
     }, [key, shown.join("\0")]);
 
     if (!loading && media.length === 0 && files.length === 0) return null;
     return h(
       "section",
-      { className: "lares-turn-deliverables", "aria-label": t("produced") },
+      { ref: rootRef, className: "lares-turn-deliverables", "aria-label": t("produced") },
       loading && h(
         "div",
         { className: "lares-turn-media-loading", role: "status" },
-        h(IconLoadingOutline16, { className: "lares-preview-spinner" }),
+        h(IconLoadingOutlineMedium, { className: "lares-preview-spinner" }),
         h("span", null, t("mediaLoading")),
       ),
       media.length > 0 && h(

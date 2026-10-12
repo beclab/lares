@@ -27,7 +27,14 @@ const PROTOCOL = "openai-completions";
  * gateway never asked for. Which models offer a level is the catalog's word,
  * carried per model in `reasoningEfforts`.
  */
-const ROUTE_COMPAT = { supportsReasoningEffort: true };
+const ROUTE_COMPAT = {
+  supportsReasoningEffort: true,
+  // pi-ai adds `store: false` unless this is false, and it decides that from
+  // the route base URL. The URL is the local shim, so Google's rejection
+  // (`Unknown name "store"`) never shows up in detection. Omitting the field
+  // matches OpenAI's own default of false.
+  supportsStore: false,
+};
 /**
  * The shim bearer's credential reference — never LARES_ROUTER_API_KEY. The
  * /llm/v1 shim strips whatever Authorization the adapter sends and attaches
