@@ -388,6 +388,51 @@ json.dump({
   assert.match(got.error, /Bad file descriptor|Invalid argument/);
 });
 
+test("boot pages a trusted headset until the call link is back", () => {
+  const script = `
+import importlib.util, json, sys
+spec = importlib.util.spec_from_file_location("bt", sys.argv[1])
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+state = mod.new_restore()
+steps = []
+def take(headsets, session, armed, now):
+    global state
+    state, action = mod.restore_step(state, headsets, session, armed, now)
+    steps.append({"phase": state["phase"], "action": action, "attempts": state["attempts"]})
+down = [("63:47:1F:D4:18:F6", False)]
+up = [("63:47:1F:D4:18:F6", True)]
+take([], False, False, 0)
+take(down, True, False, 10)
+take(down, True, False, 11)
+take(up, False, False, 20)
+take(up, True, False, 30)
+take(up, True, True, 31)
+gone = mod.new_restore()
+for n in range(mod.RESTORE_TRIES):
+    gone, action = mod.restore_step(gone, down, True, False, n * 10)
+    assert action == "connect", action
+gone, action = mod.restore_step(gone, down, True, False, 1000)
+json.dump({"steps": steps, "stopped": gone["phase"], "after": action}, sys.stdout)
+`;
+  const py = spawnSync("python3", ["-c", script, fileURLToPath(new URL("../../packages/core/voice/host/bluetooth-ready.py", import.meta.url))], {
+    encoding: "utf8",
+  });
+  assert.equal(py.status, 0, py.stderr);
+  assert.deepEqual(JSON.parse(py.stdout), {
+    steps: [
+      { phase: "connect", action: null, attempts: 1 },
+      { phase: "connect", action: "connect", attempts: 2 },
+      { phase: "connect", action: null, attempts: 2 },
+      { phase: "wait", action: null, attempts: 2 },
+      { phase: "arm", action: "arm", attempts: 2 },
+      { phase: "done", action: null, attempts: 2 },
+    ],
+    stopped: "done",
+    after: null,
+  });
+});
+
 test("wideband speech is ready only when the radio is on and the flag is set", () => {
   const script = `
 import importlib.util, json, sys

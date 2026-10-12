@@ -3,6 +3,8 @@
 
 ensure() makes a paired headset able to capture before a recording starts.
 scan lists devices advertising right now. connect pairs and connects one of them.
+After boot the radio has dropped the link, so serve() pages the trusted
+headset again until it answers or the reconnect window closes.
 
 
 A connected card is ready once it is on the microphone profile and that input
@@ -33,6 +35,10 @@ POLL_SECONDS = 12
 PROFILE_WAIT_SECONDS = 3
 SCAN_SECONDS = 8
 MAX_DEVICES = 16
+# A headset answers pages for about a minute after the host radio returns.
+RESTORE_TRIES = 8
+RESTORE_GAP_SECONDS = 3
+ARM_TRIES = 15
 ADDRESS = re.compile(r"^[0-9A-F]{2}(?::[0-9A-F]{2}){5}$")
 DEVICE_LINE = re.compile(
     r"\[(?:NEW|CHG)\] Device ([0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5})(?:\s+(.*))?$"
@@ -696,16 +702,92 @@ def prepare_audio():
     return ""
 
 
-def connect_headset():
+def connect_headset(timeout=20):
     headsets = paired_headsets()
     if not headsets:
         return ""
     connected = [mac for mac, is_up in headsets if is_up]
     mac = connected[0] if connected else headsets[0][0]
     if mac not in connected:
-        run(["bluetoothctl", "connect", mac], timeout=20)
+        run(["bluetoothctl", "connect", mac], timeout=timeout)
         time.sleep(1)
     return mac
+
+
+def new_restore():
+    return {"phase": "connect", "attempts": 0, "arm_attempts": 0, "next_at": 0.0}
+
+
+def restore_step(state, headsets, session_ready, armed, now):
+    """What boot should do next for the trusted headset. No radio I/O here.
+
+    A connected call sink is done. A link without a desktop session waits.
+    Otherwise page the headset a bounded number of times.
+    """
+    if state.get("phase") == "done":
+        return state, None
+    attempts = state.get("attempts", 0)
+    arm_attempts = state.get("arm_attempts", 0)
+    up = any(connected for _, connected in headsets or [])
+    if now < state.get("next_at", 0) and not (up and armed):
+        return state, None
+    if up and armed:
+        return {**state, "phase": "done"}, None
+    if up and not session_ready:
+        return {**state, "phase": "wait", "next_at": now + 5}, None
+    if up:
+        if arm_attempts >= ARM_TRIES:
+            return {**state, "phase": "done"}, None
+        return {
+            **state,
+            "phase": "arm",
+            "arm_attempts": arm_attempts + 1,
+            "next_at": now + 2,
+        }, "arm"
+    if attempts >= RESTORE_TRIES:
+        return {**state, "phase": "done"}, None
+    # An empty list at startup is bluetoothd still loading, not "no headset".
+    if not headsets:
+        return {
+            **state,
+            "phase": "connect",
+            "attempts": attempts + 1,
+            "next_at": now + RESTORE_GAP_SECONDS,
+        }, None
+    return {
+        **state,
+        "phase": "connect",
+        "attempts": attempts + 1,
+        "next_at": now + RESTORE_GAP_SECONDS,
+    }, "connect"
+
+
+def tick_restore(state, now=None):
+    """Page a trusted headset that the reboot disconnected. Requests still win."""
+    now = time.monotonic() if now is None else now
+    if state.get("phase") == "done" or now < state.get("next_at", 0):
+        return state
+    try:
+        headsets = paired_headsets()
+    except (OSError, subprocess.SubprocessError):
+        return {**state, "next_at": now + RESTORE_GAP_SECONDS}
+    user = audio_user()
+    session = user is not None and os.path.isdir(f"/run/user/{user.pw_uid}")
+    armed = False
+    if session:
+        try:
+            armed = bool(call_sink(user))
+        except (OSError, subprocess.SubprocessError):
+            armed = False
+    state, action = restore_step(state, headsets, session, armed, now)
+    try:
+        if action == "connect":
+            connect_headset(timeout=12)
+        elif action == "arm" and user is not None:
+            select_headset(user)
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return state
 
 
 def active_profiles(text):
@@ -1066,6 +1148,7 @@ def serve(directory):
     agent = directory / "agent.json"
     request = directory / "request.json"
     result = directory / "result.json"
+    restore = new_restore()
     while True:
         agent.write_text(json.dumps({"pid": os.getpid(), "at": time.time()}))
         if request.exists():
@@ -1086,6 +1169,8 @@ def serve(directory):
             outcome["id"] = payload.get("id", "")
             result.write_text(json.dumps(outcome))
             os.chmod(result, 0o644)
+        else:
+            restore = tick_restore(restore)
         time.sleep(0.2)
 
 

@@ -5,7 +5,16 @@ set -u
 
 VOICE_DIR=${LARES_HOST_VOICE_DIR:-}
 PROC=/host-proc/1/ns
-SCRIPT=/app/packages/core/voice/host/bluetooth-ready.py
+# The app runs this overlay when hot reload is on. Install that copy, or a
+# reboot puts the image's agent back beside a newer app.
+IMAGE_SCRIPT=/app/packages/core/voice/host/bluetooth-ready.py
+OVERLAY_SCRIPT=/devsrc/packages/core/voice/host/bluetooth-ready.py
+SCRIPT=$IMAGE_SCRIPT
+if [ -f /devsrc/.hotreload ] && [ -f /app/.lares-image-id ] && [ -f /devsrc/.lares-seeded-image-id ] \
+  && [ "$(cat /app/.lares-image-id)" = "$(cat /devsrc/.lares-seeded-image-id)" ] \
+  && [ -f "$OVERLAY_SCRIPT" ]; then
+  SCRIPT=$OVERLAY_SCRIPT
+fi
 
 if [ -z "$VOICE_DIR" ] || ! command -v nsenter >/dev/null 2>&1 || [ ! -e "$PROC/mnt" ] || [ ! -f "$SCRIPT" ]; then
   echo "bluetooth host setup skipped: cannot enter the host" >&2
@@ -74,6 +83,9 @@ EOF
 enter /bin/sh -c '
   mkdir -p "$LARES_HOST_VOICE_DIR"
   chmod 777 "$LARES_HOST_VOICE_DIR"
+  # A drop-in here keeps running after this unit file is rewritten.
+  rm -rf /etc/systemd/system/bluetooth-voice-ready.service.d
+  rm -f /usr/local/sbin/bluetooth-voice-ready-keep
   systemctl daemon-reload
   systemctl enable bluetooth-wideband-speech.service bluetooth-voice-ready.service
   systemctl restart bluetooth-wideband-speech.service || true
