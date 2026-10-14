@@ -113,6 +113,13 @@ export function foldTranscript(entries) {
   let error = "";
   let reply = null;
   let streamCursor = { loc: "", kind: "", index: 0 };
+  let activeTurn = 0;
+  const ended = new Map();
+
+  const tag = (row) => {
+    row.turn = activeTurn;
+    return row;
+  };
 
   const rememberFile = (path) => {
     if (!path || fileSeen.has(path)) return;
@@ -126,7 +133,7 @@ export function foldTranscript(entries) {
       items[filesAt].paths = [...files];
       return;
     }
-    items.push({ type: "files", paths: [...files] });
+    items.push(tag({ type: "files", paths: [...files] }));
     filesAt = items.length - 1;
   };
 
@@ -140,7 +147,7 @@ export function foldTranscript(entries) {
   };
 
   const putBlock = (turn, step, index, row) => {
-    const stored = upsert(items, blocks, blockKey(turn, step, index), row);
+    const stored = upsert(items, blocks, blockKey(turn, step, index), tag(row));
     // The turn's readings belong under its closing reply, the row whose action
     // bar ends the turn on screen.
     if (stored.type === "assistant") lastReply.set(Number(turn) || 0, stored);
@@ -234,6 +241,7 @@ export function foldTranscript(entries) {
 
     if (event.type === "turn/start") {
       closeTurn();
+      if (Number.isInteger(data.turn)) activeTurn = data.turn;
       files = [];
       fileSeen.clear();
       filesAt = -1;
@@ -245,6 +253,7 @@ export function foldTranscript(entries) {
     }
 
     if (event.type === "turn/end") {
+      ended.set(activeTurn, data.reason?.kind || "completed");
       if (data.reason?.kind === "error") {
         error = data.reason.error?.message || "turn failed";
       }
@@ -255,17 +264,17 @@ export function foldTranscript(entries) {
     if (event.type === "user/message") {
       const text = textFromBlocks(data.content);
       if (isHumanUserSource(data.source)) {
-        if (text) items.push({ type: "user", text });
+        if (text) items.push(tag({ type: "user", text }));
         continue;
       }
       const provenance = contextProvenance(data.source);
-      items.push({
+      items.push(tag({
         type: "context",
         role: provenance.role,
         label: provenance.label,
         form: contextForm(data.source),
         text,
-      });
+      }));
       continue;
     }
 
@@ -285,7 +294,7 @@ export function foldTranscript(entries) {
       const callView = callViewOf(view);
       const argsRaw = typeof data.arguments === "string" ? data.arguments : "";
       const model = toolRowModel(data.name, argsRaw);
-      const row = {
+      const row = tag({
         type: "tool",
         callId: data.callId,
         name: data.name,
@@ -293,7 +302,7 @@ export function foldTranscript(entries) {
         argsRaw,
         paths: producedPathsFromView(callView),
         ...model,
-      };
+      });
       items.push(row);
       if (data.callId) {
         tools.set(data.callId, items.length - 1);
@@ -327,7 +336,7 @@ export function foldTranscript(entries) {
 
     if (event.type === "llm/retry") {
       const retryId = data.retryId || String(event.seq ?? items.length);
-      upsert(items, retries, retryId, {
+      upsert(items, retries, retryId, tag({
         type: "retry",
         retryId,
         retry: data.retry,
@@ -337,7 +346,7 @@ export function foldTranscript(entries) {
         seconds: retrySeconds(data.delayMs),
         failure: data.failure,
         retryState: "scheduled",
-      });
+      }));
       continue;
     }
 
@@ -352,6 +361,13 @@ export function foldTranscript(entries) {
   for (const [turn, row] of lastReply) {
     const value = metrics.value(turn);
     if (value) row.metrics = value;
+  }
+  for (const [turn, reason] of ended) {
+    const row = items.find((item) => item.turn === turn);
+    if (!row) continue;
+    row.turnReason = reason;
+    const value = metrics.value(turn);
+    if (value) row.turnRunMs = value.runMs;
   }
   if (running) syncFiles();
   return {

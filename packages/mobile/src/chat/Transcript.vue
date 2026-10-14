@@ -10,8 +10,25 @@
       <span class="lares-sk lares-sk--line lares-sk--w56" />
     </li>
     <li v-else-if="items.length === 0 && !running" class="lares-log__empty">{{ t("chat.empty") }}</li>
+    <template v-for="block in blocks" :key="block.key">
+    <li v-if="block.kind === 'fold'" class="lares-log__item" data-type="process">
+      <button
+        type="button"
+        class="lares-process"
+        :data-phase="block.phase"
+        :data-open="processOpen(block) ? 'true' : 'false'"
+        :disabled="!block.foldable"
+        :aria-expanded="processOpen(block) ? 'true' : 'false'"
+        @click="toggleProcess(block.key)"
+      >
+        <span class="lares-process__label">{{ processLabel(block) }}</span>
+        <svg v-if="block.foldable" class="lares-process__chevron" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6.5 9 12 14.5 17.5 9" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+    </li>
     <li
-      v-for="(row, index) in items"
+      v-for="{ row, index } in shown(block)"
       :key="index"
       class="lares-log__item"
       :data-type="row.type"
@@ -79,7 +96,8 @@
         @media="$emit('media')"
       />
     </li>
-    <li v-if="running" class="lares-log__running" data-chat-running="true">
+    </template>
+    <li v-if="running && !hideRunning" class="lares-log__running" data-chat-running="true">
       <span class="lares-log__sr" role="status" aria-live="polite" aria-atomic="true">{{ t("chat.deepDiving") }}</span>
       <span class="lares-log__running-text" aria-hidden="true">{{ runningText }}</span>
     </li>
@@ -89,6 +107,7 @@
 <script>
 import { partitionPreviews } from "@olares/lares-core/files/preview-groups";
 import { parseAskUserQuestions } from "@olares/lares-core/larepass/questions";
+import { hidesRunningClock, processFoldLabel, transcriptBlocks } from "@olares/lares-core/larepass/process-fold";
 import { STAGE_COPY } from "@olares/lares-core/larepass/stage-copy";
 import { retryStatus as formatRetry, runningLabel, thinkSummary } from "./format.js";
 import { renderMarkdown } from "./markdown.js";
@@ -125,6 +144,7 @@ export default {
       logPin: 0,
       stageCopy: STAGE_COPY,
       reactions: {},
+      openFolds: {},
       now: Date.now(),
       clock: 0,
     };
@@ -133,10 +153,17 @@ export default {
     runningText() {
       return runningLabel(this.runningSince, this.t, this.now);
     },
+    blocks() {
+      return transcriptBlocks(this.items, { running: this.running });
+    },
+    hideRunning() {
+      return hidesRunningClock(this.blocks);
+    },
   },
   watch: {
     sessionId() {
       this.reactions = {};
+      this.openFolds = {};
     },
     running: "syncClock",
     runningSince: "syncClock",
@@ -164,6 +191,19 @@ export default {
     },
     renderMarkdown,
     thinkSummary,
+    shown(block) {
+      if (block.kind === "fold") return this.processOpen(block) ? block.members : [];
+      return [block];
+    },
+    processOpen(block) {
+      return !block.foldable || Boolean(this.openFolds[block.key]);
+    },
+    processLabel(block) {
+      return processFoldLabel(this.t, block);
+    },
+    toggleProcess(key) {
+      this.openFolds = { ...this.openFolds, [key]: !this.openFolds[key] };
+    },
     questionItems(row) {
       if (this.question?.questions?.length) return this.question.questions;
       return parseAskUserQuestions(row.argsRaw);
@@ -298,6 +338,7 @@ export default {
 @media (prefers-reduced-motion: reduce) {
   .lares-sk,
   .lares-log__running-text,
+  .lares-process[data-phase="live"] .lares-process__label,
   .lares-log__item[data-pending="true"] {
     animation: none;
   }
@@ -333,6 +374,71 @@ export default {
   gap: 8px;
   min-width: 0;
   max-width: 100%;
+}
+
+.lares-process {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 33px;
+  border: 0;
+  border-bottom: 0.5px solid var(--q-separator);
+  padding: 0 0 8px;
+  background: transparent;
+  color: var(--q-ink-3);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lares-process:disabled {
+  cursor: default;
+}
+
+.lares-process[data-phase="live"],
+.lares-process[data-phase="summary"] {
+  min-height: 0;
+  border-bottom: 0;
+  padding: 0;
+}
+
+.lares-process[data-phase="live"] .lares-process__label {
+  animation: lares-running-shimmer 1.6s ease-in-out infinite;
+}
+
+@media (hover: hover) {
+  .lares-process:hover:not(:disabled) {
+    color: var(--q-ink-2);
+  }
+}
+
+.lares-process__label {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 24px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lares-process__chevron {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-left: 4px;
+  transition: transform 0.1s;
+}
+
+.lares-process[data-open="true"] .lares-process__chevron {
+  transform: rotate(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lares-process__chevron {
+    transition: none;
+  }
 }
 
 .lares-log__item[data-pending="true"] {

@@ -1,5 +1,12 @@
 import { readConfig, validateConfigPatch, writeConfig } from "./config.js";
-import { installVoiceChart } from "./install.js";
+import {
+  chartModelId,
+  installVoiceChart,
+  resumeVoiceChart,
+  stopVoiceChart,
+  voiceChartsStatus,
+  voiceChartStatus,
+} from "./install.js";
 import {
   beginHostCapture,
   endHostCapture,
@@ -13,7 +20,7 @@ import { createCaptureSession } from "./capture.js";
 import { createDuplexCoordinator } from "./duplex.js";
 import { normalizeSttPcm } from "./pcm.js";
 import { speechSegments } from "./script.js";
-import { pcmToWav, silencePcm, synthesizeStream } from "../router/tts.js";
+import { pcmToWav, silencePcm, synthesize, synthesizeStream } from "../router/tts.js";
 import {
   STT_MAX_AUDIO_BYTES,
   VoiceError,
@@ -55,12 +62,19 @@ export async function voiceModelsPayload(options) {
   const ids = models.map((model) => model.id);
   const stt = sttModelIds(models);
   const tts = ttsModelIds(models);
+  let charts = null;
+  try {
+    charts = await voiceChartsStatus();
+  } catch {
+    charts = null;
+  }
   return {
     models: ids,
     stt,
     tts,
     selected: pickSttModelId(models, config.model),
     ttsSelected: pickTtsModelId(models, config.ttsModel),
+    charts,
   };
 }
 
@@ -82,6 +96,59 @@ export function installVoice(kind) {
   return installVoiceChart(kind);
 }
 
+export function stopVoice(kind) {
+  return stopVoiceChart(kind);
+}
+
+export function resumeVoice(kind) {
+  return resumeVoiceChart(kind);
+}
+
+const PROBE_TIMEOUT_MS = 45_000;
+
+function probeWav() {
+  return pcmToWav(Buffer.alloc(6400), 16000);
+}
+
+/**
+ * Ask the chart's model through Router. An engine that answers — even to
+ * reject silence — is connected. A stopped chart is not.
+ * @param {"stt" | "tts"} kind
+ */
+export async function probeVoice(kind, options = {}) {
+  const status = await (options.status ?? voiceChartStatus)(kind);
+  if (status.phase !== "running") {
+    throw new VoiceError("voice_probe_failed", 409, "voice app is not running");
+  }
+  const models = await (options.listModels ?? listModels)({ refresh: true });
+  const ids = kind === "tts" ? ttsModelIds(models) : sttModelIds(models);
+  const model = chartModelId(kind, ids);
+  if (!model) throw new VoiceError("voice_probe_failed", 503, "voice model is not registered");
+  if (kind === "tts") {
+    const speak = options.synthesize ?? synthesize;
+    const audio = await speak({ text: "你好", model, timeoutMs: PROBE_TIMEOUT_MS });
+    if (!audio?.length) throw new VoiceError("voice_probe_failed", 502, "speech returned no audio");
+    return { ok: true, app: status.app, model };
+  }
+  const hear = options.transcribe ?? transcribe;
+  try {
+    await hear({
+      bytes: probeWav(),
+      filename: "probe.wav",
+      contentType: "audio/wav",
+      model,
+      once: true,
+      timeoutMs: PROBE_TIMEOUT_MS,
+    });
+  } catch (err) {
+    if (!(err instanceof VoiceError) || err.code !== "voice_audio_unreadable") {
+      const statusCode = err && typeof err === "object" && "status" in err ? Number(err.status) : 502;
+      throw new VoiceError("voice_probe_failed", statusCode || 502, err instanceof Error ? err.message : "probe failed");
+    }
+  }
+  return { ok: true, app: status.app, model };
+}
+
 function cancelledSpeech() {
   return new VoiceError("voice_cancelled", 499, "speech was superseded");
 }
@@ -99,7 +166,7 @@ export async function speakFromConfig(text, options = {}) {
   const segments = speechSegments(text);
   if (!segments.length) throw new VoiceError("voice_config_invalid", 400, "nothing to speak");
   const model = options.model ?? await pickTtsModelId(await listModels(), config.ttsModel);
-  if (!model) throw new VoiceError("voice_model_unavailable", 503, "no speech model available");
+  if (!model) throw new VoiceError("voice_tts_unavailable", 503, "no speech model available");
   const coordinator = options.coordinator ?? duplex;
   const current = readouts.get(coordinator);
   if (current?.text === text && current.active()) return current.result;

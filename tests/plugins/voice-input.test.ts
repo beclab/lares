@@ -3,7 +3,7 @@ import test from "node:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { classifyFailure, isSttModel, isTtsModel, pickSttModelId, retryable } from "@olares/lares-core/router/stt";
+import { VoiceError, classifyFailure, isSttModel, isTtsModel, pickSttModelId, retryable } from "@olares/lares-core/router/stt";
 import { reduceSpeechEvent } from "@olares/lares-core/voice/speech";
 import { speechScript } from "@olares/lares-core/voice/script";
 import { postTranscribe } from "@olares/lares-core/voice/client";
@@ -123,13 +123,13 @@ test("recognition includes flagged models whose names are not whisper-like", () 
   assert.equal(isTtsModel({ id: "parakeet/nvidia/parakeet-unified-en-0.6b", mode: "audio", supportsStt: true }), false);
 });
 
-test("install requests the uploaded chart for the missing kind", async () => {
+test("install requests the catalog chart for that kind", async () => {
   const { installVoiceChart } = await import(`../../packages/core/voice/install.js?install=${Date.now()}`);
   const calls: string[][] = [];
   const spawnFn = ((_cmd: string, args: string[]) => {
     calls.push(args);
     return {
-      stdout: { on() {} },
+      stdout: { on(_event: string, listener: (chunk: string) => void) { listener('{"status":"accepted"}'); } },
       stderr: { on() {} },
       on(event: string, listener: (code?: number) => void) {
         if (event === "close") listener(0);
@@ -137,8 +137,57 @@ test("install requests the uploaded chart for the missing kind", async () => {
     };
   }) as unknown as typeof import("node:child_process").spawn;
   const installed = await installVoiceChart("tts", { spawnFn });
-  assert.equal(installed.app, "kokoro");
-  assert.deepEqual(calls[0]?.slice(0, 4), ["market", "install", "kokoro", "-s"]);
+  assert.equal(installed.app, "audioqwen3tts06v3");
+  assert.deepEqual(calls[0], [
+    "market", "install", "audioqwen3tts06v3", "-s", "market.test", "--version", "1.0.0", "--compute-mode", "nvidia", "-o", "json",
+  ]);
+});
+
+test("chart phase follows the market row", async () => {
+  const { chartPhase, chartModelId, stopVoiceChart } = await import(
+    `../../packages/core/voice/install.js?phase=${Date.now()}`
+  );
+  assert.equal(chartPhase(null), "absent");
+  assert.equal(chartPhase({ status: "failed", message: "not installed" }), "absent");
+  assert.equal(chartPhase({ state: "downloading" }), "busy");
+  assert.equal(chartPhase({ state: "running" }), "running");
+  assert.equal(chartPhase({ state: "stopped" }), "stopped");
+  assert.equal(chartModelId("stt", ["parakeet/x", "audioqwen3asr06v3/Qwen/Qwen3-ASR-0.6B"]), "audioqwen3asr06v3/Qwen/Qwen3-ASR-0.6B");
+
+  const calls: string[][] = [];
+  const spawnFn = ((_cmd: string, args: string[]) => {
+    calls.push(args);
+    const body = args[1] === "status" ? '{"state":"stopped"}' : '{"status":"success","finalState":"stopped"}';
+    return {
+      stdout: { on(_event: string, listener: (chunk: string) => void) { listener(body); } },
+      stderr: { on() {} },
+      on(event: string, listener: (code?: number) => void) {
+        if (event === "close") listener(0);
+      },
+    };
+  }) as unknown as typeof import("node:child_process").spawn;
+  const stopped = await stopVoiceChart("stt", { spawnFn });
+  assert.equal(stopped.phase, "stopped");
+  assert.deepEqual(calls[0]?.slice(0, 3), ["market", "stop", "audioqwen3asr06v3"]);
+  assert.ok(calls[0]?.includes("--watch"));
+});
+
+test("probe treats an engine answer as connected and a stopped chart as not", async () => {
+  const { probeVoice } = await import(`../../packages/core/voice/service.js?probe=${Date.now()}`);
+  const reached = await probeVoice("stt", {
+    status: async () => ({ app: "audioqwen3asr06v3", phase: "running" }),
+    listModels: async () => [{ id: "audioqwen3asr06v3/Qwen/Qwen3-ASR-0.6B", supportsStt: true }],
+    transcribe: async () => {
+      throw new VoiceError("voice_audio_unreadable", 400, "no speech");
+    },
+  });
+  assert.equal(reached.ok, true);
+  await assert.rejects(
+    () => probeVoice("tts", {
+      status: async () => ({ app: "audioqwen3tts06v3", phase: "stopped" }),
+    }),
+    (err) => err instanceof VoiceError && err.code === "voice_probe_failed",
+  );
 });
 
 test("pickSttModelId honors a listed preference, else the first whisper/stt row", () => {

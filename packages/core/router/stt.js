@@ -175,6 +175,8 @@ async function readTranscript(res) {
  */
 export async function transcribe(take) {
   let model = take.model;
+  const timeoutMs = Number(take.timeoutMs) > 0 ? Number(take.timeoutMs) : REQUEST_TIMEOUT_MS;
+  const retries = take.once ? 0 : RETRY_BACKOFF_MS.length;
   for (let attempt = 0; ; attempt += 1) {
     const fields = { model };
     if (take.language) fields.language = take.language;
@@ -188,7 +190,7 @@ export async function transcribe(take) {
     /** @type {VoiceError} */
     let failure;
     try {
-      const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+      const timeout = AbortSignal.timeout(timeoutMs);
       const signal = take.signal ? AbortSignal.any([take.signal, timeout]) : timeout;
       const res = await fetch(`${routerShimBaseUrl()}/audio/transcriptions`, {
         method: "POST",
@@ -212,7 +214,7 @@ export async function transcribe(take) {
     }
 
     if (take.signal?.aborted) throw new VoiceError("voice_cancelled", 499, "transcription cancelled");
-    if (attempt >= RETRY_BACKOFF_MS.length) throw failure;
+    if (attempt >= retries) throw failure;
     await new Promise((resolve) => setTimeout(resolve, RETRY_BACKOFF_MS[attempt]));
     const refreshed = await resolveSttModel(take.preferred, { refresh: true }).catch(() => null);
     if (refreshed) model = refreshed;

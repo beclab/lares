@@ -10,7 +10,10 @@ import { readConfig } from "@olares/lares-core/voice/config";
 import {
   STT_MAX_AUDIO_BYTES,
   installVoice,
+  probeVoice,
+  resumeVoice,
   saveVoiceConfig,
+  stopVoice,
   captureStart,
   captureStatus,
   captureStop,
@@ -63,6 +66,18 @@ async function handleSetConfig(req, res) {
 async function handleInstall(req, res) {
   const body = await readJsonObject(req);
   const kind = body.kind === "tts" ? "tts" : body.kind === "stt" ? "stt" : "";
+  if (body.op === "stop") {
+    sendJson(res, 200, await stopVoice(kind));
+    return;
+  }
+  if (body.op === "resume") {
+    sendJson(res, 200, await resumeVoice(kind));
+    return;
+  }
+  if (body.op === "probe") {
+    sendJson(res, 200, await probeVoice(kind));
+    return;
+  }
   sendJson(res, 200, await installVoice(kind));
 }
 

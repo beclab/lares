@@ -103,6 +103,7 @@ export function summarizeSession(row) {
     ...(projections.contextBreakdown ? { contextBreakdown: projections.contextBreakdown } : {}),
     ...(projections.goal ? { goal: projections.goal } : {}),
     ...(Array.isArray(projections.todos) ? { todos: projections.todos } : {}),
+    ...(projections.modelSelection ? { modelSelection: projections.modelSelection } : {}),
     ...(Number.isInteger(row?.projections?.asOfSeq) ? { asOfSeq: row.projections.asOfSeq } : {}),
   };
 }

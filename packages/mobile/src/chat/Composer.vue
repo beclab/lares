@@ -4,6 +4,8 @@
       class="lares-composer__card"
       data-composer-card
       :data-hero="hero ? 'true' : 'false'"
+      :data-mode="inputMode"
+      :data-expanded="expanded ? 'true' : 'false'"
       :data-holding="holding ? 'true' : 'false'"
     >
       <div v-if="referenceOpen" ref="referenceMenu" class="lares-composer__menu" role="listbox">
@@ -80,53 +82,53 @@
           </button>
         </figure>
       </div>
-      <textarea
-        ref="input"
-        :value="draft"
-        class="lares-composer__input"
-        rows="1"
-        :placeholder="placeholder"
-        :disabled="sending"
-        @input="onInput"
-        @keydown="onKeydown"
-        @click="onCaretMove"
-        @keyup="onCaretMove"
-        @select="onCaretMove"
-        @contextmenu="onContextMenu"
-      />
-      <p v-if="holdCaption" class="lares-composer__hold">{{ holdCaption }}</p>
-      <div class="lares-composer__bar">
-        <div v-if="!hero" class="lares-composer__pills">
-          <button
-            type="button"
-            class="lares-composer__pill"
-            :disabled="modelBusy"
-            :aria-label="modelAria"
-            @click="$emit('model')"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <rect x="4" y="5" width="16" height="5" rx="1.2" />
-              <rect x="4" y="14" width="16" height="5" rx="1.2" />
+      <div class="lares-composer__line" :data-expanded="expanded ? 'true' : 'false'">
+        <button
+          type="button"
+          class="lares-composer__icon"
+          data-kind="attach"
+          :disabled="attachDisabled"
+          :aria-label="attachLabel"
+          @click="pickFiles"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+        </button>
+        <textarea
+          v-show="inputMode === 'text'"
+          ref="input"
+          :value="draft"
+          class="lares-composer__input"
+          rows="1"
+          :placeholder="placeholder"
+          :disabled="sending"
+          @input="onInput"
+          @keydown="onKeydown"
+          @click="onCaretMove"
+          @keyup="onCaretMove"
+          @select="onCaretMove"
+          @contextmenu="onContextMenu"
+        />
+        <button
+          v-show="inputMode === 'voice'"
+          type="button"
+          class="lares-composer__talk"
+          :data-phase="voicePhase"
+          :disabled="voiceBlocked"
+          :aria-label="voiceLabel"
+          @pointerdown="onVoiceDown"
+          @touchstart.prevent="onVoiceTouchStart"
+          @contextmenu.prevent
+        >
+          <span v-if="voicePhase === 'preparing' || voicePhase === 'transcribing'" class="lares-composer__talk-status">
+            <svg class="lares-composer__spin" viewBox="0 0 16 16" aria-hidden="true">
+              <circle cx="8" cy="8" r="6" />
             </svg>
-            <span>{{ modelLabel }}</span>
-          </button>
-          <button
-            v-if="!effortDisabled"
-            type="button"
-            class="lares-composer__pill"
-            :disabled="modelBusy"
-            :aria-label="effortAria"
-            @click="$emit('effort')"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <circle class="lares-composer__nucleus" cx="12" cy="12" r="2.5" />
-              <ellipse cx="12" cy="12" rx="9.2" ry="3.8" />
-              <ellipse cx="12" cy="12" rx="9.2" ry="3.8" transform="rotate(60 12 12)" />
-              <ellipse cx="12" cy="12" rx="9.2" ry="3.8" transform="rotate(-60 12 12)" />
-            </svg>
-            <span>{{ effortLabel }}</span>
-          </button>
-        </div>
+            <span>{{ talkLabel }}</span>
+          </span>
+          <span v-else>{{ talkLabel }}</span>
+        </button>
         <div class="lares-composer__tools">
           <input
             ref="picker"
@@ -136,38 +138,22 @@
             @change="onFiles"
           />
           <button
-            type="button"
-            class="lares-composer__icon"
-            :disabled="attachDisabled"
-            :aria-label="attachLabel"
-            @click="pickFiles"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 5v14M5 12h14" />
-            </svg>
-          </button>
-          <button
+            v-if="inputMode === 'text'"
             type="button"
             class="lares-composer__icon"
             data-kind="voice"
-            :data-phase="voicePhase"
-            :disabled="voiceBlocked"
-            :aria-label="voiceLabel"
-            @pointerdown="onVoiceDown"
-            @touchstart.prevent="onVoiceTouchStart"
-            @contextmenu.prevent
+            :disabled="sending"
+            :aria-label="t('composer.voice')"
+            @click="setMode('voice')"
           >
-            <span v-if="voicePhase === 'recording'" class="lares-composer__live">{{ elapsed }}</span>
-            <svg v-else-if="voicePhase === 'preparing' || voicePhase === 'transcribing'" class="lares-composer__spin" viewBox="0 0 16 16" aria-hidden="true">
-              <circle cx="8" cy="8" r="6" />
-            </svg>
-            <svg v-else class="lares-composer__wave" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M6.5 9v6" />
-              <path d="M12 4.5v15" />
-              <path d="M17.5 9v6" />
+            <svg class="lares-composer__wave" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M5 8v8" />
+              <path d="M12 5v14" />
+              <path d="M19 8v8" />
             </svg>
           </button>
           <button
+            v-if="expanded"
             type="submit"
             class="lares-composer__icon"
             data-kind="send"
@@ -175,7 +161,21 @@
             :aria-label="t('chat.send')"
           >
             <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 19V7M6.5 12.5 12 7l5.5 5.5" />
+              <path d="M12 19V5M5 12.5 12 5l7 7.5" />
+            </svg>
+          </button>
+          <button
+            v-if="inputMode === 'voice'"
+            type="button"
+            class="lares-composer__icon"
+            data-kind="keyboard"
+            :disabled="voiceBusy"
+            :aria-label="t('composer.keyboard')"
+            @click="setMode('text')"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="3.5" y="6" width="17" height="12" rx="2" />
+              <path d="M7 10h2M11 10h2M15 10h2M8 14h8" />
             </svg>
           </button>
         </div>
@@ -206,10 +206,6 @@ export default {
     draft: { type: String, default: "" },
     sending: { type: Boolean, default: false },
     canSend: { type: Boolean, default: false },
-    modelLabel: { type: String, default: "" },
-    modelBusy: { type: Boolean, default: false },
-    effortLabel: { type: String, default: "" },
-    effortDisabled: { type: Boolean, default: false },
     attachPending: { type: Boolean, default: false },
     attachDisabled: { type: Boolean, default: false },
     voicePhase: { type: String, default: "idle" },
@@ -223,10 +219,11 @@ export default {
     commands: { type: Array, default: null },
     commandsError: { type: String, default: "" },
     hero: { type: Boolean, default: false },
+    inputMode: { type: String, default: "text" },
     t: { type: Function, required: true },
   },
   emits: [
-    "update:draft", "send", "model", "effort", "files", "voice", "hold-start", "hold-end",
+    "update:draft", "update:inputMode", "send", "files", "voice", "hold-start", "hold-end",
     "open-commands", "open-references", "pick-command", "remove-image",
   ],
   data() {
@@ -245,17 +242,17 @@ export default {
     elapsed() {
       return formatElapsed(this.voiceElapsed);
     },
-    holdCaption() {
+    talkLabel() {
       if (this.voicePhase === "preparing") return this.t("composer.opening");
       if (this.voicePhase === "recording") return `${this.t("composer.hold")} · ${this.elapsed}`;
+      if (this.voicePhase === "transcribing") return this.t("mic.transcribing");
       if (this.holding) return this.t("composer.hold");
-      return "";
+      return this.t("composer.holdToTalk");
     },
-    modelAria() {
-      return this.modelLabel ? this.t("model.switchAria", { label: this.modelLabel }) : this.t("model.select");
-    },
-    effortAria() {
-      return this.t("reasoning.switchAria", { label: this.effortLabel || this.t("reasoning.default") });
+    voiceBusy() {
+      return this.voicePhase === "preparing"
+        || this.voicePhase === "recording"
+        || this.voicePhase === "transcribing";
     },
     attachLabel() {
       return this.attachPending ? this.t("button.uploading", { count: 1 }) : this.t("composer.attach");
@@ -274,6 +271,9 @@ export default {
     voiceBlocked() {
       return this.voicePhase === "transcribing" || this.sending;
     },
+    expanded() {
+      return this.inputMode === "text" && (this.draft.trim().length > 0 || this.draftImages.length > 0);
+    },
     referenceMenuRows() {
       return referenceRows(this.references, this.t);
     },
@@ -285,8 +285,9 @@ export default {
     },
   },
   watch: {
-    draft() {
+    draft(value) {
       this.autosize();
+      if (value && this.inputMode === "voice" && !this.voiceBusy) this.setMode("text");
     },
     overlayPointerActive(active) {
       if (active) window.addEventListener("pointerdown", this.onTokenPointer, true);
@@ -381,6 +382,18 @@ export default {
     },
     imageStatus(image) {
       return draftImageStatus(image);
+    },
+    setMode(mode) {
+      if (mode === this.inputMode) return;
+      if (mode === "text" && this.voiceBusy) return;
+      if (mode === "voice") {
+        this.closeReferences();
+        this.commandsOpen = false;
+        this.commandTyped = false;
+        this.$refs.input?.blur();
+      }
+      this.$emit("update:inputMode", mode);
+      if (mode === "text") this.$nextTick(() => this.focus());
     },
     onSend() {
       if (this.referenceOpen || this.commandsOpen) return;
@@ -523,11 +536,12 @@ export default {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  border: 1px solid var(--q-input-stroke);
-  border-radius: 24px;
-  padding: 12px 14px 10px;
+  gap: 8px;
+  border: 1px solid var(--q-separator);
+  border-radius: 999px;
+  padding: 10px 14px;
   background: var(--q-background-1);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 6%);
 }
 
 .lares-composer__menu {
@@ -636,22 +650,14 @@ export default {
   white-space: nowrap;
 }
 
-.lares-composer__card[data-hero="true"] {
-  gap: 4px;
-  border-radius: 20px;
-  padding: 10px 14px 8px;
-  background: var(--q-background-2);
+.lares-composer__card[data-expanded="true"] {
+  border-radius: 24px;
+  padding: 16px 14px 12px;
 }
 
-.lares-composer__card[data-hero="true"] .lares-composer__input {
-  min-height: 44px;
-  padding: 0;
-  font-size: 16px;
-  line-height: 1.45;
-}
-
-.lares-composer__card[data-hero="true"] .lares-composer__bar {
-  min-height: 28px;
+.lares-composer__card[data-holding="true"] {
+  border-color: var(--q-blue-default);
+  background: var(--q-blue-alpha);
 }
 
 .lares-composer__attachments {
@@ -728,90 +734,99 @@ export default {
   stroke-linecap: round;
 }
 
-.lares-composer__input {
+.lares-composer__line {
+  display: flex;
   width: 100%;
-  min-height: 28px;
+  align-items: center;
+  gap: 12px;
+}
+
+.lares-composer__line[data-expanded="true"] {
+  flex-wrap: wrap;
+  row-gap: 14px;
+}
+
+.lares-composer__line[data-expanded="true"] .lares-composer__input {
+  order: -1;
+  flex: 1 0 100%;
+  min-height: 26px;
+  padding: 0;
+}
+
+.lares-composer__input,
+.lares-composer__talk {
+  min-width: 0;
+  min-height: 36px;
+  flex: 1;
+  border: 0;
+  background: transparent;
+  font-size: 16px;
+  line-height: 22px;
+}
+
+.lares-composer__input {
   max-height: 176px;
   resize: none;
   overflow-y: auto;
-  border: 0;
-  padding: 2px 2px 4px;
-  background: transparent;
-  line-height: 1.45;
+  padding: 7px 0;
+  color: var(--q-ink-1);
+}
+
+.lares-composer__input::placeholder {
+  color: var(--q-ink-3);
 }
 
 .lares-composer__input:focus {
   outline: none;
 }
 
-.lares-composer__hold {
-  margin: 0;
+.lares-composer__talk {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 9px 4px;
+  color: var(--q-ink-1);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 22px;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.lares-composer__talk > * {
+  pointer-events: none;
+}
+
+.lares-composer__talk[data-phase="recording"],
+.lares-composer__card[data-holding="true"] .lares-composer__talk {
   color: var(--q-blue-default);
-  font-size: 15px;
-  line-height: 20px;
 }
 
-.lares-composer__bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 32px;
-}
-
-.lares-composer__pills {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  min-width: 0;
-}
-
-.lares-composer__pill {
+.lares-composer__talk-status {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  box-sizing: border-box;
-  width: 98px;
-  flex: 0 0 98px;
-  height: 32px;
-  border: 0;
-  border-radius: 999px;
-  padding: 0 10px 0 8px;
-  background: var(--q-background-3);
-  color: var(--q-ink-2);
-  font-size: 15px;
-  font-weight: 500;
-  line-height: 18px;
-  white-space: nowrap;
 }
 
-.lares-composer__pill span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.lares-composer__pill svg {
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.lares-composer__pill svg .lares-composer__nucleus {
-  fill: currentColor;
+.lares-composer__talk .lares-composer__spin {
+  width: 16px;
+  height: 16px;
+  flex: none;
 }
 
 .lares-composer__tools {
   display: flex;
   align-items: center;
-  gap: 16px;
-  margin-left: auto;
   flex-shrink: 0;
+  gap: 12px;
+}
+
+.lares-composer__line[data-expanded="true"] .lares-composer__tools {
+  margin-left: auto;
 }
 
 .lares-composer__picker {
@@ -822,9 +837,10 @@ export default {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: 1.5px solid currentColor;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  border: 1px solid var(--q-ink-3);
   border-radius: 999px;
   padding: 0;
   background: transparent;
@@ -835,48 +851,39 @@ export default {
   background: var(--q-btn-bg-pressed);
 }
 
-.lares-composer__icon[data-kind="send"],
-.lares-composer__icon[data-kind="voice"] {
+.lares-composer__icon[data-kind="attach"],
+.lares-composer__icon[data-kind="voice"],
+.lares-composer__icon[data-kind="keyboard"] {
   border-color: transparent;
-  color: var(--q-ink-on-brand);
+  background: var(--q-background-3);
+  color: var(--q-ink-1);
+}
+
+.lares-composer__icon[data-kind="attach"]:active,
+.lares-composer__icon[data-kind="voice"]:active,
+.lares-composer__icon[data-kind="keyboard"]:active {
+  background: var(--q-background-selected);
 }
 
 .lares-composer__icon[data-kind="send"] {
-  background: var(--q-blue-default);
-}
-
-.lares-composer__icon[data-kind="voice"] {
+  border-color: transparent;
   background: var(--q-ink-1);
-  touch-action: none;
-  user-select: none;
-  -webkit-user-select: none;
-  -webkit-touch-callout: none;
+  color: var(--q-background-1);
 }
 
-/* The glyph is swapped per phase; a touch that started on a removed node never delivers touchend. */
-.lares-composer__icon[data-kind="voice"] > * {
-  pointer-events: none;
+.lares-composer__icon[data-kind="send"]:disabled {
+  opacity: 0.4;
 }
 
 .lares-composer__icon svg {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
+  flex: none;
   fill: none;
   stroke: currentColor;
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
-}
-
-.lares-composer__icon svg.lares-composer__wave {
-  width: 18px;
-  height: 18px;
-  stroke-width: 2.75;
-}
-
-.lares-composer__live {
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
 }
 
 .lares-composer__spin {

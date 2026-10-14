@@ -3,6 +3,7 @@ export {
   getJson,
   installVoiceChart,
   loadVoiceSettings,
+  voiceChartAction,
   postSpeak,
   rememberedVoiceSettings,
   saveVoiceSettings,

@@ -16,6 +16,7 @@ test("rpc envelope uses the Host namespace/method path and args object", () => {
   assert.equal(rpcPath("session.list"), "/api/session/list");
   assert.deepEqual(hostCall("session.list", {}).args, { _request: {} });
   assert.equal(rpcPath("session.history"), "/api/session/page");
+  assert.deepEqual(hostCall("session.modelCatalog"), { endpoint: "session/modelCatalog", args: {} });
   assert.deepEqual(hostCall("session.history", { sessionId: "s1", throughSeq: 4 }).args, {
     request: { address: { kind: "session", sessionId: "s1" }, throughSeq: 4 },
   });
@@ -361,6 +362,18 @@ test("navigableSessions drops subagent rows, keeps forks, and summarizeSession p
       projections: { values: { title: "gpu check" } },
     }).title,
     "gpu check",
+  );
+  assert.deepEqual(
+    summarizeSession({
+      sessionId: "s4",
+      updatedAt: 4,
+      projections: {
+        values: {
+          modelSelection: { lastUsed: null, next: { provider: "olares-router", model: "qwen", reasoningEffort: "high" } },
+        },
+      },
+    }).modelSelection,
+    { lastUsed: null, next: { provider: "olares-router", model: "qwen", reasoningEffort: "high" } },
   );
 });
 

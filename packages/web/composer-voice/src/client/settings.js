@@ -8,11 +8,10 @@ import {
 } from "../../../shared/client/settings-controls.js";
 import { watchCatalogRevision } from "../../../shared/client/catalog-events.js";
 import { useLatest, useMountedRef } from "../../../shared/client/react-lifecycle.js";
-import { installVoiceChart, loadVoiceSettings, rememberedVoiceSettings, saveVoiceSettings } from "./api.js";
+import { installVoiceChart, loadVoiceSettings, rememberedVoiceSettings, saveVoiceSettings, voiceChartAction } from "./api.js";
 import {
   EMPTY_VOICE_CONFIG,
   selectedVoice,
-  voiceChoiceItems,
   voiceLanguageItems,
   voiceMenuValue,
   voiceStatusReady,
@@ -48,6 +47,7 @@ export function VoiceSettings() {
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [installing, setInstalling] = useState(null);
+  const [acting, setActing] = useState(null);
   const [notice, setNotice] = useState(null);
   const mounted = useMountedRef();
   const translate = useLatest(t);
@@ -117,16 +117,45 @@ export function VoiceSettings() {
     setNotice(null);
     try {
       const next = await installVoiceChart(kind);
-      if (mounted.current) {
-        setView(next);
-        setNotice({ kind: "info", text: translate.current("settings.installStarted") });
-      }
+      if (mounted.current) setView(next);
     } catch {
       if (mounted.current) setNotice({ kind: "error", text: translate.current("settings.installFailed") });
     } finally {
       if (mounted.current) setInstalling(null);
     }
   }, []);
+
+  const act = useCallback(async (kind, op) => {
+    setActing({ kind, op });
+    setNotice(null);
+    try {
+      const next = await voiceChartAction(kind, op);
+      if (!mounted.current) return;
+      setView(next);
+      if (op === "probe") setNotice({ kind: "info", text: translate.current("settings.probeOk") });
+    } catch {
+      if (!mounted.current) return;
+      const key = op === "probe"
+        ? "settings.probeFailed"
+        : op === "stop"
+          ? "settings.stopFailed"
+          : "settings.resumeFailed";
+      setNotice({ kind: "error", text: translate.current(key) });
+    } finally {
+      if (mounted.current) setActing(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    const charts = view?.charts;
+    if (!charts || (charts.stt?.phase !== "busy" && charts.tts?.phase !== "busy")) return undefined;
+    const timer = setInterval(() => {
+      loadVoiceSettings({ force: true }).then((next) => {
+        if (mounted.current) setView(next);
+      }).catch(() => {});
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [view?.charts?.stt?.phase, view?.charts?.tts?.phase]);
 
   const pinned = React.useRef("");
   useEffect(() => {
@@ -152,33 +181,45 @@ export function VoiceSettings() {
     );
   }
 
-  const { config, status, sttModels, ttsModels } = view;
-  const stt = sttModels ?? [];
-  const tts = ttsModels ?? [];
-  const sttValue = selectedVoice(config.model, stt);
-  const ttsValue = selectedVoice(config.ttsModel, tts);
+  const { config, status } = view;
   const ready = voiceStatusReady(status);
-  const busy = saving || refreshing || installing !== null;
+  const busy = saving || refreshing || installing !== null || acting !== null;
 
-  function modelControl(kind, ids, value) {
-    if (!ids.length) {
-      return h(
-        Button,
-        {
+  function modelControl(kind) {
+    const phase = view.charts?.[kind]?.phase ?? "absent";
+    if (phase === "running" || phase === "stopped") {
+      const probing = acting?.kind === kind && acting.op === "probe";
+      const power = phase === "stopped" ? "resume" : "stop";
+      const powering = acting?.kind === kind && acting.op === power;
+      return [
+        h(Button, {
+          key: `${kind}-probe`,
           variant: "outline",
           size: "sm",
           disabled: busy,
-          onClick: () => install(kind),
-        },
-        installing === kind ? t("settings.installing") : t("settings.install"),
-      );
+          onClick: () => act(kind, "probe"),
+        }, probing ? t("settings.probing") : t("settings.probe")),
+        h(Button, {
+          key: `${kind}-power`,
+          variant: "outline",
+          size: "sm",
+          disabled: busy,
+          onClick: () => act(kind, power),
+        }, powering
+          ? t(power === "resume" ? "settings.resuming" : "settings.stopping")
+          : t(power === "resume" ? "settings.resume" : "settings.stop")),
+      ];
     }
-    return h(SettingsSelector, {
-      value,
-      items: voiceChoiceItems(ids),
-      disabled: busy,
-      onSelect: (id) => patch(kind === "stt" ? { model: id } : { ttsModel: id }),
-    });
+    return h(
+      Button,
+      {
+        variant: "outline",
+        size: "sm",
+        disabled: busy || phase === "busy",
+        onClick: () => install(kind),
+      },
+      installing === kind || phase === "busy" ? t("settings.installing") : t("settings.install"),
+    );
   }
 
   return h(
@@ -205,11 +246,6 @@ export function VoiceSettings() {
       "div",
       { className: "lares-voice-rows" },
       Row(
-        t("settings.stt.title"),
-        t("settings.stt.hint"),
-        modelControl("stt", stt, sttValue),
-      ),
-      Row(
         t("settings.language.title"),
         t("settings.language.hint"),
         h(SettingsSelector, {
@@ -218,6 +254,11 @@ export function VoiceSettings() {
           disabled: busy,
           onSelect: (id) => patch({ language: voiceValueFromMenu(id) }),
         }),
+      ),
+      Row(
+        t("settings.stt.title"),
+        t("settings.stt.hint"),
+        modelControl("stt"),
       ),
       Row(
         t("settings.tts.title"),
@@ -231,7 +272,7 @@ export function VoiceSettings() {
             label: t("settings.speak.label"),
             onChange: (next) => patch({ speak: next }),
           }),
-          modelControl("tts", tts, ttsValue),
+          modelControl("tts"),
         ),
       ),
       h(BluetoothDevices, { t }),

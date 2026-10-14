@@ -45,6 +45,8 @@ export function hostCall(method, payload = {}) {
     };
   }
   if (endpoint === "session/list") return { endpoint, args: { _request: body } };
+  // modelCatalog takes no parameter; a `request` object fails the strict codec.
+  if (endpoint === "session/modelCatalog") return { endpoint, args: {} };
   if (endpoint === "$events/result") return { endpoint, args: body };
   if (endpoint === "session/prompt") {
     return {

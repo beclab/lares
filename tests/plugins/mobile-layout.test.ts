@@ -33,18 +33,51 @@ test("LaresApp routes devices to separate shells while mobile keeps its surfaces
   }
 });
 
-test("mobile new session uses a centered hero with workspace and model pickers", () => {
+test("mobile new session uses a centered hero; model and effort live on the top bar", () => {
   const mobile = readFileSync(new URL("../../packages/mobile/src/mobile/MobileShell.vue", import.meta.url), "utf8");
   const hero = readFileSync(new URL("../../packages/mobile/src/mobile/MobileNewSession.vue", import.meta.url), "utf8");
+  const bar = readFileSync(new URL("../../packages/mobile/src/chat/ChatBar.vue", import.meta.url), "utf8");
   const composer = readFileSync(new URL("../../packages/mobile/src/chat/Composer.vue", import.meta.url), "utf8");
 
   assert.match(mobile, /newSessionHero/);
   assert.match(mobile, /<LaresMobileNewSession/);
-  assert.match(mobile, /\$emit\("pick-workspace"/);
-  assert.match(hero, /@click="\$emit\('workspace'\)"/);
-  assert.match(hero, /@click="\$emit\('model'\)"/);
+  assert.doesNotMatch(mobile, /\$emit\("pick-workspace"/);
+  assert.doesNotMatch(hero, /\$emit\('workspace'\)/);
+  assert.doesNotMatch(hero, /\$emit\('model'\)/);
+  assert.match(bar, /\$emit\('history'\)/);
+  assert.match(bar, /\$emit\('model'\)/);
+  assert.doesNotMatch(bar, /\$emit\('effort'\)/);
+  assert.match(bar, /\$emit\('speak'\)/);
+  assert.match(bar, /data-speak/);
+  assert.match(mobile, /state\.speakNotice/);
+  assert.doesNotMatch(bar, /\$emit\('create'\)/);
+  assert.match(hero, /mobile-new-session__brand[\s\S]*flex:\s*1/);
+  assert.match(hero, /safe-area-inset-bottom/);
+  assert.match(mobile, /@model="\$emit\('open-model'\)"/);
+  assert.match(mobile, /@effort="\$emit\('open-model'\)"/);
+  assert.match(mobile, /state\.effortRows/);
+  assert.match(mobile, /reasoning\.title/);
+  const app = readFileSync(new URL("../../packages/mobile/src/App.vue", import.meta.url), "utf8");
+  assert.match(app, /voiceSpeak: false/);
+  assert.match(app, /speakNotice: ""/);
+  assert.match(app, /speakProblemText/);
+  assert.match(app, /runtime\.modelCatalog\(\)/);
+  assert.match(app, /selectModel\(modelSwitchSelection/);
+  assert.match(app, /selectModel\(effortSwitchSelection/);
+  assert.doesNotMatch(app, /settings\.models\(/);
+  assert.doesNotMatch(app, /lares\.mobile\.effort/);
+  assert.doesNotMatch(composer, /\$emit\('model'\)/);
+  assert.doesNotMatch(composer, /内容由/);
   assert.match(composer, /chat\.placeholderNewSession/);
   assert.match(composer, /data-hero/);
+  assert.match(composer, /data-kind="attach"/);
+  assert.match(composer, /data-mode="inputMode"/);
+  assert.match(composer, /composer\.holdToTalk/);
+  assert.match(composer, /data-kind="keyboard"/);
+  assert.match(composer, /setMode\('voice'\)/);
+  assert.match(composer, /data-expanded/);
+  assert.match(composer, /v-if="expanded"/);
+  assert.doesNotMatch(composer, /lares-composer__pills/);
 });
 
 test("mobile history groups sessions by workspace and exposes session actions", () => {
@@ -52,7 +85,7 @@ test("mobile history groups sessions by workspace and exposes session actions", 
   const mobile = readFileSync(new URL("../../packages/mobile/src/mobile/MobileShell.vue", import.meta.url), "utf8");
   const app = readFileSync(new URL("../../packages/mobile/src/App.vue", import.meta.url), "utf8");
 
-  assert.match(history, /groupWorkspaceSessions/);
+  assert.match(history, /lares-history__head[\s\S]*\$emit\('create', null\)/);
   assert.doesNotMatch(history, /groupSessionsByRecency/);
   assert.match(history, /browse-workspaces/);
   assert.match(history, /desktop\.searchSessions/);

@@ -1,6 +1,6 @@
 {
   "name": "@olares/lares-core",
-  "version": "0.15.8",
+  "version": "0.15.9",
   "description": "Lares 共享业务核心：Router、workspace、文件/媒体、Olares 身份（无 UI、无平台壳）",
   "type": "module",
   "repository": {
@@ -119,6 +119,7 @@
     "./voice/duplex": "./voice/duplex.js",
     "./voice/input": "./voice/input.js",
     "./voice/playback": "./voice/playback.js",
+    "./voice/problem": "./voice/problem.js",
     "./voice/capture": "./voice/capture.js",
     "./voice/install": "./voice/install.js",
     "./search/config": "./search/config.js",
@@ -144,6 +145,7 @@
     "./larepass/tool-row": "./larepass/tool-row.js",
     "./larepass/stage-copy": "./larepass/stage-copy.js",
     "./larepass/transcript": "./larepass/transcript.js",
+    "./larepass/process-fold": "./larepass/process-fold.js",
     "./larepass/chat": "./larepass/chat.js",
     "./larepass/mux": "./larepass/mux.js",
     "./larepass/session-cache": "./larepass/session-cache.js",

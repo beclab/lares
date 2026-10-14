@@ -78,7 +78,6 @@
       @move-session="moveSession"
       @rename-session="renameSession"
       @archive-session="archiveSession"
-      @pick-workspace="pickWorkspace"
       @retry="retry"
       @open-file="openFile"
       @answer="answerQuestion"
@@ -99,6 +98,7 @@
       @open-commands="loadCommands"
       @open-references="loadReferences"
       @pick-command="pickCommand"
+      @toggle-speak="toggleSpeak"
     />
   </div>
 </template>
@@ -114,6 +114,7 @@ import { createReplySpeaker } from "@olares/lares-core/voice/speech";
 import { wavBlob } from "@olares/lares-core/voice/client";
 import { captureSource } from "@olares/lares-core/voice/input";
 import { browserPlays } from "@olares/lares-core/voice/playback";
+import { speakProblemText, speakToggleNotice } from "@olares/lares-core/voice/problem";
 import { appendDraftMentions } from "@olares/lares-core/files/mention";
 import { FileIntake, partitionDocumentsBySize, splitComposerFiles } from "@olares/lares-core/files/intake";
 import {
@@ -123,7 +124,17 @@ import {
   draftImagesUploading,
 } from "@olares/lares-core/files/draft-images";
 import { DEFAULT_MAX_UPLOAD_BYTES } from "@olares/lares-core/files/limits";
-import { groupModelsByProvider, effortMenuRows, reasoningOfModel, currentEffortId, selectionKey } from "@olares/lares-core/router/session-model";
+import {
+  groupModelsByProvider,
+  effortMenuRows,
+  reasoningOfModel,
+  currentEffortId,
+  selectionKey,
+  sessionModelSelection,
+  composerModelsFromCatalog,
+  modelSwitchSelection,
+  effortSwitchSelection,
+} from "@olares/lares-core/router/session-model";
 import { messageFromCode } from "@olares/lares-core/i18n/t";
 import { parseAskUserQuestions, singleSelectAnswer } from "@olares/lares-core/larepass/questions";
 import { applyCommand } from "@olares/lares-core/larepass/commands";
@@ -178,7 +189,7 @@ export default {
       stopping: false,
       starting: false,
       hostGen: 0,
-      modelGen: 0,
+      modelCatalogGen: 0,
       running: false,
       runningSince: 0,
       sessionId: "",
@@ -200,18 +211,20 @@ export default {
       sessions: [],
       sessionsReady: false,
       historyLoading: false,
-      models: null,
+      modelCatalog: null,
       modelError: "",
       modelPending: "",
       modelSheet: false,
       effortSheet: false,
-      effortByModel: {},
       upload: { pending: 0, failures: [] },
       draftImages: [],
       voicePhase: "idle",
       voiceElapsed: 0,
       voiceError: "",
       voiceLanguage: "",
+      voiceSpeak: false,
+      speakBusy: false,
+      speakNotice: "",
       intakeUnsub: null,
       question: null,
       questionBusy: false,
@@ -350,6 +363,9 @@ export default {
         queueBusy: this.queueBusy,
         busyEnter: this.busyEnter,
         directory: this.directory,
+        voiceSpeak: this.voiceSpeak,
+        speakBusy: this.speakBusy,
+        speakNotice: this.speakNotice,
       };
     },
     unseen() {
@@ -399,18 +415,21 @@ export default {
     modelLabel() {
       return this.currentListedModel?.name || this.models?.default?.model || this.t("model.select");
     },
+    liveModelSelection() {
+      const row = this.sessions.find((item) => item.sessionId === this.sessionId);
+      return row?.modelSelection ?? null;
+    },
+    models() {
+      return composerModelsFromCatalog(
+        this.modelCatalog,
+        sessionModelSelection(this.liveModelSelection, this.modelCatalog?.default),
+      );
+    },
     reasoning() {
       return reasoningOfModel(this.currentListedModel);
     },
     effortId() {
-      if (this.chatDevice === "desktop") {
-        return currentEffortId(this.models?.default, this.reasoning);
-      }
-      if (!(this.modelCurrent in this.effortByModel)) {
-        return currentEffortId(this.models?.default, this.reasoning);
-      }
-      const stored = this.effortByModel[this.modelCurrent];
-      return stored === "" ? undefined : stored;
+      return currentEffortId(this.models?.default, this.reasoning);
     },
     effortLabel() {
       return this.effortName({ id: this.effortId, name: this.effortId });
@@ -473,7 +492,7 @@ export default {
       return this.models?.default ? selectionKey(this.models.default) : "";
     },
     modelBusy() {
-      return Boolean(this.modelPending) || (this.modelSheet && !this.models);
+      return Boolean(this.modelPending) || (this.modelSheet && !this.modelCatalog);
     },
     modelBlocked() {
       return this.chatDevice === "desktop" && this.models?.routable === false;
@@ -503,7 +522,6 @@ export default {
     this.intake = new FileIntake((file, sessionId, options) => this.runtime.upload(file, options, sessionId));
     this.imageUploadControllers = new Map();
     this.player = createAnswerPlayer();
-    this.voiceSpeak = false;
     this.replySpeaker = createReplySpeaker();
     this.speakGen = 0;
     this.voiceCap = createVoiceCapture({
@@ -527,12 +545,6 @@ export default {
     });
     this.bindIntake(this.sessionId);
     this.bindRuntime();
-    try {
-      const raw = JSON.parse(localStorage.getItem("lares.mobile.effort") || "{}");
-      if (raw && typeof raw === "object") this.effortByModel = raw;
-    } catch {
-      this.effortByModel = {};
-    }
     try {
       this.seen = readSeen(JSON.parse(localStorage.getItem(SEEN_STORAGE_KEY) || "null"));
     } catch {
@@ -651,9 +663,6 @@ export default {
       if (!this.question) this.questionBusy = false;
       this.approval = snap.approval || null;
       if (!this.approval) this.approvalBusy = false;
-      if (sessionChanged && this.chatDevice === "desktop") {
-        void this.loadSessionModels(snap.sessionId);
-      }
       if (this.pendingUser && snap.items.some((row) => row.type === "user" && row.text === this.pendingUser)) {
         this.pendingUser = "";
       }
@@ -942,7 +951,7 @@ export default {
       this.pendingUser = "";
       this.failed = "";
       this.error = "";
-      this.models = null;
+      this.modelCatalog = null;
       this.modelError = "";
       this.modelPending = "";
       this.modelSheet = false;
@@ -995,60 +1004,36 @@ export default {
     },
     async loadComposerMeta() {
       const settings = this.runtime.settings;
-      if (!settings) return;
-      if (this.chatDevice === "desktop") {
-        await Promise.all([
-          this.loadSessionModels(this.sessionId),
-          settings.conversation().then((section) => {
-            this.busyEnter = section.busyEnter;
-          }).catch(() => {
-            this.busyEnter = DEFAULT_BUSY_ENTER;
-          }),
-        ]);
-      } else {
-        try {
-          this.models = await settings.models();
-          this.modelError = "";
-        } catch (err) {
-          this.modelError = err instanceof Error ? err.message : String(err);
-        }
+      const jobs = [this.loadModelCatalog()];
+      if (settings && this.chatDevice === "desktop") {
+        jobs.push(settings.conversation().then((section) => {
+          this.busyEnter = section.busyEnter;
+        }).catch(() => {
+          this.busyEnter = DEFAULT_BUSY_ENTER;
+        }));
       }
-      try {
-        const voice = await settings.voice();
-        this.voiceLanguage = voice.config?.language || "";
-        this.voiceSpeak = voice.config?.speak === true;
-      } catch {
-        this.voiceLanguage = "";
-        this.voiceSpeak = false;
+      if (settings) {
+        jobs.push(settings.voice().then((voice) => {
+          this.voiceLanguage = voice.config?.language || "";
+          this.voiceSpeak = voice.config?.speak === true;
+        }).catch(() => {
+          this.voiceLanguage = "";
+          this.voiceSpeak = false;
+        }));
       }
+      await Promise.all(jobs);
     },
-    async loadSessionModels(sessionId) {
-      const gen = ++this.modelGen;
-      if (!sessionId) {
-        this.models = null;
-        return;
-      }
-      this.modelError = "";
-      const loaded = await this.runtime.sessionModels(sessionId);
-      if (gen !== this.modelGen || sessionId !== this.sessionId) return;
+    async loadModelCatalog() {
+      const gen = ++this.modelCatalogGen;
+      const loaded = await this.runtime.modelCatalog();
+      if (gen !== this.modelCatalogGen) return;
       if (!loaded.ok) {
-        this.models = null;
+        this.modelCatalog = null;
         this.modelError = loaded.error?.message || loaded.error?.code || "models";
         return;
       }
-      const value = loaded.value ?? {};
-      this.models = {
-        default: value.current,
-        routable: value.routable !== false,
-        failures: value.failures ?? [],
-        models: (value.groups ?? []).flatMap((group) => (
-          (group.models ?? []).map((model) => ({
-            ...model,
-            provider: group.id,
-            providerName: group.name || group.id,
-          }))
-        )),
-      };
+      this.modelCatalog = loaded.value ?? null;
+      this.modelError = "";
     },
     openEffortSheet() {
       if (this.effortDisabled) return;
@@ -1059,71 +1044,34 @@ export default {
       const text = this.t(`effort.${row.id}`);
       return text === `effort.${row.id}` ? (row.name || row.id) : text;
     },
-    persistEffort() {
-      try {
-        localStorage.setItem("lares.mobile.effort", JSON.stringify(this.effortByModel));
-      } catch {
-        // storage may be blocked
-      }
-    },
     async chooseEffort(id) {
-      this.effortSheet = false;
-      if (!this.modelCurrent) return;
-      if (this.chatDevice === "desktop") {
-        if (id === this.effortId || this.modelBusy) return;
-        this.modelPending = `${this.modelCurrent}\u0000${id ?? ""}`;
-        const current = this.models?.default;
-        try {
-          const selected = await this.runtime.selectModel({
-            provider: current.provider,
-            model: current.model,
-            ...(id === undefined ? {} : { reasoningEffort: id }),
-          });
-          if (!selected.ok) {
-            this.modelError = selected.error?.message || selected.error?.code || "model";
-            return;
-          }
-          this.models = { ...this.models, default: selected.value?.selected ?? current };
-        } finally {
-          this.modelPending = "";
+      const current = this.models?.default;
+      if (!current || id === this.effortId || this.modelBusy) return;
+      if (this.chatDevice === "desktop") this.effortSheet = false;
+      this.modelPending = `${this.modelCurrent}\u0000${id ?? ""}`;
+      this.modelError = "";
+      try {
+        const selected = await this.runtime.selectModel(effortSwitchSelection(current, id));
+        if (!selected.ok) {
+          this.modelError = selected.error?.message || selected.error?.code || "model";
         }
-        return;
+      } finally {
+        this.modelPending = "";
       }
-      this.effortByModel = { ...this.effortByModel, [this.modelCurrent]: id ?? "" };
-      this.persistEffort();
     },
     openModelSheet() {
       this.modelSheet = true;
-      if (!this.models) void this.loadComposerMeta();
+      if (!this.modelCatalog) void this.loadModelCatalog();
     },
     async chooseModel(model) {
       const key = this.modelKey(model);
-      if (key === this.modelCurrent || this.modelBusy) {
-        this.modelSheet = false;
-        return;
-      }
-      this.modelSheet = false;
+      if (key === this.modelCurrent || this.modelBusy) return;
+      if (this.chatDevice === "desktop") this.modelSheet = false;
       this.modelPending = key;
       this.modelError = "";
       try {
-        if (this.chatDevice === "desktop") {
-          const reasoning = reasoningOfModel(model);
-          const selection = {
-            provider: model.provider,
-            model: model.id,
-            ...(reasoning?.defaultEffort === undefined
-              ? {}
-              : { reasoningEffort: reasoning.defaultEffort }),
-          };
-          const selected = await this.runtime.selectModel(selection);
-          if (!selected.ok) throw new Error(selected.error?.message || selected.error?.code || "model");
-          this.models = { ...this.models, default: selected.value?.selected ?? selection };
-        } else {
-          this.models = await this.runtime.settings.setDefaultModel({
-            provider: model.provider,
-            model: model.id,
-          });
-        }
+        const selected = await this.runtime.selectModel(modelSwitchSelection({ id: model.provider }, model));
+        if (!selected.ok) throw new Error(selected.error?.message || selected.error?.code || "model");
       } catch (err) {
         this.modelError = err instanceof Error ? err.message : String(err);
       } finally {
@@ -1240,12 +1188,52 @@ export default {
       });
       this.voiceCap?.stop(false);
     },
+    showSpeakProblem(err) {
+      this.speakNotice = speakProblemText(this.t, err);
+    },
+    async toggleSpeak() {
+      if (this.speakBusy) return;
+      this.speakNotice = "";
+      if (typeof this.runtime.settings?.saveVoice !== "function") {
+        this.speakNotice = this.t("error.voice_speak_unready");
+        return;
+      }
+      const next = !this.voiceSpeak;
+      const previous = this.voiceSpeak;
+      this.voiceSpeak = next;
+      this.speakBusy = true;
+      if (!next) {
+        this.speakGen += 1;
+        this.player?.stop();
+        void this.runtime.interruptSpeech?.();
+      }
+      try {
+        const voice = await this.runtime.settings.saveVoice({ speak: next });
+        this.voiceSpeak = voice?.config ? voice.config.speak === true : next;
+        const problem = this.voiceSpeak ? speakToggleNotice(voice?.ttsModels) : "";
+        this.speakNotice = problem ? this.t(`error.${problem}`) : "";
+      } catch (err) {
+        this.voiceSpeak = previous;
+        this.showSpeakProblem(err);
+      } finally {
+        this.speakBusy = false;
+      }
+    },
     async speakReply(text, gen) {
       if (!this.voiceSpeak) return;
-      const result = await this.runtime.speak?.(text).catch(() => null);
-      if (gen !== this.speakGen || !result?.audio) return;
-      if (!browserPlays("mobile", result.bluetooth)) return;
-      await this.player?.play(wavBlob(result.audio));
+      try {
+        const result = await this.runtime.speak?.(text);
+        if (gen !== this.speakGen) return;
+        if (!result?.audio) {
+          this.showSpeakProblem(Object.assign(new Error("voice_speak_failed"), { code: "voice_speak_failed" }));
+          return;
+        }
+        if (!browserPlays("mobile", result.bluetooth)) return;
+        await this.player?.play(wavBlob(result.audio));
+      } catch (err) {
+        if (gen !== this.speakGen) return;
+        this.showSpeakProblem(err);
+      }
     },
     toggleHistory() {
       if (this.panel === "history") {

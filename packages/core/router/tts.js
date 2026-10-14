@@ -48,7 +48,7 @@ export async function synthesize(request) {
         input: text,
         response_format: "wav",
       }),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.timeout(request.timeoutMs ?? REQUEST_TIMEOUT_MS),
     });
   } catch (err) {
     const timedOut = err?.name === "TimeoutError" || err?.name === "AbortError";
@@ -60,7 +60,7 @@ export async function synthesize(request) {
   }
   if (!res.ok) {
     const detail = (await res.text()).slice(0, 400);
-    throw new VoiceError(res.status === 404 ? "voice_model_unavailable" : "voice_failed", res.status, detail);
+    throw new VoiceError(res.status === 404 ? "voice_tts_unavailable" : "voice_failed", res.status, detail);
   }
   return Buffer.from(await res.arrayBuffer());
 }
@@ -102,9 +102,9 @@ export async function synthesizeStream(request, onChunk) {
   }
   if (!res.ok) {
     const detail = (await res.text()).slice(0, 400);
-    throw new VoiceError(res.status === 404 ? "voice_model_unavailable" : "voice_failed", res.status, detail);
+    throw new VoiceError(res.status === 404 ? "voice_tts_unavailable" : "voice_failed", res.status, detail);
   }
-  const type = res.headers.get("content-type") || "";
+  const type = (res.headers.get("content-type") || "").toLowerCase();
   if (!type.includes("audio/l16")) {
     return { streamed: false, audio: Buffer.from(await res.arrayBuffer()) };
   }

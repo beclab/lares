@@ -32,6 +32,7 @@ function composerProjections(source) {
     contextBreakdown: values.contextBreakdown,
     goal: values.goal,
     todos: values.todos,
+    modelSelection: values.modelSelection,
   };
 }
 
@@ -730,18 +731,32 @@ export function createChatRuntime(client) {
       emit();
       return archived;
     },
-    sessionModels(sessionId = state.sessionId) {
-      if (!sessionId || isDraft(sessionId)) {
-        return Promise.resolve({ ok: false, error: { code: "no_session", message: "no session" } });
-      }
-      return client.rpc("session.models", { sessionId });
+    modelCatalog() {
+      return client.rpc("session.modelCatalog");
     },
     selectModel(selection) {
       const sessionId = state.sessionId;
       if (!sessionId || isDraft(sessionId)) {
         return Promise.resolve({ ok: false, error: { code: "no_session", message: "no session" } });
       }
-      return client.rpc("session.selectModel", { sessionId, ...selection });
+      return client.rpc("session.selectModel", { sessionId, ...selection }).then((result) => {
+        const selected = result.ok ? result.value?.selected : null;
+        if (selected) {
+          const row = state.sessions.find((item) => item.sessionId === sessionId);
+          noteComposerProjections(sessionId, {
+            projections: {
+              values: {
+                modelSelection: {
+                  lastUsed: row?.modelSelection?.lastUsed ?? null,
+                  next: selected,
+                },
+              },
+            },
+          });
+          emit();
+        }
+        return result;
+      });
     },
     cancel() {
       const sessionId = state.sessionId;

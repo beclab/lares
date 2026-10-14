@@ -21,18 +21,38 @@ export async function loadVoiceSettings(options = {}) {
       status,
       sttModels: Array.isArray(models.stt) ? models.stt : [],
       ttsModels: Array.isArray(models.tts) ? models.tts : [],
+      charts: {
+        stt: chartView(models.charts?.stt),
+        tts: chartView(models.charts?.tts),
+      },
     };
   }, options);
 }
 
-export async function installVoiceChart(kind) {
+function chartView(row) {
+  const phase = row?.phase;
+  return {
+    phase: phase === "running" || phase === "stopped" || phase === "busy" || phase === "failed" ? phase : "absent",
+    state: typeof row?.state === "string" ? row.state : "",
+  };
+}
+
+async function postInstall(body) {
   const res = await fetch(`${API}/install`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ kind }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(String(res.status));
   return loadVoiceSettings({ force: true });
+}
+
+export function installVoiceChart(kind) {
+  return postInstall({ kind });
+}
+
+export function voiceChartAction(kind, op) {
+  return postInstall({ kind, op });
 }
 
 export function wavBlob(base64) {

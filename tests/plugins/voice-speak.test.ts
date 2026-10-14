@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { speakFromConfig } from "@olares/lares-core/voice/service";
+import { speakProblemText, speakToggleNotice } from "@olares/lares-core/voice/problem";
 import { captureSource } from "@olares/lares-core/voice/input";
 import { browserPlays } from "@olares/lares-core/voice/playback";
 import {
@@ -11,8 +12,53 @@ import {
 } from "@olares/lares-core/voice/speech";
 import { foldTranscript } from "@olares/lares-core/larepass/transcript";
 import { createDuplexCoordinator } from "@olares/lares-core/voice/duplex";
+import { synthesizeStream } from "@olares/lares-core/router/tts";
 
 const config = { speak: true, ttsModel: "kokoro", model: "", language: "" };
+
+test("a stream labelled audio/L16 is read as PCM chunks, whatever the case", async (t) => {
+  const pcm = new Uint8Array([1, 0, 2, 0]);
+  t.mock.method(globalThis, "fetch", async () => new Response(pcm, {
+    headers: { "content-type": "audio/L16" },
+  }));
+  const chunks: Buffer[] = [];
+  const outcome = await synthesizeStream({ text: "你好", model: "qwen3-tts" }, (chunk) => {
+    chunks.push(chunk);
+  });
+  assert.deepEqual(outcome, { streamed: true });
+  assert.deepEqual([...Buffer.concat(chunks)], [...pcm]);
+});
+
+test("turning playback on with no speech model says which problem that is", () => {
+  const zh = (key: string) => ({
+    "error.voice_tts_unavailable": "没有可用的语音播报模型，请先在语音设置里安装",
+    "error.voice_speak_failed": "语音播报失败，请重试",
+    "error.voice_speak_timeout": "语音播报超时，请重试",
+  }[key] ?? key);
+  assert.equal(speakToggleNotice(["kokoro"]), "");
+  assert.equal(speakToggleNotice([]), "voice_tts_unavailable");
+  assert.equal(speakToggleNotice(undefined), "");
+  assert.equal(
+    speakProblemText(zh, Object.assign(new Error("no speech model available"), { code: "voice_tts_unavailable" })),
+    "没有可用的语音播报模型，请先在语音设置里安装",
+  );
+  assert.equal(
+    speakProblemText(zh, Object.assign(new Error("router down"), { code: "voice_failed" })),
+    "语音播报失败，请重试: router down",
+  );
+  assert.equal(
+    speakProblemText(zh, Object.assign(new Error("speech timed out"), { code: "voice_timeout" })),
+    "语音播报超时，请重试",
+  );
+  assert.equal(speakProblemText(zh, new Error("unknown voice setting: speak")), "unknown voice setting: speak");
+});
+
+test("speaking with no speech model reports that the model is missing", async () => {
+  await assert.rejects(
+    speakFromConfig("Hello.", { config, model: "" }),
+    (err: { code?: string }) => err.code === "voice_tts_unavailable",
+  );
+});
 
 test("the desktop page records on the headset and the phone page records on the phone", () => {
   assert.equal(captureSource("pc"), "headset");

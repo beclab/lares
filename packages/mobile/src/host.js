@@ -285,11 +285,16 @@ export function createHostClient(ports = {}) {
     async speak(text) {
       const res = await request(`${VOICE_API}/speak`, { method: "POST", body: { text } });
       const body = res?.body;
-      if (!res?.ok || !body || typeof body.audio !== "string") return null;
-      return {
-        bluetooth: body.bluetooth === "played" ? "played" : "skipped",
-        audio: body.audio,
-      };
+      if (res?.ok && body && typeof body.audio === "string") {
+        return {
+          bluetooth: body.bluetooth === "played" ? "played" : "skipped",
+          audio: body.audio,
+        };
+      }
+      const error = body && typeof body === "object" ? body.error : null;
+      const code = typeof error?.code === "string" && error.code ? error.code : "voice_speak_failed";
+      const message = typeof error?.message === "string" && error.message ? error.message : code;
+      throw Object.assign(new Error(message), { code });
     },
     async interruptSpeech() {
       const res = await request(`${VOICE_API}/playback/stop`, { method: "POST" });

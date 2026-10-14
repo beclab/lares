@@ -17,6 +17,8 @@ import {
   reasoningOfModel,
   selectionKey,
   sessionModelLabel,
+  sessionModelSelection,
+  composerModelsFromCatalog,
 } from "@olares/lares-core/router/session-model";
 
 test("Router catalog effort dict becomes the switcher menu shape", () => {
@@ -138,4 +140,36 @@ test("settings list groups by provider registration order", () => {
   assert.equal(catalogDefaultReady(groups.flatMap((group) => group.models), current), true);
   assert.equal(catalogDefaultReady(groups.flatMap((group) => group.models), { provider: "olares-router", model: "missing" }), false);
   assert.equal(selectionKey(current), "olares-router\u0000c");
+});
+
+test("the composer catalog keeps each model's reasoning and prefers the session selection", () => {
+  const catalog = {
+    default: { provider: "olares-router", model: "qwen" },
+    groups: [{
+      id: "olares-router",
+      name: "Olares Router",
+      models: [
+        { id: "plain", name: "Plain" },
+        {
+          id: "qwen",
+          name: "Qwen",
+          reasoning: { efforts: [{ id: "low", name: "Low" }, { id: "high", name: "High" }] },
+        },
+      ],
+    }],
+    failures: [{ id: "other", name: "Other", message: "down" }],
+  };
+  const pending = { provider: "olares-router", model: "qwen", reasoningEffort: "high" };
+  assert.deepEqual(
+    sessionModelSelection({ next: pending }, catalog.default),
+    pending,
+  );
+  assert.deepEqual(sessionModelSelection(null, catalog.default), catalog.default);
+  const listed = composerModelsFromCatalog(catalog, pending);
+  assert.equal(listed.default, pending);
+  assert.equal(listed.routable, true);
+  assert.deepEqual(listed.failures, [{ provider: "other", name: "Other", message: "down" }]);
+  assert.deepEqual(listed.models[1].reasoning.efforts.map((level) => level.id), ["low", "high"]);
+  assert.equal(reasoningOfModel(listed.models[1]).efforts.length, 2);
+  assert.equal(composerModelsFromCatalog(null, pending), null);
 });
