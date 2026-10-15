@@ -162,6 +162,40 @@ test("createHostClient hands its request port to upload and transcribe", async (
   );
 });
 
+test("createHostClient asks for one sentence of a streaming answer", async () => {
+  const port = recorder({ ok: true, status: 200, body: { bluetooth: "skipped", audio: "UklGRg==" } });
+  const client = createHostClient({ baseUrl: "https://489966aa.alice.olares.com", request: port.request });
+
+  const spoken = await client.speak({ key: "s1:1:0", text: "一。二。三", done: false, part: 1 });
+
+  assert.deepEqual(port.calls[0].init.body, { key: "s1:1:0", text: "一。二。三", done: false, part: 1 });
+  assert.equal(spoken?.audio, "UklGRg==");
+});
+
+test("createHostClient hands over a streaming answer's text without asking for audio", async () => {
+  const port = recorder({ ok: true, status: 200, body: { sentences: 2 } });
+  const client = createHostClient({ baseUrl: "https://489966aa.alice.olares.com", request: port.request });
+
+  const handed = await client.speak({ key: "s1:1:0", text: "一。二。三", done: false });
+
+  assert.deepEqual(port.calls[0].init.body, { key: "s1:1:0", text: "一。二。三", done: false });
+  assert.deepEqual(handed, { sentences: 2 });
+});
+
+test("createHostClient posts client logs to the entrance once, not a doubled URL", async () => {
+  const port = recorder({ ok: true, status: 200 });
+  const client = createHostClient({
+    baseUrl: "https://489966aa.alice.olares.com",
+    request: port.request,
+  });
+
+  await client.reportLog("voice", "hold-start", { via: "touch" });
+
+  assert.deepEqual(port.calls.map((call) => call.url), [
+    "https://489966aa.alice.olares.com/api/lares/log",
+  ]);
+});
+
 /**
  * A `WebSocket` stand-in that records the constructor arguments and opens on
  * the next tick, so `openMux` resolves without a server.

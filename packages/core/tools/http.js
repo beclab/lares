@@ -1,3 +1,18 @@
+import { LAREPASS_PAGE_ORIGINS } from "../larepass/host.js";
+import { pageOrigin } from "../olares/trusted-host.js";
+
+const CORS_HEADERS = "content-type, x-authorization, x-unauth-error, x-lares-session-id, x-lares-file-name, x-lares-upload-request-id";
+
+/** @returns {boolean} true when the request came from a LarePass page. */
+function allowLarepassOrigin(req, res) {
+  const origin = pageOrigin(req.headers);
+  if (!origin || !LAREPASS_PAGE_ORIGINS.includes(origin)) return false;
+  res.setHeader("access-control-allow-origin", origin);
+  res.setHeader("access-control-allow-credentials", "true");
+  res.setHeader("vary", "Origin");
+  return true;
+}
+
 export class HttpError extends Error {
   constructor(code, status, message) {
     super(message);
@@ -99,10 +114,20 @@ export function createRouteHandler(options) {
     const suffix = new URL(req.url ?? "/", "http://x").pathname.slice(options.prefix.length) || "/";
     const path = suffix.replace(/\/+$/, "") || "/";
     const handlers = options.routes[path];
+    const cors = allowLarepassOrigin(req, res);
     if (!handlers) {
       sendJson(res, 404, {
         error: { code: "not_found", message: `no route ${path}` },
       });
+      return;
+    }
+    if (cors && method === "OPTIONS") {
+      res.writeHead(204, {
+        "access-control-allow-methods": Object.keys(handlers).join(", "),
+        "access-control-allow-headers": CORS_HEADERS,
+        "access-control-max-age": "600",
+      });
+      res.end();
       return;
     }
     const route = handlers[method];

@@ -5,6 +5,28 @@ const REQUEST_TIMEOUT_MS = 180_000;
 
 const PCM_RATE = 24000;
 
+/**
+ * Engines pick a speaker per request when none is named, so the readout voice
+ * changed between answers. First listed voice the model offers wins.
+ */
+const PREFERRED_VOICES = ["serena", "vivian", "uncle_fu"];
+
+export function pickTtsVoice(voices) {
+  const ids = voices.filter((id) => typeof id === "string" && id);
+  return PREFERRED_VOICES.find((id) => ids.includes(id)) ?? [...ids].sort()[0] ?? null;
+}
+
+/** @returns {Promise<string[]>} voice ids the model serves; empty when it lists none. */
+export async function listTtsVoices(model) {
+  const res = await fetch(`${routerShimBaseUrl()}/audio/voices?model=${encodeURIComponent(model)}`, {
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) return [];
+  const body = await res.json().catch(() => null);
+  const voices = Array.isArray(body?.voices) ? body.voices : [];
+  return voices.map((voice) => (typeof voice === "string" ? voice : voice?.id));
+}
+
 /** Kokoro concatenates chunks with no gap. This is the silence we insert between sentences. */
 export function silencePcm(ms, sampleRate = PCM_RATE) {
   const samples = Math.max(0, Math.round((sampleRate * ms) / 1000));
@@ -47,6 +69,7 @@ export async function synthesize(request) {
         model: request.model,
         input: text,
         response_format: "wav",
+        ...(request.voice ? { voice: request.voice } : {}),
       }),
       signal: AbortSignal.timeout(request.timeoutMs ?? REQUEST_TIMEOUT_MS),
     });
@@ -89,6 +112,7 @@ export async function synthesizeStream(request, onChunk) {
         input: text,
         response_format: "pcm",
         stream: true,
+        ...(request.voice ? { voice: request.voice } : {}),
       }),
       signal,
     });

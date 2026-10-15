@@ -9,6 +9,8 @@ const DEFAULTS = {
   ttsModel: "",
   language: "",
   speak: false,
+  // Read answers while they are written. Needs the GPU in MemorySlice, see gpu-mode.js.
+  streaming: false,
 };
 
 const WRITABLE = new Set(Object.keys(DEFAULTS));
@@ -25,9 +27,9 @@ export function validateConfigPatch(raw) {
   const patch = {};
   for (const [key, value] of Object.entries(raw)) {
     if (!WRITABLE.has(key)) invalid(`unknown voice setting: ${key}`);
-    if (key === "speak") {
-      if (typeof value !== "boolean") invalid("speak must be a boolean");
-      patch.speak = value;
+    if (key === "speak" || key === "streaming") {
+      if (typeof value !== "boolean") invalid(`${key} must be a boolean`);
+      patch[key] = value;
       continue;
     }
     if (typeof value !== "string") invalid(`${key} must be a string`);
@@ -54,6 +56,7 @@ export function readConfig() {
   if (SAFE_MODEL.test(ttsModel)) merged.ttsModel = ttsModel;
   if (SUPPORTED_LANGUAGES.has(language)) merged.language = language;
   if (stored?.speak === true) merged.speak = true;
+  if (stored?.streaming === true) merged.streaming = true;
   return merged;
 }
 

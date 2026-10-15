@@ -5,16 +5,58 @@ import { speakProblemText, speakToggleNotice } from "@olares/lares-core/voice/pr
 import { captureSource } from "@olares/lares-core/voice/input";
 import { browserPlays } from "@olares/lares-core/voice/playback";
 import {
-  concludingReply,
   createReplySpeaker,
-  emptySpeechState,
-  reduceSpeechEvent,
+  createSentencePlayer,
+  reduceUtterance,
 } from "@olares/lares-core/voice/speech";
+import { gapAfter, speechSegments } from "@olares/lares-core/voice/script";
 import { foldTranscript } from "@olares/lares-core/larepass/transcript";
 import { createDuplexCoordinator } from "@olares/lares-core/voice/duplex";
-import { synthesizeStream } from "@olares/lares-core/router/tts";
+import { pickTtsVoice, synthesizeStream } from "@olares/lares-core/router/tts";
 
 const config = { speak: true, ttsModel: "kokoro", model: "", language: "" };
+const noVoices = async () => [];
+
+test("the readout voice is pinned, never left to the engine", () => {
+  assert.equal(pickTtsVoice(["aiden", "vivian", "serena", "ryan"]), "serena");
+  assert.equal(pickTtsVoice(["ryan", "vivian"]), "vivian");
+  assert.equal(pickTtsVoice(["zm_b", "af_a"]), "af_a");
+  assert.equal(pickTtsVoice([]), null);
+});
+
+test("synthesis names the voice it was given", async (t) => {
+  const bodies: Record<string, unknown>[] = [];
+  t.mock.method(globalThis, "fetch", async (_url: string, init: { body: string }) => {
+    bodies.push(JSON.parse(init.body));
+    return new Response(new Uint8Array([0, 0]), { headers: { "content-type": "audio/L16" } });
+  });
+  await synthesizeStream({ text: "你好", model: "qwen3-tts", voice: "serena" }, () => {});
+  assert.equal(bodies[0].voice, "serena");
+});
+
+test("every sentence of one answer is read in the model's pinned voice", async () => {
+  const voices: unknown[] = [];
+  let listed = 0;
+  const options = {
+    config,
+    model: "qwen3-tts-pin",
+    listVoices: async () => {
+      listed += 1;
+      return ["vivian", "serena"];
+    },
+    openPlayback: async () => ({ skipped: true }),
+    synthesize: async (request: { voice?: string }, onChunk: (chunk: Buffer) => unknown) => {
+      voices.push(request.voice);
+      await onChunk(Buffer.from("pcm"));
+      return { streamed: true };
+    },
+    pcmToWav: (pcm: Buffer) => pcm,
+  };
+  await speakFromConfig("First one. Second one.", options);
+  await speakFromConfig("Third one.", options);
+  assert.deepEqual(voices, ["serena", "serena", "serena"]);
+  assert.equal(listed, 1);
+});
 
 test("a stream labelled audio/L16 is read as PCM chunks, whatever the case", async (t) => {
   const pcm = new Uint8Array([1, 0, 2, 0]);
@@ -53,6 +95,73 @@ test("turning playback on with no speech model says which problem that is", () =
   assert.equal(speakProblemText(zh, new Error("unknown voice setting: speak")), "unknown voice setting: speak");
 });
 
+test("the first sentence is handed out before the rest is synthesized", async () => {
+  const coordinator = createDuplexCoordinator(async () => {});
+  let finishSecond: () => void = () => {};
+  const first = await Promise.race([
+    speakFromConfig("First one. Second one.", {
+      config, model: "kokoro", coordinator, listVoices: noVoices, part: 0,
+      openPlayback: async () => ({ skipped: true }),
+      synthesize: async (request: { text: string }, onChunk: (chunk: Buffer) => unknown) => {
+        if (request.text === "Second one.") await new Promise<void>((resolve) => { finishSecond = resolve; });
+        await onChunk(Buffer.from(request.text === "First one." ? "a" : "b"));
+        return { streamed: true };
+      },
+      pcmToWav: (pcm: Buffer) => pcm,
+      silencePcm: () => Buffer.from("_"),
+    }),
+    new Promise((_, reject) => setTimeout(() => reject(new Error("waited for the whole answer")), 200)),
+  ]) as { audio: Buffer };
+  assert.equal(first.audio.toString(), "a");
+  finishSecond();
+});
+
+test("a later sentence joins the readout, even after synthesis ended", async () => {
+  const coordinator = createDuplexCoordinator(async () => {});
+  let syntheses = 0;
+  let opens = 0;
+  const options = {
+    config, model: "kokoro", coordinator, listVoices: noVoices,
+    openPlayback: async () => {
+      opens += 1;
+      return fakeHeadset([]);
+    },
+    synthesize: async (request: { text: string }, onChunk: (chunk: Buffer) => unknown) => {
+      syntheses += 1;
+      await onChunk(Buffer.from(request.text === "First one." ? "a" : "b"));
+      return { streamed: true };
+    },
+    pcmToWav: (pcm: Buffer) => pcm,
+    silencePcm: () => Buffer.from("_"),
+  };
+  const first = await speakFromConfig("First one. Second one.", { ...options, part: 0 });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  const second = await speakFromConfig("First one. Second one.", { ...options, part: 1 });
+  assert.equal(first.audio.toString(), "a");
+  assert.equal(second.audio.toString(), "_b");
+  assert.equal(syntheses, 2);
+  assert.equal(opens, 1);
+});
+
+test("an interrupted readout cancels the sentences not yet handed out", async () => {
+  const coordinator = createDuplexCoordinator(async () => {});
+  const options = {
+    config, model: "kokoro", coordinator, listVoices: noVoices,
+    openPlayback: async () => ({ skipped: true }),
+    synthesize: (request: { text: string; signal: AbortSignal }, onChunk: (chunk: Buffer) => unknown) => {
+      if (request.text === "First one.") return synthOnce(request, onChunk);
+      return new Promise((_, reject) => {
+        request.signal.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })));
+      });
+    },
+    pcmToWav: (pcm: Buffer) => pcm,
+  };
+  await speakFromConfig("First one. Second one.", { ...options, part: 0 });
+  const second = speakFromConfig("First one. Second one.", { ...options, part: 1 });
+  await coordinator.interrupt();
+  await assert.rejects(second, (err: { code?: string }) => err.code === "voice_cancelled");
+});
+
 test("speaking with no speech model reports that the model is missing", async () => {
   await assert.rejects(
     speakFromConfig("Hello.", { config, model: "" }),
@@ -72,130 +181,272 @@ test("the phone plays an answer the headset already played; the desktop page doe
   assert.equal(browserPlays("pc", "skipped"), true);
 });
 
-function assistantMessage(seq: number, content: unknown[], extra: Record<string, unknown> = {}) {
-  return { seq, type: "assistant/message", data: { turn: 1, step: seq, message: { content }, ...extra } };
+function message(seq: number, step: number, content: unknown[], extra: Record<string, unknown> = {}) {
+  return { seq, type: "assistant/message", data: { turn: 1, step, message: { content }, ...extra } };
 }
 
-test("only the message that concludes a turn is spoken", () => {
-  const text = (value: string) => ({ type: "text", text: value });
-  const call = { type: "tool-call", callId: "c1", name: "search", arguments: "{}" };
-  assert.equal(concludingReply(assistantMessage(1, [text("checking"), call])), "");
-  assert.equal(concludingReply(assistantMessage(1, [text("partial")], { interrupted: true })), "");
-  assert.equal(concludingReply(assistantMessage(1, [{ type: "reasoning", text: "hmm" }])), "");
-  assert.equal(concludingReply(assistantMessage(1, [text("done")])), "done");
-});
+function chunk(seq: number, step: number, value: Record<string, unknown>) {
+  return { seq, type: "assistant/chunk", data: { turn: 1, step, chunk: value } };
+}
 
-test("the answer is ready to speak before turn-stopping work ends the turn", () => {
+function utteranceOf(events: unknown[]) {
+  let state: ReturnType<typeof reduceUtterance> = null;
+  for (const event of events) state = reduceUtterance(state, event);
+  if (!state) return null;
+  const { key, text, done, silent } = state;
+  return { key, text, done, silent };
+}
+
+const toolCall = { type: "tool-call", callId: "c1", name: "search", arguments: "{}" };
+
+test("the step being written is read while it streams, reasoning left out", () => {
   const events = [
     { seq: 0, type: "turn/start", data: { turn: 1 } },
-    assistantMessage(1, [{ type: "text", text: "checking" }, { type: "tool-call", callId: "c1", name: "search", arguments: "{}" }]),
-    { seq: 2, type: "tool/call", data: { turn: 1, callId: "c1", name: "search", arguments: "{}" } },
-    { seq: 3, type: "tool/result", data: { turn: 1, callId: "c1" } },
+    chunk(1, 0, { type: "reasoning-delta", index: 0, text: "hmm" }),
+    chunk(2, 0, { type: "text-delta", index: 1, text: "First one. " }),
+    chunk(3, 0, { type: "text-delta", index: 1, text: "Sec" }),
   ];
-  assert.equal(foldTranscript(events).reply, null);
-  const concluded = foldTranscript([...events, assistantMessage(4, [{ type: "text", text: "done" }])]);
-  assert.equal(concluded.running, true);
-  assert.deepEqual(concluded.reply, { seq: 4, text: "done" });
-  const next = foldTranscript([
-    ...events,
-    assistantMessage(4, [{ type: "text", text: "done" }]),
-    { seq: 5, type: "turn/end", data: { turn: 1, reason: { kind: "completed" } } },
-    { seq: 6, type: "turn/start", data: { turn: 2 } },
+  assert.deepEqual(utteranceOf(events), { key: "1:0", text: "First one. Sec", done: false, silent: false });
+  const settled = [...events, message(4, 0, [{ type: "reasoning", text: "hmm" }, { type: "text", text: "First one. Second one." }])];
+  assert.deepEqual(utteranceOf(settled), { key: "1:0", text: "First one. Second one.", done: true, silent: false });
+});
+
+test("a step turns silent the moment it calls a tool, and an interrupted step is silent", () => {
+  const streaming = [
+    { seq: 0, type: "turn/start", data: { turn: 1 } },
+    chunk(1, 0, { type: "text-delta", index: 0, text: "Let me check." }),
+  ];
+  assert.equal(utteranceOf([...streaming, chunk(2, 0, { type: "tool-call-delta", index: 1, id: "c1", name: "search", argumentsDelta: "" })])?.silent, true);
+  assert.equal(utteranceOf([...streaming, message(2, 0, [{ type: "text", text: "Let me check." }, toolCall])])?.silent, true);
+  assert.equal(utteranceOf([...streaming, message(2, 0, [{ type: "text", text: "Let me" }], { interrupted: true })])?.silent, true);
+  const answered = utteranceOf([
+    ...streaming,
+    message(2, 0, [{ type: "text", text: "Let me check." }, toolCall]),
+    chunk(3, 1, { type: "text-delta", index: 0, text: "Found it." }),
   ]);
-  assert.equal(next.reply, null);
-
-  let state = emptySpeechState();
-  for (const event of [...events, assistantMessage(4, [{ type: "text", text: "done" }])]) {
-    state = reduceSpeechEvent(state, event);
-  }
-  assert.deepEqual(state, { text: "done", seq: 4 });
+  assert.deepEqual(answered, { key: "1:1", text: "Found it.", done: false, silent: false });
 });
 
-test("a steer answered in the same turn is a second answer", () => {
+test("the turn ending completes the utterance and a new turn clears it", () => {
   const events = [
     { seq: 0, type: "turn/start", data: { turn: 1 } },
-    assistantMessage(1, [{ type: "text", text: "first" }]),
-    { seq: 2, type: "user/message", data: { turn: 1, content: [{ type: "text", text: "also this" }] } },
-    assistantMessage(3, [{ type: "text", text: "second" }]),
+    chunk(1, 0, { type: "text-delta", index: 0, text: "Half an answer" }),
+    { seq: 2, type: "turn/end", data: { turn: 1, reason: { kind: "completed" } } },
   ];
-  assert.deepEqual(foldTranscript(events.slice(0, 2)).reply, { seq: 1, text: "first" });
-  assert.deepEqual(foldTranscript(events).reply, { seq: 3, text: "second" });
-  let state = emptySpeechState();
-  for (const event of events) state = reduceSpeechEvent(state, event);
-  assert.deepEqual(state, { text: "second", seq: 3 });
+  assert.equal(utteranceOf(events)?.done, true);
+  assert.equal(utteranceOf([...events, { seq: 3, type: "turn/start", data: { turn: 2 } }]), null);
 });
 
-function speakerRun(snaps: Array<{ sessionChanged?: boolean; running: boolean; reply: null | { seq: number; text: string } }>) {
+test("the phone transcript carries the utterance being written", () => {
+  const snap = foldTranscript([
+    { seq: 0, type: "turn/start", data: { turn: 1 } },
+    chunk(1, 0, { type: "text-delta", index: 0, text: "First one. Sec" }),
+  ]);
+  assert.equal(snap.utterance?.key, "1:0");
+  assert.equal(snap.utterance?.text, "First one. Sec");
+  assert.equal(snap.utterance?.done, false);
+});
+
+test("a sentence still being written is not read yet", () => {
+  assert.deepEqual(speechSegments("First one. Sec", { done: false }), ["First one."]);
+  assert.deepEqual(speechSegments("First one. Sec"), ["First one.", "Sec"]);
+  assert.deepEqual(speechSegments("Look. ```js\nconst a = 1;", { done: false }), []);
+  assert.deepEqual(speechSegments("Look. ```js\nconst a = 1;\n``` Then go. Next", { done: false }), ["Look.", "Then go."]);
+});
+
+test("a long sentence is read clause by clause so the first sound comes early", () => {
+  const long = "城市的秋天是繁华与静谧交织的画卷，银杏大道在行人的足下铺就一条金色的地毯，早晚渐起的凉风卷起了落叶。";
+  assert.deepEqual(speechSegments(long), [
+    "城市的秋天是繁华与静谧交织的画卷，",
+    "银杏大道在行人的足下铺就一条金色的地毯，",
+    "早晚渐起的凉风卷起了落叶。",
+  ]);
+  assert.deepEqual(speechSegments("天气凉了，记得加衣。"), ["天气凉了，记得加衣。"]);
+  assert.deepEqual(
+    speechSegments("We sold 1,000 copies by 10:30 this morning across all of the stores in town, and more came later."),
+    ["We sold 1,000 copies by 10:30 this morning across all of the stores in town,", "and more came later."],
+  );
+  assert.equal(gapAfter("城市的秋天，"), 150);
+  assert.equal(gapAfter("早晚渐起的凉风卷起了落叶。"), 300);
+});
+
+function utterance(key: string, text: string, done = false, silent = false) {
+  return { key, turn: 1, step: 0, text, done, silent };
+}
+
+function speakerRun(snaps: Array<{ sessionChanged?: boolean; running: boolean; utterance: null | ReturnType<typeof utterance> }>) {
   const speaker = createReplySpeaker();
   let running = false;
   return snaps.map((snap) => {
-    const text = speaker.observe({ sessionChanged: Boolean(snap.sessionChanged), wasRunning: running, ...snap });
+    const follow = speaker.observe({ sessionChanged: Boolean(snap.sessionChanged), wasRunning: running, ...snap });
     running = snap.running;
-    return text;
+    return follow?.text ?? "";
   });
 }
 
-test("a live turn speaks its answer once, as soon as it concludes", () => {
-  const done = { seq: 4, text: "done" };
+test("a live turn follows its answer while it is written, through the turn end", () => {
   assert.deepEqual(speakerRun([
-    { sessionChanged: true, running: false, reply: null },
-    { running: true, reply: null },
-    { running: true, reply: done },
-    { running: true, reply: done },
-    { running: false, reply: done },
-  ]), ["", "", "done", "", ""]);
+    { sessionChanged: true, running: false, utterance: null },
+    { running: true, utterance: null },
+    { running: true, utterance: utterance("1:0", "First") },
+    { running: true, utterance: utterance("1:0", "First one.", true) },
+    { running: false, utterance: utterance("1:0", "First one.", true) },
+    { running: false, utterance: utterance("1:0", "First one.", true) },
+  ]), ["", "", "First", "First one.", "First one.", ""]);
 });
 
-test("an answer and the turn end landing in one update are still spoken", () => {
+test("opening a session never reads an answer it did not watch being written", () => {
   assert.deepEqual(speakerRun([
-    { sessionChanged: true, running: false, reply: null },
-    { running: true, reply: null },
-    { running: false, reply: { seq: 4, text: "done" } },
-  ]), ["", "", "done"]);
-});
-
-test("a steer answered after the first answer is spoken too", () => {
+    { sessionChanged: true, running: true, utterance: utterance("1:0", "Already half") },
+    { running: true, utterance: utterance("1:0", "Already half way") },
+    { running: true, utterance: utterance("1:1", "Next step") },
+  ]), ["", "", "Next step"]);
   assert.deepEqual(speakerRun([
-    { sessionChanged: true, running: false, reply: null },
-    { running: true, reply: null },
-    { running: true, reply: { seq: 4, text: "first" } },
-    { running: true, reply: { seq: 9, text: "second" } },
-    { running: false, reply: { seq: 9, text: "second" } },
-  ]), ["", "", "first", "second", ""]);
-});
-
-test("opening a session never reads out an answer it did not watch arrive", () => {
-  assert.deepEqual(speakerRun([
-    { sessionChanged: true, running: false, reply: { seq: 4, text: "old" } },
-    { running: false, reply: { seq: 4, text: "old" } },
-    { running: true, reply: null },
-    { running: true, reply: { seq: 8, text: "new" } },
-  ]), ["", "", "", "new"]);
-  assert.deepEqual(speakerRun([
-    { sessionChanged: true, running: true, reply: { seq: 4, text: "concluded before I came" } },
-    { running: false, reply: { seq: 4, text: "concluded before I came" } },
+    { sessionChanged: true, running: false, utterance: null },
+    { running: false, utterance: utterance("1:0", "history page arrived", true) },
   ]), ["", ""]);
-  assert.deepEqual(speakerRun([
-    { sessionChanged: true, running: true, reply: null },
-    { running: true, reply: { seq: 4, text: "watched" } },
-  ]), ["", "watched"]);
-  assert.deepEqual(speakerRun([
-    { sessionChanged: true, running: false, reply: null },
-    { running: false, reply: { seq: 4, text: "history page arrived" } },
-  ]), ["", ""]);
-  assert.deepEqual(speakerRun([
-    { sessionChanged: true, running: false, reply: null },
-    { running: true, reply: { seq: 4, text: "loaded mid-turn, already concluded" } },
-    { running: true, reply: { seq: 9, text: "steer answered while watching" } },
-  ]), ["", "", "steer answered while watching"]);
 });
 
-test("a turn stopped before it concludes says nothing", () => {
-  assert.deepEqual(speakerRun([
-    { sessionChanged: true, running: false, reply: null },
-    { running: true, reply: null },
-    { running: false, reply: null },
-  ]), ["", "", ""]);
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+function fakeReader() {
+  const handed: Array<{ text: string; done: boolean }> = [];
+  const played: string[] = [];
+  const log: string[] = [];
+  const reader = createSentencePlayer({
+    send: async (request: { text: string; done: boolean; part?: number }) => {
+      if (request.part === undefined) {
+        handed.push({ text: request.text, done: request.done });
+        return { sentences: speechSegments(request.text, { done: request.done }).length };
+      }
+      return { audio: speechSegments(request.text, { done: request.done })[request.part] };
+    },
+    play: async (sentence: { audio: unknown }) => { played.push(String(sentence.audio)); },
+    halt: () => log.push("halt"),
+    silence: () => log.push("silence"),
+  });
+  return { reader, handed, played, log };
+}
+
+test("sentences are read in order while the answer is still being written", async () => {
+  const { reader, handed, played } = fakeReader();
+  reader.follow(utterance("s:1:0", "First one. Sec"));
+  await tick();
+  assert.deepEqual(played, ["First one."]);
+  reader.follow(utterance("s:1:0", "First one. Second one. Thi"));
+  await tick();
+  reader.follow(utterance("s:1:0", "First one. Second one. Third.", true));
+  for (let i = 0; i < 5; i += 1) await tick();
+  assert.deepEqual(played, ["First one.", "Second one.", "Third."]);
+  assert.equal(handed.at(-1)?.done, true);
+  reader.follow(utterance("s:1:0", "First one. Second one. Third.", true));
+  await tick();
+  assert.equal(played.length, 3);
+});
+
+test("a step that calls a tool stops the reading, the host too, for good", async () => {
+  const { reader, played, log } = fakeReader();
+  reader.follow(utterance("s:1:0", "Let me check. The"));
+  await tick();
+  reader.follow(utterance("s:1:0", "Let me check. The", false, true));
+  reader.follow(utterance("s:1:0", "Let me check. The", false, true));
+  reader.follow(utterance("s:1:0", "Let me check. The rest. More"));
+  await tick();
+  assert.deepEqual(played, ["Let me check."]);
+  assert.deepEqual(log, ["halt", "silence"]);
+});
+
+const letters: Record<string, string> = { "First one.": "a", "Second one.": "b", "Third.": "c" };
+
+function streamingOptions(log: string[], extra: Record<string, unknown> = {}) {
+  return {
+    config,
+    model: "kokoro",
+    coordinator: createDuplexCoordinator(async () => {}),
+    listVoices: noVoices,
+    key: "s:1:0",
+    openPlayback: async () => fakeHeadset(log),
+    synthesize: async (request: { text: string }, onChunk: (chunk: Buffer) => unknown) => {
+      await onChunk(Buffer.from(letters[request.text] ?? "?"));
+      return { streamed: true };
+    },
+    pcmToWav: (pcm: Buffer) => pcm,
+    silencePcm: () => Buffer.from("_"),
+    ...extra,
+  };
+}
+
+test("a streaming answer reads on in one headset readout as it grows", async () => {
+  const log: string[] = [];
+  let opens = 0;
+  const options = streamingOptions(log, {
+    openPlayback: async () => {
+      opens += 1;
+      return fakeHeadset(log);
+    },
+  });
+  assert.deepEqual(await speakFromConfig("First one. Sec", { ...options, done: false }), { sentences: 1 });
+  const first = await speakFromConfig("First one. Sec", { ...options, done: false, part: 0 }) as { audio: Buffer; bluetooth: string };
+  assert.deepEqual(await speakFromConfig("First one. Second one. Thi", { ...options, done: false }), { sentences: 2 });
+  const second = await speakFromConfig("First one. Second one. Thi", { ...options, done: false, part: 1 }) as { audio: Buffer };
+  await speakFromConfig("First one. Second one. Third.", { ...options, done: true });
+  const third = await speakFromConfig("First one. Second one. Third.", { ...options, done: true, part: 2 }) as { audio: Buffer };
+  assert.deepEqual([first, second, third].map((sentence) => sentence.audio.toString()), ["a", "_b", "_c"]);
+  assert.equal(first.bluetooth, "played");
+  assert.equal(opens, 1);
+  for (let i = 0; i < 5; i += 1) await tick();
+  assert.deepEqual(log, ["close"]);
+});
+
+test("an interrupted streaming answer stays cancelled for its key", async () => {
+  const options = streamingOptions([], { openPlayback: async () => ({ skipped: true }) });
+  await speakFromConfig("First one. Sec", { ...options, done: false });
+  await options.coordinator.interrupt();
+  await assert.rejects(
+    speakFromConfig("First one. Second one. Thi", { ...options, done: false }),
+    (err: { code?: string }) => err.code === "voice_cancelled",
+  );
+});
+
+test("a streaming readout lets the headset go once the answer stops arriving", async () => {
+  const log: string[] = [];
+  const options = streamingOptions(log, { idleMs: 20 });
+  await speakFromConfig("First one. Sec", { ...options, done: false });
+  await speakFromConfig("First one. Sec", { ...options, done: false, part: 0 });
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  assert.deepEqual(log, ["close"]);
+});
+
+test("the phone player resolves when a sentence has finished playing", async () => {
+  let element: { paused: boolean; onended: null | (() => void) } | undefined;
+  class FakeAudio {
+    paused = true;
+    src = "";
+    onended: null | (() => void) = null;
+    onerror: null | (() => void) = null;
+    constructor() { element = this; }
+    async play() { this.paused = false; }
+    pause() { this.paused = true; }
+  }
+  const saved = { Audio: globalThis.Audio, create: URL.createObjectURL, revoke: URL.revokeObjectURL };
+  Object.assign(globalThis, { Audio: FakeAudio });
+  globalThis.URL.createObjectURL = () => "blob:sentence";
+  globalThis.URL.revokeObjectURL = () => {};
+  try {
+    const { createAnswerPlayer } = await import("../../packages/mobile/src/chat/playback.js");
+    const player = createAnswerPlayer();
+    let done = false;
+    const playing = player.play(new Blob(["wav"])).then((played: boolean) => { done = true; return played; });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(done, false);
+    element!.paused = true;
+    element!.onended?.();
+    assert.equal(await playing, true);
+  } finally {
+    Object.assign(globalThis, { Audio: saved.Audio });
+    URL.createObjectURL = saved.create;
+    URL.revokeObjectURL = saved.revoke;
+  }
 });
 
 test("a send tap unlocks the phone player without cutting an answer still playing", async () => {
@@ -216,11 +467,13 @@ test("a send tap unlocks the phone player without cutting an answer still playin
     const player = createAnswerPlayer();
     player.unlock();
     assert.match(sources.at(-1) ?? "", /^data:audio\/wav/);
-    await player.play(new Blob(["wav"]));
+    const playing = player.play(new Blob(["wav"]));
+    await new Promise((resolve) => setTimeout(resolve, 0));
     assert.equal(sources.at(-1), "blob:answer");
     player.unlock();
     assert.equal(sources.at(-1), "blob:answer");
     player.stop();
+    assert.equal(await playing, false);
     player.unlock();
     assert.match(sources.at(-1) ?? "", /^data:audio\/wav/);
   } finally {
@@ -250,7 +503,7 @@ test("a newer readout supersedes one still synthesizing, which returns no audio"
   const log: string[] = [];
   let release: () => void = () => {};
   const first = speakFromConfig("First.", {
-    config, model: "kokoro", coordinator,
+    config, model: "kokoro", coordinator, listVoices: noVoices,
     openPlayback: async () => fakeHeadset(log),
     synthesize: (request: { signal: AbortSignal }, onChunk: (chunk: Buffer) => unknown) => new Promise((resolve, reject) => {
       void onChunk(Buffer.from("a"));
@@ -261,7 +514,7 @@ test("a newer readout supersedes one still synthesizing, which returns no audio"
   });
   await new Promise((resolve) => setTimeout(resolve, 0));
   const second = await speakFromConfig("Second.", {
-    config, model: "kokoro", coordinator,
+    config, model: "kokoro", coordinator, listVoices: noVoices,
     openPlayback: async () => fakeHeadset([]),
     synthesize: synthOnce,
     pcmToWav: (pcm: Buffer) => pcm,
@@ -278,7 +531,7 @@ test("an interrupt that lands between synthesis and the headset opening returns 
   const log: string[] = [];
   let open: (value: unknown) => void = () => {};
   const pending = speakFromConfig("Hello.", {
-    config, model: "kokoro", coordinator,
+    config, model: "kokoro", coordinator, listVoices: noVoices,
     openPlayback: () => new Promise((resolve) => { open = resolve; }),
     synthesize: synthOnce,
     pcmToWav: (pcm: Buffer) => pcm,
@@ -296,7 +549,7 @@ test("recording stops a headset readout still draining after the browser got its
   const log: string[] = [];
   let failWrite: (err: Error) => void = () => {};
   const spoken = await speakFromConfig("Hello.", {
-    config, model: "kokoro", coordinator,
+    config, model: "kokoro", coordinator, listVoices: noVoices,
     openPlayback: async () => fakeHeadset(log, () => new Promise((_, reject) => { failWrite = reject; })),
     synthesize: synthOnce,
     pcmToWav: (pcm: Buffer) => pcm,
@@ -309,7 +562,7 @@ test("recording stops a headset readout still draining after the browser got its
   assert.ok(log.includes("abort"));
   assert.ok(!log.includes("close"));
   const next = await speakFromConfig("Again.", {
-    config, model: "kokoro", coordinator,
+    config, model: "kokoro", coordinator, listVoices: noVoices,
     openPlayback: async () => fakeHeadset([]),
     synthesize: synthOnce,
     pcmToWav: (pcm: Buffer) => pcm,
@@ -323,7 +576,7 @@ test("two pages asking for the same answer share one readout", async () => {
   let opens = 0;
   let drain: () => void = () => {};
   const options = {
-    config, model: "kokoro", coordinator,
+    config, model: "kokoro", coordinator, listVoices: noVoices,
     openPlayback: async () => {
       opens += 1;
       return fakeHeadset([], () => new Promise<void>((resolve) => { drain = resolve; }));
@@ -353,7 +606,7 @@ test("two pages asking for the same answer share one readout", async () => {
 
 test("a streamed answer with no headset goes to the browser alone", async () => {
   const spoken = await speakFromConfig("Hello.", {
-    config, model: "kokoro",
+    config, model: "kokoro", listVoices: noVoices,
     openPlayback: async () => ({ skipped: true }),
     synthesize: synthOnce,
     pcmToWav: (pcm: Buffer) => pcm,
@@ -365,7 +618,7 @@ test("a streamed answer with no headset goes to the browser alone", async () => 
 test("a synthesis failure closes the headset and reports the failure", async () => {
   const log: string[] = [];
   await assert.rejects(speakFromConfig("Hello.", {
-    config, model: "kokoro",
+    config, model: "kokoro", listVoices: noVoices,
     openPlayback: async () => fakeHeadset(log),
     synthesize: async (_request: unknown, onChunk: (chunk: Buffer) => unknown) => {
       await onChunk(Buffer.from("a"));
@@ -381,6 +634,7 @@ test("the browser receives the answer even when the headset plays it", async () 
   const spoken = await speakFromConfig("Hello there.", {
     config,
     model: "kokoro",
+    listVoices: noVoices,
     async openPlayback() {
       return { skipped: false, async write() {}, async close() {}, abort() {} };
     },
@@ -403,6 +657,7 @@ test("the answer returns once synthesized while the headset is still playing", a
     speakFromConfig("Hello there.", {
       config,
       model: "kokoro",
+      listVoices: noVoices,
       async openPlayback() {
         return {
           skipped: false,
@@ -432,6 +687,7 @@ test("a sentence boundary inserts a pause the model does not provide", async () 
   const spoken = await speakFromConfig("Hello there. Go on.", {
     config,
     model: "kokoro",
+    listVoices: noVoices,
     async openPlayback() {
       return { skipped: false, async write() {}, async close() {}, abort() {} };
     },
@@ -457,6 +713,7 @@ test("no headset still returns the answer for the browser", async () => {
   const spoken = await speakFromConfig("Hello there.", {
     config,
     model: "kokoro",
+    listVoices: noVoices,
     async openPlayback() {
       return { skipped: true };
     },
@@ -482,4 +739,29 @@ test("recording invalidates synthesis that has not reached the speaker", async (
   assert.equal(speech.signal.aborted, true);
   assert.equal(speech.active(), false);
   assert.equal(stopped, 1);
+});
+
+test("the desktop page projects the answer being written from live chunks", async () => {
+  const { speechDefinition, speechView } = await import("../../packages/web/composer-voice/src/client/speech-view.js");
+  const live = (seq: number, step: number, value: Record<string, unknown>) => (
+    { seq, type: "assistant/live-chunk", data: { turn: 3, step, chunk: value } }
+  );
+  const events = [
+    { seq: 1, type: "turn/start", data: { turn: 3 } },
+    live(2, 0, { type: "text-delta", index: 0, text: "First one. " }),
+    live(3, 0, { type: "text-delta", index: 0, text: "Sec" }),
+  ];
+  assert.deepEqual(events.map((event) => speechDefinition.match(event)?.role), ["start", "update", "update"]);
+  let state = speechDefinition.start();
+  for (const event of events.slice(1)) state = speechDefinition.update({ state }, { event });
+  const node = speechDefinition.buildViewNode({ key: "k", kind: "lares-voice-speech", id: "3", state });
+  const view = speechView.create();
+  const snapshot = view.apply({ upserts: [node] });
+  assert.equal(snapshot.latest.key, "3:0");
+  assert.equal(snapshot.latest.text, "First one. Sec");
+  assert.equal(snapshot.latest.done, false);
+  assert.equal(view.apply({ upserts: [node] }), snapshot);
+  state = speechDefinition.update({ state }, { event: live(4, 0, { type: "tool-call-delta", index: 1, id: "c", argumentsDelta: "{" }) });
+  const silenced = view.apply({ upserts: [speechDefinition.buildViewNode({ key: "k", kind: "lares-voice-speech", id: "3", state })] });
+  assert.equal(silenced.latest.silent, true);
 });

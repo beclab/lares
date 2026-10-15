@@ -47,7 +47,11 @@ function describe(chart, row) {
   };
 }
 
-function runMarket(args, spawnFn) {
+/**
+ * Runs olares-cli as the app's profile; resolves with exit code, parsed JSON, and a readable message.
+ * Output past `limit` characters is cut from the front, so JSON larger than that does not parse.
+ */
+export function runOlaresCli(args, spawnFn = spawn, limit = OUTPUT_LIMIT) {
   return new Promise((resolve, reject) => {
     const child = spawnFn("olares-cli", args, {
       env: process.env,
@@ -56,8 +60,8 @@ function runMarket(args, spawnFn) {
     let stdout = "";
     let stderr = "";
     const take = (bucket) => (chunk) => {
-      if (bucket === "stdout") stdout = `${stdout}${chunk}`.slice(-OUTPUT_LIMIT);
-      else stderr = `${stderr}${chunk}`.slice(-OUTPUT_LIMIT);
+      if (bucket === "stdout") stdout = `${stdout}${chunk}`.slice(-limit);
+      else stderr = `${stderr}${chunk}`.slice(-limit);
     };
     child.stdout?.on("data", take("stdout"));
     child.stderr?.on("data", take("stderr"));
@@ -96,7 +100,7 @@ function accepted(result) {
 export async function installVoiceChart(kind, options = {}) {
   const chart = chartFor(kind);
   const spawnFn = options.spawnFn ?? spawn;
-  const result = await runMarket(
+  const result = await runOlaresCli(
     ["market", "install", chart.app, "-s", "market.test", "--version", chart.version, "--compute-mode", "nvidia", "-o", "json"],
     spawnFn,
   );
@@ -106,15 +110,28 @@ export async function installVoiceChart(kind, options = {}) {
   return { app: chart.app, version: chart.version };
 }
 
+/**
+ * `status -a` returns one row per market source (catalog, test, upload). An
+ * app reinstalled from another source keeps its old `uninstalled` row, so the
+ * live one is the latest row that is still installed.
+ * @param {unknown} json
+ */
+export function currentChartRow(json) {
+  const rows = (Array.isArray(json) ? json : [json]).filter((row) => row && typeof row === "object");
+  const installed = rows.filter((row) => chartPhase(row) !== "absent");
+  const time = (row) => Date.parse(row.statusTime) || 0;
+  return [...(installed.length ? installed : rows)].sort((a, b) => time(b) - time(a))[0] ?? null;
+}
+
 /** @param {"stt" | "tts"} kind */
 export async function voiceChartStatus(kind, options = {}) {
   const chart = chartFor(kind);
-  const result = await runMarket(
+  const result = await runOlaresCli(
     ["market", "status", chart.app, "-a", "-o", "json"],
     options.spawnFn ?? spawn,
   );
   if (!result.json) throw new VoiceError("voice_install_failed", 502, result.message);
-  return describe(chart, result.json);
+  return describe(chart, currentChartRow(result.json));
 }
 
 export async function voiceChartsStatus(options = {}) {
@@ -127,7 +144,7 @@ export async function voiceChartsStatus(options = {}) {
 
 async function settle(kind, verb, code, options) {
   const chart = chartFor(kind);
-  const result = await runMarket(
+  const result = await runOlaresCli(
     ["market", verb, chart.app, "--watch", "-o", "json"],
     options.spawnFn ?? spawn,
   );

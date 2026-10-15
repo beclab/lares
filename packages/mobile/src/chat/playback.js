@@ -8,10 +8,15 @@ const SILENT_WAV = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAE
 export function createAnswerPlayer() {
   const audio = typeof Audio === "function" ? new Audio() : null;
   let url = "";
-  const release = () => {
-    if (!url) return;
-    URL.revokeObjectURL(url);
-    url = "";
+  let settle = null;
+  const finish = (played) => {
+    const done = settle;
+    settle = null;
+    if (url) {
+      URL.revokeObjectURL(url);
+      url = "";
+    }
+    done?.(played);
   };
   return {
     unlock() {
@@ -19,23 +24,27 @@ export function createAnswerPlayer() {
       audio.src = SILENT_WAV;
       void audio.play().catch(() => {});
     },
+    /** Resolves when the clip ends (true), or is stopped or fails (false). */
     async play(blob) {
       if (!audio || !blob) return false;
-      release();
+      finish(false);
       url = URL.createObjectURL(blob);
       audio.src = url;
-      audio.onended = release;
+      const ended = new Promise((resolve) => {
+        settle = resolve;
+      });
+      audio.onended = () => finish(true);
+      audio.onerror = () => finish(false);
       try {
         await audio.play();
-        return true;
       } catch {
-        release();
-        return false;
+        finish(false);
       }
+      return ended;
     },
     stop() {
       audio?.pause();
-      release();
+      finish(false);
     },
   };
 }

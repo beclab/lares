@@ -2,9 +2,19 @@ export function loopbackAuthority(port) {
   return `127.0.0.1:${port}`;
 }
 
+/** The browser's Origin, kept for CORS after the loopback rewrite replaces it. */
+const pageOrigins = new WeakMap();
+
+export function pageOrigin(headers) {
+  return pageOrigins.get(headers) ?? headers?.origin;
+}
+
 export function applyLoopbackHeaders(headers, authority) {
   headers.host = authority;
-  if (headers.origin !== undefined) headers.origin = `http://${authority}`;
+  if (headers.origin !== undefined) {
+    if (!pageOrigins.has(headers)) pageOrigins.set(headers, headers.origin);
+    headers.origin = `http://${authority}`;
+  }
   // Fetch Metadata outlives the origin rewrite. The browser decides this one and
   // we cannot argue with it: a packaged page calling the entrance is `cross-site`
   // however the host and origin now read, and dsh refuses that outright — the

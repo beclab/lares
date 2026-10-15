@@ -278,13 +278,18 @@ export function createHostClient(ports = {}) {
     },
     reportLog(scope, event, fields) {
       return postReport({ scope, event, ...(fields ?? {}) }, {
-        request,
+        request: direct,
         url: urlFor(REPORT_PATH),
       });
     },
-    async speak(text) {
-      const res = await request(`${VOICE_API}/speak`, { method: "POST", body: { text } });
+    /** Hands over a streaming answer's text; with `part`, also returns that sentence's audio. */
+    async speak({ key, text, done, part }) {
+      const res = await request(`${VOICE_API}/speak`, {
+        method: "POST",
+        body: Number.isInteger(part) ? { key, text, done, part } : { key, text, done },
+      });
       const body = res?.body;
+      if (res?.ok && body && !Number.isInteger(part)) return { sentences: Number(body.sentences) || 0 };
       if (res?.ok && body && typeof body.audio === "string") {
         return {
           bluetooth: body.bluetooth === "played" ? "played" : "skipped",

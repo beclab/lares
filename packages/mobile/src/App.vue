@@ -110,7 +110,7 @@ import { createT } from "./i18n.js";
 import { failText, withPendingUser } from "./chat/format.js";
 import { createVoiceCapture } from "./chat/voice.js";
 import { createAnswerPlayer } from "./chat/playback.js";
-import { createReplySpeaker } from "@olares/lares-core/voice/speech";
+import { createReplySpeaker, createSentencePlayer, speakable } from "@olares/lares-core/voice/speech";
 import { wavBlob } from "@olares/lares-core/voice/client";
 import { captureSource } from "@olares/lares-core/voice/input";
 import { browserPlays } from "@olares/lares-core/voice/playback";
@@ -223,6 +223,7 @@ export default {
       voiceError: "",
       voiceLanguage: "",
       voiceSpeak: false,
+      voiceStreaming: false,
       speakBusy: false,
       speakNotice: "",
       intakeUnsub: null,
@@ -523,7 +524,20 @@ export default {
     this.imageUploadControllers = new Map();
     this.player = createAnswerPlayer();
     this.replySpeaker = createReplySpeaker();
-    this.speakGen = 0;
+    this.reader = createSentencePlayer({
+      send: async (request) => {
+        const result = await this.runtime.speak?.(request);
+        if (!result) throw Object.assign(new Error("voice_speak_failed"), { code: "voice_speak_failed" });
+        return result;
+      },
+      play: (sentence) => {
+        if (!browserPlays("mobile", sentence.bluetooth)) return Promise.resolve(false);
+        return this.player?.play(wavBlob(sentence.audio));
+      },
+      halt: () => this.player?.stop(),
+      silence: () => void this.runtime.interruptSpeech?.(),
+      fail: (err) => this.showSpeakProblem(err),
+    });
     this.voiceCap = createVoiceCapture({
       transcribe: (blob, signal) => this.runtime.transcribe(blob, this.voiceLanguage, signal),
       onPhase: (phase, extra = {}) => {
@@ -629,20 +643,21 @@ export default {
         this.commandsError = "";
       }
       if (sessionChanged) {
-        this.speakGen += 1;
+        this.reader.stop();
         this.player?.stop();
       }
-      const answer = this.replySpeaker.observe({
+      const utterance = this.replySpeaker.observe({
         sessionChanged,
         wasRunning: this.running,
         running: snap.running,
-        reply: snap.reply,
+        utterance: snap.utterance,
       });
       this.sessionId = snap.sessionId;
       this.items = snap.items;
       this.running = snap.running;
       this.runningSince = snap.runningSince || 0;
-      if (answer) void this.speakReply(answer, ++this.speakGen);
+      const target = this.voiceSpeak ? speakable(utterance, this.voiceStreaming) : null;
+      if (target) this.reader.follow({ ...target, key: `${snap.sessionId}:${target.key}` });
       this.failed = snap.failed;
       this.error = snap.error;
       this.sessions = snap.sessions ?? this.sessions;
@@ -1016,9 +1031,11 @@ export default {
         jobs.push(settings.voice().then((voice) => {
           this.voiceLanguage = voice.config?.language || "";
           this.voiceSpeak = voice.config?.speak === true;
+          this.voiceStreaming = voice.config?.streaming === true;
         }).catch(() => {
           this.voiceLanguage = "";
           this.voiceSpeak = false;
+          this.voiceStreaming = false;
         }));
       }
       await Promise.all(jobs);
@@ -1176,7 +1193,7 @@ export default {
       });
       if (captureSource("mobile") !== "device") return;
       if (this.voicePhase === "idle" || this.voicePhase === "error") void this.voiceCap?.start();
-      this.speakGen += 1;
+      this.reader.stop();
       this.player?.stop();
       this.player?.unlock();
       void this.runtime.interruptSpeech?.();
@@ -1203,13 +1220,14 @@ export default {
       this.voiceSpeak = next;
       this.speakBusy = true;
       if (!next) {
-        this.speakGen += 1;
+        this.reader.stop();
         this.player?.stop();
         void this.runtime.interruptSpeech?.();
       }
       try {
         const voice = await this.runtime.settings.saveVoice({ speak: next });
         this.voiceSpeak = voice?.config ? voice.config.speak === true : next;
+        this.voiceStreaming = voice?.config?.streaming === true;
         const problem = this.voiceSpeak ? speakToggleNotice(voice?.ttsModels) : "";
         this.speakNotice = problem ? this.t(`error.${problem}`) : "";
       } catch (err) {
@@ -1217,22 +1235,6 @@ export default {
         this.showSpeakProblem(err);
       } finally {
         this.speakBusy = false;
-      }
-    },
-    async speakReply(text, gen) {
-      if (!this.voiceSpeak) return;
-      try {
-        const result = await this.runtime.speak?.(text);
-        if (gen !== this.speakGen) return;
-        if (!result?.audio) {
-          this.showSpeakProblem(Object.assign(new Error("voice_speak_failed"), { code: "voice_speak_failed" }));
-          return;
-        }
-        if (!browserPlays("mobile", result.bluetooth)) return;
-        await this.player?.play(wavBlob(result.audio));
-      } catch (err) {
-        if (gen !== this.speakGen) return;
-        this.showSpeakProblem(err);
       }
     },
     toggleHistory() {

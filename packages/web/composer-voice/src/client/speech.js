@@ -1,69 +1,11 @@
 import React from "react";
-import { loadVoiceSettings, postSpeak } from "./api.js";
+import { loadVoiceSettings, postPlaybackStop, postSpeak } from "./api.js";
 import { browserPlays } from "@olares/lares-core/voice/playback";
-import {
-  emptySpeechState,
-  matchSpeechEvent,
-  reduceSpeechEvent,
-} from "@olares/lares-core/voice/speech";
+import { createSentencePlayer, speakable } from "@olares/lares-core/voice/speech";
+import { TARGET } from "./speech-view.js";
 
 const { useEffect, useRef, useSyncExternalStore } = React;
 const h = React.createElement;
-const TARGET = "lares-voice-speech";
-
-export const speechDefinition = {
-  kind: TARGET,
-  target: TARGET,
-  match: matchSpeechEvent,
-  start() {
-    return emptySpeechState();
-  },
-  update(context, match) {
-    return reduceSpeechEvent(context.state, match.event);
-  },
-  buildViewNode(context) {
-    const text = context.state?.text?.trim();
-    if (!text) return null;
-    return {
-      key: context.key,
-      kind: context.kind,
-      id: context.id,
-      target: TARGET,
-      data: { turn: Number(context.id), seq: context.state.seq, text },
-    };
-  },
-};
-
-function latestUtterance(nodes) {
-  let best = null;
-  for (const node of nodes) {
-    const data = node?.data;
-    if (!data?.text) continue;
-    if (!best || data.seq >= best.seq) best = data;
-  }
-  return best;
-}
-
-export const speechView = {
-  target: TARGET,
-  create() {
-    let snapshot = { latest: null };
-    const publish = (latest) => {
-      if (snapshot.latest?.seq === latest?.seq) return snapshot;
-      snapshot = { latest };
-      return snapshot;
-    };
-    return {
-      empty: snapshot,
-      replace({ nodes }) {
-        return publish(latestUtterance(nodes));
-      },
-      apply({ upserts }) {
-        return publish(latestUtterance(upserts) ?? snapshot.latest);
-      },
-    };
-  },
-};
 
 function bindingOf(conversation, sessionId) {
   if (!conversation || sessionId == null || sessionId === "") return null;
@@ -83,9 +25,51 @@ function speechSourceOf(binding) {
   }
 }
 
+function createBrowserPlayer() {
+  let element = null;
+  let finish = null;
+  const stop = () => {
+    element?.pause();
+    finish?.();
+  };
+  return {
+    play(blob) {
+      stop();
+      return new Promise((resolve) => {
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        const done = () => {
+          if (finish !== done) return;
+          finish = null;
+          element = null;
+          URL.revokeObjectURL(url);
+          resolve();
+        };
+        element = audio;
+        finish = done;
+        audio.addEventListener("ended", done, { once: true });
+        audio.addEventListener("error", done, { once: true });
+        audio.play().catch(done);
+      });
+    },
+    stop,
+  };
+}
+
+function createReader() {
+  const browser = createBrowserPlayer();
+  return createSentencePlayer({
+    send: (request) => postSpeak(request),
+    play: (sentence) => (browserPlays("pc", sentence.bluetooth) ? browser.play(sentence.blob) : Promise.resolve()),
+    halt: browser.stop,
+    silence: () => void postPlaybackStop().catch(() => {}),
+  });
+}
+
 /**
- * Speaks a turn only after this view has seen it open, and only when playback
- * is switched on. History that arrives already closed stays silent.
+ * Reads a turn's answer while it is written, only after this view has seen
+ * the turn open, and only when playback is switched on. History that arrives
+ * already closed stays silent.
  */
 export function SpeechPlayer({ sessionId, conversation }) {
   const binding = bindingOf(conversation, sessionId);
@@ -100,46 +84,41 @@ export function SpeechPlayer({ sessionId, conversation }) {
     () => speechSource?.getSnapshot(),
   );
   const opened = useRef(new Set());
-  const spoken = useRef(new Set());
-  const audioRef = useRef(null);
+  const reader = useRef(null);
+  reader.current ??= createReader();
+  // Playback is checked once per utterance; the answer keeps streaming meanwhile.
+  const allowed = useRef({ key: null, speak: null, streaming: false, latest: null });
+  const follow = (gate) => {
+    const target = gate.speak ? speakable(gate.latest, gate.streaming) : null;
+    if (target) reader.current.follow(target);
+  };
 
   useEffect(() => {
     if (typeof openTurn === "number") opened.current.add(openTurn);
   }, [openTurn]);
 
+  useEffect(() => () => reader.current.stop(), [sessionId]);
+
   useEffect(() => {
     const latest = speech?.latest;
-    if (!latest?.text || spoken.current.has(latest.seq)) return;
-    if (!opened.current.has(latest.turn)) return;
-    let cancelled = false;
-    let playing = false;
-    void (async () => {
-      const settings = await loadVoiceSettings().catch(() => null);
-      if (cancelled || !settings?.config?.speak) return;
-      const result = await postSpeak(latest.text).catch(() => null);
-      if (cancelled || !result?.blob || spoken.current.has(latest.seq)) return;
-      if (!browserPlays("pc", result.bluetooth)) {
-        spoken.current.add(latest.seq);
-        return;
-      }
-      const blob = result.blob;
-      if (!blob) return;
-      audioRef.current?.pause();
-      const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
-      audioRef.current = audio;
-      audio.addEventListener("ended", () => URL.revokeObjectURL(url), { once: true });
-      try {
-        await audio.play();
-        playing = true;
-        spoken.current.add(latest.seq);
-      } catch {
-        URL.revokeObjectURL(url);
-      }
-    })();
-    return () => {
-      if (!playing) cancelled = true;
-    };
+    if (!latest || !opened.current.has(latest.turn)) return;
+    const utterance = { ...latest, key: `${sessionId}:${latest.key}` };
+    const gate = allowed.current;
+    if (gate.key === utterance.key) {
+      gate.latest = utterance;
+      follow(gate);
+      return;
+    }
+    allowed.current = { key: utterance.key, speak: null, streaming: false, latest: utterance };
+    void loadVoiceSettings()
+      .then((settings) => {
+        const current = allowed.current;
+        if (current.key !== utterance.key) return;
+        current.speak = Boolean(settings?.config?.speak);
+        current.streaming = settings?.config?.streaming === true;
+        follow(current);
+      })
+      .catch(() => {});
   }, [speech]);
 
   return h("span", { hidden: true });

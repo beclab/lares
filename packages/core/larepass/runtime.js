@@ -47,7 +47,7 @@ function viewOf(state, cache, pendingQuestions, pendingApprovals, inbox) {
     messages: snap.messages,
     running: snap.running,
     runningSince: snap.runningSince,
-    reply: snap.reply,
+    utterance: snap.utterance,
     error: state.error || snap.error,
     failed: state.failed,
     phase: state.phase,
@@ -872,9 +872,9 @@ export function createChatRuntime(client) {
       if (typeof client.reportLog !== "function") return Promise.resolve(false);
       return client.reportLog(scope, event, fields);
     },
-    speak(text) {
+    speak(request) {
       if (typeof client.speak !== "function") return Promise.resolve(null);
-      return client.speak(text);
+      return client.speak(request);
     },
     interruptSpeech() {
       if (typeof client.interruptSpeech !== "function") return Promise.resolve(false);

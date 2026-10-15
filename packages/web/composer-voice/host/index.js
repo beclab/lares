@@ -24,6 +24,7 @@ import {
   voiceStatusPayload,
 } from "@olares/lares-core/voice/service";
 import { bluetoothRequest, ensureBluetoothReady } from "@olares/lares-core/voice/link";
+import { gpuAppAction, gpuModePayload, saveSlicePlan, switchReadingMode } from "@olares/lares-core/voice/gpu-mode";
 import { writeReport } from "@olares/lares-core/log/report";
 
 export const name = "lares-composer-voice";
@@ -63,6 +64,25 @@ async function handleSetConfig(req, res) {
   sendJson(res, 200, await saveVoiceConfig(await readJsonObject(req)));
 }
 
+async function handleGetGpuMode(_req, res) {
+  sendJson(res, 200, await gpuModePayload());
+}
+
+async function handleSetGpuMode(req, res) {
+  const body = await readJsonObject(req);
+  sendJson(res, 200, await switchReadingMode(body.streaming));
+}
+
+async function handleSetSlicePlan(req, res) {
+  const body = await readJsonObject(req);
+  sendJson(res, 200, await saveSlicePlan(body.apps));
+}
+
+async function handleGpuApp(req, res) {
+  const body = await readJsonObject(req);
+  sendJson(res, 200, await gpuAppAction(body.app, body.op));
+}
+
 async function handleInstall(req, res) {
   const body = await readJsonObject(req);
   const kind = body.kind === "tts" ? "tts" : body.kind === "stt" ? "stt" : "";
@@ -86,14 +106,20 @@ async function handleSpeak(req, res) {
   const controller = new AbortController();
   const abort = () => controller.abort();
   res.once("close", abort);
+  const part = Number.isInteger(body.part) ? body.part : undefined;
+  const key = typeof body.key === "string" && body.key ? body.key : undefined;
   let spoken;
   try {
     spoken = await speakFromConfig(
       typeof body.text === "string" ? body.text : "",
-      { signal: controller.signal },
+      { signal: controller.signal, part, key, done: body.done === true },
     );
   } finally {
     res.off("close", abort);
+  }
+  if (key && part === undefined) {
+    sendJson(res, 200, { sentences: spoken.sentences });
+    return;
   }
   sendJson(res, 200, {
     bluetooth: spoken.bluetooth === "played" ? "played" : "skipped",
@@ -176,6 +202,9 @@ const ROUTES = {
   "/models": { GET: handleModels },
   "/config": { GET: handleGetConfig, POST: handleSetConfig },
   "/install": { POST: handleInstall },
+  "/gpu-mode": { GET: handleGetGpuMode, POST: handleSetGpuMode },
+  "/gpu-mode/slices": { POST: handleSetSlicePlan },
+  "/gpu-mode/app": { POST: handleGpuApp },
   "/speak": { POST: handleSpeak },
   "/playback/stop": { POST: handlePlaybackStop },
   "/ready": { POST: handleReady },

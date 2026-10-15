@@ -1,6 +1,6 @@
 import { producedPathsFromView, turnMediaPathsFromEvent } from "../files/deliverables.js";
 import { durablePathFromToolCall, parseToolArguments } from "../files/published-tools.js";
-import { concludingReply } from "../voice/speech.js";
+import { reduceUtterance } from "../voice/speech.js";
 import { contextForm, contextProvenance, isHumanUserSource } from "./context-provenance.js";
 import { toolRowModel } from "./tool-row.js";
 import { createTurnMetrics } from "./turn-metrics.js";
@@ -111,7 +111,7 @@ export function foldTranscript(entries) {
   let running = false;
   let runningSince = 0;
   let error = "";
-  let reply = null;
+  let utterance = null;
   let streamCursor = { loc: "", kind: "", index: 0 };
   let activeTurn = 0;
   const ended = new Map();
@@ -238,6 +238,7 @@ export function foldTranscript(entries) {
     const data = event.data ?? {};
     const view = entryView(entry, event);
     metrics.observe(event);
+    utterance = reduceUtterance(utterance, event);
 
     if (event.type === "turn/start") {
       closeTurn();
@@ -248,7 +249,6 @@ export function foldTranscript(entries) {
       running = true;
       runningSince = Number(event.time) || 0;
       error = "";
-      reply = null;
       continue;
     }
 
@@ -280,8 +280,6 @@ export function foldTranscript(entries) {
 
     if (event.type === "assistant/message") {
       applyAssistantMessage(data);
-      const text = concludingReply(event);
-      if (text) reply = { seq: event.seq, text };
       continue;
     }
 
@@ -376,6 +374,6 @@ export function foldTranscript(entries) {
     running,
     runningSince: running ? runningSince : 0,
     error,
-    reply,
+    utterance,
   };
 }

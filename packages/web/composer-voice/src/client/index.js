@@ -4,7 +4,8 @@ import { MicButton, micCss } from "./MicButton.js";
 import { spinCss } from "./icons.js";
 import { ZH, EN, attachLocale, bindTranslate, getTranslate } from "./locale.js";
 import { VoiceSettings, settingsCss } from "./settings.js";
-import { SpeechPlayer, speechDefinition, speechView } from "./speech.js";
+import { SpeechPlayer } from "./speech.js";
+import { speechDefinition, speechView } from "./speech-view.js";
 import { installPluginStyle } from "../../../shared/client/plugin-style.js";
 
 const h = React.createElement;

@@ -77,11 +77,12 @@ export function classifyRemoteEvent(value) {
   return { kind: "pass", eventId: value.eventId };
 }
 
+// A tool call starting is what turns the step being read aloud silent.
+const LIVE_CHUNKS = new Set(["text-delta", "reasoning-delta", "tool-call-delta", "block-end"]);
+
 function liveChunkEvent(seq, turn, step, chunk) {
   if (!chunk || typeof chunk !== "object") return null;
-  if (chunk.type !== "text-delta" && chunk.type !== "reasoning-delta" && chunk.type !== "block-end") {
-    return null;
-  }
+  if (!LIVE_CHUNKS.has(chunk.type)) return null;
   return {
     type: "assistant/chunk",
     seq,

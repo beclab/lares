@@ -3,6 +3,12 @@ export const LARES_API_PREFIX = "/api/lares";
 export const MODELS_PATH = `${LARES_API_PREFIX}/models`;
 export const PC_TEST_PROXY = "/laresHost";
 
+/**
+ * Packaged LarePass page origins (Capacitor Android `androidScheme: http`, iOS).
+ * Binary bodies leave those pages as a cross-origin webview `fetch`.
+ */
+export const LAREPASS_PAGE_ORIGINS = ["http://localhost", "https://localhost", "capacitor://localhost"];
+
 /** Host plugin routes (`file-preview`, models, voice, …). Same path on PC and LarePass. */
 export function isLaresPluginPath(path) {
   const suffix = String(path ?? "").startsWith("/") ? path : `/${path}`;

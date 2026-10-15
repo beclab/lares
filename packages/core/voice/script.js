@@ -8,6 +8,12 @@ import { segment } from "sentencex";
  */
 export const SENTENCE_GAP_MS = 300;
 
+/** Text still streaming may hold a code fence that has not closed yet. */
+function closedPart(text) {
+  const fences = text.match(/```/g)?.length ?? 0;
+  return fences % 2 === 0 ? text : text.slice(0, text.lastIndexOf("```"));
+}
+
 function plain(text) {
   return String(text ?? "")
     .replace(/```[\s\S]*?```/g, " ")
@@ -20,16 +26,59 @@ function plain(text) {
     .slice(0, 2000);
 }
 
-export function speechSegments(text) {
-  const source = plain(text);
+/**
+ * Synthesis time grows with the segment, and the first sound waits for the
+ * whole first segment. A long sentence is read clause by clause instead,
+ * clauses merged back up to this length. A CJK character counts as one, other
+ * characters as a third (roughly a syllable each way).
+ */
+const MAX_SEGMENT_WEIGHT = 24;
+const CJK = /[\u3000-\u9fff\uff00-\uffef]/g;
+// ASCII separators only when a space follows, so 1,000 and 10:30 stay whole.
+const CLAUSE_SPLIT = /(?<=[，；：]|[,;:](?=\s))/;
+const CLAUSE_END = /[，,；;：:]$/;
+
+function weight(text) {
+  const cjk = text.match(CJK)?.length ?? 0;
+  return cjk + (text.length - cjk) / 3;
+}
+
+function joinClauses(left, right) {
+  return /[\u3000-\u9fff\uff00-\uffef]$/.test(left) ? `${left}${right}` : `${left} ${right}`;
+}
+
+function clauses(sentence) {
+  if (weight(sentence) <= MAX_SEGMENT_WEIGHT) return [sentence];
+  const merged = [];
+  for (const part of sentence.split(CLAUSE_SPLIT).map((piece) => piece.trim()).filter(Boolean)) {
+    const last = merged.at(-1);
+    if (last !== undefined && weight(joinClauses(last, part)) <= MAX_SEGMENT_WEIGHT) {
+      merged[merged.length - 1] = joinClauses(last, part);
+    } else {
+      merged.push(part);
+    }
+  }
+  return merged;
+}
+
+/** A clause break is half a sentence break. */
+export function gapAfter(segment) {
+  return CLAUSE_END.test(segment) ? SENTENCE_GAP_MS / 2 : SENTENCE_GAP_MS;
+}
+
+/**
+ * The segments to read: sentences, long ones cut into clauses. While the
+ * answer is still streaming (`done: false`) its last sentence may be cut
+ * mid-word, so only the ones before it count.
+ * @returns {string[]}
+ */
+export function speechSegments(text, { done = true } = {}) {
+  const source = plain(done ? text : closedPart(String(text ?? "")));
   if (!source) return [];
   const sentences = segment("en", source).map((part) => part.trim()).filter(Boolean);
-  return sentences.map((sentence, index) => ({
-    text: sentence,
-    gapMs: index === sentences.length - 1 ? 0 : SENTENCE_GAP_MS,
-  }));
+  return (done ? sentences : sentences.slice(0, -1)).flatMap(clauses);
 }
 
 export function speechScript(text) {
-  return speechSegments(text).map((part) => part.text).join("\n");
+  return speechSegments(text).join("\n");
 }

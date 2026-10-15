@@ -19,8 +19,15 @@ import {
 import { createCaptureSession } from "./capture.js";
 import { createDuplexCoordinator } from "./duplex.js";
 import { normalizeSttPcm } from "./pcm.js";
-import { speechSegments } from "./script.js";
-import { pcmToWav, silencePcm, synthesize, synthesizeStream } from "../router/tts.js";
+import { gapAfter, speechSegments } from "./script.js";
+import {
+  listTtsVoices,
+  pcmToWav,
+  pickTtsVoice,
+  silencePcm,
+  synthesize,
+  synthesizeStream,
+} from "../router/tts.js";
 import {
   STT_MAX_AUDIO_BYTES,
   VoiceError,
@@ -155,43 +162,159 @@ function cancelledSpeech() {
 
 const readouts = new WeakMap();
 
+/** model id → pinned voice. A failed lookup is not cached, so the next readout asks again. */
+const pinnedVoices = new Map();
+
+async function pinnedVoice(model, listVoices = listTtsVoices) {
+  if (pinnedVoices.has(model)) return pinnedVoices.get(model);
+  let voice = null;
+  try {
+    voice = pickTtsVoice(await listVoices(model));
+  } catch {
+    return null;
+  }
+  if (voice) pinnedVoices.set(model, voice);
+  return voice;
+}
+
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((ok, fail) => {
+    resolve = ok;
+    reject = fail;
+  });
+  promise.catch(() => {});
+  return { promise, resolve, reject };
+}
+
+function partIndex(value) {
+  return Number.isInteger(value) && value >= 0 ? value : null;
+}
+
+/** How long a readout of a streaming answer waits for its next sentence before it lets the headset go. */
+const STREAM_IDLE_MS = 30_000;
+
+function joinable(current, id, key, part) {
+  if (current?.id !== id) return null;
+  if (key && current.signal.aborted) throw cancelledSpeech();
+  if (key || part > 0) return current.signal.aborted ? null : current;
+  return current.active() ? current : null;
+}
+
 /**
- * Every open page asks to read the same answer when it concludes. A request
- * for the readout already under way joins it instead of restarting the
- * headset and cancelling the page that asked first.
+ * Every open page asks to read the same answer. A request for the readout
+ * already under way joins it instead of restarting the headset and cancelling
+ * the page that asked first.
+ *
+ * `options.key` names an answer that is still being written: each request
+ * carries the text so far, and `options.done` once it is complete. The readout
+ * appends the sentences it has not seen yet, so the headset reads on without a
+ * restart. A keyed request without `options.part` only hands over the text.
+ * Once interrupted, a key stays cancelled.
+ *
+ * `options.part` asks for one sentence instead of the whole answer, so a page
+ * can play it while the rest is still being written or synthesized. A later
+ * sentence joins its readout even after synthesis has finished.
+ *
+ * Without a key the text is the whole answer and names its readout.
+ *
+ * @returns {Promise<{ bluetooth: string, audio: Buffer } | { sentences: number }>}
  */
 export async function speakFromConfig(text, options = {}) {
   const config = options.config ?? readConfig();
   if (!config.speak) throw new VoiceError("voice_speak_disabled", 409, "speech playback is off");
-  const segments = speechSegments(text);
-  if (!segments.length) throw new VoiceError("voice_config_invalid", 400, "nothing to speak");
-  const model = options.model ?? await pickTtsModelId(await listModels(), config.ttsModel);
-  if (!model) throw new VoiceError("voice_tts_unavailable", 503, "no speech model available");
+  const key = typeof options.key === "string" && options.key ? options.key : null;
+  const done = key ? options.done === true : true;
+  const segments = speechSegments(text, { done });
+  const part = partIndex(options.part);
   const coordinator = options.coordinator ?? duplex;
-  const current = readouts.get(coordinator);
-  if (current?.text === text && current.active()) return current.result;
-  const lease = coordinator.beginSpeech(options.signal);
-  const result = readAloud(segments, model, lease, options);
-  readouts.set(coordinator, { text, active: lease.active, result });
-  return result;
+  const id = key ?? text;
+  let readout = joinable(readouts.get(coordinator), id, key, part);
+  if (!readout) {
+    if (!segments.length) {
+      if (key && part === null) return { sentences: 0 };
+      throw new VoiceError("voice_config_invalid", 400, "nothing to speak");
+    }
+    const model = options.model ?? await pickTtsModelId(await listModels(), config.ttsModel);
+    if (!model) throw new VoiceError("voice_tts_unavailable", 503, "no speech model available");
+    readout = joinable(readouts.get(coordinator), id, key, part) ?? startReadout(coordinator, id, model, options);
+  }
+  readout.extend(segments, done);
+  if (part === null) return key ? { sentences: readout.segments.length } : readout.result;
+  if (part >= readout.segments.length) {
+    throw new VoiceError("voice_config_invalid", 400, `answer has ${readout.segments.length} sentence(s)`);
+  }
+  return readout.parts[part].promise;
 }
 
-async function readAloud(segments, model, lease, options) {
+function startReadout(coordinator, id, model, options) {
+  const lease = coordinator.beginSpeech(options.signal);
+  let wake = () => {};
+  const readout = {
+    id,
+    active: lease.active,
+    signal: lease.signal,
+    segments: [],
+    parts: [],
+    final: false,
+    extend(segments, done) {
+      if (readout.final) return;
+      for (const sentence of segments.slice(readout.segments.length)) {
+        readout.segments.push(sentence);
+        readout.parts.push(deferred());
+      }
+      if (done) readout.final = true;
+      wake();
+    },
+    /** true once more text arrives or the readout is cancelled, false after `idleMs` of silence. */
+    more(idleMs) {
+      return new Promise((resolve) => {
+        const settle = (value) => {
+          clearTimeout(timer);
+          lease.signal.removeEventListener("abort", woken);
+          wake = () => {};
+          resolve(value);
+        };
+        const woken = () => settle(true);
+        const timer = setTimeout(() => settle(false), idleMs);
+        wake = woken;
+        lease.signal.addEventListener("abort", woken, { once: true });
+      });
+    },
+  };
+  readout.result = pinnedVoice(model, options.listVoices)
+    .then((voice) => readAloud(readout, model, voice, lease, options));
+  readout.result.catch(() => {});
+  readouts.set(coordinator, readout);
+  return readout;
+}
+
+async function readAloud(readout, model, voice, lease, options) {
   const openPlayback = options.openPlayback ?? openBluetoothPlayback;
   const synthesize = options.synthesize ?? synthesizeStream;
   const playFile = options.playFile ?? playBluetoothAudio;
   const toWav = options.pcmToWav ?? pcmToWav;
   const gap = options.silencePcm ?? silencePcm;
+  const idleMs = options.idleMs ?? STREAM_IDLE_MS;
   let opening;
   let player;
   const abortPlayer = () => player?.abort?.();
   lease.signal.addEventListener("abort", abortPlayer);
   const pcm = [];
+  let sentence = [];
   let streamed = false;
   let fileAudio;
   const release = () => {
     lease.signal.removeEventListener("abort", abortPlayer);
     lease.finish();
+  };
+  const dropParts = (err) => {
+    for (const part of readout.parts) part.reject(err);
+  };
+  const headsetState = async () => {
+    const opened = opening ? await opening : null;
+    return opened && !opened.skipped ? "played" : "skipped";
   };
   // The speaker drains in real time; synthesis must not wait on it, or the
   // browser copy arrives only after the headset has finished.
@@ -199,6 +322,7 @@ async function readAloud(segments, model, lease, options) {
   const writeChunk = (chunk) => {
     if (!chunk?.length) return;
     pcm.push(chunk);
+    sentence.push(chunk);
     if (!lease.active()) return;
     opening ??= openPlayback().catch(() => ({ skipped: true }));
     feeding = feeding.then(async () => {
@@ -213,29 +337,41 @@ async function readAloud(segments, model, lease, options) {
     });
   };
   try {
-    for (const segment of segments) {
-      if (!lease.active()) break;
-      const outcome = await synthesize({ text: segment.text, model, signal: lease.signal }, writeChunk);
+    for (let index = 0; lease.active();) {
+      if (index >= readout.segments.length) {
+        if (readout.final) break;
+        if (!(await readout.more(idleMs))) readout.final = true;
+        continue;
+      }
+      sentence = [];
+      if (index > 0) writeChunk(gap(gapAfter(readout.segments[index - 1])));
+      const outcome = await synthesize({ text: readout.segments[index], model, voice, signal: lease.signal }, writeChunk);
       if (!outcome.streamed) {
         fileAudio = outcome.audio;
+        readout.parts[0].resolve({ audio: fileAudio, bluetooth: "skipped" });
+        readout.final = true;
         break;
       }
       streamed = true;
-      if (segment.gapMs > 0 && lease.active()) writeChunk(gap(segment.gapMs));
+      readout.parts[index].resolve({ audio: toWav(Buffer.concat(sentence)), bluetooth: await headsetState() });
+      index += 1;
     }
   } catch (err) {
     void opening?.then((opened) => opened.abort?.());
     release();
-    if (lease.signal.aborted) throw cancelledSpeech();
-    throw err;
+    const failure = lease.signal.aborted ? cancelledSpeech() : err;
+    dropParts(failure);
+    throw failure;
   }
-  const audio = streamed ? toWav(Buffer.concat(pcm)) : fileAudio;
   const headset = opening ? await opening : null;
   if (!lease.active()) {
     headset?.abort?.();
     release();
+    dropParts(cancelledSpeech());
     throw cancelledSpeech();
   }
+  if (!streamed) dropParts(new VoiceError("voice_config_invalid", 400, "this engine returns the answer whole"));
+  const audio = streamed ? toWav(Buffer.concat(pcm)) : fileAudio;
   if (streamed && headset && !headset.skipped) {
     void feeding
       .then(() => (headset.skipped || !lease.active() ? headset.abort?.() : headset.close()))

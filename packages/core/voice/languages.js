@@ -14,7 +14,7 @@ export function voiceValueFromMenu(id) {
   return id === VOICE_AUTO ? "" : id;
 }
 
-export const EMPTY_VOICE_CONFIG = { model: "", ttsModel: "", language: "", speak: false };
+export const EMPTY_VOICE_CONFIG = { model: "", ttsModel: "", language: "", speak: false, streaming: false };
 
 export function voiceChoiceItems(ids) {
   return ids.map((id) => ({ id, label: id }));
@@ -32,8 +32,4 @@ export function voiceLanguageItems(autoLabel) {
 
 export function voiceModelItems(sttIds, autoLabel) {
   return [{ id: VOICE_AUTO, label: autoLabel }, ...sttIds.map((id) => ({ id, label: id }))];
-}
-
-export function voiceStatusReady(status) {
-  return Boolean(status?.modelAvailable);
 }

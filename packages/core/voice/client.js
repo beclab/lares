@@ -32,6 +32,7 @@ export async function loadVoiceSettings(options = {}) {
 function chartView(row) {
   const phase = row?.phase;
   return {
+    app: typeof row?.app === "string" ? row.app : "",
     phase: phase === "running" || phase === "stopped" || phase === "busy" || phase === "failed" ? phase : "absent",
     state: typeof row?.state === "string" ? row.state : "",
   };
@@ -62,11 +63,12 @@ export function wavBlob(base64) {
   return new Blob([bytes], { type: "audio/wav" });
 }
 
-export async function postSpeak(text) {
+/** Hands over a streaming answer's text; with `part`, also returns that sentence's audio. */
+export async function postSpeak({ key, text, done, part }) {
   const res = await fetch(`${API}/speak`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify(Number.isInteger(part) ? { key, text, done, part } : { key, text, done }),
   });
   let body = null;
   try {
@@ -74,7 +76,11 @@ export async function postSpeak(text) {
   } catch {
     body = null;
   }
-  if (!res.ok || typeof body?.audio !== "string") throw new Error(transcribeErrorCode(body));
+  if (res.ok && body && !Number.isInteger(part)) return { sentences: Number(body.sentences) || 0 };
+  if (!res.ok || typeof body?.audio !== "string") {
+    const code = transcribeErrorCode(body);
+    throw Object.assign(new Error(code), { code });
+  }
   return {
     bluetooth: body.bluetooth === "played" ? "played" : "skipped",
     blob: wavBlob(body.audio),
@@ -95,6 +101,47 @@ export async function saveVoiceSettings(patch) {
   });
   if (!res.ok) throw new Error(String(res.status));
   return loadVoiceSettings({ force: true });
+}
+
+/** Reading mode and the GPU slicing it needs; see core/voice/gpu-mode.js. */
+export async function loadGpuMode() {
+  const res = await fetch(`${API}/gpu-mode`);
+  if (!res.ok) throw new Error(String(res.status));
+  return res.json();
+}
+
+export async function switchGpuMode(streaming) {
+  const res = await fetch(`${API}/gpu-mode`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ streaming }),
+  });
+  if (!res.ok) throw new Error(String(res.status));
+  return res.json();
+}
+
+/** @param {{ app: string, enabled: boolean, memory: number }[]} apps memory in bytes */
+export async function saveSlicePlan(apps) {
+  const res = await fetch(`${API}/gpu-mode/slices`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ apps }),
+  });
+  const payload = await res.json().catch(() => null);
+  if (!res.ok) throw Object.assign(new Error(payload?.error?.message || String(res.status)), { code: payload?.error?.code });
+  return payload;
+}
+
+/** @param {string} app @param {"resume" | "stop"} op */
+export async function postGpuApp(app, op) {
+  const res = await fetch(`${API}/gpu-mode/app`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ app, op }),
+  });
+  const payload = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(payload?.error?.message || String(res.status));
+  return payload;
 }
 
 function transcribeErrorCode(payload) {
