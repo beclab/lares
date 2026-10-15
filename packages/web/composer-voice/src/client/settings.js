@@ -8,7 +8,7 @@ import {
 import { watchCatalogRevision } from "../../../shared/client/catalog-events.js";
 import { useLatest, useMountedRef } from "../../../shared/client/react-lifecycle.js";
 import { installVoiceChart, loadVoiceSettings, rememberedVoiceSettings, saveVoiceSettings, voiceChartAction } from "./api.js";
-import { GpuAppsCard, ReadingModeRow, SlicePlanCard, useGpuMode } from "./gpu-panel.js";
+import { GpuAppsCard, needsPlan, ReadingModeRow, SlicePlanCard, useGpuMode } from "./gpu-panel.js";
 import {
   EMPTY_VOICE_CONFIG,
   selectedVoice,
@@ -320,7 +320,7 @@ export function VoiceSettings() {
       ),
       h(ReadingModeRow, { gpu, disabled: busy, t }),
     ),
-    gpu.mode?.streaming || gpu.mode?.gpu?.type === "MemorySlice"
+    gpu.mode?.streaming || gpu.mode?.gpu?.type === "MemorySlice" || needsPlan(gpu.mode)
       ? h(SlicePlanCard, { gpu, disabled: busy, t })
       : null,
     gpu.mode?.gpu?.type === "TimeSlice" && !gpu.switching

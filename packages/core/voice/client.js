@@ -110,14 +110,24 @@ export async function loadGpuMode() {
   return res.json();
 }
 
+/** A failed GPU request keeps the Host's code and params for gpuProblemText. */
+async function gpuResponse(res) {
+  const payload = await res.json().catch(() => null);
+  if (res.ok) return payload;
+  const error = payload?.error;
+  throw Object.assign(new Error(error?.message || String(res.status)), {
+    code: typeof error?.code === "string" ? error.code : "voice_gpu_failed",
+    params: error?.params && typeof error.params === "object" ? error.params : {},
+  });
+}
+
 export async function switchGpuMode(streaming) {
   const res = await fetch(`${API}/gpu-mode`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ streaming }),
   });
-  if (!res.ok) throw new Error(String(res.status));
-  return res.json();
+  return gpuResponse(res);
 }
 
 /** @param {{ app: string, enabled: boolean, memory: number }[]} apps memory in bytes */
@@ -127,9 +137,7 @@ export async function saveSlicePlan(apps) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ apps }),
   });
-  const payload = await res.json().catch(() => null);
-  if (!res.ok) throw Object.assign(new Error(payload?.error?.message || String(res.status)), { code: payload?.error?.code });
-  return payload;
+  return gpuResponse(res);
 }
 
 /** @param {string} app @param {"resume" | "stop"} op */
@@ -139,9 +147,7 @@ export async function postGpuApp(app, op) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ app, op }),
   });
-  const payload = await res.json().catch(() => null);
-  if (!res.ok) throw new Error(payload?.error?.message || String(res.status));
-  return payload;
+  return gpuResponse(res);
 }
 
 function transcribeErrorCode(payload) {

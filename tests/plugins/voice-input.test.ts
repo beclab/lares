@@ -137,8 +137,9 @@ test("install requests the catalog chart for that kind", async () => {
   const installed = await installVoiceChart("tts", { spawnFn });
   assert.equal(installed.app, "audioqwen3tts06v3");
   assert.deepEqual(calls[0], [
-    "market", "install", "audioqwen3tts06v3", "-s", "market.test", "--version", "1.0.0", "--compute-mode", "nvidia", "-o", "json",
+    "market", "install", "audioqwen3tts06v3", "-s", "market.test", "--compute-mode", "nvidia", "-o", "json",
   ]);
+  assert.equal(calls[0].includes("--version"), false);
 });
 
 test("GPU switch keeps each app's memory slice across a time-slice round trip", async () => {
@@ -278,6 +279,148 @@ test("saving a slice plan while memory-sliced restarts only the apps that change
   }
 });
 
+type CliReply = { body?: string; code?: number };
+
+function fakeCli(reply: (args: string[]) => CliReply, calls: string[][] = []) {
+  return ((_cmd: string, args: string[]) => {
+    calls.push(args);
+    const { body = '{"status":"success"}', code = 0 } = reply(args);
+    return {
+      stdout: { on(_event: string, listener: (chunk: string) => void) { listener(body); } },
+      stderr: { on() {} },
+      on(event: string, listener: (code?: number) => void) {
+        if (event === "close") setTimeout(() => listener(code), 0);
+      },
+    };
+  }) as unknown as typeof import("node:child_process").spawn;
+}
+
+async function withGpuHome<T>(run: (home: string) => Promise<T>) {
+  const home = mkdtempSync(join(tmpdir(), "lares-gpu-"));
+  const prev = process.env.DSH_HOME;
+  process.env.DSH_HOME = home;
+  try {
+    return await run(home);
+  } finally {
+    if (prev === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = prev;
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
+const GPU_GiB = 2 ** 30;
+
+/** A time-sliced 24 GiB card with three running GPU apps and one stopped. */
+function timeSlicedCard(required: Record<string, string>) {
+  const device = {
+    id: "GPU-1",
+    nodeName: "demo01",
+    mode: "nvidia",
+    memory: 24 * GPU_GiB,
+    supportType: "TimeSlice",
+    availableSupportTypes: ["TimeSlice", "MemorySlice"],
+    bindings: Object.keys(required).map((appName) => ({ appName, memory: 0 })),
+  };
+  const mine = Object.keys(required).map((name) => ({
+    name, title: name, source: "upload", state: name === "flowstudio" ? "stopped" : "running",
+  }));
+  const reply = (args: string[]): CliReply | null => {
+    if (args[2] === "list") return { body: JSON.stringify([{ devices: [device] }]) };
+    if (args[1] === "list") return { body: JSON.stringify(mine) };
+    if (args[1] === "get") {
+      return { body: JSON.stringify({ app_info: { app_entry: { accelerator: [{ mode: "nvidia", requiredGPUMemory: required[args[2]] }] } } }) };
+    }
+    return null;
+  };
+  return { device, reply };
+}
+
+async function settleJob(gpuSwitchJob: () => { phase: string } | null) {
+  while (["switching", "restoring", "resuming"].includes(gpuSwitchJob()?.phase ?? "")) {
+    await new Promise((r) => setTimeout(r, 1));
+  }
+  return gpuSwitchJob();
+}
+
+test("a first switch to memory slicing gives each running app its minimum", async () => {
+  await withGpuHome(async () => {
+    const card = timeSlicedCard({ audioqwen3asr06v3: "3584Mi", audioqwen3tts06v3: "4Gi", sglang: "15Gi", flowstudio: "6Gi" });
+    const calls: string[][] = [];
+    const spawnFn = fakeCli((args) => card.reply(args) ?? {}, calls);
+    const { gpuSwitchJob, switchReadingMode } = await import(`../../packages/core/voice/gpu-mode.js?seed=${Date.now()}`);
+    const { readConfig } = await import(`../../packages/core/voice/config.js?seed=${Date.now()}`);
+    await switchReadingMode(true, { spawnFn });
+    assert.equal((await settleJob(gpuSwitchJob))?.phase, "done");
+    assert.equal(readConfig().streaming, true);
+    const resumes = calls.filter((args) => args[1] === "resume").map((args) => [args[2], args[args.indexOf("--compute-binding") + 1]]);
+    assert.deepEqual(resumes, [
+      ["audioqwen3asr06v3", "demo01:GPU-1:3584Mi"],
+      ["audioqwen3tts06v3", "demo01:GPU-1:4096Mi"],
+      ["sglang", "demo01:GPU-1:15360Mi"],
+    ]);
+  });
+});
+
+test("a memory-slice plan that cannot fit is refused before any app stops", async () => {
+  await withGpuHome(async () => {
+    const card = timeSlicedCard({ audioqwen3asr06v3: "6Gi", audioqwen3tts06v3: "4Gi", sglang: "15Gi" });
+    const calls: string[][] = [];
+    const spawnFn = fakeCli((args) => card.reply(args) ?? {}, calls);
+    const { gpuSwitchJob, switchReadingMode } = await import(`../../packages/core/voice/gpu-mode.js?over=${Date.now()}`);
+    const { readConfig } = await import(`../../packages/core/voice/config.js?over=${Date.now()}`);
+    await switchReadingMode(true, { spawnFn });
+    const job = await settleJob(gpuSwitchJob);
+    assert.equal(job?.phase, "failed");
+    assert.deepEqual(job?.problem, { code: "voice_gpu_plan_over", params: { need: 25, total: 24 }, detail: "" });
+    assert.equal(calls.some((args) => ["stop", "resume", "set-type"].includes(args[1] === "compute" ? args[2] : args[1])), false);
+    assert.equal(readConfig().streaming, false);
+  });
+});
+
+test("a refused GPU switch puts the stopped apps back and keeps the reading mode", async () => {
+  await withGpuHome(async () => {
+    const card = timeSlicedCard({ audioqwen3asr06v3: "3584Mi", sglang: "15Gi" });
+    const calls: string[][] = [];
+    const spawnFn = fakeCli((args) => {
+      if (args[2] === "set-type") return { code: 1, body: '{"status":"failed","message":"API error (HTTP 403): forbidden"}' };
+      return card.reply(args) ?? {};
+    }, calls);
+    const { gpuSwitchJob, switchReadingMode } = await import(`../../packages/core/voice/gpu-mode.js?refused=${Date.now()}`);
+    const { readConfig } = await import(`../../packages/core/voice/config.js?refused=${Date.now()}`);
+    await switchReadingMode(true, { spawnFn });
+    const job = await settleJob(gpuSwitchJob) as { phase: string; problem: { code: string }; restored: { app: string; ok: boolean }[] };
+    assert.equal(job.phase, "failed");
+    assert.equal(job.problem.code, "voice_gpu_forbidden");
+    assert.deepEqual(job.restored, [{ app: "audioqwen3asr06v3", ok: true }, { app: "sglang", ok: true }]);
+    const resumes = calls.filter((args) => args[1] === "resume").map((args) => [args[2], args[args.indexOf("--compute-binding") + 1]]);
+    assert.deepEqual(resumes, [["audioqwen3asr06v3", "demo01:GPU-1"], ["sglang", "demo01:GPU-1"]]);
+    assert.equal(readConfig().streaming, false);
+  });
+});
+
+test("GPU problems read as guidance in both languages", async () => {
+  const { cliProblem, gpuProblemText } = await import("@olares/lares-core/voice/gpu-problem");
+  const { ZH, EN } = await import("@olares/lares-core/i18n/voice");
+  const { interpolate } = await import("@olares/lares-core/i18n/t");
+  assert.equal(cliProblem({ message: "API error (HTTP 403): forbidden" }, "voice_gpu_failed").code, "voice_gpu_forbidden");
+  assert.equal(cliProblem({ message: "credential is invalidated, run profile login" }, "voice_gpu_failed").code, "voice_gpu_login");
+  assert.equal(cliProblem({ message: "bound-apps-stop-blocked: sglang" }, "voice_gpu_failed").code, "voice_gpu_blocked");
+  assert.equal(cliProblem({ message: "insufficient GPU memory on node" }, "voice_gpu_resume_failed", { app: "a" }).code, "voice_gpu_memory");
+  assert.equal(cliProblem({ message: "boom" }, "voice_gpu_stop_failed", { app: "a" }).code, "voice_gpu_stop_failed");
+
+  const zhKeys = Object.keys(ZH).filter((key) => key.startsWith("error.voice_gpu_") || key.startsWith("settings.mode."));
+  const enKeys = Object.keys(EN).filter((key) => key.startsWith("error.voice_gpu_") || key.startsWith("settings.mode."));
+  assert.deepEqual(enKeys.sort(), zhKeys.sort());
+
+  const translate = (table: Record<string, string>) => (key: string, params?: Record<string, unknown>) =>
+    table[key] === undefined ? key : interpolate(table[key], params);
+  assert.equal(
+    gpuProblemText(translate(ZH), { code: "voice_gpu_resume_failed", params: { app: "语音识别" }, detail: "timeout" }),
+    "语音识别没能启动（timeout）。请在 Olares 市场查看它的状态，再点重试",
+  );
+  assert.match(gpuProblemText(translate(EN), { code: "voice_gpu_new_thing", params: {}, detail: "oops" }), /^Couldn't switch the GPU mode \(oops\)/);
+});
+
 test("chart status reads the live row across every market source", async () => {
   const { currentChartRow, voiceChartStatus } = await import(`../../packages/core/voice/install.js?rows=${Date.now()}`);
   const rows = [
@@ -364,7 +507,7 @@ test("starting a GPU app that is already running counts as started", async () =>
       await new Promise((r) => setTimeout(r, 2));
       payload = await gpuModePayload({ spawnFn });
     }
-    assert.equal(payload.apps[0]?.error, "");
+    assert.equal(payload.apps[0]?.problem, null);
     const { readJsonFile } = await import("@olares/lares-core/tools/json-file");
     assert.deepEqual(readJsonFile(join(home, "voice-gpu", "config.json"))?.apps, ["flowstudio"]);
   } finally {
@@ -507,14 +650,16 @@ test("readConfig / writeConfig round-trip through DSH_HOME", async () => {
   const prev = process.env.DSH_HOME;
   process.env.DSH_HOME = home;
   try {
-    const { readConfig, validateConfigPatch, writeConfig } = await import(
+    const { readConfig, spokenReplyPrompt, validateConfigPatch, writeConfig } = await import(
       `../../packages/core/voice/config.js?cfg=${Date.now()}`
     );
     assert.deepEqual(readConfig(), { model: "", ttsModel: "", language: "", speak: false, streaming: false });
+    assert.equal(spokenReplyPrompt(), "");
     const saved = writeConfig({ model: "  whisper-x  ", language: "zh" });
     assert.equal(saved.model, "whisper-x");
     assert.equal(saved.language, "zh");
     assert.equal(writeConfig({ speak: true, ttsModel: "kokoro/hexgrad/Kokoro-82M" }).speak, true);
+    assert.match(spokenReplyPrompt(), /read aloud/);
     assert.equal(readConfig().model, "whisper-x");
     assert.equal(writeConfig({ streaming: true }).streaming, true);
     for (const patch of [

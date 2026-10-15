@@ -14,16 +14,36 @@ function closedPart(text) {
   return fences % 2 === 0 ? text : text.slice(0, text.lastIndexOf("```"));
 }
 
-function plain(text) {
-  return String(text ?? "")
-    .replace(/```[\s\S]*?```/g, " ")
+/** Table rules and horizontal rules carry nothing to read. */
+const RULE_LINE = /^\s*(?:\|?\s*:?-{3,}:?\s*)+\|?\s*$|^\s*([-*_])(?:\s*\1){2,}\s*$/;
+const BLOCK_MARK = /^\s*(?:>\s*)*(?:#{1,6}\s+|[-*+]\s+(?:\[[ xX]]\s+)?|\d+[.)]\s+)?/;
+
+function plainLine(line) {
+  if (RULE_LINE.test(line)) return "";
+  return line
+    .replace(BLOCK_MARK, "")
     .replace(/`([^`]+)`/g, "$1")
     .replace(/!\[[^\]]*]\([^)]*\)/g, " ")
     .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
-    .replace(/[#>*_]+/g, " ")
+    .replace(/[|#>*_]+/g, " ")
     .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 2000);
+    .trim();
+}
+
+/**
+ * Model answers are Markdown, and a heading, list item or table row often ends
+ * without punctuation, so every line is a sentence boundary of its own.
+ */
+function plainLines(text) {
+  return String(text ?? "")
+    .replace(/```[\s\S]*?```/g, " ")
+    .slice(0, 2000)
+    .split("\n")
+    .map(plainLine);
+}
+
+function sentencesOf(line) {
+  return line ? segment("en", line).map((part) => part.trim()).filter(Boolean) : [];
 }
 
 /**
@@ -68,15 +88,16 @@ export function gapAfter(segment) {
 
 /**
  * The segments to read: sentences, long ones cut into clauses. While the
- * answer is still streaming (`done: false`) its last sentence may be cut
- * mid-word, so only the ones before it count.
+ * answer is still streaming (`done: false`) its open line may be cut
+ * mid-word, so only the sentences before its last one count.
  * @returns {string[]}
  */
 export function speechSegments(text, { done = true } = {}) {
-  const source = plain(done ? text : closedPart(String(text ?? "")));
-  if (!source) return [];
-  const sentences = segment("en", source).map((part) => part.trim()).filter(Boolean);
-  return (done ? sentences : sentences.slice(0, -1)).flatMap(clauses);
+  const lines = plainLines(done ? text : closedPart(String(text ?? "")));
+  const open = done ? "" : lines.pop();
+  const sentences = lines.flatMap(sentencesOf);
+  sentences.push(...sentencesOf(open).slice(0, -1));
+  return sentences.flatMap(clauses);
 }
 
 export function speechScript(text) {

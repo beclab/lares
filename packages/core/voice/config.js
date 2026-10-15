@@ -60,6 +60,17 @@ export function readConfig() {
   return merged;
 }
 
+const SPOKEN_REPLY_PROMPT = [
+  "Your final answers are read aloud to the user.",
+  "Keep them short and conversational: a few sentences that answer directly, without headings, tables, or long lists.",
+  "Give a detailed answer only when the user explicitly asks for detail.",
+].join(" ");
+
+/** Empty unless read-aloud is on, so the section drops out of the prompt. */
+export function spokenReplyPrompt() {
+  return readConfig().speak ? SPOKEN_REPLY_PROMPT : "";
+}
+
 /** @param {Record<string, unknown>} patch @returns {typeof DEFAULTS} */
 export function writeConfig(patch) {
   const next = readConfig();

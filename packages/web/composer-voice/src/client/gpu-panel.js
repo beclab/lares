@@ -1,5 +1,6 @@
 import React from "react";
 import { Button, Input, SegmentedControl, StateDot, Switch, Tag } from "@deepseek-ai/dsh-client-ui-primitives";
+import { gpuProblemText } from "@olares/lares-core/voice/gpu-problem";
 import { useMountedRef } from "../../../shared/client/react-lifecycle.js";
 import { loadGpuMode, postGpuApp, saveSlicePlan, switchGpuMode } from "./api.js";
 
@@ -8,14 +9,48 @@ const h = React.createElement;
 
 const GIB = 2 ** 30;
 const SWATCHES = 4;
+const BUSY = new Set(["switching", "restoring", "resuming"]);
+const PLAN_PROBLEMS = new Set(["voice_gpu_plan_empty", "voice_gpu_plan_over", "voice_gpu_memory"]);
 
 function gib(bytes) {
   return Math.round((bytes / GIB) * 10) / 10;
 }
 
 function busyJob(mode) {
-  const phase = mode?.job?.phase;
-  return phase === "switching" || phase === "resuming";
+  return BUSY.has(mode?.job?.phase);
+}
+
+/** The last switch failed on something the slice plan fixes, so the plan card shows beside it. */
+export function needsPlan(mode) {
+  const job = mode?.job;
+  if (!job || !mode?.gpu?.available?.includes("MemorySlice")) return false;
+  return PLAN_PROBLEMS.has(job.problem?.code) || job.apps.some((app) => PLAN_PROBLEMS.has(app.problem?.code));
+}
+
+function appName(mode, app, t) {
+  const entry = mode?.plan?.find((item) => item.app === app) ?? mode?.apps?.find((item) => item.app === app);
+  return entry ? appLabel(entry, t) : app;
+}
+
+function appNames(mode, apps, t) {
+  return apps.map((app) => appName(mode, app, t)).join(t("settings.list.separator"));
+}
+
+/** A Host problem in the product language, with app ids shown as their names. */
+export function problemText(mode, problem, t) {
+  if (!problem) return "";
+  const params = { ...problem.params };
+  if (typeof params.app === "string") params.app = appName(mode, params.app, t);
+  if (Array.isArray(params.apps)) params.apps = appNames(mode, params.apps, t);
+  return gpuProblemText(t, { ...problem, params });
+}
+
+function requestProblem(err) {
+  return {
+    code: typeof err?.code === "string" ? err.code : "voice_gpu_failed",
+    params: err?.params ?? {},
+    detail: err instanceof Error ? err.message : String(err),
+  };
 }
 
 function busyApps(mode) {
@@ -25,7 +60,7 @@ function busyApps(mode) {
 /** Reading mode, the GPU slicing it needs, and the switch job; shared by both panels. */
 export function useGpuMode(onSettled) {
   const [mode, setMode] = useState(null);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(null);
   const mounted = useMountedRef();
   const switching = busyJob(mode);
   const working = switching || busyApps(mode);
@@ -51,14 +86,14 @@ export function useGpuMode(onSettled) {
   }, [working]);
 
   const run = useCallback(async (request) => {
-    setError("");
+    setError(null);
     try {
       const next = await request();
       if (mounted.current) setMode(next);
       onSettled?.();
       return true;
     } catch (err) {
-      if (mounted.current) setError(err instanceof Error ? err.message : String(err));
+      if (mounted.current) setError(requestProblem(err));
       return false;
     }
   }, []);
@@ -74,23 +109,33 @@ export function useGpuMode(onSettled) {
   };
 }
 
+function restoreText(mode, job, t) {
+  const lost = job.restored.filter((app) => !app.ok).map((app) => app.app);
+  if (lost.length) return t("settings.mode.notRestored", { apps: appNames(mode, lost, t) });
+  return job.restored.length ? t("settings.mode.restored") : "";
+}
+
 function modeStatus(gpu, t) {
   const { mode, error, switching } = gpu;
   const job = mode?.job;
-  if (error) return { state: "error", text: t("settings.mode.failed", { error }) };
+  if (error) return { state: "error", text: problemText(mode, error, t) };
   if (switching) {
-    const current = job.apps.find((app) => !app.ok && !app.message)?.app;
+    if (job.phase === "restoring") return { state: "ongoing", text: t("settings.mode.restoring") };
+    const current = job.apps.find((app) => !app.ok && !app.problem)?.app;
     return {
       state: "ongoing",
-      text: current ? t("settings.mode.resumingApp", { app: current }) : t("settings.mode.switching"),
+      text: current ? t("settings.mode.resumingApp", { app: appName(mode, current, t) }) : t("settings.mode.switching"),
     };
   }
-  if (job?.phase === "failed") return { state: "error", text: t("settings.mode.failed", { error: job.error }) };
-  if (job?.phase === "partial") {
-    const apps = job.apps.filter((app) => !app.ok).map((app) => app.app).join("、");
-    return { state: "warning", text: t("settings.mode.partial", { apps }) };
+  if (job?.phase === "failed") {
+    return { state: "error", text: [problemText(mode, job.problem, t), restoreText(mode, job, t)].filter(Boolean).join(" ") };
   }
-  if (!mode?.gpu) return mode ? { state: "warning", text: t("settings.mode.noGpu") } : null;
+  if (job?.phase === "partial") {
+    const problems = job.apps.filter((app) => app.problem).map((app) => problemText(mode, app.problem, t));
+    return { state: "warning", text: [t("settings.mode.partial"), ...problems].join(" ") };
+  }
+  if (mode?.problem) return { state: "error", text: problemText(mode, mode.problem, t) };
+  if (!mode?.gpu) return mode ? { state: "warning", text: t("error.voice_gpu_no_gpu") } : null;
   const type = t(`settings.gpu.${mode.gpu.type}`);
   return mode.gpu.type === mode.target
     ? { state: "done", text: t("settings.mode.gpu", { type }) }
@@ -102,6 +147,7 @@ export function ReadingModeRow({ gpu, disabled, t }) {
   const { mode, switching } = gpu;
   const status = modeStatus(gpu, t);
   const failed = mode?.job?.phase === "failed" || mode?.job?.phase === "partial";
+  const target = failed || switching ? mode.job.target === "MemorySlice" : mode?.streaming;
   return h(
     "div",
     { className: "lares-voice-row lares-voice-mode" },
@@ -127,13 +173,13 @@ export function ReadingModeRow({ gpu, disabled, t }) {
           variant: "ghost",
           size: "sm",
           disabled: disabled || switching,
-          onClick: () => gpu.switchMode(mode.streaming),
+          onClick: () => gpu.switchMode(target),
         }, t("settings.mode.retry"))
         : null,
       h(SegmentedControl, {
         id: "lares-voice-mode",
         label: t("settings.mode.title"),
-        value: mode?.streaming ? "streaming" : "turns",
+        value: (switching ? target : mode?.streaming) ? "streaming" : "turns",
         disabled: disabled || switching || !mode,
         options: [
           { value: "turns", label: t("settings.mode.turns") },
@@ -158,11 +204,11 @@ function appLabel(entry, t) {
   return entry.title || entry.app;
 }
 
-function jobState(mode, app) {
+function jobState(mode, app, t) {
   const entry = mode?.job?.apps.find((item) => item.app === app);
   if (!entry) return busyJob(mode) ? { state: "idle", text: "" } : null;
   if (entry.ok) return { state: "done", text: "" };
-  if (entry.message) return { state: "error", text: entry.message };
+  if (entry.problem) return { state: "error", text: problemText(mode, entry.problem, t) };
   return { state: "ongoing", text: "" };
 }
 
@@ -234,7 +280,7 @@ export function SlicePlanCard({ gpu, disabled, t }) {
           "ul",
           { className: "lares-voice-slice-list" },
           rows.map((row) => {
-            const state = jobState(mode, row.entry.app);
+            const state = jobState(mode, row.entry.app, t);
             return h(
               "li",
               { key: row.entry.app, className: `lares-voice-slice${row.value.enabled ? "" : " is-off"}` },
@@ -329,7 +375,7 @@ export function GpuAppsCard({ gpu, disabled, t }) {
           apps.map((app) => {
             const running = app.phase === "running";
             const op = running ? "stop" : "resume";
-            const state = app.pending ? "ongoing" : app.error ? "error" : PHASE_DOT[app.phase] ?? "idle";
+            const state = app.pending ? "ongoing" : app.problem ? "error" : PHASE_DOT[app.phase] ?? "idle";
             const label = app.pending
               ? t(app.pending === "stop" ? "settings.apps.stopping" : "settings.apps.starting")
               : t(running ? "settings.apps.stop" : "settings.apps.start");
@@ -345,7 +391,7 @@ export function GpuAppsCard({ gpu, disabled, t }) {
                   app.app,
                   app.required ? t("settings.apps.required", { size: gib(app.required) }) : "",
                 ].filter(Boolean).join(" · ")),
-                app.error ? h("div", { className: "lares-voice-hint is-error" }, app.error) : null,
+                app.problem ? h("div", { className: "lares-voice-hint is-error" }, problemText(mode, app.problem, t)) : null,
               ),
               h(Tag, { tone: running ? "success" : "neutral" }, t(`settings.phase.${app.phase}`)),
               h(Button, {

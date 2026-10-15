@@ -85,6 +85,7 @@ function errorResponse(err, fallbackCode) {
       status: err.status >= 400 ? err.status : 500,
       code: err.code,
       message: err instanceof Error ? err.message : String(err),
+      params: err.params && typeof err.params === "object" ? err.params : undefined,
     };
   }
   return {
@@ -97,7 +98,7 @@ function errorResponse(err, fallbackCode) {
 export function sendError(res, err, fallbackCode) {
   const failure = errorResponse(err, fallbackCode);
   sendJson(res, failure.status, {
-    error: { code: failure.code, message: failure.message },
+    error: { code: failure.code, message: failure.message, params: failure.params },
   });
 }
 

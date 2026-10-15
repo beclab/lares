@@ -254,6 +254,28 @@ test("a sentence still being written is not read yet", () => {
   assert.deepEqual(speechSegments("Look. ```js\nconst a = 1;\n``` Then go. Next", { done: false }), ["Look.", "Then go."]);
 });
 
+test("every markdown line is a sentence of its own", () => {
+  const answer = [
+    "## 今日安排",
+    "",
+    "- **上午**：开会",
+    "- [x] 下午写代码",
+    "1. 先吃饭",
+    "",
+    "| 项目 | 时间 |",
+    "| --- | :---: |",
+    "| 跑步 | 30分钟 |",
+    "---",
+    "> 记得喝水",
+    "祝你顺利。明天见",
+  ].join("\n");
+  assert.deepEqual(speechSegments(answer), [
+    "今日安排", "上午 ：开会", "下午写代码", "先吃饭", "项目 时间", "跑步 30分钟", "记得喝水", "祝你顺利。", "明天见",
+  ]);
+  assert.deepEqual(speechSegments("## 标题\n- 第一项\n- 第二", { done: false }), ["标题", "第一项"]);
+  assert.deepEqual(speechSegments("## 标题\n- 第一项\n", { done: false }), ["标题", "第一项"]);
+});
+
 test("a long sentence is read clause by clause so the first sound comes early", () => {
   const long = "城市的秋天是繁华与静谧交织的画卷，银杏大道在行人的足下铺就一条金色的地毯，早晚渐起的凉风卷起了落叶。";
   assert.deepEqual(speechSegments(long), [

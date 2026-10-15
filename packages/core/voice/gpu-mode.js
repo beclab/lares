@@ -2,7 +2,23 @@ import { readJsonFile, writeJsonFile } from "../tools/json-file.js";
 import { dshPluginConfigPath } from "../workspace/home.js";
 import { VoiceError } from "../router/stt.js";
 import { readConfig, writeConfig } from "./config.js";
+import { cliProblem, gpuProblem } from "./gpu-problem.js";
 import { chartPhase, currentChartRow, runOlaresCli, VOICE_CHARTS } from "./install.js";
+
+/** A GPU failure the settings panel explains; `params` reach the browser beside the code. */
+export class GpuError extends VoiceError {
+  /** @param {import('./gpu-problem.js').GpuProblem} problem */
+  constructor(problem, status = 502) {
+    super(problem.code, status, problem.detail || problem.code);
+    this.params = problem.params;
+    this.problem = problem;
+  }
+}
+
+function problemOf(err) {
+  if (err instanceof GpuError) return err.problem;
+  return gpuProblem("voice_gpu_failed", {}, err instanceof Error ? err.message : String(err));
+}
 
 /**
  * Reading answers while they are written needs the LLM and speech models on
@@ -72,7 +88,7 @@ export function parseQuantity(text) {
  */
 export async function gpuApps(options = {}) {
   const mine = await runOlaresCli(["market", "list", "--mine", "-o", "json"], options.spawnFn);
-  if (mine.code !== 0 || !Array.isArray(mine.json)) throw new VoiceError("voice_gpu_failed", 502, mine.message);
+  if (mine.code !== 0 || !Array.isArray(mine.json)) throw new GpuError(cliProblem(mine, "voice_gpu_failed"));
   const apps = await Promise.all(mine.json.map(async (row) => {
     const app = typeof row?.name === "string" ? row.name : "";
     if (!app) return null;
@@ -110,7 +126,7 @@ function speechDevice(nodes) {
 export async function speechGpu(options = {}) {
   const result = await runOlaresCli(["settings", "compute", "list", "-o", "json"], options.spawnFn);
   if (result.code !== 0 || !Array.isArray(result.json)) {
-    throw new VoiceError("voice_gpu_failed", 502, result.message);
+    throw new GpuError(cliProblem(result, "voice_gpu_failed"));
   }
   const device = speechDevice(result.json);
   if (!device) return null;
@@ -155,11 +171,48 @@ function sliceFlag(gpu, app, plan) {
   return `${gpu.node}:${gpu.device}:${Math.round(Number(plan.slices[app]) / MIB)}Mi`;
 }
 
+/** The binding an app had before this switch touched it, to put it back after a failure. */
+function bindingFlag(gpu, binding) {
+  return gpu.type === "MemorySlice" && binding.memory > 0
+    ? `${gpu.node}:${gpu.device}:${Math.round(binding.memory / MIB)}Mi`
+    : `${gpu.node}:${gpu.device}`;
+}
+
+function gib(bytes) {
+  return Math.round((bytes / 2 ** 30) * 10) / 10;
+}
+
+/**
+ * Entering MemorySlice with no slice planned would stop every app and start
+ * none. The first time, each running app on the card gets its manifest
+ * minimum; when that cannot fit, or nothing qualifies, the user plans it.
+ */
+async function ensureSlices(gpu, plan, options) {
+  if (slicePlan(null, plan).some((entry) => entry.enabled)) return plan;
+  const onCard = new Set(union(plan.apps, gpu.bindings.map((binding) => binding.app)));
+  const seeded = (await gpuApps(options)).filter((entry) => (
+    onCard.has(entry.app) && entry.phase === "running" && entry.required > 0 && !plan.off.includes(entry.app)
+  ));
+  if (!seeded.length) throw new GpuError(gpuProblem("voice_gpu_plan_empty"), 409);
+  const need = seeded.reduce((sum, entry) => sum + entry.required, 0);
+  if (gpu.memory > 0 && need > gpu.memory) {
+    throw new GpuError(gpuProblem("voice_gpu_plan_over", { need: gib(need), total: gib(gpu.memory) }), 409);
+  }
+  const slices = { ...plan.slices };
+  for (const entry of seeded) slices[entry.app] = Math.ceil(entry.required / MIB) * MIB;
+  const next = { ...plan, slices };
+  writePlan(next);
+  return next;
+}
+
 let job = null;
+
+const BUSY = new Set(["switching", "restoring", "resuming"]);
 
 /** The switch in progress or last finished, for the settings panel to poll. */
 export function gpuSwitchJob() {
-  return job ? { ...job, apps: job.apps.map((app) => ({ ...app })) } : null;
+  if (!job) return null;
+  return { ...job, apps: job.apps.map((app) => ({ ...app })), restored: job.restored.map((app) => ({ ...app })) };
 }
 
 /**
@@ -167,89 +220,121 @@ export function gpuSwitchJob() {
  * the plan. Switching the type stops every app bound to the card; within
  * MemorySlice only apps whose slice changed are stopped and rebound. Apps
  * resume smallest first, so the LLM is not starved of a slice.
+ * The reading mode is saved only once the card is where it needs to be; a
+ * failure before that puts the stopped apps back on their old bindings.
  * Returns at once; the job runs on and reports through `gpuSwitchJob`.
  */
 export function startGpuSwitch(streaming, options = {}) {
-  if (job?.phase === "switching" || job?.phase === "resuming") {
-    throw new VoiceError("voice_gpu_busy", 409, "the GPU is already switching");
+  if (BUSY.has(job?.phase)) {
+    throw new GpuError(gpuProblem("voice_gpu_busy"), 409);
   }
   const target = gpuTypeFor(streaming);
-  job = { target, phase: "switching", startedAt: Date.now(), apps: [], error: "" };
+  job = { target, phase: "switching", startedAt: Date.now(), apps: [], restored: [], problem: null };
   const current = job;
-  void runSwitch(current, options).catch((err) => {
+  void runSwitch(current, streaming, options).catch((err) => {
     current.phase = "failed";
-    current.error = err instanceof Error ? err.message : String(err);
+    current.problem = problemOf(err);
   });
   return gpuSwitchJob();
 }
 
-async function runSwitch(current, options) {
+async function runSwitch(current, streaming, options) {
   const run = (args) => runOlaresCli(args, options.spawnFn);
-  // set-type and unbind return before their stops settle, and a resume against a stopping app is refused.
-  const stop = (app) => run(["market", "stop", app, "--watch", "--watch-timeout", "10m", "-o", "json"]);
   const gpu = await speechGpu(options);
-  if (!gpu) throw new VoiceError("voice_gpu_failed", 404, "no NVIDIA GPU found");
   const sliced = current.target === "MemorySlice";
-  const switching = gpu.type !== current.target;
-  if (gpu.bindings.length) rememberBound(gpu, switching);
-  const plan = readPlan();
-  const kept = new Set();
-  if (switching) {
-    if (!gpu.available.includes(current.target)) {
-      throw new VoiceError("voice_gpu_failed", 400, `this GPU does not support ${current.target}`);
-    }
-    for (const binding of gpu.bindings) await stop(binding.app);
-    const switched = await run(["settings", "compute", "set-type", gpu.node, gpu.device, "--type", current.target, "--yes", "-o", "json"]);
-    if (switched.code !== 0) throw new VoiceError("voice_gpu_failed", 502, switched.message);
-  } else if (sliced) {
-    for (const binding of gpu.bindings) {
-      const wanted = plan.off.includes(binding.app) ? 0 : Number(plan.slices[binding.app]) || 0;
-      if (wanted === binding.memory) {
-        kept.add(binding.app);
-        continue;
-      }
-      await stop(binding.app);
-      const unbound = await run(["settings", "compute", "unbind", binding.app, "--yes", "-o", "json"]);
-      if (unbound.code !== 0) throw new VoiceError("voice_gpu_failed", 502, unbound.message);
-    }
+  if (!gpu) {
+    if (sliced) throw new GpuError(gpuProblem("voice_gpu_no_gpu"), 404);
+    writeConfig({ streaming });
+    current.phase = "done";
+    return;
   }
+  const switching = gpu.type !== current.target;
+  if (switching && !gpu.available.includes(current.target)) {
+    throw new GpuError(gpuProblem("voice_gpu_unsupported", { model: gpu.model || gpu.device }), 400);
+  }
+  if (gpu.bindings.length) rememberBound(gpu, switching);
+  const plan = sliced ? await ensureSlices(gpu, readPlan(), options) : readPlan();
+  const kept = new Set();
+  const stopped = [];
+  // set-type and unbind return before their stops settle, and a resume against a stopping app is refused.
+  const stop = async (binding) => {
+    const result = await run(["market", "stop", binding.app, "--watch", "--watch-timeout", "10m", "-o", "json"]);
+    if (result.code !== 0 && !(await settledAs(binding.app, "stopped", options))) {
+      throw new GpuError(cliProblem(result, "voice_gpu_stop_failed", { app: binding.app }));
+    }
+    stopped.push(binding);
+  };
+  try {
+    if (switching) {
+      for (const binding of gpu.bindings) await stop(binding);
+      const switched = await run(["settings", "compute", "set-type", gpu.node, gpu.device, "--type", current.target, "--yes", "-o", "json"]);
+      if (switched.code !== 0) {
+        throw new GpuError(cliProblem(switched, "voice_gpu_failed"));
+      }
+    } else if (sliced) {
+      for (const binding of gpu.bindings) {
+        const wanted = plan.off.includes(binding.app) ? 0 : Number(plan.slices[binding.app]) || 0;
+        if (wanted === binding.memory) {
+          kept.add(binding.app);
+          continue;
+        }
+        await stop(binding);
+        const unbound = await run(["settings", "compute", "unbind", binding.app, "--yes", "-o", "json"]);
+        if (unbound.code !== 0) throw new GpuError(cliProblem(unbound, "voice_gpu_failed", { app: binding.app }));
+      }
+    }
+  } catch (err) {
+    current.phase = "restoring";
+    for (const binding of stopped) {
+      const resumed = await resumeApp(binding.app, bindingFlag(gpu, binding), options);
+      current.restored.push({ app: binding.app, ok: !resumed });
+    }
+    throw err;
+  }
+  writeConfig({ streaming });
   current.phase = "resuming";
   const apps = (sliced
     ? slicePlan(null, plan).filter((entry) => entry.enabled).map((entry) => entry.app)
     : plan.apps
   ).sort((a, b) => (Number(plan.slices[a]) || Infinity) - (Number(plan.slices[b]) || Infinity));
   for (const app of apps) {
-    const entry = { app, ok: false, message: "" };
+    const entry = { app, ok: false, problem: null };
     current.apps.push(entry);
     if (kept.has(app)) {
       entry.ok = true;
       continue;
     }
-    const resumed = await run([
-      "market", "resume", app,
-      "--compute-binding", sliced ? sliceFlag(gpu, app, plan) : `${gpu.node}:${gpu.device}`,
-      "--watch", "--watch-timeout", "15m", "-o", "json",
-    ]);
-    entry.ok = resumed.code === 0;
-    if (!entry.ok) entry.message = resumed.message;
+    entry.problem = await resumeApp(app, sliced ? sliceFlag(gpu, app, plan) : `${gpu.node}:${gpu.device}`, options);
+    entry.ok = !entry.problem;
   }
   current.phase = current.apps.every((app) => app.ok) ? "done" : "partial";
+}
+
+/** Resumes one app onto the card; null once it runs, else why it did not. */
+async function resumeApp(app, binding, options) {
+  const resumed = await runOlaresCli([
+    "market", "resume", app,
+    "--compute-binding", binding,
+    "--watch", "--watch-timeout", "15m", "-o", "json",
+  ], options.spawnFn);
+  if (resumed.code === 0 || await settledAs(app, "running", options)) return null;
+  return cliProblem(resumed, "voice_gpu_resume_failed", { app });
 }
 
 /** What the settings panel shows: the reading mode, the card, its slice plan, and any switch in progress. */
 export async function gpuModePayload(options = {}) {
   let gpu = null;
-  let error = "";
+  let problem = null;
   try {
     gpu = await speechGpu(options);
   } catch (err) {
-    error = err instanceof Error ? err.message : String(err);
+    problem = problemOf(err);
   }
   let apps = [];
   try {
     apps = await gpuApps(options);
   } catch (err) {
-    error ||= err instanceof Error ? err.message : String(err);
+    problem ||= problemOf(err);
   }
   const streaming = readConfig().streaming;
   const bound = new Set(gpu?.bindings.map((binding) => binding.app) ?? []);
@@ -262,18 +347,17 @@ export async function gpuModePayload(options = {}) {
       ...entry,
       bound: bound.has(entry.app),
       pending: pendingApps.get(entry.app) ?? "",
-      error: appErrors.get(entry.app) ?? "",
+      problem: appErrors.get(entry.app) ?? null,
     })),
     job: gpuSwitchJob(),
-    error,
+    problem,
   };
 }
 
-/** Saves the reading mode and starts moving the card to the type it needs. */
+/** Starts moving the card to the type the reading mode needs; the mode is saved once it gets there. */
 export async function switchReadingMode(streaming, options = {}) {
   if (typeof streaming !== "boolean") throw new VoiceError("voice_config_invalid", 400, "streaming must be a boolean");
   startGpuSwitch(streaming, options);
-  writeConfig({ streaming });
   return gpuModePayload(options);
 }
 
@@ -283,12 +367,12 @@ export async function switchReadingMode(streaming, options = {}) {
  * @param {unknown} entries `[{ app, enabled, memory }]`, memory in bytes
  */
 export async function saveSlicePlan(entries, options = {}) {
-  const invalid = (message) => {
-    throw new VoiceError("voice_config_invalid", 400, message);
+  const invalid = (code, params, detail) => {
+    throw new GpuError(gpuProblem(code, params, detail), 400);
   };
-  if (!Array.isArray(entries)) invalid("plan must be a list");
+  if (!Array.isArray(entries)) throw new VoiceError("voice_config_invalid", 400, "plan must be a list");
   const gpu = await speechGpu(options);
-  if (!gpu) throw new VoiceError("voice_gpu_failed", 404, "no NVIDIA GPU found");
+  if (!gpu) throw new GpuError(gpuProblem("voice_gpu_no_gpu"), 404);
   const plan = readPlan();
   const candidates = slicePlan(gpu, plan, await gpuApps(options));
   const known = new Set(candidates.map((entry) => entry.app));
@@ -298,12 +382,12 @@ export async function saveSlicePlan(entries, options = {}) {
   let total = 0;
   for (const entry of entries) {
     const app = entry?.app;
-    if (typeof app !== "string" || !known.has(app)) invalid(`unknown app ${String(app)}`);
-    if (typeof entry.enabled !== "boolean") invalid(`${app}: enabled must be a boolean`);
+    if (typeof app !== "string" || !known.has(app)) invalid("voice_gpu_unknown_app", { app: String(app) }, `unknown app ${String(app)}`);
+    if (typeof entry.enabled !== "boolean") throw new VoiceError("voice_config_invalid", 400, `${app}: enabled must be a boolean`);
     const memory = Number(entry.memory);
     const floor = Math.max(256 * MIB, required.get(app) || 0);
     if (entry.enabled && !(Number.isFinite(memory) && memory >= floor)) {
-      invalid(`${app}: memory must be at least ${Math.round(floor / MIB)}Mi`);
+      invalid("voice_gpu_plan_floor", { app, size: gib(floor) }, `${app}: memory must be at least ${Math.round(floor / MIB)}Mi`);
     }
     if (Number.isFinite(memory) && memory > 0) slices[app] = Math.round(memory / MIB) * MIB;
     if (entry.enabled) {
@@ -313,7 +397,9 @@ export async function saveSlicePlan(entries, options = {}) {
       off.add(app);
     }
   }
-  if (gpu.memory > 0 && total > gpu.memory) invalid("slices exceed the GPU memory");
+  if (gpu.memory > 0 && total > gpu.memory) {
+    invalid("voice_gpu_plan_over", { need: gib(total), total: gib(gpu.memory) }, "slices exceed the GPU memory");
+  }
   writePlan({ apps: union(plan.apps, gpu.bindings.map((binding) => binding.app)), slices, off: [...off] });
   if (gpu.type === "MemorySlice") startGpuSwitch(true, options);
   return gpuModePayload(options);
@@ -337,17 +423,19 @@ const appErrors = new Map();
  */
 export async function gpuAppAction(app, op, options = {}) {
   if (op !== "resume" && op !== "stop") throw new VoiceError("voice_config_invalid", 400, "op must be resume or stop");
-  if (job?.phase === "switching" || job?.phase === "resuming" || pendingApps.has(app)) {
-    throw new VoiceError("voice_gpu_busy", 409, "the GPU is busy");
+  if (BUSY.has(job?.phase) || pendingApps.has(app)) {
+    throw new GpuError(gpuProblem("voice_gpu_busy"), 409);
   }
   const [gpu, apps] = await Promise.all([speechGpu(options), gpuApps(options)]);
-  if (!gpu) throw new VoiceError("voice_gpu_failed", 404, "no NVIDIA GPU found");
-  if (!apps.some((entry) => entry.app === app)) throw new VoiceError("voice_config_invalid", 400, `${app} is not a GPU app`);
+  if (!gpu) throw new GpuError(gpuProblem("voice_gpu_no_gpu"), 404);
+  if (!apps.some((entry) => entry.app === app)) {
+    throw new GpuError(gpuProblem("voice_gpu_unknown_app", { app }, `${app} is not a GPU app`), 400);
+  }
   const plan = readPlan();
   let binding = `${gpu.node}:${gpu.device}`;
   if (op === "resume" && gpu.type === "MemorySlice") {
     if (plan.off.includes(app) || !(Number(plan.slices[app]) > 0)) {
-      throw new VoiceError("voice_config_invalid", 400, `${app} has no memory slice`);
+      throw new GpuError(gpuProblem("voice_gpu_no_slice", { app }, `${app} has no memory slice`), 400);
     }
     binding = sliceFlag(gpu, app, plan);
   }
@@ -359,14 +447,14 @@ export async function gpuAppAction(app, op, options = {}) {
   void runOlaresCli(args, options.spawnFn)
     .then(async (result) => {
       if (result.code !== 0 && !(await settledAs(app, op === "stop" ? "stopped" : "running", options))) {
-        appErrors.set(app, result.message);
+        appErrors.set(app, cliProblem(result, op === "stop" ? "voice_gpu_stop_failed" : "voice_gpu_resume_failed", { app }));
         return;
       }
       const latest = readPlan();
       const kept = latest.apps.filter((name) => name !== app);
       writePlan({ ...latest, apps: op === "resume" ? [...kept, app] : kept });
     })
-    .catch((err) => appErrors.set(app, err instanceof Error ? err.message : String(err)))
+    .catch((err) => appErrors.set(app, problemOf(err)))
     .finally(() => pendingApps.delete(app));
   return gpuModePayload(options);
 }

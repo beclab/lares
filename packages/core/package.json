@@ -124,6 +124,7 @@
     "./voice/capture": "./voice/capture.js",
     "./voice/install": "./voice/install.js",
     "./voice/gpu-mode": "./voice/gpu-mode.js",
+    "./voice/gpu-problem": "./voice/gpu-problem.js",
     "./search/config": "./search/config.js",
     "./search/menu": "./search/menu.js",
     "./search/client": "./search/client.js",

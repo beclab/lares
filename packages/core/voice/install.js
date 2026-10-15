@@ -1,10 +1,14 @@
 import { spawn } from "node:child_process";
 import { VoiceError } from "../router/stt.js";
 
-/** Charts the voice panel installs, stops, and resumes through olares-cli market. */
+/**
+ * Charts the voice panel installs, stops, and resumes through olares-cli market.
+ * No version is pinned: install takes whatever the market holds, and status
+ * and model matching go by app name, so chart updates need no Lares release.
+ */
 export const VOICE_CHARTS = {
-  stt: { app: "audioqwen3asr06v3", version: "1.0.0", model: "Qwen3-ASR-0.6B" },
-  tts: { app: "audioqwen3tts06v3", version: "1.0.0", model: "Qwen3-TTS-12Hz-0.6B-CustomVoice" },
+  stt: { app: "audioqwen3asr06v3", model: "Qwen3-ASR-0.6B" },
+  tts: { app: "audioqwen3tts06v3", model: "Qwen3-TTS-12Hz-0.6B-CustomVoice" },
 };
 
 const OUTPUT_LIMIT = 8000;
@@ -101,13 +105,13 @@ export async function installVoiceChart(kind, options = {}) {
   const chart = chartFor(kind);
   const spawnFn = options.spawnFn ?? spawn;
   const result = await runOlaresCli(
-    ["market", "install", chart.app, "-s", "market.test", "--version", chart.version, "--compute-mode", "nvidia", "-o", "json"],
+    ["market", "install", chart.app, "-s", "market.test", "--compute-mode", "nvidia", "-o", "json"],
     spawnFn,
   );
   if (!accepted(result)) {
     throw new VoiceError("voice_install_failed", 502, result.message);
   }
-  return { app: chart.app, version: chart.version };
+  return { app: chart.app };
 }
 
 /**

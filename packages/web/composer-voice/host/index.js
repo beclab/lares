@@ -6,7 +6,7 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRouteHandler, readBody, readJsonObject, sendJson } from "@olares/lares-core/tools/http";
-import { readConfig } from "@olares/lares-core/voice/config";
+import { readConfig, spokenReplyPrompt } from "@olares/lares-core/voice/config";
 import {
   STT_MAX_AUDIO_BYTES,
   installVoice,
@@ -250,4 +250,7 @@ export function apply(ctx) {
     () => ctx.webServer.register({ kind: "prefix", path: ROUTE_PREFIX, handler: voiceHandler }),
     "lares-composer-voice-routes",
   );
+  ctx.inject(["systemPrompt"], (promptCtx) => {
+    promptCtx.systemPrompt.section({ name: "app:spoken-reply", order: 9800, text: () => spokenReplyPrompt() });
+  });
 }
