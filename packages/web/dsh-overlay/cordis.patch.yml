@@ -95,6 +95,15 @@
 - id: session-title-llm
   disabled: true
 
+# Auto-compaction fires at min(0.8 × window, window − request maxTokens − headroom).
+# Upstream headroom is 65536, which on a 128k Router model (maxTokens = window/4)
+# leaves a 32k trigger, and on a 32k model no budget at all. Headroom only has to
+# hold the summary reply, so 8192 moves the trigger to ~90k on 128k windows while
+# large windows stay at 80%.
+- id: compaction-basic
+  config:
+    headroomTokens: 8192
+
 - id: agent-default-model
   config:
     provider: olares-router
