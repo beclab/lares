@@ -19,7 +19,7 @@ function mockRequest() {
   let voiceConfig = { model: "", language: "" };
   const request = async (path, init = {}) => {
     calls.push({ path, method: init.method ?? "GET", body: init.body });
-    if (path === "/api/settings.describe") {
+    if (path === "/api/settings/describe") {
       return ok({
         type: "server-response",
         rpcId: init.body.rpcId,
@@ -36,7 +36,7 @@ function mockRequest() {
         },
       });
     }
-    if (path === "/api/settings.update") {
+    if (path === "/api/settings/update") {
       return ok({
         type: "server-response",
         rpcId: init.body.rpcId,
@@ -44,7 +44,7 @@ function mockRequest() {
           ok: true,
           value: {
             ns: "ui-conversation",
-            value: init.body.payload.patch,
+            value: init.body.payload.args.request.patch,
             revision: 4,
           },
         },
@@ -58,7 +58,9 @@ function mockRequest() {
       return ok(voiceConfig);
     }
     if (path.startsWith("/api/lares/voice/status")) return ok({ modelAvailable: true, model: "whisper" });
-    if (path.startsWith("/api/lares/voice/models")) return ok({ stt: ["whisper", { id: "paraformer" }] });
+    if (path.startsWith("/api/lares/voice/models")) {
+      return ok({ stt: ["whisper", { id: "paraformer" }], tts: ["kokoro", { id: "hexgrad" }] });
+    }
     if (path.startsWith("/api/lares/web-search/config") && !path.includes("/default")) return ok({ searchModels: [{ id: "brave" }], defaultSearchModel: "brave" });
     if (path === "/api/lares/web-search/config/default") {
       return ok({
@@ -97,6 +99,7 @@ test("createHostSettings maps model, voice, and search over the Host request", a
 
   const voice = await settings.voice();
   assert.deepEqual(voice.sttModels, ["whisper", "paraformer"]);
+  assert.deepEqual(voice.ttsModels, ["kokoro", "hexgrad"]);
   assert.equal(voice.config.model, "");
   const saved = await settings.saveVoice({ model: "whisper" });
   assert.equal(saved.config.model, "whisper");
@@ -108,8 +111,8 @@ test("createHostSettings maps model, voice, and search over the Host request", a
   assert.equal(followRouter.searchOff, false);
   assert.equal((await settings.conversation()).busyEnter, "queue");
   assert.equal((await settings.setBusyEnter("steer")).busyEnter, "steer");
-  const update = calls.find((call) => call.path === "/api/settings.update");
-  assert.equal(update.body.payload.expectedRevision, 3);
+  const update = calls.find((call) => call.path === "/api/settings/update");
+  assert.equal(update.body.payload.args.request.expectedRevision, 3);
 });
 
 test("createHostSettings reuses the last snapshot until force", async () => {

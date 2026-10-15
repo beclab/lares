@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
-import { HOST_PORT_KEYS, pickHostPorts } from "@olares/lares-core/larepass/host";
+import { HOST_PORT_KEYS, laresPortsFromAccount, pickHostPorts } from "@olares/lares-core/larepass/host";
 import { uploadFile } from "@olares/lares-core/files/upload-client";
 import { postTranscribe } from "@olares/lares-core/voice/client";
 import { createHostClient } from "../../packages/mobile/src/host.js";
@@ -162,6 +162,40 @@ test("createHostClient hands its request port to upload and transcribe", async (
   );
 });
 
+test("createHostClient asks for one sentence of a streaming answer", async () => {
+  const port = recorder({ ok: true, status: 200, body: { bluetooth: "skipped", audio: "UklGRg==" } });
+  const client = createHostClient({ baseUrl: "https://489966aa.alice.olares.com", request: port.request });
+
+  const spoken = await client.speak({ key: "s1:1:0", text: "一。二。三", done: false, part: 1 });
+
+  assert.deepEqual(port.calls[0].init.body, { key: "s1:1:0", text: "一。二。三", done: false, part: 1 });
+  assert.equal(spoken?.audio, "UklGRg==");
+});
+
+test("createHostClient hands over a streaming answer's text without asking for audio", async () => {
+  const port = recorder({ ok: true, status: 200, body: { sentences: 2 } });
+  const client = createHostClient({ baseUrl: "https://489966aa.alice.olares.com", request: port.request });
+
+  const handed = await client.speak({ key: "s1:1:0", text: "一。二。三", done: false });
+
+  assert.deepEqual(port.calls[0].init.body, { key: "s1:1:0", text: "一。二。三", done: false });
+  assert.deepEqual(handed, { sentences: 2 });
+});
+
+test("createHostClient posts client logs to the entrance once, not a doubled URL", async () => {
+  const port = recorder({ ok: true, status: 200 });
+  const client = createHostClient({
+    baseUrl: "https://489966aa.alice.olares.com",
+    request: port.request,
+  });
+
+  await client.reportLog("voice", "hold-start", { via: "touch" });
+
+  assert.deepEqual(port.calls.map((call) => call.url), [
+    "https://489966aa.alice.olares.com/api/lares/log",
+  ]);
+});
+
 /**
  * A `WebSocket` stand-in that records the constructor arguments and opens on
  * the next tick, so `openMux` resolves without a server.
@@ -211,7 +245,7 @@ test("openMux offers the host's token as the mux subprotocol", async () => {
 
     assert.equal(res.ok, true);
     assert.deepEqual(opened, [
-      { url: "wss://489966aa.alice.olares.com/api/events.mux", protocols: "tok-ws" },
+      { url: "wss://489966aa.alice.olares.com/api/remote.mux", protocols: "tok-ws" },
     ]);
   });
 });
@@ -269,7 +303,7 @@ test("openMux opens a bare socket when the host offers no protocol", async () =>
  * These cover the plumbing rather than the client.
  */
 test("the canonical port list carries every port the client reads", () => {
-  for (const key of ["baseUrl", "proxyPrefix", "env", "request", "socketProtocol"]) {
+  for (const key of ["baseUrl", "proxyPrefix", "env", "request", "socketProtocol", "missing"]) {
     assert.ok(HOST_PORT_KEYS.includes(key), `HOST_PORT_KEYS is missing ${key}`);
   }
 });
@@ -327,4 +361,15 @@ test("LaresApp declares every port as a prop, or the host's value never lands", 
       `App.vue does not declare the '${key}' prop, so v-bind="ports" drops it into attrs`,
     );
   }
+});
+
+test("the phone shell probes this page; an unbound LarePass account stays missing", async () => {
+  const page = recorder({ ok: true, status: 200, body: { ok: true } });
+  const phone = createHostClient({ request: page.request });
+  assert.equal((await phone.probe()).status, "ok");
+  assert.equal(page.calls[0]?.url, "/api/lares/models");
+
+  const embedded = createHostClient(laresPortsFromAccount({ apps: [] }));
+  assert.deepEqual(await embedded.probe(), { status: "missing" });
+  assert.equal(page.calls.length, 1);
 });

@@ -117,6 +117,59 @@ export function effortMenuItems(reasoning) {
   return items;
 }
 
+/** The selection the composer shows: the session's pending choice, else the catalog default. */
+export function sessionModelSelection(projection, catalogDefault) {
+  const next = projection?.next;
+  if (next && typeof next.provider === "string" && typeof next.model === "string") return next;
+  if (
+    catalogDefault
+    && typeof catalogDefault.provider === "string"
+    && typeof catalogDefault.model === "string"
+  ) {
+    return catalogDefault;
+  }
+  return null;
+}
+
+/**
+ * `session.modelCatalog` → the flat list the composer already renders.
+ * Reasoning stays on the model; that is the same metadata the desktop menu reads.
+ */
+export function composerModelsFromCatalog(catalog, selection) {
+  if (!catalog || typeof catalog !== "object") return null;
+  const models = [];
+  for (const group of Array.isArray(catalog.groups) ? catalog.groups : []) {
+    const provider = typeof group?.id === "string" ? group.id : "";
+    if (!provider) continue;
+    for (const model of group.models ?? []) {
+      if (!model?.id) continue;
+      models.push({
+        provider,
+        providerName: group.name || provider,
+        id: model.id,
+        name: model.name || model.id,
+        ...(model.description ? { description: model.description } : {}),
+        ...(model.reasoning ? { reasoning: model.reasoning } : {}),
+      });
+    }
+  }
+  const current = selection ?? null;
+  const routable = Boolean(
+    current
+    && models.some((model) => model.provider === current.provider && model.id === current.model),
+  );
+  return {
+    default: current,
+    routable,
+    failures: (Array.isArray(catalog.failures) ? catalog.failures : []).map((entry) => ({
+      provider: entry.provider ?? entry.id,
+      name: entry.name,
+      message: entry.message,
+    })),
+    models,
+  };
+}
+
 export function selectionKey(selection) {
   return `${selection.provider}\u0000${selection.model ?? selection.id}`;
 }

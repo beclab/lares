@@ -157,6 +157,16 @@
       name: '@lares/dsh-overlay/host/olares/olares-identity.js'
       inject: [webServer, connection]
 
+    # Phone browsers on this same entrance get the mobile shell. Desktop stays
+    # on the dsh fallback. Choice is ?ui= / cookie / Client Hints / User-Agent.
+    - id: lares-mobile-surface
+      name: '@lares/dsh-overlay/host/mobile-surface.js'
+      inject: [webServer, connection]
+
+    - id: lares-client-log
+      name: '@lares/dsh-overlay/host/client-log.js'
+      inject: [webServer]
+
     - id: lares-default-workspace
       name: '@lares/dsh-overlay/host/default-workspace.js'
       inject: [workspaceRegistry]
@@ -165,10 +175,9 @@
       name: '@lares/brand'
       inject: [webServer]
 
-    # Voice input parked: mic in composer + Settings → 语音输入.
-    # - id: lares-composer-voice
-    #   name: '@lares/composer-voice'
-    #   inject: [webServer]
+    - id: lares-composer-voice
+      name: '@lares/composer-voice'
+      inject: [webServer]
 
     - id: lares-file-upload
       name: '@lares/file-upload'

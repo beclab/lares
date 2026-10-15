@@ -1,21 +1,57 @@
-import { TranscriptQueue } from "@olares/lares-core/voice/client";
 import {
   formatElapsed,
   isRecordingTooShort,
   pickRecordingMime,
-  RECORDING_AUDIO,
 } from "@olares/lares-core/voice/recorder";
 
 export { formatElapsed };
 
-export function createVoiceCapture({ transcribe, getDraft, setDraft, onPhase }) {
-  const queue = new TranscriptQueue();
+/** Phone mic. Bare booleans are exact and iOS rejects the headset profile. */
+const DEVICE_AUDIO = {
+  channelCount: { ideal: 1 },
+  echoCancellation: { ideal: true },
+  noiseSuppression: { ideal: true },
+  autoGainControl: { ideal: true },
+};
+
+const CHUNK_MS = 250;
+
+function micFailure(err) {
+  const name = err?.name || "";
+  if (name === "NotAllowedError" || name === "PermissionDeniedError") return "voice_permission_denied";
+  if (name === "SecurityError") return "voice_unsupported";
+  return "voice_failed";
+}
+
+async function openDeviceMic(mediaDevices) {
+  try {
+    return await mediaDevices.getUserMedia({ audio: DEVICE_AUDIO });
+  } catch (err) {
+    if (micFailure(err) !== "voice_failed") throw err;
+    return mediaDevices.getUserMedia({ audio: true });
+  }
+}
+
+export function createVoiceCapture({
+  transcribe,
+  submit,
+  onPhase,
+  onTrace,
+  now = Date.now,
+  media,
+}) {
+  const mediaDevices = media?.mediaDevices ?? globalThis.navigator?.mediaDevices;
+  const Recorder = media?.MediaRecorder ?? globalThis.MediaRecorder;
   let recorder = null;
   let stream = null;
   let chunks = [];
   let started = 0;
   let timer = 0;
+  let errorTimer = 0;
+  let finishTimer = 0;
   let cancel = false;
+  let released = false;
+  let finished = false;
   let dead = false;
   let abort = null;
   let phase = "idle";
@@ -23,6 +59,14 @@ export function createVoiceCapture({ transcribe, getDraft, setDraft, onPhase }) 
   const emit = (next, extra = {}) => {
     phase = next;
     onPhase?.(next, extra);
+  };
+
+  const trace = (event, fields) => {
+    try {
+      onTrace?.(event, fields);
+    } catch {
+      /* a trace must not change the take */
+    }
   };
 
   const stopTimer = () => {
@@ -40,41 +84,79 @@ export function createVoiceCapture({ transcribe, getDraft, setDraft, onPhase }) 
 
   const fail = (code) => {
     if (dead) return;
+    if (errorTimer) clearTimeout(errorTimer);
     emit("error", { error: code, elapsed: 0 });
-    setTimeout(() => {
+    errorTimer = setTimeout(() => {
+      errorTimer = 0;
       if (!dead && phase === "error") emit("idle", { error: "", elapsed: 0 });
     }, 3200);
   };
 
   const finish = async () => {
+    if (finished || dead) return;
+    finished = true;
     stopTimer();
-    const took = Date.now() - started;
-    const type = recorder?.mimeType || "audio/webm";
+    const took = now() - started;
+    const type = recorder?.mimeType || chunks[0]?.type || "audio/webm";
     const blobChunks = chunks;
     chunks = [];
     release();
-    if (dead) return;
     if (cancel) {
-      emit("idle", { elapsed: 0 });
+      emit("idle", { error: "", elapsed: 0 });
       return;
     }
     const blob = new Blob(blobChunks, { type });
+    trace("blob", { bytes: blob.size, type, ms: took, chunks: blobChunks.length });
     if (isRecordingTooShort(took, blob.size)) {
+      trace("too-short", { bytes: blob.size, ms: took });
       fail("voice_too_short");
       return;
     }
-    emit("transcribing", { elapsed: took });
+    emit("transcribing", { elapsed: took, error: "" });
     abort = new AbortController();
     try {
-      const text = await transcribe(blob, abort.signal);
-      if (dead) return;
-      emit("idle", { elapsed: 0 });
-      queue.apply(text, true, getDraft(), setDraft);
+      const text = String(await transcribe(blob, abort.signal) ?? "").trim();
+      if (dead || cancel) return;
+      if (!text) {
+        trace("no-input", {});
+        fail("voice_no_input");
+        return;
+      }
+      trace("transcript", { chars: text.length, head: text.slice(0, 40) });
+      emit("idle", { error: "", elapsed: 0 });
+      submit?.(text);
     } catch (err) {
-      if (dead || abort.signal.aborted) return;
-      fail(err instanceof Error ? err.message : "voice_failed");
+      if (dead || abort.signal.aborted || cancel) return;
+      const code = err instanceof Error ? err.message : "voice_failed";
+      trace("transcribe-error", { code });
+      fail(code);
     } finally {
       abort = null;
+    }
+  };
+
+  const scheduleFinish = () => {
+    if (finishTimer) clearTimeout(finishTimer);
+    finishTimer = setTimeout(() => {
+      finishTimer = 0;
+      void finish();
+    }, 30);
+  };
+
+  const endRecorder = () => {
+    if (!recorder || recorder.state === "inactive") {
+      scheduleFinish();
+      return;
+    }
+    try {
+      recorder.requestData?.();
+    } catch {
+      /* the final dataavailable still arrives from stop() */
+    }
+    try {
+      recorder.stop();
+    } catch {
+      scheduleFinish();
     }
   };
 
@@ -83,53 +165,101 @@ export function createVoiceCapture({ transcribe, getDraft, setDraft, onPhase }) 
       return phase;
     },
     async start() {
-      if (dead || phase === "recording" || phase === "transcribing") return;
-      if (typeof MediaRecorder === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      if (dead || phase === "preparing" || phase === "recording" || phase === "transcribing") return;
+      if (typeof Recorder === "undefined" || !mediaDevices?.getUserMedia) {
         fail("voice_unsupported");
         return;
       }
       cancel = false;
+      released = false;
+      finished = false;
+      trace("open", {});
+      emit("preparing", { elapsed: 0, error: "" });
       let next;
       try {
-        next = await navigator.mediaDevices.getUserMedia({ audio: RECORDING_AUDIO });
-      } catch {
-        fail("voice_permission_denied");
+        next = await openDeviceMic(mediaDevices);
+      } catch (err) {
+        const code = micFailure(err);
+        trace("mic-fail", { code, name: err?.name || "" });
+        if (!dead) fail(code);
         return;
       }
       if (dead || cancel) {
         next.getTracks().forEach((track) => track.stop());
+        if (!dead && phase === "preparing") emit("idle", { error: "", elapsed: 0 });
         return;
       }
       stream = next;
       chunks = [];
-      const mime = pickRecordingMime();
-      recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      const mime = pickRecordingMime(Recorder);
+      try {
+        recorder = new Recorder(stream, mime ? { mimeType: mime } : undefined);
+      } catch {
+        release();
+        fail("voice_unsupported");
+        return;
+      }
       recorder.ondataavailable = (event) => {
         if (event.data?.size) chunks.push(event.data);
+        if (recorder?.state === "inactive") scheduleFinish();
       };
-      recorder.onstop = () => {
-        void finish();
-      };
-      started = Date.now();
-      emit("recording", { elapsed: 0, error: "" });
-      recorder.start();
-      timer = setInterval(() => emit("recording", { elapsed: Date.now() - started }), 200);
-    },
-    stop(aborting = false) {
-      cancel = Boolean(aborting);
-      if (recorder && recorder.state !== "inactive") recorder.stop();
-      else {
-        stopTimer();
+      recorder.onstop = () => scheduleFinish();
+      started = now();
+      try {
+        recorder.start(CHUNK_MS);
+      } catch {
+        trace("record-fail", { mime });
         release();
-        emit("idle", { elapsed: 0 });
+        fail("voice_unsupported");
+        return;
       }
+      trace("recording", { mime: recorder.mimeType || mime || "" });
+      if (released || cancel) {
+        endRecorder();
+        return;
+      }
+      emit("recording", { elapsed: 0, error: "" });
+      timer = setInterval(() => emit("recording", { elapsed: now() - started, error: "" }), 200);
     },
-    toggle() {
-      if (phase === "recording") this.stop(false);
-      else if (phase === "idle" || phase === "error") void this.start();
+    /**
+     * Finger-up finishes the take. The mic opens asynchronously, so the finger
+     * often lifts while still preparing — that is not a cancel.
+     */
+    stop(aborting = false) {
+      if (phase === "transcribing") {
+        if (aborting) {
+          cancel = true;
+          abort?.abort();
+        }
+        return;
+      }
+      if (phase !== "preparing" && phase !== "recording") {
+        trace("stop-ignored", { aborting: Boolean(aborting), phase });
+        return;
+      }
+      trace("stop", {
+        aborting: Boolean(aborting),
+        phase,
+        recorder: recorder?.state || "none",
+      });
+      if (aborting) {
+        cancel = true;
+        released = false;
+        if (recorder && recorder.state !== "inactive") recorder.stop();
+        return;
+      }
+      released = true;
+      stopTimer();
+      if (recorder && recorder.state !== "inactive") {
+        emit("transcribing", { elapsed: now() - started, error: "" });
+        endRecorder();
+      }
     },
     dispose() {
       dead = true;
+      cancel = true;
+      if (errorTimer) clearTimeout(errorTimer);
+      if (finishTimer) clearTimeout(finishTimer);
       stopTimer();
       abort?.abort();
       if (recorder && recorder.state !== "inactive") recorder.stop();

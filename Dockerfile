@@ -1,13 +1,13 @@
 # syntax=docker/dockerfile:1.7
 # App image: compile and ship Lares code on top of the environment image.
 # Default `scripts/build-image.sh` rebuilds only this file.
-ARG BASE_IMAGE=docker.io/beclab/lares-base:21
+ARG BASE_IMAGE=docker.io/beclab/lares-base:22
 FROM ${BASE_IMAGE}
 
 USER root
 WORKDIR /app
 
-COPY tsconfig.base.json tsconfig.server.json ./
+COPY package.json package-lock.json tsconfig.base.json tsconfig.server.json ./
 COPY scripts/build-client.mjs ./scripts/
 COPY packages/ ./packages/
 RUN mkdir -p node_modules/@olares \

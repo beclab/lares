@@ -41,10 +41,14 @@ export default {
   inset: 0;
   z-index: 40;
   pointer-events: none;
+  visibility: hidden;
+  transition: visibility 0s linear var(--lares-duration-sheet, 280ms);
 }
 
 .lares-sheet[data-open="true"] {
   pointer-events: auto;
+  visibility: visible;
+  transition: visibility 0s linear 0s;
 }
 
 .lares-sheet__backdrop {

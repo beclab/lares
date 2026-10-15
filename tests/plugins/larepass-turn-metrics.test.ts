@@ -8,7 +8,7 @@ import {
   throughputTokens,
 } from "@olares/lares-core/larepass/turn-metrics";
 import { foldTranscript } from "@olares/lares-core/larepass/transcript";
-import { metricsLine } from "../../packages/mobile/src/chat/format.js";
+import { metricsLine, runningLabel } from "../../packages/mobile/src/chat/format.js";
 import { createT } from "../../packages/mobile/src/i18n.js";
 
 // Local wall clock, so the rendered "21:42" holds in any test-runner zone.
@@ -122,4 +122,15 @@ test("readings round the way the harness rounds them", () => {
   assert.equal(throughputTokens(3.44), "3.4");
   assert.equal(clockParts(START, START).scope, "day");
   assert.equal(clockParts(START, START + 86400000 * 400).scope, "ymd");
+});
+
+test("an open turn shows dsh's live deep-diving clock before any model output", () => {
+  const t = createT("zh");
+  const open = foldTranscript(turnEvents().slice(0, 2));
+  assert.equal(open.running, true);
+  assert.equal(open.runningSince, START);
+  assert.equal(runningLabel(open.runningSince, t, START + 300), "深度求索中，用时 1秒 ···");
+  assert.equal(runningLabel(open.runningSince, t, START + 65_000), "深度求索中，用时 1分05秒 ···");
+  assert.equal(runningLabel(0, t), "深度求索中");
+  assert.equal(foldTranscript(turnEvents()).runningSince, 0);
 });

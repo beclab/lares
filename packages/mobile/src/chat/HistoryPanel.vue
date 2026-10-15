@@ -9,6 +9,17 @@
     <aside class="lares-history__sheet" role="dialog" :aria-label="t('bar.history')">
       <header class="lares-history__head">
         <h2 class="lares-history__title">{{ t("bar.history") }}</h2>
+        <button
+          type="button"
+          class="lares-history__new"
+          :aria-label="t('bar.newAria')"
+          @click="$emit('create', null)"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M5 4.2h14a2.2 2.2 0 0 1 2.2 2.2v8.2a2.2 2.2 0 0 1-2.2 2.2h-5.2L12 19.8l-1.8-3H5a2.2 2.2 0 0 1-2.2-2.2V6.4A2.2 2.2 0 0 1 5 4.2z" />
+            <path d="M12 7.6v5.2M9.4 10.2h5.2" />
+          </svg>
+        </button>
       </header>
       <header class="lares-history__toolbar">
         <span v-if="!searchOpen" class="lares-history__section-label">{{ sectionTitle }}</span>
@@ -517,7 +528,7 @@ export default {
   align-items: center;
   flex-shrink: 0;
   height: 56px;
-  padding: 0 20px;
+  padding: 0 12px 0 20px;
 }
 
 .lares-history__title {
@@ -525,6 +536,34 @@ export default {
   font-size: 20px;
   font-weight: 500;
   line-height: 26px;
+}
+
+.lares-history__new {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  margin-left: auto;
+  border: 0;
+  border-radius: 999px;
+  padding: 0;
+  background: var(--q-background-3);
+  color: var(--q-ink-2);
+}
+
+.lares-history__new svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.lares-history__new:active {
+  background: var(--q-btn-bg-pressed);
 }
 
 .lares-history__toolbar {

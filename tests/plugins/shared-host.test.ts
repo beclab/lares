@@ -10,9 +10,10 @@ import {
   sendJson,
 } from "@olares/lares-core/tools/http";
 import { resolveSessionWorkspace } from "@olares/lares-core/workspace/session";
+import { applyLoopbackHeaders, loopbackAuthority } from "@olares/lares-core/olares/trusted-host";
 
-function request(method: string, url: string, body = "") {
-  const req = Object.assign(new EventEmitter(), { method, url });
+function request(method: string, url: string, body = "", headers: Record<string, string> = {}) {
+  const req = Object.assign(new EventEmitter(), { method, url, headers });
   queueMicrotask(() => {
     if (body) req.emit("data", Buffer.from(body));
     req.emit("end");
@@ -23,10 +24,15 @@ function request(method: string, url: string, body = "") {
 function response() {
   let status = 0;
   let body = "";
+  const headers: Record<string, string> = {};
   return {
     headersSent: false,
-    writeHead(next: number) {
+    setHeader(name: string, value: string) {
+      headers[name.toLowerCase()] = value;
+    },
+    writeHead(next: number, extra: Record<string, string> = {}) {
       status = next;
+      for (const [name, value] of Object.entries(extra)) headers[name.toLowerCase()] = value;
       this.headersSent = true;
     },
     end(chunk = "") {
@@ -34,7 +40,7 @@ function response() {
     },
     destroy() {},
     result() {
-      return { status, body: body ? JSON.parse(body) : null };
+      return { status, headers, body: body ? JSON.parse(body) : null };
     },
   };
 }
@@ -150,4 +156,50 @@ test("shared route handler owns 404, 405 and structured failures", async () => {
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(res.result().status, expected);
   }
+});
+
+/**
+ * LarePass sends binary bodies with a webview `fetch` from its own origin, so
+ * the browser preflights them; a 405 there fails the upload before it is sent.
+ */
+test("shared route handler answers LarePass preflights and only LarePass origins", async () => {
+  const handler = createRouteHandler({
+    prefix: "/api/example",
+    routes: {
+      "/upload": {
+        POST: (_req, res) => sendJson(res, 200, { ok: true }),
+      },
+    },
+    fallbackCode: "example_failed",
+  });
+  const run = async (method: string, origin: string) => {
+    const res = response();
+    const req = request(method, "/api/example/upload", "", {
+      origin,
+      "access-control-request-method": "POST",
+      "access-control-request-headers": "content-type,x-authorization,x-unauth-error",
+    });
+    // The identity plugin rewrites Origin to loopback before any route runs.
+    applyLoopbackHeaders(req.headers, loopbackAuthority(8080));
+    handler(req as never, res as never);
+    await new Promise((resolve) => setImmediate(resolve));
+    return res.result();
+  };
+
+  for (const origin of ["http://localhost", "https://localhost", "capacitor://localhost"]) {
+    const preflight = await run("OPTIONS", origin);
+    assert.equal(preflight.status, 204);
+    assert.equal(preflight.headers["access-control-allow-origin"], origin);
+    assert.equal(preflight.headers["access-control-allow-credentials"], "true");
+    assert.match(preflight.headers["access-control-allow-methods"], /POST/);
+    assert.match(preflight.headers["access-control-allow-headers"], /x-authorization/);
+
+    const post = await run("POST", origin);
+    assert.equal(post.status, 200);
+    assert.equal(post.headers["access-control-allow-origin"], origin);
+  }
+
+  const foreign = await run("OPTIONS", "https://evil.example");
+  assert.equal(foreign.status, 405);
+  assert.equal(foreign.headers["access-control-allow-origin"], undefined);
 });

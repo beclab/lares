@@ -156,5 +156,6 @@ test("laresPortsFromAccount uses myApps unless this is a PC-test proxy build", (
     baseUrl: undefined,
     env: undefined,
     proxyPrefix: undefined,
+    missing: true,
   });
 });

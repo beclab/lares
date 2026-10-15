@@ -2,11 +2,20 @@
   <div class="lares-mobile-shell">
     <LaresChatBar
       :t="t"
-      :title="barTitle"
       :starting="state.starting"
+      :model-label="state.modelLabel"
+      :model-busy="state.modelBusy"
+      :effort-label="state.effortLabel"
+      :effort-disabled="state.effortDisabled"
+      :unseen="hasUnseen"
+      :speak="state.voiceSpeak"
+      :speak-busy="state.speakBusy"
       @history="$emit('history')"
-      @create="$emit('create', state.currentWorkspaceId || null)"
+      @model="$emit('open-model')"
+      @effort="$emit('open-model')"
+      @speak="$emit('toggle-speak')"
     />
+    <p v-if="state.speakNotice" class="lares-speak-notice" role="status">{{ state.speakNotice }}</p>
     <LaresHistoryPanel
       :open="state.panel === 'history'"
       :sessions="state.sessions"
@@ -54,12 +63,6 @@
           v-if="newSessionHero"
           key="hero"
           :t="t"
-          :workspace-label="workspaceLabel"
-          :workspace-busy="!state.workspacesReady && !state.workspaceError"
-          :model-label="state.modelLabel"
-          :model-busy="state.modelBusy"
-          @workspace="workspaceSheet = true"
-          @model="$emit('open-model')"
         >
           <LaresComposer
             ref="composer"
@@ -67,10 +70,6 @@
             :draft="state.draft"
             :sending="state.sending"
             :can-send="state.canSend"
-            :model-label="state.modelLabel"
-            :model-busy="state.modelBusy"
-            :effort-label="state.effortLabel"
-            :effort-disabled="state.effortDisabled"
             :attach-pending="state.upload.pending > 0"
             :attach-disabled="!state.sessionId || state.historyLoading || state.starting"
             :voice-phase="state.voicePhase"
@@ -83,15 +82,15 @@
             :references-error="state.referencesError"
             :commands="state.commands"
             :commands-error="state.commandsError"
+            :input-mode="composerMode"
             :t="t"
             @update:draft="$emit('update-draft', $event)"
+            @update:input-mode="composerMode = $event"
             @send="$emit('send')"
-            @model="$emit('open-model')"
-            @effort="$emit('open-effort')"
             @files="$emit('files', $event)"
             @voice="$emit('voice')"
-            @hold-start="$emit('hold-start')"
-            @hold-end="$emit('hold-end')"
+            @hold-start="$emit('hold-start', $event)"
+            @hold-end="$emit('hold-end', $event)"
             @open-commands="$emit('open-commands')"
             @open-references="$emit('open-references', $event)"
             @pick-command="$emit('pick-command', $event)"
@@ -104,6 +103,7 @@
             ref="transcript"
             :items="state.viewItems"
             :running="state.running"
+            :running-since="state.runningSince"
             :loading="state.historyLoading || state.starting"
             :previews="state.previews"
             :media-url="mediaUrl"
@@ -111,6 +111,7 @@
             :remember-scroll="rememberScroll"
             :sticking="sticking"
             :session-id="state.sessionId"
+            popup
             :question="state.question"
             :question-busy="state.questionBusy"
             :t="t"
@@ -118,15 +119,18 @@
             @media="pinLog"
             @answer="forwardAnswer"
           />
+          <LaresDesktopQueue
+            :items="state.queue"
+            :running="state.running"
+            :busy="state.queueBusy"
+            :t="t"
+            @action="(itemId, action) => $emit('queue-action', itemId, action)"
+          />
           <LaresComposer
             ref="composer"
             :draft="state.draft"
             :sending="state.sending"
             :can-send="state.canSend"
-            :model-label="state.modelLabel"
-            :model-busy="state.modelBusy"
-            :effort-label="state.effortLabel"
-            :effort-disabled="state.effortDisabled"
             :attach-pending="state.upload.pending > 0"
             :attach-disabled="!state.sessionId || state.historyLoading || state.starting"
             :voice-phase="state.voicePhase"
@@ -139,15 +143,15 @@
             :references-error="state.referencesError"
             :commands="state.commands"
             :commands-error="state.commandsError"
+            :input-mode="composerMode"
             :t="t"
             @update:draft="$emit('update-draft', $event)"
+            @update:input-mode="composerMode = $event"
             @send="$emit('send')"
-            @model="$emit('open-model')"
-            @effort="$emit('open-effort')"
             @files="$emit('files', $event)"
             @voice="$emit('voice')"
-            @hold-start="$emit('hold-start')"
-            @hold-end="$emit('hold-end')"
+            @hold-start="$emit('hold-start', $event)"
+            @hold-end="$emit('hold-end', $event)"
             @open-commands="$emit('open-commands')"
             @open-references="$emit('open-references', $event)"
             @pick-command="$emit('pick-command', $event)"
@@ -157,18 +161,6 @@
       </Transition>
     </div>
 
-    <LaresSheet :open="workspaceSheet" :title="t('desktop.workspaces')" @close="workspaceSheet = false">
-      <p v-if="state.workspaceError" class="lares-shell__status">{{ state.workspaceError }}</p>
-      <p v-else-if="!state.workspacesReady" class="lares-shell__hint">{{ t("agent.loading") }}</p>
-      <p v-else-if="!state.workspaces.length" class="lares-shell__hint">{{ t("desktop.noFolders") }}</p>
-      <LaresSettingRow
-        v-for="workspace in state.workspaces"
-        :key="workspace.workspaceId"
-        :label="workspace.title"
-        :checked="workspace.workspaceId === state.currentWorkspaceId"
-        @click="pickWorkspace(workspace.workspaceId)"
-      />
-    </LaresSheet>
     <LaresSheet :open="state.modelSheet" :title="t('model.menuAria')" @close="$emit('close-model')">
       <p v-if="state.modelError" class="lares-shell__status">{{ state.modelError }}</p>
       <p v-else-if="!state.models" class="lares-shell__hint">{{ t("agent.loading") }}</p>
@@ -184,17 +176,17 @@
           @click="$emit('choose-model', item)"
         />
       </template>
-    </LaresSheet>
-    <LaresSheet :open="state.effortSheet" :title="t('reasoning.title')" @close="$emit('close-effort')">
-      <p v-if="!state.effortRows.length" class="lares-shell__hint">{{ t("reasoning.default") }}</p>
-      <LaresSettingRow
-        v-for="row in state.effortRows"
-        :key="row.key"
-        :label="effortName(row)"
-        :checked="row.id === state.effortId"
-        :disabled="state.modelBusy"
-        @click="$emit('choose-effort', row.id)"
-      />
+      <template v-if="state.effortRows.length">
+        <p class="lares-shell__heading">{{ t("reasoning.title") }}</p>
+        <LaresSettingRow
+          v-for="row in state.effortRows"
+          :key="row.key"
+          :label="effortName(row)"
+          :checked="row.id === state.effortId"
+          :disabled="state.modelBusy"
+          @click="$emit('choose-effort', row.id)"
+        />
+      </template>
     </LaresSheet>
     <Transition name="lares-preview">
       <LaresPreview
@@ -222,12 +214,12 @@ import LaresChatBar from "../chat/ChatBar.vue";
 import LaresHistoryPanel from "../chat/HistoryPanel.vue";
 import LaresTranscript from "../chat/Transcript.vue";
 import LaresComposer from "../chat/Composer.vue";
+import LaresDesktopQueue from "../desktop/DesktopQueue.vue";
 import LaresPreview from "../preview/Preview.vue";
 import LaresSheet from "../settings/Sheet.vue";
 import LaresSettingRow from "../settings/SettingRow.vue";
 import LaresMobileDirectorySheet from "./MobileDirectorySheet.vue";
 import LaresMobileNewSession from "./MobileNewSession.vue";
-import { DEFAULT_WORKSPACE_TITLE } from "@olares/lares-core/workspace/constants";
 
 export default {
   name: "LaresMobileShell",
@@ -236,6 +228,7 @@ export default {
     LaresHistoryPanel,
     LaresTranscript,
     LaresComposer,
+    LaresDesktopQueue,
     LaresPreview,
     LaresSheet,
     LaresSettingRow,
@@ -254,18 +247,18 @@ export default {
     effortName: { type: Function, required: true },
   },
   emits: [
-    "history", "create", "close-history", "pick-session", "retry", "open-file",
-    "answer", "update-draft", "send", "open-model", "open-effort", "files",
+    "history", "create", "toggle-speak", "close-history", "pick-session", "retry", "open-file",
+    "answer", "update-draft", "send", "queue-action", "open-model", "open-effort", "files",
     "voice", "hold-start", "hold-end", "close-model", "choose-model",
     "close-effort", "choose-effort", "close-preview",
     "open-commands", "open-references", "pick-command", "remove-image",
     "refresh-workspaces", "browse-workspaces", "browse-directory",
     "close-directory", "choose-directory", "create-folder", "toggle-hidden",
     "rename-session", "archive-session",
-    "move-session", "pick-workspace",
+    "move-session",
   ],
   data() {
-    return { workspaceSheet: false };
+    return { composerMode: "text" };
   },
   computed: {
     newSessionHero() {
@@ -277,25 +270,12 @@ export default {
         && !this.state.starting
       );
     },
-    barTitle() {
-      return this.newSessionHero ? this.t("desktop.newSession") : this.state.sessionTitle;
-    },
-    workspaceLabel() {
-      if (!this.state.workspacesReady) return this.t("agent.loading");
-      const current = this.state.workspaces.find(
-        (row) => row.workspaceId === this.state.currentWorkspaceId,
-      );
-      if (current?.title) return current.title;
-      if (this.state.workspaces[0]?.title) return this.state.workspaces[0].title;
-      return DEFAULT_WORKSPACE_TITLE;
+    hasUnseen() {
+      const unseen = this.state.unseen;
+      return Boolean(unseen && Object.keys(unseen).length);
     },
   },
   methods: {
-    pickWorkspace(workspaceId) {
-      this.workspaceSheet = false;
-      if (!workspaceId || workspaceId === this.state.currentWorkspaceId) return;
-      this.$emit("pick-workspace", workspaceId);
-    },
     forwardAnswer(label, row) {
       this.$emit("answer", label, row);
     },
@@ -325,7 +305,7 @@ export default {
 }
 
 .lares-shell__conversation[data-hero="true"] {
-  justify-content: center;
+  justify-content: flex-start;
 }
 
 .lares-shell__chat {
@@ -345,6 +325,13 @@ export default {
 
 .lares-shell__status {
   color: var(--q-orange-default);
+}
+
+.lares-speak-notice {
+  margin: 0 16px 8px;
+  color: var(--q-orange-default);
+  font-size: 14px;
+  line-height: 20px;
 }
 
 .lares-shell__retry {

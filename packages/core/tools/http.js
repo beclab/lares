@@ -1,3 +1,18 @@
+import { LAREPASS_PAGE_ORIGINS } from "../larepass/host.js";
+import { pageOrigin } from "../olares/trusted-host.js";
+
+const CORS_HEADERS = "content-type, x-authorization, x-unauth-error, x-lares-session-id, x-lares-file-name, x-lares-upload-request-id";
+
+/** @returns {boolean} true when the request came from a LarePass page. */
+function allowLarepassOrigin(req, res) {
+  const origin = pageOrigin(req.headers);
+  if (!origin || !LAREPASS_PAGE_ORIGINS.includes(origin)) return false;
+  res.setHeader("access-control-allow-origin", origin);
+  res.setHeader("access-control-allow-credentials", "true");
+  res.setHeader("vary", "Origin");
+  return true;
+}
+
 export class HttpError extends Error {
   constructor(code, status, message) {
     super(message);
@@ -70,6 +85,7 @@ function errorResponse(err, fallbackCode) {
       status: err.status >= 400 ? err.status : 500,
       code: err.code,
       message: err instanceof Error ? err.message : String(err),
+      params: err.params && typeof err.params === "object" ? err.params : undefined,
     };
   }
   return {
@@ -82,7 +98,7 @@ function errorResponse(err, fallbackCode) {
 export function sendError(res, err, fallbackCode) {
   const failure = errorResponse(err, fallbackCode);
   sendJson(res, failure.status, {
-    error: { code: failure.code, message: failure.message },
+    error: { code: failure.code, message: failure.message, params: failure.params },
   });
 }
 
@@ -99,10 +115,20 @@ export function createRouteHandler(options) {
     const suffix = new URL(req.url ?? "/", "http://x").pathname.slice(options.prefix.length) || "/";
     const path = suffix.replace(/\/+$/, "") || "/";
     const handlers = options.routes[path];
+    const cors = allowLarepassOrigin(req, res);
     if (!handlers) {
       sendJson(res, 404, {
         error: { code: "not_found", message: `no route ${path}` },
       });
+      return;
+    }
+    if (cors && method === "OPTIONS") {
+      res.writeHead(204, {
+        "access-control-allow-methods": Object.keys(handlers).join(", "),
+        "access-control-allow-headers": CORS_HEADERS,
+        "access-control-max-age": "600",
+      });
+      res.end();
       return;
     }
     const route = handlers[method];

@@ -3,6 +3,24 @@ import test from "node:test";
 import { consumeMux } from "@olares/lares-core/larepass/mux";
 import { createChatRuntime, pinnedScroll, restoreScroll } from "@olares/lares-core/larepass/runtime";
 
+test("mobile voice playback commands pass through the chat runtime", async () => {
+  const calls = [];
+  const runtime = createChatRuntime({
+    speak: async (text) => {
+      calls.push(["speak", text]);
+      return { audio: "wav" };
+    },
+    interruptSpeech: async () => {
+      calls.push(["interrupt"]);
+      return true;
+    },
+  });
+  assert.deepEqual(await runtime.speak("hello"), { audio: "wav" });
+  assert.equal(await runtime.interruptSpeech(), true);
+  assert.deepEqual(calls, [["speak", "hello"], ["interrupt"]]);
+  runtime.dispose();
+});
+
 function sseFrame(payload) {
   return `data: ${JSON.stringify({
     type: "server-request",
@@ -133,6 +151,80 @@ test("mux token deltas reach subscribers without waiting for history", async () 
   assert.deepEqual(last.messages, [{ role: "assistant", text: "he", pending: true }]);
   runtime.dispose();
   client.close();
+});
+
+test("session follow streams think and reply without a history reload", async () => {
+  const listeners = { message: [], close: [] };
+  const sent = [];
+  const socket = {
+    readyState: 1,
+    send(data) {
+      sent.push(JSON.parse(data));
+    },
+    addEventListener(type, fn) {
+      listeners[type].push(fn);
+    },
+    removeEventListener() {},
+  };
+  const client = mockClient();
+  client.openMux = async () => ({ ok: true, http: 101, body: socket });
+  const runtime = createChatRuntime(client);
+  const snaps = [];
+  runtime.subscribe((snap) => snaps.push(snap));
+  await runtime.start();
+  for (let i = 0; i < 20 && !sent.length; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.equal(sent[0]?.endpoint, "session/follow");
+  assert.equal(sent[0]?.payload?.args?.request?.assistantStream, true);
+  const streamId = sent[0].streamId;
+  const deliver = (value) => {
+    for (const fn of listeners.message) fn({ data: JSON.stringify({ type: "item", streamId, value }) });
+  };
+  deliver({
+    type: "snapshot",
+    cursor: 1,
+    records: [{ type: "event", event: { type: "turn/start", seq: 1, data: { turn: 1 } } }],
+    hasMore: false,
+    assistantStream: { revision: 0 },
+  });
+  deliver({
+    type: "assistant-stream",
+    frame: { type: "start", attemptId: "a", revision: 1, startedAfterSeq: 1, turn: 1, step: 0 },
+  });
+  deliver({
+    type: "assistant-stream",
+    frame: {
+      type: "chunk",
+      attemptId: "a",
+      revision: 2,
+      index: 0,
+      time: 1,
+      chunk: { type: "reasoning-delta", index: 0, text: "adding" },
+    },
+  });
+  deliver({
+    type: "assistant-stream",
+    frame: {
+      type: "chunk",
+      attemptId: "a",
+      revision: 3,
+      index: 1,
+      time: 2,
+      chunk: { type: "text-delta", index: 1, text: "4" },
+    },
+  });
+  let last;
+  for (let i = 0; i < 20; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    last = snaps.at(-1);
+    if (last?.items?.some((row) => row.type === "assistant" && row.text === "4")) break;
+  }
+  assert.equal(last.running, true);
+  assert.equal(last.items.find((row) => row.type === "reasoning")?.text, "adding");
+  assert.equal(last.items.find((row) => row.type === "assistant")?.text, "4");
+  runtime.dispose();
+  for (const fn of listeners.close) fn();
 });
 
 test("scroll pin follows the bottom until the user scrolls up", () => {
@@ -488,42 +580,96 @@ test("createSession does not steal the view if another chat was opened while cre
   client.close();
 });
 
-test("mux question waits surface on the snapshot and answer through respond", async () => {
-  const client = mockClient();
+function fakeSocket() {
+  const listeners = { message: new Set(), close: new Set() };
+  const sent = [];
+  return {
+    readyState: 1,
+    sent,
+    send(data) {
+      sent.push(JSON.parse(data));
+    },
+    addEventListener(type, fn) {
+      listeners[type]?.add(fn);
+    },
+    removeEventListener(type, fn) {
+      listeners[type]?.delete(fn);
+    },
+    deliver(message) {
+      for (const fn of listeners.message) fn({ data: JSON.stringify(message) });
+    },
+    close() {
+      for (const fn of listeners.close) fn();
+    },
+  };
+}
+
+async function until(check) {
+  for (let i = 0; i < 50; i += 1) {
+    if (check()) return;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
+function remoteEventsClient() {
+  const socket = fakeSocket();
+  const results = [];
+  const client = {
+    socket,
+    results,
+    probe: async () => ({ status: "ok", http: 200 }),
+    ensureSession: async () => ({ ok: true, value: { sessionId: "s1" } }),
+    rpc: async (method, payload = {}) => {
+      if (method === "session.list") return { ok: true, value: { items: [{ sessionId: "s1", title: "s1" }] } };
+      if (method === "session.history") return { ok: true, value: { events: [] } };
+      if (method === "$events/result") {
+        results.push(payload);
+        return { ok: true, value: null };
+      }
+      throw new Error(method);
+    },
+    openMux: async () => ({ ok: true, http: 200, body: socket }),
+    consumeMux,
+  };
+  return client;
+}
+
+test("Host question and approval waterfalls surface on the snapshot and answer through $events/result", async () => {
+  const client = remoteEventsClient();
   const runtime = createChatRuntime(client);
   await runtime.start();
-  client.push({
-    type: "question/requested",
-    sessionId: "s1",
-    questions: [{ id: "bg-style", question: "style?", options: [{ label: "nature" }] }],
+  await until(() => client.socket.sent.some((frame) => frame.endpoint === "$events"));
+  const open = client.socket.sent.find((frame) => frame.endpoint === "$events");
+  assert.deepEqual(open.payload, { args: {} });
+  const item = (value) => client.socket.deliver({ type: "item", streamId: open.streamId, value });
+  item({ type: "ready", clientId: "c1", host: { home: "/root" } });
+  item({
+    type: "waterfall",
+    event: "user-questions/request",
+    eventId: "e1",
+    agentId: "s1",
+    request: { questions: [{ id: "bg-style", question: "style?", options: [{ label: "nature" }] }], wait: { callId: "call1", timed: true } },
   });
-  let snap;
-  for (let i = 0; i < 20; i += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    snap = runtime.snapshot();
-    if (snap.question?.rpcId === "r1") break;
-  }
-  assert.equal(snap.question.rpcId, "r1");
-  assert.equal(snap.question.questions[0].id, "bg-style");
+  item({ type: "waterfall", event: "something/else", eventId: "e2", agentId: "s1", request: {} });
+  await until(() => runtime.snapshot().question && client.results.length === 1);
+  assert.equal(runtime.snapshot().question.questions[0].id, "bg-style");
+  assert.deepEqual(client.results[0], { clientId: "c1", eventId: "e2", outcome: { kind: "next" } });
+
   const answered = await runtime.answerQuestion([{ id: "bg-style", selected: ["nature"] }]);
   assert.equal(answered.ok, true);
-  assert.equal(client.stats().responds.length, 1);
-  assert.equal(client.stats().responds[0].type, "client-response");
-  assert.equal(client.stats().responds[0].rpcId, "r1");
-  assert.deepEqual(client.stats().responds[0].result.value.answer.answers, [
-    { id: "bg-style", selected: ["nature"] },
-  ]);
-  client.push({
-    type: "question/resolved",
-    sessionId: "s1",
-    questionRpcId: "r1",
-    outcome: "answered",
+  assert.deepEqual(client.results[1], {
+    clientId: "c1",
+    eventId: "e1",
+    outcome: { kind: "result", value: { answers: [{ id: "bg-style", selected: ["nature"] }] } },
   });
-  for (let i = 0; i < 20; i += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    if (!runtime.snapshot().question) break;
-  }
   assert.equal(runtime.snapshot().question, null);
+
+  item({ type: "waterfall", event: "approval/request", eventId: "e3", agentId: "s1", request: { toolName: "bash", callId: "call2", reason: "rm" } });
+  await until(() => runtime.snapshot().approval);
+  assert.equal(runtime.snapshot().approval.toolName, "bash");
+  item({ type: "cancel", eventId: "e3" });
+  await until(() => !runtime.snapshot().approval);
+  assert.equal(runtime.snapshot().approval, null);
   runtime.dispose();
-  client.close();
+  client.socket.close();
 });

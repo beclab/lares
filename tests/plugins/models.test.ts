@@ -38,6 +38,8 @@ test("boot catalog requests only Router's callable models", async () => {
         name: "Qwen/ready",
         mode: "chat",
         supportsVision: false,
+        supportsStt: false,
+        supportsTts: false,
         reasoningEfforts: null,
         contextWindow: null,
         maxTokens: null,

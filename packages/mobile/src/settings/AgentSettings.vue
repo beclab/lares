@@ -152,6 +152,7 @@ export default {
     proxyPrefix: { type: String, default: undefined },
     request: { type: Function, default: undefined },
     env: { type: Object, default: undefined },
+    missing: { type: Boolean, default: false },
   },
   data() {
     const remembered = rememberedSettings();
@@ -185,6 +186,7 @@ export default {
         proxyPrefix: this.proxyPrefix,
         request: this.request,
         env: this.env,
+        missing: this.missing,
       };
     },
     hostKey() {

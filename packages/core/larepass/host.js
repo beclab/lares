@@ -3,6 +3,12 @@ export const LARES_API_PREFIX = "/api/lares";
 export const MODELS_PATH = `${LARES_API_PREFIX}/models`;
 export const PC_TEST_PROXY = "/laresHost";
 
+/**
+ * Packaged LarePass page origins (Capacitor Android `androidScheme: http`, iOS).
+ * Binary bodies leave those pages as a cross-origin webview `fetch`.
+ */
+export const LAREPASS_PAGE_ORIGINS = ["http://localhost", "https://localhost", "capacitor://localhost"];
+
 /** Host plugin routes (`file-preview`, models, voice, …). Same path on PC and LarePass. */
 export function isLaresPluginPath(path) {
   const suffix = String(path ?? "").startsWith("/") ? path : `/${path}`;
@@ -51,7 +57,7 @@ export function hostConfigFromEnv(env = {}) {
  * object, so a key that exists in one place and not the other is dropped in
  * silence — which is how `socketProtocol` shipped inert once already.
  */
-export const HOST_PORT_KEYS = ["baseUrl", "proxyPrefix", "env", "request", "socketProtocol"];
+export const HOST_PORT_KEYS = ["baseUrl", "proxyPrefix", "env", "request", "socketProtocol", "missing"];
 
 /** Collect the port keys off any carrier (a component instance included). */
 export function pickHostPorts(source = {}) {
@@ -86,7 +92,12 @@ export function laresPortsFromAccount({ env, apps } = {}) {
     return { env, proxyPrefix: fromEnv.proxyPrefix, baseUrl: undefined };
   }
   const baseUrl = findLaresEntrance(apps);
-  return { baseUrl: baseUrl || undefined, env: undefined, proxyPrefix: undefined };
+  if (!baseUrl) {
+    // LarePass lives on another origin. No myApps hit means there is no Host
+    // to call. The entrance page never uses this function: it is already there.
+    return { baseUrl: undefined, env: undefined, proxyPrefix: undefined, missing: true };
+  }
+  return { baseUrl, env: undefined, proxyPrefix: undefined };
 }
 
 export function hostUrl({ baseUrl = "", proxyPrefix = "", path }) {

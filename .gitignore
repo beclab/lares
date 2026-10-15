@@ -26,6 +26,9 @@ __tools/
 # 一次性调试脚本（入口探测、无头临时场景等）；禁止放 scripts/，整目录不入仓
 __debug__/
 
+# Cosmic 设计文档，本地保留，不入仓
+cosmic/
+
 # Node / Next
 node_modules/
 **/node_modules/

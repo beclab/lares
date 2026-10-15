@@ -1,10 +1,17 @@
 import { isAuthFailure } from "./host.js";
 import { listNavigableSessions, summarizeSession } from "./chat.js";
-import { consumeMuxInbox } from "./mux.js";
+import {
+  classifyRemoteEvent,
+  consumeMuxInbox,
+  createSessionFollow,
+  remoteEventsOpen,
+  sessionFollowOpen,
+} from "./mux.js";
 import { permissionLine, permissionSelect } from "./permissions.js";
-import { wrapClientResponse } from "./rpc.js";
+import { mintRpcId } from "./rpc.js";
 import { sessionReferenceCandidates } from "./references.js";
 import { createSessionCache } from "./session-cache.js";
+import { createInboxTracker } from "./queue.js";
 import { foldTranscript } from "./transcript.js";
 import { normalizeWorkspaceList, workspaceForSession } from "./workspace.js";
 
@@ -25,10 +32,11 @@ function composerProjections(source) {
     contextBreakdown: values.contextBreakdown,
     goal: values.goal,
     todos: values.todos,
+    modelSelection: values.modelSelection,
   };
 }
 
-function viewOf(state, cache, pendingQuestions, pendingApprovals, queues) {
+function viewOf(state, cache, pendingQuestions, pendingApprovals, inbox) {
   const page = cache.peek(state.sessionId);
   const events = page?.events ?? [];
   const snap = foldTranscript(events);
@@ -38,6 +46,8 @@ function viewOf(state, cache, pendingQuestions, pendingApprovals, queues) {
     items: snap.items,
     messages: snap.messages,
     running: snap.running,
+    runningSince: snap.runningSince,
+    utterance: snap.utterance,
     error: state.error || snap.error,
     failed: state.failed,
     phase: state.phase,
@@ -50,7 +60,7 @@ function viewOf(state, cache, pendingQuestions, pendingApprovals, queues) {
     historyLoading: Boolean(state.sessionId) && !page?.ready && events.length === 0,
     question: pendingQuestions.get(state.sessionId) ?? null,
     approval: pendingApprovals.get(state.sessionId) ?? null,
-    queue: queues.get(state.sessionId) ?? [],
+    queue: inbox.queue(state.sessionId),
     permissions: permissionSelect(session),
     plan: session?.plan,
     contextPressure: session?.contextPressure,
@@ -75,7 +85,7 @@ export function createChatRuntime(client) {
   const cache = createSessionCache();
   const pendingQuestions = new Map();
   const pendingApprovals = new Map();
-  const queues = new Map();
+  const inbox = createInboxTracker();
   const projectionSeqs = new Map();
   const state = {
     sessionId: "",
@@ -93,12 +103,19 @@ export function createChatRuntime(client) {
   let abort = null;
   let dead = false;
   let muxLoop = null;
+  let liveSocket = null;
+  let followStreamId = "";
+  let followedSessionId = "";
+  let followMisses = 0;
+  let eventsStreamId = "";
+  let eventsClientId = "";
+  const follow = createSessionFollow();
   let listing = null;
   let workspaceListing = null;
   let creating = null;
 
   const emit = () => {
-    const view = viewOf(state, cache, pendingQuestions, pendingApprovals, queues);
+    const view = viewOf(state, cache, pendingQuestions, pendingApprovals, inbox);
     for (const listener of listeners) listener(view);
   };
 
@@ -156,10 +173,11 @@ export function createChatRuntime(client) {
   }
 
   function ingest(sessionId, extra) {
+    const queued = inbox.apply(sessionId, extra);
     const changed = cache.merge(sessionId, extra);
     const filled = extra?.length ? noteFilled(sessionId) : false;
     const moved = extra?.length ? noteActivity(sessionId) : false;
-    if (filled || moved || (changed && sessionId === state.sessionId)) emit();
+    if (filled || moved || ((changed || queued) && sessionId === state.sessionId)) emit();
   }
 
   function rememberListed(row) {
@@ -171,7 +189,11 @@ export function createChatRuntime(client) {
   function pullHistory(sessionId) {
     if (!sessionId || dead || isDraft(sessionId)) return Promise.resolve();
     return cache.load(sessionId, async () => {
-      const history = await client.rpc("session.history", { sessionId });
+      const row = state.sessions.find((item) => item.sessionId === sessionId);
+      const history = await client.rpc("session.history", {
+        sessionId,
+        ...(Number.isInteger(row?.asOfSeq) ? { throughSeq: row.asOfSeq } : {}),
+      });
       if (dead) return;
       if (!history.ok) {
         if (sessionId !== state.sessionId) return;
@@ -181,7 +203,9 @@ export function createChatRuntime(client) {
         return;
       }
       const events = history.value?.events;
-      const changed = cache.rememberHistory(sessionId, events);
+      const seeded = inbox.seed(sessionId, history.value?.projections);
+      const queued = inbox.apply(sessionId, events) || seeded;
+      const changed = cache.rememberHistory(sessionId, events) || queued;
       const filled = events?.length ? noteFilled(sessionId) : false;
       // The history tail carries the same projections a list row does, and it
       // is the fresher of the two for the session being opened.
@@ -206,16 +230,40 @@ export function createChatRuntime(client) {
     }
     state.failed = "";
     emit();
+    liveSocket = typeof opened.body?.send === "function" ? opened.body : null;
+    followMisses = 0;
+    followStreamId = "";
+    followedSessionId = "";
+    sendFollow(state.sessionId);
+    openEvents();
     try {
       for await (const item of consumeMuxInbox(opened.body)) {
         if (dead) return "stop";
-        if (item.kind === "event") {
-          ingest(item.sessionId, [item.event]);
+        if (item.kind === "stream" && item.streamId === followStreamId) {
+          const step = follow.push(item.value);
+          if (step?.ready) followMisses = 0;
+          applyFollow(followedSessionId, step);
           continue;
         }
-        if (item.kind === "queue") {
-          queues.set(item.sessionId, item.items);
-          if (item.sessionId === state.sessionId) emit();
+        if ((item.kind === "stream-end" || item.kind === "stream-error") && item.streamId === followStreamId) {
+          followStreamId = "";
+          followedSessionId = "";
+          followMisses += 1;
+          void pullHistory(state.sessionId);
+          sendFollow(state.sessionId);
+          continue;
+        }
+        if (item.kind === "stream" && item.streamId === eventsStreamId) {
+          onRemoteEvent(classifyRemoteEvent(item.value));
+          continue;
+        }
+        if ((item.kind === "stream-end" || item.kind === "stream-error") && item.streamId === eventsStreamId) {
+          dropRemoteWaits();
+          openEvents();
+          continue;
+        }
+        if (item.kind === "event") {
+          ingest(item.sessionId, [item.event]);
           continue;
         }
         if (item.kind === "projection") {
@@ -229,40 +277,18 @@ export function createChatRuntime(client) {
           if (item.sessionId === state.sessionId) emit();
           continue;
         }
-        if (item.kind === "question") {
-          pendingQuestions.set(item.sessionId, {
-            rpcId: item.rpcId,
-            questions: item.questions,
-          });
-          emit();
-          continue;
-        }
-        if (item.kind === "approval") {
-          pendingApprovals.set(item.sessionId, item);
-          if (item.sessionId === state.sessionId) emit();
-          continue;
-        }
-        if (item.kind === "approval-resolved") {
-          const current = pendingApprovals.get(item.sessionId);
-          if (!current || current.approvalId === item.approvalId) {
-            pendingApprovals.delete(item.sessionId);
-            if (item.sessionId === state.sessionId) emit();
-          }
-          continue;
-        }
-        if (item.kind === "question-resolved") {
-          const current = pendingQuestions.get(item.sessionId);
-          if (!current || !item.rpcId || current.rpcId === item.rpcId) {
-            pendingQuestions.delete(item.sessionId);
-            emit();
-          }
-        }
       }
     } catch (err) {
       if (dead || err?.name === "AbortError") return "stop";
       state.failed = err instanceof Error ? err.message : String(err);
       emit();
       return "error";
+    } finally {
+      if (liveSocket === opened.body) {
+        liveSocket = null;
+        eventsStreamId = "";
+        dropRemoteWaits();
+      }
     }
     return "end";
   }
@@ -329,12 +355,118 @@ export function createChatRuntime(client) {
     return workspaceListing;
   }
 
+  function sendFollow(sessionId) {
+    const socket = liveSocket;
+    if (!socket || socket.readyState !== 1 || !sessionId || isDraft(sessionId)) return;
+    if (followedSessionId === sessionId && followStreamId) return;
+    if (followMisses > 2) return;
+    if (followStreamId) {
+      try {
+        socket.send(JSON.stringify({ type: "cancel", streamId: followStreamId }));
+      } catch {
+        // the socket is already closing
+      }
+    }
+    follow.reset();
+    followStreamId = mintRpcId();
+    followedSessionId = sessionId;
+    try {
+      socket.send(JSON.stringify(sessionFollowOpen(followStreamId, sessionId)));
+    } catch {
+      followStreamId = "";
+      followedSessionId = "";
+    }
+  }
+
+  function openEvents() {
+    const socket = liveSocket;
+    eventsStreamId = "";
+    eventsClientId = "";
+    if (!socket || socket.readyState !== 1) return;
+    eventsStreamId = mintRpcId();
+    try {
+      socket.send(JSON.stringify(remoteEventsOpen(eventsStreamId)));
+    } catch {
+      eventsStreamId = "";
+    }
+  }
+
+  /** A Host delivery dies with the `$events` generation that received it. */
+  function dropRemoteWaits() {
+    const shown = pendingQuestions.has(state.sessionId) || pendingApprovals.has(state.sessionId);
+    pendingQuestions.clear();
+    pendingApprovals.clear();
+    if (shown) emit();
+  }
+
+  function replyRemote(eventId, outcome) {
+    if (!eventsClientId) return Promise.resolve({ ok: false, error: { message: "no event stream" } });
+    return client.rpc("$events/result", { clientId: eventsClientId, eventId, outcome });
+  }
+
+  function onRemoteEvent(item) {
+    if (!item) return;
+    if (item.kind === "ready") {
+      eventsClientId = item.clientId;
+      return;
+    }
+    if (item.kind === "pass") {
+      void replyRemote(item.eventId, { kind: "next" });
+      return;
+    }
+    if (item.kind === "question" || item.kind === "approval") {
+      (item.kind === "question" ? pendingQuestions : pendingApprovals).set(item.sessionId, item);
+      if (item.sessionId === state.sessionId) emit();
+      return;
+    }
+    if (item.kind === "cancel") {
+      for (const pending of [pendingQuestions, pendingApprovals]) {
+        for (const [sessionId, wait] of pending) {
+          if (wait.eventId !== item.eventId) continue;
+          pending.delete(sessionId);
+          if (sessionId === state.sessionId) emit();
+        }
+      }
+    }
+  }
+
+  async function settleRemote(pending, sessionId, value) {
+    const wait = pending.get(sessionId);
+    if (!wait?.eventId) return { ok: false, error: { message: "not-pending" } };
+    const sent = await replyRemote(wait.eventId, { kind: "result", value });
+    if (!sent.ok) return { ok: false, error: sent.error };
+    if (pending.get(sessionId) === wait) {
+      pending.delete(sessionId);
+      if (sessionId === state.sessionId) emit();
+    }
+    return { ok: true };
+  }
+
+  function applyFollow(sessionId, step) {
+    if (!sessionId || !step) return;
+    const dropped = step.dropLive ? cache.dropLive(sessionId) : false;
+    const events = step.events ?? [];
+    const seeded = inbox.seed(sessionId, step.projections);
+    const queued = inbox.apply(sessionId, events) || seeded;
+    const changed = step.ready
+      ? cache.rememberHistory(sessionId, events)
+      : (events.length ? cache.merge(sessionId, events) : false);
+    const filled = events.length ? noteFilled(sessionId) : false;
+    const projected = step.projections
+      ? noteComposerProjections(sessionId, { projections: step.projections })
+      : false;
+    if (projected || filled || dropped || ((changed || queued) && sessionId === state.sessionId)) emit();
+    if (step.resync) void pullHistory(sessionId);
+  }
+
   function occupy(sessionId) {
     state.sessionId = sessionId;
     state.error = "";
     state.failed = "";
     liveScroll = cache.scroll(sessionId);
     emit();
+    followMisses = 0;
+    sendFollow(sessionId);
   }
 
   function currentIsEmpty(workspaceId, scoped) {
@@ -429,10 +561,10 @@ export function createChatRuntime(client) {
   }
 
   return {
-    snapshot: () => viewOf(state, cache, pendingQuestions, pendingApprovals, queues),
+    snapshot: () => viewOf(state, cache, pendingQuestions, pendingApprovals, inbox),
     subscribe(listener) {
       listeners.add(listener);
-      listener(viewOf(state, cache, pendingQuestions, pendingApprovals, queues));
+      listener(viewOf(state, cache, pendingQuestions, pendingApprovals, inbox));
       return () => listeners.delete(listener);
     },
     async start(options = {}) {
@@ -599,18 +731,32 @@ export function createChatRuntime(client) {
       emit();
       return archived;
     },
-    sessionModels(sessionId = state.sessionId) {
-      if (!sessionId || isDraft(sessionId)) {
-        return Promise.resolve({ ok: false, error: { code: "no_session", message: "no session" } });
-      }
-      return client.rpc("session.models", { sessionId });
+    modelCatalog() {
+      return client.rpc("session.modelCatalog");
     },
     selectModel(selection) {
       const sessionId = state.sessionId;
       if (!sessionId || isDraft(sessionId)) {
         return Promise.resolve({ ok: false, error: { code: "no_session", message: "no session" } });
       }
-      return client.rpc("session.selectModel", { sessionId, ...selection });
+      return client.rpc("session.selectModel", { sessionId, ...selection }).then((result) => {
+        const selected = result.ok ? result.value?.selected : null;
+        if (selected) {
+          const row = state.sessions.find((item) => item.sessionId === sessionId);
+          noteComposerProjections(sessionId, {
+            projections: {
+              values: {
+                modelSelection: {
+                  lastUsed: row?.modelSelection?.lastUsed ?? null,
+                  next: selected,
+                },
+              },
+            },
+          });
+          emit();
+        }
+        return result;
+      });
     },
     cancel() {
       const sessionId = state.sessionId;
@@ -691,37 +837,11 @@ export function createChatRuntime(client) {
       }
       return client.prompt(state.sessionId, content, mode);
     },
-    async answerQuestion(answers) {
-      const pending = pendingQuestions.get(state.sessionId);
-      if (!pending?.rpcId || typeof client.respond !== "function") {
-        return { ok: false, error: { message: "no question" } };
-      }
-      const receipt = await client.respond(wrapClientResponse(pending.rpcId, {
-        ok: true,
-        value: { sessionId: state.sessionId, answer: { answers } },
-      }));
-      if (!receipt?.accepted) {
-        return { ok: false, error: { message: receipt?.reason || "not-pending" } };
-      }
-      return { ok: true };
+    answerQuestion(answers) {
+      return settleRemote(pendingQuestions, state.sessionId, { answers });
     },
-    async answerApproval(outcome) {
-      const pending = pendingApprovals.get(state.sessionId);
-      if (!pending?.rpcId || !pending.approvalId || typeof client.respond !== "function") {
-        return { ok: false, error: { message: "no approval" } };
-      }
-      const receipt = await client.respond(wrapClientResponse(pending.rpcId, {
-        ok: true,
-        value: {
-          sessionId: state.sessionId,
-          approvalId: pending.approvalId,
-          outcome: outcome === "allowed-once" ? "allowed-once" : "rejected",
-        },
-      }));
-      if (!receipt?.accepted) {
-        return { ok: false, error: { message: receipt?.reason || "not-pending" } };
-      }
-      return { ok: true };
+    answerApproval(outcome) {
+      return settleRemote(pendingApprovals, state.sessionId, outcome === "allowed-once" ? "allowed-once" : "rejected");
     },
     preview(path) {
       if (!state.sessionId || typeof client.preview !== "function") {
@@ -747,6 +867,18 @@ export function createChatRuntime(client) {
         return Promise.reject(new Error("voice_failed"));
       }
       return client.transcribe(blob, language, signal);
+    },
+    reportLog(scope, event, fields) {
+      if (typeof client.reportLog !== "function") return Promise.resolve(false);
+      return client.reportLog(scope, event, fields);
+    },
+    speak(request) {
+      if (typeof client.speak !== "function") return Promise.resolve(null);
+      return client.speak(request);
+    },
+    interruptSpeech() {
+      if (typeof client.interruptSpeech !== "function") return Promise.resolve(false);
+      return client.interruptSpeech();
     },
     settings: client.settings,
     rememberScroll(top, height, view) {

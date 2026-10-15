@@ -27,7 +27,9 @@ export function subscribeConversationSettings(listener) {
 
 function fail(res, path) {
   const err = res?.body?.error;
-  throw new Error(err?.message || err?.code || `${path} ${res?.status ?? ""}`.trim());
+  const code = typeof err?.code === "string" ? err.code : "";
+  const message = err?.message || code || `${path} ${res?.status ?? ""}`.trim();
+  throw Object.assign(new Error(message), code ? { code } : {});
 }
 
 function payload(res, path) {
@@ -40,8 +42,8 @@ function rpcValue(result, method) {
   throw new Error(result?.error?.message || result?.error?.code || method);
 }
 
-function sttModels(body) {
-  const list = Array.isArray(body?.stt) ? body.stt : [];
+function modelIds(body, key) {
+  const list = Array.isArray(body?.[key]) ? body[key] : [];
   return list.map((item) => (typeof item === "string" ? item : item?.id)).filter(Boolean);
 }
 
@@ -93,10 +95,12 @@ export function createHostSettings(request) {
           request(`/api/lares/voice/status${query}`),
           request(`/api/lares/voice/models${query}`),
         ]);
+        const listed = payload(models, "/api/lares/voice/models");
         return {
           config: payload(config, "/api/lares/voice/config"),
           status: payload(status, "/api/lares/voice/status"),
-          sttModels: sttModels(payload(models, "/api/lares/voice/models")),
+          sttModels: modelIds(listed, "stt"),
+          ttsModels: modelIds(listed, "tts"),
         };
       }, { force: Boolean(force) });
     },

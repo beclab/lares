@@ -4,6 +4,10 @@ export interface RouterCatalogRow {
   mode: string | null;
   /** Whether Router declares native image input for this chat model. */
   supportsVision: boolean;
+  /** Speech recognition, from `stt` / `stt_stream`. */
+  supportsStt: boolean;
+  /** Speech playback, from `tts`. */
+  supportsTts: boolean;
   /** pi-ai level → Router wire spelling, or null when the model takes no effort. */
   reasoningEfforts: Record<string, string> | null;
   /** Tokens one request may span, or null when Router states none. */

@@ -25,7 +25,7 @@ export default {
   name: "LaresQuestionCard",
   props: {
     questions: { type: Array, default: () => [] },
-    rpcId: { type: String, default: "" },
+    answerable: { type: Boolean, default: false },
     busy: { type: Boolean, default: false },
     t: { type: Function, required: true },
   },
@@ -47,11 +47,11 @@ export default {
       return Array.isArray(this.current?.options) ? this.current.options : [];
     },
     disabled() {
-      return this.busy || !this.rpcId || !this.current;
+      return this.busy || !this.answerable || !this.current;
     },
     hint() {
       if (this.busy) return this.t("question.busy");
-      if (!this.rpcId) return this.t("question.waiting");
+      if (!this.answerable) return this.t("question.waiting");
       return "";
     },
   },

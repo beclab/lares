@@ -22,17 +22,36 @@ export class VoiceError extends Error {
   }
 }
 
+export function isSttModel(model) {
+  if (model?.supportsStt) return true;
+  return model?.mode === "audio" && STT_HINTS.test(model?.id ?? "");
+}
+
+export function isTtsModel(model) {
+  if (model?.supportsTts) return true;
+  return model?.mode === "tts";
+}
+
 export function sttModelIds(models) {
-  return models
-    .filter((model) => model.mode === "audio" && STT_HINTS.test(model.id))
-    .map((model) => model.id);
+  return models.filter(isSttModel).map((model) => model.id);
+}
+
+export function ttsModelIds(models) {
+  return models.filter(isTtsModel).map((model) => model.id);
+}
+
+export function pickListedModelId(ids, preferred) {
+  const want = (preferred ?? "").trim();
+  if (want && ids.includes(want)) return want;
+  return ids[0] ?? null;
 }
 
 export function pickSttModelId(models, preferred) {
-  const stt = sttModelIds(models);
-  const want = (preferred ?? "").trim();
-  if (want && stt.includes(want)) return want;
-  return stt[0] ?? null;
+  return pickListedModelId(sttModelIds(models), preferred);
+}
+
+export function pickTtsModelId(models, preferred) {
+  return pickListedModelId(ttsModelIds(models), preferred);
 }
 
 export function classifyFailure(status, body) {
@@ -73,7 +92,12 @@ const RESOLVED_TTL_MS = 120_000;
 export async function listModels(options) {
   try {
     const { rows } = await catalogCache.get({ refresh: options?.refresh });
-    return rows.map(({ id, mode }) => ({ id, mode }));
+    return rows.map(({ id, mode, supportsStt, supportsTts }) => ({
+      id,
+      mode,
+      supportsStt: Boolean(supportsStt),
+      supportsTts: Boolean(supportsTts),
+    }));
   } catch (err) {
     const status = err && typeof err === "object" && "status" in err ? Number(err.status) : 503;
     throw new VoiceError(
@@ -151,6 +175,8 @@ async function readTranscript(res) {
  */
 export async function transcribe(take) {
   let model = take.model;
+  const timeoutMs = Number(take.timeoutMs) > 0 ? Number(take.timeoutMs) : REQUEST_TIMEOUT_MS;
+  const retries = take.once ? 0 : RETRY_BACKOFF_MS.length;
   for (let attempt = 0; ; attempt += 1) {
     const fields = { model };
     if (take.language) fields.language = take.language;
@@ -164,11 +190,13 @@ export async function transcribe(take) {
     /** @type {VoiceError} */
     let failure;
     try {
+      const timeout = AbortSignal.timeout(timeoutMs);
+      const signal = take.signal ? AbortSignal.any([take.signal, timeout]) : timeout;
       const res = await fetch(`${routerShimBaseUrl()}/audio/transcriptions`, {
         method: "POST",
         headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
         body,
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        signal,
       });
       if (res.ok) return await readTranscript(res);
       const text = await res.text();
@@ -176,13 +204,17 @@ export async function transcribe(take) {
       if (!retryable(res.status)) throw failure;
     } catch (err) {
       if (err instanceof VoiceError) throw err;
+      if (take.signal?.aborted) {
+        throw new VoiceError("voice_cancelled", 499, "transcription cancelled");
+      }
       const timedOut = err?.name === "TimeoutError" || err?.name === "AbortError";
       failure = timedOut
         ? new VoiceError("voice_timeout", 504, "transcription timed out")
         : new VoiceError("voice_failed", 502, `router unreachable: ${err?.message ?? err}`);
     }
 
-    if (attempt >= RETRY_BACKOFF_MS.length) throw failure;
+    if (take.signal?.aborted) throw new VoiceError("voice_cancelled", 499, "transcription cancelled");
+    if (attempt >= retries) throw failure;
     await new Promise((resolve) => setTimeout(resolve, RETRY_BACKOFF_MS[attempt]));
     const refreshed = await resolveSttModel(take.preferred, { refresh: true }).catch(() => null);
     if (refreshed) model = refreshed;
