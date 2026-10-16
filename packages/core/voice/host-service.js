@@ -13,6 +13,15 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
   const append = (scope, role, text, turnId, taskId = null, fields = {}) => records.append(ownerOf(scope), keyOf(scope), {
     id: `${scope.id}:${turnId}:${role}`, voiceId: scope.id, clientId: scope.id, turnId, role, text: text.slice(0, 16000), taskId, anchorSeq: scope.session?.snapshot().cursor ?? -1, ...fields,
   });
+  const ensurePresentation = async (scope) => {
+    if (!scope.presentationSession || scope.session.snapshot().sessionId) return;
+    const before = keyOf(scope);
+    await scope.session.ensureSession();
+    if (!scope.active) throw failure("voice_session_closed", 409);
+    for (const row of records.read(ownerOf(scope), before).records) records.append(ownerOf(scope), keyOf(scope), row);
+    records.clear(ownerOf(scope), before);
+    records.bind(ownerOf(scope), scope.contextId, keyOf(scope));
+  };
   const scopes = new Set();
   const service = {
     async clean(scope, text) {
@@ -44,6 +53,7 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
       const restoredRequests = [...new Set(history.records.map((row) => row.taskId).filter(Boolean))].map((requestId) => ({ requestId }));
       scope.session = createVoiceAgentSession(api, { sessionId: boundSessionId,
         preset: scope.authorizedBinding?.agentPreset || env.LARES_VOICE_AGENT_PRESET || undefined, workspaceId: scope.authorizedBinding?.workspaceId || env.LARES_VOICE_WORKSPACE_ID || undefined, restoredRequests,
+        onChange: () => { if (scope.active) service.state(scope); },
         metric: (fields) => metric({ voiceId: scope.id, ...fields }),
       });
       await scope.session.open();
@@ -79,14 +89,7 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
       if (!scope.active || !scope.session) throw failure("voice_session_closed", 409);
       if (typeof body.text !== "string" || !body.text.trim() || body.text.length > 16000 || typeof body.requestId !== "string" || !body.requestId || body.requestId.length > 128) throw failure("voice_session_invalid", 400);
       if (scope.voiceConfig.preset === "dictation") return { ...service.state(scope), text: body.text };
-      if (scope.presentationSession && !scope.session.snapshot().sessionId) {
-        const before = keyOf(scope);
-        await scope.session.ensureSession();
-        if (!scope.active) throw failure("voice_session_closed", 409);
-        for (const row of records.read(ownerOf(scope), before).records) records.append(ownerOf(scope), keyOf(scope), row);
-        records.clear(ownerOf(scope), before);
-        records.bind(ownerOf(scope), scope.contextId, keyOf(scope));
-      }
+      await ensurePresentation(scope);
       if (scope.voiceConfig.preset === "direct") {
         const before = keyOf(scope);
         append(scope, "user", body.text, body.requestId, body.requestId);
@@ -158,7 +161,9 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
       for (const scope of scopes) if (scope.session?.snapshot().sessionId === sessionId) { await service.close(scope); scopes.delete(scope); }
       records.clearConversation(sessionId);
     },
-    record(scope, role, text, turnId) {
+    async record(scope, role, text, turnId, fields = {}) {
+      if (!text?.trim()) return;
+      if (role === "user") await ensurePresentation(scope);
       const key = keyOf(scope);
       if (scope.recordKey && scope.recordKey !== key) {
         for (const row of records.read(ownerOf(scope), scope.recordKey).records) records.append(ownerOf(scope), key, row);
@@ -166,7 +171,7 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
         records.bind(ownerOf(scope), scope.contextId, key);
       }
       scope.recordKey = key;
-      return append(scope, role, text.slice(0, 16000), String(turnId || scope.voiceState.version), role === "task" ? String(turnId) : null);
+      return append(scope, role, text.slice(0, 16000), String(turnId || scope.voiceState.version), role === "task" ? String(turnId) : null, fields);
     },
     async history(scope, body, signal) {
       const { sessionId, version, waitMs = 0 } = body;

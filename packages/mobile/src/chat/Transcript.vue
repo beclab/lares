@@ -29,7 +29,7 @@
     </li>
     <li
       v-for="{ row, index } in shown(block)"
-      :key="index"
+      :key="row.id || row.key || index"
       class="lares-log__item"
       :data-type="row.type"
       :data-pending="row.pending ? 'true' : 'false'"
@@ -78,6 +78,7 @@
       >{{ row.text }}</div>
       <template v-else-if="row.type === 'assistant'">
         <div class="lares-md" v-html="renderMarkdown(row.text)" />
+        <p v-if="row.voiceSummary" class="lares-voice-summary">{{ row.voiceSummary }}</p>
         <LaresMessageActions
           :text="row.text"
           :reaction="reactions[actionKey(index)] || ''"
@@ -482,6 +483,8 @@ export default {
   word-break: break-word;
   overflow-wrap: anywhere;
 }
+
+.lares-voice-summary { border-left: 2px solid var(--q-blue-default); padding-left: 12px; font-size: 14px; opacity: .8; }
 
 .lares-md[data-pending="true"] {
   white-space: pre-wrap;

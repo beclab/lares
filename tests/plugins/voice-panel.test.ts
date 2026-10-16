@@ -3,6 +3,7 @@ import test from "node:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { voiceChat } from "@olares/lares-core/voice/dialogue";
 import { createVoicePanel } from "@olares/lares-core/voice/panel";
 import { createVoiceController } from "@olares/lares-core/voice/controller";
 import { createVoiceRecords } from "@olares/lares-core/voice/records";
@@ -98,5 +99,76 @@ test("Lares creates a presentation session on first valid speech without prompti
     await assert.rejects(service.prompt(scope, { text: " ", requestId: "noise" })); assert.equal(creates, 0);
     await service.prompt(scope, { text: "hi", requestId: "valid" }); assert.equal(creates, 1); assert.equal(prompts, 0);
     assert.equal(service.state(scope).sessionId, "new"); assert.equal((await service.history(scope, { sessionId: "new" })).records.length, 2);
+  } finally { await service.close(scope); rmSync(directory, { recursive: true, force: true }); }
+});
+
+
+test("streaming voice replies update one stable record instead of duplicating bubbles", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "voice-stream-"));
+  const records = createVoiceRecords({ directory });
+  const service = createVoiceHostService({}, { records, config: () => ({ preset: "chat" }),
+    chat: async ({ onDelta }: any) => { onDelta?.("first"); onDelta?.("first second"); return { content: "first second" }; } });
+  const scope: any = { id: "v", owner: "a" };
+  try { await service.open(scope, {}); await service.prompt(scope, { text: "hi", requestId: "one" });
+    const rows = service.records(scope).records; assert.equal(rows.length, 2); assert.equal(rows[1].text, "first second"); assert.equal(rows[1].status, "completed"); assert.equal(rows[1].sequence, 2);
+  } finally { await service.close(scope); rmSync(directory, { recursive: true, force: true }); }
+});
+test("Router SSE handles split packets and assembles controlled tool arguments", async () => {
+  const deltas: string[] = []; const events = [
+    { choices: [{ delta: { content: "hello " } }] }, { choices: [{ delta: { content: "world" } }] },
+    { choices: [{ delta: { tool_calls: [{ index: 0, id: "call", function: { name: "ask_lares", arguments: '{"task":' } }] } }] },
+    { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '"check"}' } }] } }] },
+  ];
+  const data = events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join("") + "data: [DONE]\n\n";
+  const bytes = new TextEncoder().encode(data);
+  const response = new Response(new ReadableStream({ start(controller) { for (let i = 0; i < bytes.length; i += 13) controller.enqueue(bytes.slice(i, i + 13)); controller.close(); } }));
+  const answer = await voiceChat({ messages: [], onDelta: (value: string) => deltas.push(value), fetch: async () => response });
+  assert.deepEqual(deltas, ["hello ", "hello world"]); assert.equal(answer.tool_calls[0].function.arguments, '{"task":"check"}');
+});
+test("native task ownership still deduplicates after voice has ended, before a result record exists", () => {
+  const native = [{ key: "u", kind: "user", data: { source: { rpcId: "r" } }, location: { turn: { turn: 2 } } },
+    { key: "a", kind: "turn-tail", data: { turn: 2, closing: { blocks: [{ type: "text", text: "result" }] } } }];
+  const records = [{ id: "u", role: "user", voiceId: "v", text: "task", taskId: "r", sequence: 1, anchorSeq: -1 },
+    { id: "a", role: "assistant", voiceId: "v", text: "result", taskId: "r", sequence: 2, anchorSeq: 5 }];
+  assert.equal(projectVoiceRecords(records, native).length, 0);
+});
+
+test("session ownership changes even when pausing a broken device fails", async () => {
+  const h = panelHarness(); await h.panel.open({ mode: "continuous", sessionId: "old" }); await h.panel.start();
+  h.calls[0].pause = async () => { throw new Error("device lost"); };
+  await assert.rejects(h.panel.bind("new"), /device lost/);
+  assert.equal(h.panel.getSnapshot().sessionId, "new"); assert.equal(h.panel.conversation, null);
+  h.calls[0].options.onTranscript({ text: "late" }); assert.equal(h.panel.getSnapshot().draft, ""); await h.panel.dispose();
+});
+
+test("delegation, approval and final results project once on both client shapes", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "voice-delegate-ui-")); const frames: any[] = []; let wake: any;
+  let submitted = 0; let modelCalls = 0;
+  const api = { inspect: async () => ({}), create: async () => ({ sessionId: "s" }), prompt: async () => { submitted++; },
+    async *follow(_: any, signal: AbortSignal) {
+      yield { type: "snapshot", records: [] };
+      while (!signal.aborted) {
+        if (frames.length) { yield frames.shift(); continue; }
+        await new Promise<void>((resolve) => { wake = resolve; signal.addEventListener("abort", () => resolve(), { once: true }); });
+      }
+    },
+  };
+  const service = createVoiceHostService(api, { records: createVoiceRecords({ directory }), config: () => ({ preset: "assistant" }),
+    chat: async ({ tools }: any) => tools && ++modelCalls === 1 ? { tool_calls: [{ id: "call", function: { name: "ask_lares", arguments: '{"task":"read usage"}' } }] } : { content: "The task is pending." } });
+  const scope: any = { id: "v", owner: "a" };
+  const event = (seq: number, type: string, data: any) => { frames.push({ type: "event", event: { seq, type, data } }); wake?.(); };
+  try {
+    await service.open(scope, {}); await service.prompt(scope, { text: "check usage", requestId: "r" });
+    event(1, "turn/start", { turn: 1 }); event(2, "user/message", { source: { kind: "user", rpcId: "r:delegate" } }); event(3, "approval/asked", { turn: 1 }); await flush();
+    assert.equal(service.state(scope).tasks[0].status, "waiting");
+    const user = { key: "u", type: "user", requestId: "r:delegate", turn: 1, anchorSeq: 2 };
+    let records = (await service.history(scope, { sessionId: "s" })).records;
+    assert.equal(projectVoiceRecords(records, [user]).some((row: any) => row.role === "user"), false);
+    event(4, "approval/decided", { turn: 1 }); event(5, "assistant/message", { turn: 1, content: [{ type: "text", text: "Usage is 20%." }] }); event(6, "turn/end", { turn: 1, reason: { kind: "completed" } }); await flush();
+    records = (await service.history(scope, { sessionId: "s" })).records;
+    const mobile = mergeVoiceTranscript([user, { key: "a", type: "assistant", text: "Usage is 20%.", turn: 1, anchorSeq: 5 }], records);
+    assert.equal(mobile.length, 2); assert.equal(mobile[1].voiceSummary, undefined);
+    const web = projectVoiceRecords(records, [{ key: "u", kind: "user", data: { source: { rpcId: "r:delegate" } }, location: { turn: { turn: 1 } } }, { key: "a", kind: "turn-tail", data: { turn: 1, closing: { blocks: [{ type: "text", text: "Usage is 20%." }] } } }]);
+    assert.equal(web.length, 0); assert.equal(submitted, 1);
   } finally { await service.close(scope); rmSync(directory, { recursive: true, force: true }); }
 });

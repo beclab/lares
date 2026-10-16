@@ -53,7 +53,7 @@ export function createVoiceRecords({ directory = join(dshHome(), "voice-records"
       // Copy only public record fields; audio, credentials and arbitrary tool payloads cannot enter storage.
       const previous = value.records[index];
       const next = { id: record.id, voiceId: record.voiceId, clientId: String(record.clientId || "").slice(0, 128), turnId: record.turnId, role: record.role, text: record.text,
-        taskId: record.taskId || null, requestId: record.requestId || record.taskId || null,
+        taskId: record.taskId || null, requestId: record.requestId || record.taskId || record.turnId,
         taskTurn: Number.isInteger(record.taskTurn) ? record.taskTurn : null,
         anchorSeq: previous?.anchorSeq ?? (Number.isInteger(record.anchorSeq) ? record.anchorSeq : -1),
         status: ["streaming", "failed"].includes(record.status) ? record.status : "completed",

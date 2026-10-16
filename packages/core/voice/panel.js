@@ -1,6 +1,6 @@
 /** Framework-independent panel lifetime; factories only supply audio/platform ports. */
 export function createVoicePanel({ create, complete, onSession = () => {} }) {
-  let state = { visible: false, mode: "single", sessionId: null, draft: "", snapshot: null, busy: false, error: null, device: "", levels: [], startedAt: null };
+  let state = { visible: false, mode: "single", sessionId: null, draft: "", snapshot: null, busy: false, error: null, device: "", levels: [], startedAt: null, elapsedMs: 0 };
   let call = null;
   let unsubscribe = () => {};
   let serial = Promise.resolve();
@@ -23,8 +23,11 @@ export function createVoicePanel({ create, complete, onSession = () => {} }) {
       controller.stopRecording(); check();
     });
   };
-  const pause = async () => { await finishCapture(); if (call?.controller.getSnapshot().connection === "open") await call.pause(); };
-  const end = async () => { generation++; unsubscribe(); unsubscribe = () => {}; const previous = call; call = null; await previous?.stop(); emit({ snapshot: null, startedAt: null, levels: [] }); };
+  const pause = async () => { try { await finishCapture(); } finally { if (call?.controller.getSnapshot().connection === "open") await call.pause(); } };
+  const end = async () => { generation++; unsubscribe(); unsubscribe = () => {}; const previous = call; call = null; try { await previous?.stop(); } finally { emit({ snapshot: null, startedAt: null, elapsedMs: 0, levels: [] }); } };
+  const reset = async (patch) => {
+    try { await pause(); } finally { try { await end(); } finally { emit(patch); } }
+  };
   return {
     getSnapshot: () => state,
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
@@ -32,13 +35,13 @@ export function createVoicePanel({ create, complete, onSession = () => {} }) {
     open({ mode = state.mode, sessionId = state.sessionId } = {}) {
       emit({ visible: true });
       return enqueue(async () => {
-        if (sessionId !== state.sessionId) { await pause(); await end(); emit({ sessionId, draft: drafts.get(sessionId) || "" }); }
-        if (mode !== state.mode) { await pause(); await end(); emit({ mode }); }
+        if (sessionId !== state.sessionId) { await reset({ sessionId, draft: drafts.get(sessionId) || "" }); }
+        if (mode !== state.mode) { await reset({ mode }); }
       });
     },
     bind(sessionId) {
       if (sessionId === state.sessionId) return Promise.resolve();
-      return enqueue(async () => { await pause(); await end(); emit({ sessionId, draft: drafts.get(sessionId) || "" }); });
+      return enqueue(async () => { await reset({ sessionId, draft: drafts.get(sessionId) || "" }); });
     },
     close() { emit({ visible: false }); return enqueue(pause); },
     pause: () => enqueue(pause),
@@ -62,7 +65,7 @@ export function createVoicePanel({ create, complete, onSession = () => {} }) {
         const snapshot = call.controller.getSnapshot();
         if (!state.sessionId && snapshot.sessionId) { emit({ sessionId: snapshot.sessionId }); onSession(snapshot.sessionId); }
         emit({ snapshot, ...(snapshot.inputLevel == null ? {} : { levels: [...state.levels.slice(-19), snapshot.inputLevel] }),
-          ...(snapshot.capture === "recording" && state.snapshot?.capture !== "recording" ? { startedAt: Date.now() } : {}) });
+          ...(snapshot.capture === "recording" && state.snapshot?.capture !== "recording" ? { startedAt: Date.now(), elapsedMs: 0 } : snapshot.capture !== "recording" && state.startedAt ? { startedAt: null, elapsedMs: Date.now() - state.startedAt } : {}) });
       });
       await call.start({ sessionId: target, continuous: state.mode === "continuous" });
     }); },
@@ -80,6 +83,6 @@ export function createVoicePanel({ create, complete, onSession = () => {} }) {
       if (action === "playback") await call?.controller.stopPlayback();
       if (action === "input") { if (state.snapshot.inputPaused) call?.controller.resumeInput(); else await call?.controller.pauseInput(); }
     }); },
-    dispose: () => enqueue(async () => { await end(); listeners.clear(); drafts.clear(); }),
+    dispose: () => enqueue(async () => { try { await end(); } finally { listeners.clear(); drafts.clear(); } }),
   };
 }

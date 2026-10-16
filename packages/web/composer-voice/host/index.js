@@ -248,7 +248,7 @@ const ROUTES = {
     const abort = new AbortController();
     const close = () => abort.abort();
     res.once("close", close);
-    try { sendJson(res, 200, await voiceHost.history(scopeFor(req), await readJsonObject(req), abort.signal)); }
+    try { sendJson(res, 200, await voiceHost.history({ owner: routerEndUser(process.env, req.headers) }, await readJsonObject(req), abort.signal)); }
     finally { res.removeListener("close", close); }
   } },
   "/records": {

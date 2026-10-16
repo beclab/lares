@@ -147,3 +147,5 @@ flowchart TD
     Close --> Pause[Pause audio; retain context; tasks continue]
     Pause --> Panel
 ```
+
+The initial implementation uses bounded long polling for session history, stable record sequences for pagination, and a persisted `anchorSeq` for native dsh ordering. A read-only external activity marker expands the official Chat on voice-only sessions. Presentation markers and projected rows never become execution events. Client subscriptions share one web history feed per mounted session and stop when the last subscriber leaves.

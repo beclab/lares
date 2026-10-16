@@ -110,3 +110,13 @@ Before enabling either external service or native Realtime: verify real models, 
 ## Voice panel migration status
 
 The released 0.26.46 UI places voice controls and reply captions in the composer. Voice model exchanges are not yet projected into native chat. The target behavior is specified in [Voice service design](voice-service-design.md#voice-panel-and-session-message-presentation); implementation and acceptance are tracked in [Voice service plan](voice-service-plan.md#voice-panel-and-message-projection-delivery). Local changes are not evidence of deployment or real-device acceptance.
+
+### Implemented locally: panel and session messages
+
+The current development branch moves web and LarePass Vue controls into an application panel. Opening does not start capture. Close/Escape/backdrop pauses audio, retains context, and does not cancel dsh tasks; reopening requires Start/Continue. Dictation remains in the panel until Complete appends it to the original draft. Mode/session changes fence old callbacks.
+
+`POST /api/lares/voice/history` accepts `{sessionId, after, limit, version, waitMs}`. Reads authorize the business session and isolate records by the authenticated owner; they require no active voice ID. Pages return stable record sequences, `version` and `next`; long polling is bounded at 20 seconds and ends on disconnect. Streaming updates preserve record identity and anchor. The shared SDK exports `voice/panel` and `voice/projection`.
+
+The official dsh Chat receives read-only voice rows through the `conversation.chat.timeline` presentation extension. A separate `setExternalActivity` presentation marker lets a session containing only voice records display Chat instead of the empty hero; it does not mutate the dsh journal or prompt the Agent. Both vendor patches apply on npm install and ordinary application-image builds. Vue uses the same projection in its existing Transcript. Native task messages replace temporary echoes, and completed tasks suppress stale pending acknowledgements. History subscriptions have no playback path.
+
+Verification: 184 focused tests; full suite 692/693 with the known file-preview cleanup failure; typecheck and all builds pass. Local real-page inspection confirms persisted synthetic records in web/Vue message areas, mobile full-screen layout at 390×844, keyboard close and focus return. The Vite mobile bundle size warning remains informational. No new image, npm package, PR or deployment was produced. yaotest004 still runs the previously released UI; real microphone/playback and native Realtime acceptance for this branch are pending.

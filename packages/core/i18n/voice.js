@@ -1,4 +1,17 @@
 export const ZH = {
+  "panel.title": "语音",
+  "panel.close": "关闭",
+  "panel.paused": "语音已暂停",
+  "panel.start": "开始",
+  "panel.continue": "继续",
+  "panel.pause": "暂停",
+  "panel.complete": "完成听写",
+  "panel.discard": "丢弃听写",
+  "panel.draft": "听写草稿",
+  "panel.draftHint": "识别结果会保留在这里，完成后追加到输入框。",
+  "panel.messages": "完整回复显示在当前会话中。关闭此面板会暂停音频，任务继续执行。",
+  "panel.elapsed": "录音时长",
+
   "settings.backend": "语音后端",
   "settings.backend.pipeline": "STT → Lares → TTS",
   "settings.realtime.model": "Realtime 模型",
@@ -181,6 +194,19 @@ export const ZH = {
 };
 
 export const EN = {
+  "panel.title": "Voice",
+  "panel.close": "Close",
+  "panel.paused": "Voice paused",
+  "panel.start": "Start",
+  "panel.continue": "Continue",
+  "panel.pause": "Pause",
+  "panel.complete": "Complete dictation",
+  "panel.discard": "Discard dictation",
+  "panel.draft": "Dictation draft",
+  "panel.draftHint": "Recognized text stays here until you complete dictation.",
+  "panel.messages": "Replies appear in this conversation. Closing pauses audio; tasks keep running.",
+  "panel.elapsed": "Recording time",
+
   "settings.backend": "Voice backend",
   "settings.backend.pipeline": "STT → Lares → TTS",
   "settings.realtime.model": "Realtime model",
