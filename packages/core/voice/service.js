@@ -47,6 +47,10 @@ const duplex = createDuplexCoordinator(stopBluetoothPlayback);
 const deviceLease = createDeviceLease();
 const scopes = new Map();
 
+export function voiceSessionPrompt(sessionId) {
+  return [...scopes.values()].some((scope) => scope.session?.snapshot().sessionId === sessionId && scope.active && Date.now() - scope.seen < 30_000);
+}
+
 export function voiceScope(id, owner = "", device = "headset") {
   if (!/^[a-zA-Z0-9_-]{8,128}$/.test(id)) throw new VoiceError("voice_session_invalid", 400, "invalid voice connection");
   const key = `${owner}:${id}`;
@@ -55,12 +59,13 @@ export function voiceScope(id, owner = "", device = "headset") {
       scopes.delete(other);
       void scope.duplex.interrupt();
       scope.capture?.stop(true);
+      void scope.session?.close();
     }
   }
   let scope = scopes.get(key);
   if (!scope) {
     if (scopes.size >= 128) throw new VoiceError("voice_busy", 429, "too many voice connections");
-    scope = { id, device, seen: Date.now(), capture: null, duplex: null };
+    scope = { id, owner, device, seen: Date.now(), capture: null, duplex: null };
     scope.duplex = createDuplexCoordinator(async () => {
       if (deviceLease.owns(scope)) {
         await stopBluetoothPlayback();
@@ -68,6 +73,10 @@ export function voiceScope(id, owner = "", device = "headset") {
       }
     });
     scopes.set(key, scope);
+  }
+  if (scope.device !== device) {
+    if (deviceLease.owns(scope)) throw new VoiceError("voice_device_busy", 409, "stop the current audio device first");
+    scope.device = device;
   }
   scope.seen = Date.now();
   return scope;
@@ -386,6 +395,7 @@ async function readAloud(readout, model, voice, lease, options) {
         player.abort?.();
       }
     });
+    if (options.scope?.device === "headset") return feeding;
   };
   try {
     for (let index = 0; lease.active();) {
@@ -399,7 +409,7 @@ async function readAloud(readout, model, voice, lease, options) {
         continue;
       }
       sentence = [];
-      if (index > 0) writeChunk(gap(gapAfter(readout.segments[index - 1])));
+      if (index > 0) await writeChunk(gap(gapAfter(readout.segments[index - 1])));
       const outcome = await synthesize({ text: readout.segments[index], model, voice, signal: lease.signal }, writeChunk);
       if (!outcome.streamed) {
         fileAudio = outcome.audio;
@@ -446,6 +456,8 @@ async function readAloud(readout, model, voice, lease, options) {
   release();
   return { bluetooth, audio };
 }
+
+export function playbackStatus(scope) { return { playing: (scope?.duplex ?? duplex).isSpeaking() }; }
 
 export function interruptSpeech(scope) {
   return (scope?.duplex ?? duplex).interrupt();

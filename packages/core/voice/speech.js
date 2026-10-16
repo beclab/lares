@@ -165,7 +165,7 @@ const BOUNDARY = /[.!?;。！？；…\n]/;
  *   fail?: (err: unknown) => void,
  * }} io
  */
-export function createSentencePlayer({ send, play, halt, silence, fail = () => {} }) {
+export function createSentencePlayer({ send, play, halt, silence, fail = () => {}, onState = () => {} }) {
   let gen = 0;
   let current = null;
   // An utterance is read once: finishing it, failing, or being stopped all end it for good.
@@ -177,6 +177,7 @@ export function createSentencePlayer({ send, play, halt, silence, fail = () => {
     gen += 1;
     run.wake?.();
     current = null;
+    onState(false);
     if (err?.code !== "voice_cancelled") fail(err);
   };
 
@@ -219,7 +220,7 @@ export function createSentencePlayer({ send, play, halt, silence, fail = () => {
       await play(sentence);
       part += 1;
     }
-    if (run.gen === gen) current = null;
+    if (run.gen === gen) { current = null; onState(false); }
   };
 
   const stop = () => {
@@ -227,6 +228,7 @@ export function createSentencePlayer({ send, play, halt, silence, fail = () => {
     current?.wake?.();
     if (current) halt();
     current = null;
+    onState(false);
   };
 
   return {
@@ -258,6 +260,7 @@ export function createSentencePlayer({ send, play, halt, silence, fail = () => {
           wake: null,
         };
         const run = current;
+        onState(true);
         handOver(run);
         read(run).catch((err) => failed(run, err));
         return;

@@ -172,6 +172,11 @@
     "./skills/client": "./skills/client.js",
     "./voice/controller": "./voice/controller.js",
     "./voice/lease": "./voice/lease.js",
-    "./voice/browser-capture": "./voice/browser-capture.js"
+    "./voice/browser-capture": "./voice/browser-capture.js",
+    "./voice/agent-session": "./voice/agent-session.js",
+    "./voice/device-input": "./voice/device-input.js",
+    "./voice/host-input": "./voice/host-input.js",
+    "./voice/conversation": "./voice/conversation.js",
+    "./voice/browser-playback": "./voice/browser-playback.js"
   }
 }

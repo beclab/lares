@@ -35,6 +35,7 @@ async function openDeviceMic(mediaDevices) {
 export function createVoiceCapture({
   transcribe,
   submit,
+  onStream,
   onPhase,
   onTrace,
   now = Date.now,
@@ -43,6 +44,7 @@ export function createVoiceCapture({
   const mediaDevices = media?.mediaDevices ?? globalThis.navigator?.mediaDevices;
   const Recorder = media?.MediaRecorder ?? globalThis.MediaRecorder;
   let recorder = null;
+  let detector = null;
   let stream = null;
   let chunks = [];
   let started = 0;
@@ -77,6 +79,8 @@ export function createVoiceCapture({
   };
 
   const release = () => {
+    detector?.stop?.();
+    detector = null;
     stream?.getTracks().forEach((track) => track.stop());
     stream = null;
     recorder = null;
@@ -204,6 +208,7 @@ export function createVoiceCapture({
         if (recorder?.state === "inactive") scheduleFinish();
       };
       recorder.onstop = () => scheduleFinish();
+      try { detector = await onStream?.(stream); } catch { release(); fail("voice_unsupported"); return; }
       started = now();
       try {
         recorder.start(CHUNK_MS);

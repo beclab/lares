@@ -89,6 +89,7 @@
       @files="attachFiles"
       @hold-start="onHoldStart"
       @hold-end="onHoldEnd"
+      @voice-action="voiceAction"
       @close-model="modelSheet = false"
       @choose-model="chooseModel"
       @close-effort="effortSheet = false"
@@ -108,11 +109,10 @@ import { pickHostPorts } from "@olares/lares-core/larepass/host";
 import { connectChat } from "./runtime.js";
 import { createT } from "./i18n.js";
 import { failText, withPendingUser } from "./chat/format.js";
-import { createVoiceCapture } from "./chat/voice.js";
+import { createVoiceConversation } from "@olares/lares-core/voice/conversation";
 import { createAnswerPlayer } from "./chat/playback.js";
 import { createReplySpeaker, createSentencePlayer, speakable } from "@olares/lares-core/voice/speech";
 import { wavBlob } from "@olares/lares-core/voice/client";
-import { captureSource } from "@olares/lares-core/voice/input";
 import { browserPlays } from "@olares/lares-core/voice/playback";
 import { speakProblemText, speakToggleNotice } from "@olares/lares-core/voice/problem";
 import { appendDraftMentions } from "@olares/lares-core/files/mention";
@@ -218,6 +218,7 @@ export default {
       effortSheet: false,
       upload: { pending: 0, failures: [] },
       draftImages: [],
+      voiceCall: null,
       voicePhase: "idle",
       voiceElapsed: 0,
       voiceError: "",
@@ -329,6 +330,7 @@ export default {
         effortDisabled: this.effortDisabled,
         upload: this.upload,
         draftImages: this.draftImages,
+        voiceCall: this.voiceCall,
         voicePhase: this.voicePhase,
         voiceElapsed: this.voiceElapsed,
         voiceErrorText: this.voiceErrorText,
@@ -538,25 +540,7 @@ export default {
       silence: () => void this.runtime.interruptSpeech?.(),
       fail: (err) => this.showSpeakProblem(err),
     });
-    this.voiceCap = createVoiceCapture({
-      transcribe: (blob, signal) => this.runtime.transcribe(blob, this.voiceLanguage, signal),
-      onPhase: (phase, extra = {}) => {
-        this.voicePhase = phase;
-        if (extra.elapsed != null) this.voiceElapsed = extra.elapsed;
-        if (extra.error != null) this.voiceError = extra.error;
-      },
-      onTrace: (event, fields) => {
-        void this.runtime.reportLog?.("voice", event, fields);
-      },
-      submit: (text) => {
-        void this.runtime.reportLog?.("voice", "submit", {
-          chars: String(text ?? "").trim().length,
-          running: Boolean(this.running),
-          session: Boolean(this.sessionId),
-        });
-        void this.sendTranscript(text);
-      },
-    });
+
     this.bindIntake(this.sessionId);
     this.bindRuntime();
     try {
@@ -585,7 +569,8 @@ export default {
     this.noteSeen(this.sessionId);
     for (const controller of this.imageUploadControllers?.values?.() ?? []) controller.abort();
     this.imageUploadControllers?.clear?.();
-    this.voiceCap?.dispose();
+    void this.voiceConversation?.stop().catch(() => {});
+    this.voiceUnsub?.();
     this.conversationUnsub?.();
     this.intakeUnsub?.();
     if (this.sessionId) this.intake?.cancelSession(this.sessionId);
@@ -643,6 +628,7 @@ export default {
         this.commandsError = "";
       }
       if (sessionChanged) {
+        void this.voiceConversation?.stop().catch(() => {});
         this.reader.stop();
         this.player?.stop();
       }
@@ -656,7 +642,7 @@ export default {
       this.items = snap.items;
       this.running = snap.running;
       this.runningSince = snap.runningSince || 0;
-      const target = this.voiceSpeak ? speakable(utterance, this.voiceStreaming) : null;
+      const target = this.voiceSpeak && !this.voiceCall ? speakable(utterance, this.voiceStreaming) : null;
       if (target) this.reader.follow({ ...target, key: `${snap.sessionId}:${target.key}` });
       this.failed = snap.failed;
       this.error = snap.error;
@@ -951,7 +937,7 @@ export default {
       this.unsub = this.runtime.subscribe((snap) => this.applySnap(snap));
     },
     switchHost() {
-      this.voiceCap?.stop?.(true);
+      void this.voiceConversation?.stop().catch(() => {});
       for (const controller of this.imageUploadControllers.values()) controller.abort();
       this.imageUploadControllers.clear();
       this.releaseDraftImages();
@@ -1186,24 +1172,58 @@ export default {
       this.draftImages = [];
       this.imagesBySession = {};
     },
-    onHoldStart(detail) {
-      void this.runtime.reportLog?.("voice", "hold-start", {
-        via: detail?.via || "",
-        phase: this.voicePhase,
-      });
-      if (captureSource("mobile") !== "device") return;
-      if (this.voicePhase === "idle" || this.voicePhase === "error") void this.voiceCap?.start();
-      this.reader.stop();
-      this.player?.stop();
-      this.player?.unlock();
-      void this.runtime.interruptSpeech?.();
+    async onHoldStart() {
+      this.voiceReleased = false;
+      if (this.voiceCall?.connection === "open") {
+        await this.voiceConversation.stop(); return;
+      }
+      const target = this.sessionId;
+      this.voicePhase = "preparing";
+      try {
+        const settings = await this.runtime.settings.voice(true);
+        if (this.sessionId !== target) return;
+        if (settings.config.backend === "realtime") throw new Error("voice_realtime_unavailable");
+        this.reader.stop(); this.player?.stop(); this.player?.unlock();
+        let conversation;
+        const reader = createSentencePlayer({
+          send: (value) => conversation.speak(value),
+          play: (sentence) => sentence.bluetooth === "played" ? Promise.resolve() : this.player.play(wavBlob(sentence.audio)),
+          halt: () => this.player.stop(), silence: () => {},
+          onState: (playing) => conversation?.playbackState(playing),
+          fail: (error) => { this.showSpeakProblem(error); void conversation.controller.disconnect("voice_playback_failed"); },
+        });
+        conversation = createVoiceConversation({
+          request: (path, options) => this.runtime.voiceRequest(path, options),
+          transcribe: (blob, signal) => this.runtime.transcribe(blob, this.voiceLanguage, signal),
+          device: settings.config.device === "headset" ? "headset" : "device",
+          readAloud: settings.config.mode === "continuous" || settings.config.speak,
+          mode: () => resolveSubmitMode(this.running, false, true, this.busyEnter),
+          playback: { stop: () => { reader.stop(); this.player.stop(); } },
+          onReply: (reply) => { const value = speakable(reply, settings.config.streaming); if (value) reader.follow(value); },
+        });
+        this.voiceConversation = conversation;
+        this.voiceUnsub?.();
+        this.voiceUnsub = conversation.controller.subscribe(() => {
+          const state = conversation.controller.getSnapshot();
+          this.voiceCall = state.connection === "closed" ? null : state;
+          this.voicePhase = state.error ? "error" : state.capture;
+          this.voiceError = state.error || "";
+        });
+        await conversation.start({ sessionId: target || null, continuous: settings.config.mode === "continuous" });
+        if (this.voiceReleased && settings.config.mode !== "continuous") conversation.controller.stopRecording();
+      } catch (error) { this.voicePhase = "error"; this.voiceError = error.message; }
     },
-    onHoldEnd(detail) {
-      void this.runtime.reportLog?.("voice", "hold-end", {
-        via: detail?.via || "",
-        phase: this.voicePhase,
-      });
-      this.voiceCap?.stop(false);
+    onHoldEnd() {
+      this.voiceReleased = true;
+      if (!this.voiceConversation?.controller.getSnapshot().continuous) this.voiceConversation?.controller.stopRecording();
+    },
+    async voiceAction(action) {
+      try {
+        if (action === "stop") await this.voiceConversation?.stop();
+        if (action === "playback") await this.voiceConversation?.controller.stopPlayback();
+        if (action === "cancel") await this.voiceConversation?.controller.cancelTask();
+        if (action === "resume") await this.voiceConversation?.resume();
+      } catch (error) { this.voiceError = error.message; }
     },
     showSpeakProblem(err) {
       this.speakNotice = speakProblemText(this.t, err);

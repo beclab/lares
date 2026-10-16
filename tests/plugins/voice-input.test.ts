@@ -61,7 +61,7 @@ test("voice settings map the auto sentinel to an empty stored value", () => {
   assert.equal(voiceValueFromMenu("auto"), "");
   assert.equal(voiceValueFromMenu("zh"), "zh");
   assert.deepEqual(STT_LANGUAGE_CHOICES.map((item) => item.id), ["zh", "en", "ja", "ko"]);
-  assert.deepEqual(EMPTY_VOICE_CONFIG, { model: "", ttsModel: "", language: "", speak: false, streaming: false });
+  assert.deepEqual(EMPTY_VOICE_CONFIG, { mode: "single", device: "auto", backend: "pipeline", realtimeModel: "", model: "", ttsModel: "", language: "", speak: false, streaming: false });
   assert.equal(voiceLanguageItems("Auto")[0].label, "Auto");
   assert.deepEqual(voiceModelItems(["whisper-a"], "Auto"), [
     { id: "auto", label: "Auto" },
@@ -650,20 +650,21 @@ test("readConfig / writeConfig round-trip through DSH_HOME", async () => {
   const prev = process.env.DSH_HOME;
   process.env.DSH_HOME = home;
   try {
-    const { readConfig, spokenReplyPrompt, validateConfigPatch, writeConfig } = await import(
+    const { readConfig, validateConfigPatch, writeConfig } = await import(
       `../../packages/core/voice/config.js?cfg=${Date.now()}`
     );
-    assert.deepEqual(readConfig(), { model: "", ttsModel: "", language: "", speak: false, streaming: false });
-    assert.equal(spokenReplyPrompt(), "");
+    assert.deepEqual(readConfig(), { mode: "single", device: "auto", backend: "pipeline", realtimeModel: "", model: "", ttsModel: "", language: "", speak: false, streaming: false });
     const saved = writeConfig({ model: "  whisper-x  ", language: "zh" });
     assert.equal(saved.model, "whisper-x");
     assert.equal(saved.language, "zh");
     assert.equal(writeConfig({ speak: true, ttsModel: "kokoro/hexgrad/Kokoro-82M" }).speak, true);
-    assert.match(spokenReplyPrompt(), /read aloud/);
     assert.equal(readConfig().model, "whisper-x");
     assert.equal(writeConfig({ streaming: true }).streaming, true);
     for (const patch of [
       { streaming: "yes" },
+      { mode: "invalid" },
+      { backend: "invalid" },
+      { device: "invalid" },
       { ignored: "value" },
       { language: "zh\r\nX-Injected: yes" },
       { language: "fr" },

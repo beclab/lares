@@ -15,11 +15,12 @@ const PLUGIN_CSS = [spinCss, micCss, settingsCss].join("");
 export const inject = [];
 
 function VoiceComposer(props) {
+  const [active, setActive] = React.useState(false);
   return h(
     React.Fragment,
     null,
-    h(MicButton, props),
-    h(SpeechPlayer, { sessionId: props.sessionId, conversation: props.uiConversation }),
+    h(MicButton, { ...props, onActive: setActive }),
+    h(SpeechPlayer, { sessionId: props.sessionId, conversation: props.uiConversation, suspended: active }),
   );
 }
 
@@ -65,6 +66,12 @@ export function apply(ctx) {
           return h(VoiceComposer, {
             ...props,
             uiConversation: scope.uiConversation,
+            mode: () => {
+              const session = scope.sessions.binding(props.sessionId)?.session;
+              const snap = session?.getSnapshot();
+              const preferred = scope.configForms.get("ui-conversation").getSnapshot().value?.busyEnter;
+              return resolveSubmitMode(Boolean(snap?.running), false, steeringAvailable(snap || {}), preferred);
+            },
             send: (sessionId, text) => sendTranscript(scope, sessionId, text),
           });
         },

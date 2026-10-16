@@ -181,6 +181,12 @@
         </div>
       </div>
     </div>
+    <div v-if="voiceCall" class="lares-composer__hint" role="status" aria-live="polite">
+      <span>{{ t(`call.${voiceCall.capture === 'recording' ? 'listening' : voiceCall.agent === 'running' ? 'working' : voiceCall.playback !== 'idle' ? 'speaking' : 'waiting'}`) }}</span>
+      <button type="button" @click="$emit('voice-action', voiceCall.connection === 'paused' ? 'resume' : 'stop')">{{ t(voiceCall.connection === 'paused' ? 'call.resume' : 'call.end') }}</button>
+      <button v-if="voiceCall.playback !== 'idle'" type="button" @click="$emit('voice-action', 'playback')">{{ t('call.stopPlayback') }}</button>
+      <button v-if="voiceCall.agent === 'running'" type="button" @click="$emit('voice-action', 'cancel')">{{ t('call.cancelTask') }}</button>
+    </div>
     <p v-if="voiceError && voicePhase === 'error'" class="lares-composer__hint" data-status="error">{{ voiceError }}</p>
     <p v-for="item in failures" :key="item.id" class="lares-composer__hint" data-status="error">
       {{ t("upload.failed", { name: item.name, reason: t(`error.${item.code}`) }) }}
@@ -208,6 +214,7 @@ export default {
     canSend: { type: Boolean, default: false },
     attachPending: { type: Boolean, default: false },
     attachDisabled: { type: Boolean, default: false },
+    voiceCall: { type: Object, default: null },
     voicePhase: { type: String, default: "idle" },
     voiceElapsed: { type: Number, default: 0 },
     voiceError: { type: String, default: "" },
@@ -223,7 +230,7 @@ export default {
     t: { type: Function, required: true },
   },
   emits: [
-    "update:draft", "update:inputMode", "send", "files", "voice", "hold-start", "hold-end",
+    "update:draft", "update:inputMode", "send", "files", "voice", "voice-action", "hold-start", "hold-end",
     "open-commands", "open-references", "pick-command", "remove-image",
   ],
   data() {

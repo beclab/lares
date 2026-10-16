@@ -270,6 +270,7 @@ export function createHostClient(ports = {}) {
         request: direct,
       });
     },
+    voiceRequest(path, options) { return request(path, options); },
     transcribe(blob, language, signal) {
       return postTranscribe(blob, language, signal, {
         baseUrl: urlFor(VOICE_API),

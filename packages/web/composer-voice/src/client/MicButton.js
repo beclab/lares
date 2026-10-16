@@ -1,261 +1,75 @@
 import React from "react";
-import { Tooltip } from "@deepseek-ai/dsh-client-ui-primitives";
-import {
-  getCapture,
-  postCaptureCancel,
-  postCaptureStart,
-  postCaptureStop,
-} from "@olares/lares-core/voice/client";
-import { captureSource } from "@olares/lares-core/voice/input";
-import { MicGlyph, Spinner } from "./icons.js";
-import { messageFor, useT } from "./locale.js";
-import { formatElapsed } from "@olares/lares-core/voice/recorder";
+import { createVoiceConversation } from "@olares/lares-core/voice/conversation";
+import { createBrowserPlayer } from "@olares/lares-core/voice/browser-playback";
+import { createSentencePlayer, speakable } from "@olares/lares-core/voice/speech";
+import { loadVoiceSettings, wavBlob } from "@olares/lares-core/voice/client";
+import { MicGlyph } from "./icons.js";
+import { useT, messageFor } from "./locale.js";
 import micCss from "./styles/mic.css";
-
-const { useCallback, useEffect, useRef, useState } = React;
-const h = React.createElement;
-
 export { micCss };
-
-export function MicButton(props) {
+const h = React.createElement;
+const { useEffect, useRef, useState } = React;
+const request = async (url, options = {}) => {
+  const response = await fetch(url, { ...options, headers: { "content-type": "application/json", ...options.headers }, body: options.body === undefined ? undefined : JSON.stringify(options.body) });
+  return { ok: response.ok, body: await response.json() };
+};
+export function MicButton({ sessionId, onActive = () => {}, mode = () => "queue" }) {
   const t = useT();
-  const sessionIdRef = useRef(props.sessionId);
-  sessionIdRef.current = props.sessionId;
-  const sendRef = useRef(props.send);
-  sendRef.current = props.send;
-  const canSend = Boolean(props.sessionId && props.send);
-
-  const [phase, setPhase] = useState("idle"); // idle | preparing | recording | transcribing | error
+  const [view, setView] = useState(null);
   const [error, setError] = useState(null);
-  const [elapsed, setElapsed] = useState(0);
-
-  const startedRef = useRef(0);
-  const timerRef = useRef(0);
-  const mountedRef = useRef(true);
-  const errorTimerRef = useRef(0);
-  const hostRef = useRef(false);
-  const capturedSession = useRef(null);
-  const pollRef = useRef(0);
-  const startAbortRef = useRef(null);
-
-  const stopTimer = useCallback(() => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = 0;
-    }
-  }, []);
-
-  const stopHostPoll = useCallback(() => {
-    if (pollRef.current) {
-      clearTimeout(pollRef.current);
-      pollRef.current = 0;
-    }
-  }, []);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-      stopTimer();
-      stopHostPoll();
-      if (hostRef.current) void postCaptureCancel();
-      hostRef.current = false;
-      if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
-    };
-  }, [stopHostPoll, stopTimer]);
-
-  useEffect(() => {
-    startAbortRef.current?.abort();
-    if (hostRef.current) void postCaptureCancel();
-    hostRef.current = false;
-    stopHostPoll();
-    stopTimer();
-    setPhase("idle");
-  }, [props.sessionId, stopHostPoll, stopTimer]);
-
-  const failWith = useCallback((code) => {
-    if (!mountedRef.current) return;
-    if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
-    setError(messageFor(t, code));
-    setPhase("error");
-    errorTimerRef.current = setTimeout(() => {
-      if (!mountedRef.current) return;
-      setPhase((current) => (current === "error" ? "idle" : current));
-      setError(null);
-      errorTimerRef.current = 0;
-    }, 3200);
-  }, [t]);
-
-  const watchHost = useCallback(() => {
-    const tick = async () => {
-      if (!mountedRef.current || !hostRef.current) return;
-      let status;
-      try {
-        status = await getCapture();
-      } catch (err) {
-        if (!mountedRef.current || !hostRef.current) return;
-        hostRef.current = false;
-        failWith(err instanceof Error ? err.message : "voice_failed");
-        return;
-      }
-      if (!mountedRef.current || !hostRef.current) return;
-      if (status.phase === "transcribing") {
-        stopTimer();
-        setPhase("transcribing");
-      }
-      if (status.phase === "done") {
-        hostRef.current = false;
-        stopTimer();
-        const text = String(status.text ?? "").trim();
-        if (!text) {
-          failWith("voice_no_input");
-          return;
-        }
-        try {
-          if (capturedSession.current !== sessionIdRef.current) return;
-          await sendRef.current?.(capturedSession.current, text);
-        } catch (err) {
-          failWith(err instanceof Error ? err.message : "voice_failed");
-          return;
-        }
-        if (!mountedRef.current) return;
-        setPhase("idle");
-        return;
-      }
-      if (status.phase === "idle") {
-        hostRef.current = false;
-        stopTimer();
-        setPhase("idle");
-        return;
-      }
-      if (status.phase === "error") {
-        hostRef.current = false;
-        stopTimer();
-        failWith(status.error || "voice_failed");
-        return;
-      }
-      pollRef.current = setTimeout(tick, 200);
-    };
-    stopHostPoll();
-    pollRef.current = setTimeout(tick, 200);
-  }, [failWith, stopHostPoll, stopTimer]);
-
-  const start = useCallback(async () => {
-    if (captureSource("pc") !== "headset") return;
-    if (!sessionIdRef.current || !sendRef.current) return;
-    if (phase === "preparing" || phase === "recording" || phase === "transcribing") return;
-    setError(null);
-    hostRef.current = false;
-    setPhase("preparing");
-    capturedSession.current = sessionIdRef.current;
-    const controller = new AbortController();
-    startAbortRef.current = controller;
-    let opened;
+  const [opening, setOpening] = useState(false);
+  const call = useRef(null);
+  const cleanup = useRef(() => {});
+  const current = useRef(sessionId);
+  current.current = sessionId;
+  useEffect(() => () => { cleanup.current(); void call.current?.stop().catch(() => {}); call.current = null; onActive(false); }, [sessionId]);
+  const start = async () => {
+    setOpening(true); setError(null);
     try {
-      opened = await postCaptureStart(controller.signal);
-    } catch (err) {
-      if (!mountedRef.current || controller.signal.aborted) {
-        if (mountedRef.current) setPhase("idle");
-        return;
-      }
-      failWith(err instanceof Error ? err.message : "voice_failed");
-      return;
-    } finally {
-      if (startAbortRef.current === controller) startAbortRef.current = null;
-    }
-    if (!mountedRef.current || opened?.cancelled) {
-      if (!mountedRef.current && opened?.recording) void postCaptureCancel();
-      if (mountedRef.current) setPhase("idle");
-      return;
-    }
-    if (opened?.skipped || !opened?.recording) {
-      failWith("voice_bluetooth_not_ready");
-      return;
-    }
-    hostRef.current = true;
-    startedRef.current = opened?.at || Date.now();
-    setElapsed(0);
-    setPhase("recording");
-    timerRef.current = setInterval(() => setElapsed(Date.now() - startedRef.current), 200);
-    watchHost();
-  }, [failWith, phase, watchHost]);
-
-  const stop = useCallback((cancel) => {
-    if (!hostRef.current) {
-      stopTimer();
-      setPhase("idle");
-      return;
-    }
-    if (cancel) {
-      hostRef.current = false;
-      stopHostPoll();
-      stopTimer();
-      void postCaptureCancel();
-      setPhase("idle");
-      return;
-    }
-    stopTimer();
-    setPhase("transcribing");
-    void postCaptureStop();
-  }, [stopHostPoll, stopTimer]);
-
-  const onClick = useCallback(() => {
-    if (phase === "recording") stop(false);
-    else if (phase === "idle" || phase === "error") void start();
-  }, [phase, start, stop]);
-
-  const recording = phase === "recording";
-  const preparing = phase === "preparing";
-  const busy = phase === "transcribing" || preparing;
-  const disabled = busy || (!canSend && !recording);
-  const title = error
-    ? error
-    : preparing
-      ? t("mic.preparing")
-      : recording
-        ? t("mic.stop")
-        : busy
-          ? t("mic.transcribing")
-        : canSend
-          ? t("mic.idle")
-          : t("mic.blocked");
-
-  return h(
-    Tooltip,
-    { label: title, side: "top", delayMs: 500 },
-    h(
-      "button",
-      {
-        type: "button",
-        className: "lares-voice-mic",
-        "data-phase": phase,
-        "aria-label": title,
-        disabled,
-        onClick,
-        onKeyDown: recording
-          ? (event) => {
-              if (event.key !== "Escape") return;
-              event.preventDefault();
-              stop(true);
-            }
-          : undefined,
-        onContextMenu: recording
-          ? (event) => {
-              event.preventDefault();
-              stop(true);
-            }
-          : undefined,
-      },
-      busy
-        ? Spinner(14)
-        : recording
-          ? h(
-              "span",
-              { className: "lares-voice-live" },
-              h("span", { className: "lares-voice-dot" }),
-              formatElapsed(elapsed),
-            )
-          : MicGlyph(),
-    ),
+      const settings = await loadVoiceSettings({ force: true });
+      if (settings.config.backend === "realtime") throw new Error("voice_realtime_unavailable");
+      const expected = sessionId;
+      const browser = createBrowserPlayer();
+      let conversation;
+      const reader = createSentencePlayer({
+        send: (value) => conversation.speak(value).then((result) => ({ ...result, blob: result.audio ? wavBlob(result.audio) : null })),
+        play: (sentence) => sentence.bluetooth === "played" ? Promise.resolve() : browser.play(sentence.blob),
+        halt: browser.stop, silence: () => {},
+        fail: (cause) => { setError(cause.code || cause.message); void conversation.controller.disconnect("voice_playback_failed"); },
+        onState: (playing) => conversation?.playbackState(playing),
+      });
+      conversation = createVoiceConversation({ request, mode, device: settings.config.device === "device" ? "device" : "headset",
+        readAloud: settings.config.mode === "continuous" || settings.config.speak,
+        transcribe: async (blob, signal) => {
+          const response = await fetch("/api/lares/voice/transcribe", { method: "POST", body: blob, headers: { "content-type": blob.type }, signal });
+          const value = await response.json(); if (!response.ok) throw new Error(value.error?.code || "voice_failed"); return value.text;
+        }, playback: { stop() { reader.stop(); browser.stop(); } },
+        onReply: (reply) => { const target = speakable(reply, settings.config.streaming); if (target) reader.follow(target); },
+      });
+      if (current.current !== expected) return;
+      cleanup.current(); call.current = conversation;
+      cleanup.current = conversation.controller.subscribe(() => {
+        const snapshot = conversation.controller.getSnapshot();
+        setView(snapshot); onActive(snapshot.connection !== "closed");
+      });
+      await conversation.start({ sessionId: expected || null, continuous: settings.config.mode === "continuous" });
+      onActive(true);
+    } catch (cause) { setError(cause.message); onActive(false); }
+    finally { setOpening(false); }
+  };
+  const active = view?.connection === "open";
+  const paused = view?.connection === "paused";
+  const recording = view?.capture === "recording";
+  const label = opening ? t("mic.preparing") : recording ? t("mic.stop") : active ? t("call.end") : t("call.start");
+  return h("span", { className: "lares-voice-controls" },
+    h("button", { type: "button", className: "lares-voice-mic", disabled: opening, "aria-label": label, onClick: () => {
+      if (paused) void call.current.resume().catch((cause) => setError(cause.message));
+      else if (active && !view.continuous && recording) call.current.controller.stopRecording();
+      else if (active) void call.current.stop().catch((cause) => setError(cause.message));
+      else void start();
+    } }, active ? t(view.continuous ? "call.end" : "mic.stop") : paused ? t("call.resume") : MicGlyph()),
+    active && view.playback !== "idle" ? h("button", { type: "button", onClick: () => void call.current.controller.stopPlayback().catch((cause) => setError(cause.message)) }, t("call.stopPlayback")) : null,
+    active && view.agent === "running" ? h("button", { type: "button", onClick: () => void call.current.controller.cancelTask().catch((cause) => setError(cause.message)) }, t("call.cancelTask")) : null,
+    h("span", { role: "status", "aria-live": "polite" }, error || view?.error ? messageFor(t, error || view.error) : active ? t(`call.${view.capture === "recording" ? "listening" : view.agent === "running" ? "working" : view.playback !== "idle" ? "speaking" : "waiting"}`) : ""),
   );
 }

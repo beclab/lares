@@ -41,7 +41,6 @@
       <p class="lares-agent__hint">{{ t("settings.input.busyEnter.hint") }}</p>
       <p v-if="conversationError" class="lares-agent__hint" data-status="error">{{ conversationError }}</p>
     </section>
-    <!-- Voice input parked.
     <section class="lares-agent__group">
       <h2>{{ tVoice("settings.title") }}</h2>
       <div class="lares-agent__list">
@@ -62,9 +61,19 @@
           @click="openSheet('voiceLang')"
         />
       </div>
+      <label class="lares-agent__hint">{{ tVoice('settings.mode') }}
+        <select :value="voice?.config?.mode || 'single'" @change="patchVoice('mode', $event.target.value)">
+          <option value="single">{{ tVoice('settings.mode.single') }}</option>
+          <option value="continuous">{{ tVoice('settings.mode.continuous') }}</option>
+        </select>
+      </label>
+      <label class="lares-agent__hint">{{ tVoice('settings.device') }}
+        <select :value="voice?.config?.device || 'auto'" @change="patchVoice('device', $event.target.value)">
+          <option v-for="device in ['auto', 'device', 'headset']" :key="device" :value="device">{{ tVoice(`settings.device.${device}`) }}</option>
+        </select>
+      </label>
       <p v-if="voiceError" class="lares-agent__hint" data-status="error">{{ voiceError }}</p>
     </section>
-    -->
     <section class="lares-agent__group">
       <h2>{{ tSearch("settings.title") }}</h2>
       <LaresSelect

@@ -40,5 +40,5 @@ export function createDuplexCoordinator(stopPlayback = async () => {}) {
     await stopPlayback();
   }
 
-  return { beginSpeech, interrupt };
+  return { beginSpeech, interrupt, isSpeaking: () => Boolean(speech && !speech.controller.signal.aborted) };
 }

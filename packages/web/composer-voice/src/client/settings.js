@@ -281,6 +281,10 @@ export function VoiceSettings() {
       t,
     }),
     h(Notice, { notice: scoped("page") }),
+    Group(t("settings.conversation"), null,
+      Row(t("settings.mode"), null, h(SettingsSelector, { value: config.mode || "single", items: ["single", "continuous"].map((id) => ({ id, label: t(`settings.mode.${id}`) })), onSelect: (mode) => patch({ mode }), disabled: busy })),
+      Row(t("settings.device"), null, h(SettingsSelector, { value: config.device || "auto", items: ["auto", "device", "headset"].map((id) => ({ id, label: t(`settings.device.${id}`) })), onSelect: (device) => patch({ device }), disabled: busy })),
+    ),
     Group(
       t("settings.group.stt"),
       scoped("stt"),

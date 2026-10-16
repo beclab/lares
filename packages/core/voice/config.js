@@ -5,6 +5,10 @@ import { STT_LANGUAGE_CHOICES } from "./languages.js";
 export { STT_LANGUAGE_CHOICES, VOICE_AUTO, voiceMenuValue, voiceValueFromMenu } from "./languages.js";
 
 const DEFAULTS = {
+  mode: "single",
+  device: "auto",
+  backend: "pipeline",
+  realtimeModel: "",
   model: "",
   ttsModel: "",
   language: "",
@@ -32,9 +36,15 @@ export function validateConfigPatch(raw) {
       patch[key] = value;
       continue;
     }
+    if (["mode", "device", "backend"].includes(key)) {
+      const choices = { mode: ["single", "continuous"], device: ["auto", "device", "headset"], backend: ["pipeline", "realtime"] };
+      if (!choices[key].includes(value)) invalid(`invalid ${key}`);
+      patch[key] = value;
+      continue;
+    }
     if (typeof value !== "string") invalid(`${key} must be a string`);
     const normalized = value.trim();
-    if ((key === "model" || key === "ttsModel") && !SAFE_MODEL.test(normalized)) invalid("invalid voice model");
+    if ((key === "model" || key === "ttsModel" || key === "realtimeModel") && !SAFE_MODEL.test(normalized)) invalid("invalid voice model");
     if (key === "language" && !SUPPORTED_LANGUAGES.has(normalized)) invalid("unsupported recognition language");
     patch[key] = normalized;
   }
@@ -55,20 +65,14 @@ export function readConfig() {
   if (SAFE_MODEL.test(model)) merged.model = model;
   if (SAFE_MODEL.test(ttsModel)) merged.ttsModel = ttsModel;
   if (SUPPORTED_LANGUAGES.has(language)) merged.language = language;
+  for (const key of ["mode", "device", "backend", "realtimeModel"]) {
+    if (stored?.[key] !== undefined) {
+      try { Object.assign(merged, validateConfigPatch({ [key]: stored[key] })); } catch {}
+    }
+  }
   if (stored?.speak === true) merged.speak = true;
   if (stored?.streaming === true) merged.streaming = true;
   return merged;
-}
-
-const SPOKEN_REPLY_PROMPT = [
-  "Your final answers are read aloud to the user.",
-  "Keep them short and conversational: a few sentences that answer directly, without headings, tables, or long lists.",
-  "Give a detailed answer only when the user explicitly asks for detail.",
-].join(" ");
-
-/** Empty unless read-aloud is on, so the section drops out of the prompt. */
-export function spokenReplyPrompt() {
-  return readConfig().speak ? SPOKEN_REPLY_PROMPT : "";
 }
 
 /** @param {Record<string, unknown>} patch @returns {typeof DEFAULTS} */

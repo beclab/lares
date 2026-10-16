@@ -1,3 +1,4 @@
+import { createBrowserPlayer } from "@olares/lares-core/voice/browser-playback";
 import React from "react";
 import { loadVoiceSettings, postPlaybackStop, postSpeak } from "./api.js";
 import { browserPlays } from "@olares/lares-core/voice/playback";
@@ -25,36 +26,6 @@ function speechSourceOf(binding) {
   }
 }
 
-function createBrowserPlayer() {
-  let element = null;
-  let finish = null;
-  const stop = () => {
-    element?.pause();
-    finish?.();
-  };
-  return {
-    play(blob) {
-      stop();
-      return new Promise((resolve) => {
-        const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
-        const done = () => {
-          if (finish !== done) return;
-          finish = null;
-          element = null;
-          URL.revokeObjectURL(url);
-          resolve();
-        };
-        element = audio;
-        finish = done;
-        audio.addEventListener("ended", done, { once: true });
-        audio.addEventListener("error", done, { once: true });
-        audio.play().catch(done);
-      });
-    },
-    stop,
-  };
-}
 
 function createReader() {
   const browser = createBrowserPlayer();
@@ -71,7 +42,7 @@ function createReader() {
  * the turn open, and only when playback is switched on. History that arrives
  * already closed stays silent.
  */
-export function SpeechPlayer({ sessionId, conversation }) {
+export function SpeechPlayer({ sessionId, conversation, suspended = false }) {
   const binding = bindingOf(conversation, sessionId);
   const openSource = binding?.openTurn;
   const speechSource = speechSourceOf(binding);
@@ -103,6 +74,11 @@ export function SpeechPlayer({ sessionId, conversation }) {
     const latest = speech?.latest;
     if (!latest || !opened.current.has(latest.turn)) return;
     const utterance = { ...latest, key: `${sessionId}:${latest.key}` };
+    if (suspended) {
+      reader.current.stop();
+      allowed.current = { key: utterance.key, speak: false, streaming: false, latest: utterance };
+      return;
+    }
     const gate = allowed.current;
     if (gate.key === utterance.key) {
       gate.latest = utterance;
@@ -119,7 +95,7 @@ export function SpeechPlayer({ sessionId, conversation }) {
         follow(current);
       })
       .catch(() => {});
-  }, [speech]);
+  }, [speech, suspended]);
 
   return h("span", { hidden: true });
 }

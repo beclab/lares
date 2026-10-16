@@ -14,7 +14,11 @@ export function voiceValueFromMenu(id) {
   return id === VOICE_AUTO ? "" : id;
 }
 
-export const EMPTY_VOICE_CONFIG = { model: "", ttsModel: "", language: "", speak: false, streaming: false };
+export const EMPTY_VOICE_CONFIG = {
+  mode: "single",
+  device: "auto",
+  backend: "pipeline",
+  realtimeModel: "", model: "", ttsModel: "", language: "", speak: false, streaming: false };
 
 export function voiceChoiceItems(ids) {
   return ids.map((id) => ({ id, label: id }));

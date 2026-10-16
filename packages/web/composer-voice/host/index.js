@@ -6,10 +6,12 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRouteHandler, readBody, readJsonObject, sendJson } from "@olares/lares-core/tools/http";
-import { readConfig, spokenReplyPrompt } from "@olares/lares-core/voice/config";
+import { readConfig } from "@olares/lares-core/voice/config";
 import {
   STT_MAX_AUDIO_BYTES,
   voiceScope,
+  voiceSessionPrompt,
+  playbackStatus,
   installVoice,
   probeVoice,
   resumeVoice,
@@ -27,10 +29,11 @@ import {
 import { bluetoothRequest, ensureBluetoothReady } from "@olares/lares-core/voice/link";
 import { gpuAppAction, gpuModePayload, saveSlicePlan, switchReadingMode } from "@olares/lares-core/voice/gpu-mode";
 import { routerEndUser } from "@olares/lares-core/router/gateway";
+import { createVoiceAgentSession, SPOKEN_PROMPT } from "@olares/lares-core/voice/agent-session";
 import { writeReport } from "@olares/lares-core/log/report";
 
 export const name = "lares-composer-voice";
-export const inject = ["webServer"];
+export const inject = ["webServer", "sessionController"];
 
 const ROUTE_PREFIX = "/api/lares/voice";
 const require = createRequire(import.meta.url);
@@ -118,7 +121,7 @@ async function handleSpeak(req, res) {
   try {
     spoken = await speakFromConfig(
       typeof body.text === "string" ? body.text : "",
-      { signal: controller.signal, part, key, done: body.done === true, scope: scopeFor(req) },
+      { signal: controller.signal, part, key, done: body.done === true, scope: scopeFor(req), config: { ...readConfig(), speak: scopeFor(req).active ? scopeFor(req).readAloud : readConfig().speak } },
     );
   } finally {
     res.off("close", abort);
@@ -200,7 +203,60 @@ async function handleTranscribe(req, res) {
 }
 
 /** @type {Record<string, Record<string, (req, res) => Promise<void>>>} */
+let sessionApi;
+async function handleVoiceSession(req, res) {
+  const scope = scopeFor(req);
+  const body = await readJsonObject(req);
+  if (scope.active) throw Object.assign(new Error("voice_session_active"), { code: "voice_session_active", status: 409 });
+  if (body.sessionId != null && (typeof body.sessionId !== "string" || body.sessionId.length > 256)) throw Object.assign(new Error("invalid session"), { code: "voice_session_invalid", status: 400 });
+  if (body.sessionId) await sessionApi.inspect(body.sessionId);
+  await scope.session?.close();
+  scope.session = createVoiceAgentSession(sessionApi, {
+    sessionId: body.sessionId || null,
+    preset: process.env.LARES_VOICE_AGENT_PRESET || undefined,
+    metric: (fields) => writeReport({ scope: "voice", event: "metric", voiceId: scope.id, ...fields }),
+  });
+  await scope.session.open();
+  scope.active = true;
+  scope.readAloud = body.readAloud === true;
+  sendJson(res, 200, scope.session.snapshot());
+}
+async function handleVoiceState(req, res) {
+  const scope = scopeFor(req);
+  sendJson(res, 200, { ...scope.session?.snapshot(), active: scope.active === true });
+}
+async function handleVoicePrompt(req, res) {
+  const scope = scopeFor(req);
+  const body = await readJsonObject(req);
+  if (!scope.active || !scope.session) throw Object.assign(new Error("voice session closed"), { code: "voice_session_closed", status: 409 });
+  if (typeof body.text !== "string" || body.text.length > 16_000 || typeof body.requestId !== "string" || body.requestId.length > 128) throw Object.assign(new Error("invalid voice task"), { code: "voice_session_invalid", status: 400 });
+  sendJson(res, 200, await scope.session.submit(body.text, body.requestId, body.mode));
+}
+async function handleVoiceCancel(req, res) {
+  await scopeFor(req).session?.cancel();
+  sendJson(res, 200, { cancelled: true });
+}
+async function handleVoiceClose(req, res) {
+  const scope = scopeFor(req);
+  scope.active = false;
+  captureStop(true, scope);
+  await interruptSpeech(scope);
+  await scope.session?.close();
+  sendJson(res, 200, { closed: true });
+}
+
 const ROUTES = {
+  "/session/metric": { POST: async (req, res) => {
+    const scope = scopeFor(req);
+    const value = await readJsonObject(req);
+    if (["recognition", "interrupt"].includes(value.stage) && Number.isFinite(value.durationMs) && value.durationMs >= 0 && value.durationMs <= 3_600_000) writeReport({ scope: "voice", event: "metric", voiceId: scope.id, stage: value.stage, durationMs: value.durationMs });
+    sendJson(res, 200, { ok: true });
+  } },
+  "/playback/status": { GET: (req, res) => sendJson(res, 200, playbackStatus(scopeFor(req))) },
+  "/session": { POST: handleVoiceSession, GET: handleVoiceState },
+  "/session/prompt": { POST: handleVoicePrompt },
+  "/session/cancel": { POST: handleVoiceCancel },
+  "/session/close": { POST: handleVoiceClose },
   "/status": { GET: handleStatus },
   "/models": { GET: handleModels },
   "/config": { GET: handleGetConfig, POST: handleSetConfig },
@@ -249,11 +305,12 @@ async function voiceHandler(req, res) {
  * @param {import('@deepseek-ai/cordis').Context} ctx
  */
 export function apply(ctx) {
+  sessionApi = ctx.sessionController;
   ctx.effect(
     () => ctx.webServer.register({ kind: "prefix", path: ROUTE_PREFIX, handler: voiceHandler }),
     "lares-composer-voice-routes",
   );
   ctx.inject(["systemPrompt"], (promptCtx) => {
-    promptCtx.systemPrompt.section({ name: "app:spoken-reply", order: 9800, text: () => spokenReplyPrompt() });
+    promptCtx.systemPrompt.section({ name: "app:spoken-reply", order: 9800, text: (assembly) => voiceSessionPrompt(assembly.scope?.id) ? SPOKEN_PROMPT : "" });
   });
 }
