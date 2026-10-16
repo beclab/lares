@@ -1,3 +1,4 @@
+import { VOICE_PRESETS } from "@olares/lares-core/voice/options";
 import React from "react";
 import { Button, Switch, Tag } from "@deepseek-ai/dsh-client-ui-primitives";
 import {
@@ -282,9 +283,13 @@ export function VoiceSettings() {
     }),
     h(Notice, { notice: scoped("page") }),
     Group(t("settings.conversation"), null,
+      Row(t("settings.dictationCleanup"), null, h(Switch, { checked: config.dictationCleanup === true, disabled: busy, onChange: (dictationCleanup) => patch({ dictationCleanup }) })),
+      Row(t("settings.preset"), null, h(SettingsSelector, { value: config.preset || "assistant", items: VOICE_PRESETS.map((id) => ({ id, label: t(`settings.preset.${id}`) })), onSelect: (preset) => patch({ preset }), disabled: busy })),
+      Row(t("settings.chatModel"), null, h(SettingsSelector, { value: config.chatModel || "default-chat", disabled: busy, items: [...new Set(["default-chat", config.chatModel, ...(view.chatModels || [])].filter(Boolean))].map((id) => ({ id, label: id })), onSelect: (chatModel) => patch({ chatModel }) })),
       Row(t("settings.backend"), t("settings.realtime.hint"), h(SettingsSelector, { value: config.backend || "pipeline", items: [{ id: "pipeline", label: t("settings.backend.pipeline") }, ...((view.realtimeReady || []).includes(config.realtimeModel) ? [{ id: "realtime", label: "Realtime" }] : [])], onSelect: (backend) => patch({ backend }), disabled: busy })),
       (view.realtimeModels || []).length ? Row(t("settings.realtime.model"), null, h(SettingsSelector, { value: config.realtimeModel || "__none__", items: [{ id: "__none__", label: "—", disabled: true }, ...(view.realtimeModels || []).map((id) => ({ id, label: id }))], onSelect: (realtimeModel) => { if (realtimeModel !== "__none__") void patch({ realtimeModel }); }, disabled: busy })) : null,
-      Row(t("settings.mode"), null, h(SettingsSelector, { value: config.mode || "single", items: ["single", "continuous"].map((id) => ({ id, label: t(`settings.mode.${id}`) })), onSelect: (mode) => patch({ mode }), disabled: busy })),
+      Row(t("settings.webMode"), null, h(SettingsSelector, { value: config.mode || "single", items: ["single", "continuous"].map((id) => ({ id, label: t(`settings.mode.${id}`) })), onSelect: (mode) => patch({ mode }), disabled: busy })),
+      Row(t("settings.mobileMode"), null, h(SettingsSelector, { value: config.mobileMode || "continuous", items: ["single", "continuous"].map((id) => ({ id, label: t(`settings.mode.${id}`) })), onSelect: (mobileMode) => patch({ mobileMode }), disabled: busy })),
       Row(t("settings.device"), null, h(SettingsSelector, { value: config.device || "auto", items: ["auto", "device", "headset"].map((id) => ({ id, label: t(`settings.device.${id}`) })), onSelect: (device) => patch({ device }), disabled: busy })),
     ),
     Group(

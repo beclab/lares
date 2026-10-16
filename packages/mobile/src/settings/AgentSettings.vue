@@ -61,6 +61,17 @@
           @click="openSheet('voiceLang')"
         />
       </div>
+      <label class="lares-agent__hint">{{ tVoice('settings.preset') }}
+        <select :value="voice?.config?.preset || 'assistant'" @change="patchVoice('preset', $event.target.value)">
+          <option v-for="preset in ['dictation', 'chat', 'assistant', 'direct']" :key="preset" :value="preset">{{ tVoice(`settings.preset.${preset}`) }}</option>
+        </select>
+      </label>
+      <label class="lares-agent__hint">{{ tVoice('settings.chatModel') }}
+        <select :value="voice?.config?.chatModel || 'default-chat'" @change="patchVoice('chatModel', $event.target.value)">
+          <option value="default-chat">default-chat</option>
+          <option v-for="model in voice?.chatModels || []" :key="model" :value="model">{{ model }}</option>
+        </select>
+      </label>
       <label class="lares-agent__hint">{{ tVoice('settings.backend') }}
         <select :value="voice?.config?.backend || 'pipeline'" @change="patchVoice('backend', $event.target.value)">
           <option value="pipeline">{{ tVoice('settings.backend.pipeline') }}</option>
@@ -74,8 +85,8 @@
         </select>
       </label>
       <p class="lares-agent__hint">{{ tVoice('settings.realtime.hint') }}</p>
-      <label class="lares-agent__hint">{{ tVoice('settings.mode') }}
-        <select :value="voice?.config?.mode || 'single'" @change="patchVoice('mode', $event.target.value)">
+      <label class="lares-agent__hint">{{ tVoice('settings.mobileMode') }}
+        <select :value="voice?.config?.mobileMode || 'continuous'" @change="patchVoice('mobileMode', $event.target.value)">
           <option value="single">{{ tVoice('settings.mode.single') }}</option>
           <option value="continuous">{{ tVoice('settings.mode.continuous') }}</option>
         </select>

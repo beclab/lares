@@ -221,12 +221,14 @@ export default {
       upload: { pending: 0, failures: [] },
       draftImages: [],
       voiceCall: null,
+      voiceHistory: null,
       voiceCaption: "",
       voicePhase: "idle",
       voiceElapsed: 0,
       voiceError: "",
       voiceLanguage: "",
       voiceSpeak: false,
+      voiceDefaultMode: "continuous",
       voiceStreaming: false,
       speakBusy: false,
       speakNotice: "",
@@ -333,6 +335,7 @@ export default {
         effortDisabled: this.effortDisabled,
         upload: this.upload,
         draftImages: this.draftImages,
+        voiceDefaultMode: this.voiceDefaultMode,
         voiceCall: this.voiceCall,
         voicePhase: this.voicePhase,
         voiceElapsed: this.voiceElapsed,
@@ -559,6 +562,13 @@ export default {
     this.conversationUnsub = subscribeConversationSettings((section) => {
       this.busyEnter = section.busyEnter;
     });
+    this.voiceVisibilityHandler = () => {
+      if (document.hidden) void this.voiceConversation?.controller.disconnect("voice_background");
+    };
+    document.addEventListener("visibilitychange", this.voiceVisibilityHandler);
+    this.voiceClock = setInterval(() => {
+      if (this.voicePhase === "recording") this.voiceElapsed += 1;
+    }, 1000);
     this.retry();
   },
   activated() {
@@ -568,6 +578,8 @@ export default {
     this.captureLog();
   },
   beforeUnmount() {
+    document.removeEventListener("visibilitychange", this.voiceVisibilityHandler);
+    clearInterval(this.voiceClock);
     this.captureLog();
     this.noteSeen(this.sessionId);
     for (const controller of this.imageUploadControllers?.values?.() ?? []) controller.abort();
@@ -630,11 +642,12 @@ export default {
         this.commands = null;
         this.commandsError = "";
       }
-      if (sessionChanged) {
+      if (sessionChanged && snap.sessionId !== this.voiceAdoptingSession) {
         void this.voiceConversation?.stop().catch(() => {});
         this.reader.stop();
         this.player?.stop();
       }
+      if (sessionChanged) this.voiceAdoptingSession = null;
       const utterance = this.replySpeaker.observe({
         sessionChanged,
         wasRunning: this.running,
@@ -1019,6 +1032,7 @@ export default {
       if (settings) {
         jobs.push(settings.voice().then((voice) => {
           this.voiceLanguage = voice.config?.language || "";
+          this.voiceDefaultMode = voice.config?.mobileMode || "continuous";
           this.voiceSpeak = voice.config?.speak === true;
           this.voiceStreaming = voice.config?.streaming === true;
         }).catch(() => {
@@ -1175,18 +1189,19 @@ export default {
       this.draftImages = [];
       this.imagesBySession = {};
     },
-    async onHoldStart() {
+    async onHoldStart({ mode: selectedMode } = {}) {
       this.voiceReleased = false;
       if (this.voiceCall?.connection === "open") {
         await this.voiceConversation.stop(); return;
       }
       const target = this.sessionId;
-      this.voicePhase = "preparing";
+      this.voicePhase = "preparing"; this.voiceElapsed = 0;
       try {
         const settings = await this.runtime.settings.voice(true);
         if (this.sessionId !== target) return;
-        if (settings.config.backend === "realtime") {
-          const conversation = createRealtimeConversation({
+        const continuous = (selectedMode || settings.config.mobileMode || "continuous") === "continuous";
+        if (settings.config.backend === "realtime" && continuous) {
+          const conversation = createRealtimeConversation({ readAloud: settings.config.speak, idleTimeoutMs: settings.config.idleTimeoutMs, recoveryTimeoutMs: settings.config.recoveryTimeoutMs,
             request: (path, options) => this.runtime.voiceRequest(path, options), socket: (ticket) => this.runtime.voiceSocket(ticket),
             device: captureSource("mobile", settings.config.device), playback: this.player,
             onCaption: (text) => { this.voiceCaption = `${this.voiceCaption}${text}`.slice(-300); },
@@ -1207,20 +1222,32 @@ export default {
           request: (path, options) => this.runtime.voiceRequest(path, options),
           transcribe: (blob, signal) => this.runtime.transcribe(blob, this.voiceLanguage, signal),
           device: captureSource("mobile", settings.config.device),
-          readAloud: settings.config.mode === "continuous" || settings.config.speak,
+          readAloud: continuous && settings.config.speak,
+          preset: settings.config.preset, endpointSilenceMs: settings.config.endpointSilenceMs, idleTimeoutMs: settings.config.idleTimeoutMs, recoveryTimeoutMs: settings.config.recoveryTimeoutMs,
+          onText: (text) => { this.voiceCaption = text; if (this.voiceCall) this.voiceCall = { ...this.voiceCall, caption: text }; },
+          onTranscript: continuous && settings.config.preset !== "dictation" ? null : ({ text }) => {
+            if (this.sessionId !== target) return;
+            this.draft = [this.draft, text].filter(Boolean).join(" ");
+            this.draftBySession = { ...this.draftBySession, [target || "@pending"]: this.draft };
+          },
           mode: () => resolveSubmitMode(this.running, false, true, this.busyEnter),
           playback: { stop: () => { reader.stop(); this.player.stop(); } },
           onReply: (reply) => { const value = speakable(reply, settings.config.streaming); if (value) reader.follow(value); },
         });
-        await this.attachVoiceConversation(conversation, target, settings.config.mode === "continuous");
+        await this.attachVoiceConversation(conversation, target, continuous);
       } catch (error) { this.voicePhase = "error"; this.voiceError = error.message; }
     },
     async attachVoiceConversation(conversation, target, continuous) {
+      this.voiceCaption = ""; this.voiceHistory = null;
       this.voiceConversation = conversation;
       this.voiceUnsub?.();
       this.voiceUnsub = conversation.controller.subscribe(() => {
         const state = conversation.controller.getSnapshot();
-        this.voiceCall = state.connection === "closed" ? null : { ...state, caption: this.voiceCaption };
+        if (state.connection === "open" && !target && !this.sessionId && !this.voiceAdoptingSession && state.sessionId) {
+          this.voiceAdoptingSession = state.sessionId;
+          void Promise.resolve(this.runtime.openSession(state.sessionId)).catch((error) => { this.voiceError = error.message; this.voiceAdoptingSession = null; });
+        }
+        this.voiceCall = state.connection === "closed" ? null : { ...state, caption: this.voiceCaption, history: this.voiceHistory };
         this.voicePhase = state.error ? "error" : state.capture;
         this.voiceError = state.error || "";
       });
@@ -1233,6 +1260,14 @@ export default {
     },
     async voiceAction(action) {
       try {
+        if (action === "mute") await this.voiceConversation?.setReadAloud(this.voiceCall.outputMuted);
+        if (action === "history") {
+          this.voiceHistory = (await this.voiceConversation?.records()).records;
+          if (this.voiceCall) this.voiceCall = { ...this.voiceCall, history: this.voiceHistory };
+        }
+        if (action === "clear-history") { await this.voiceConversation?.clearRecords(); this.voiceHistory = null; }
+        if (action === "input-pause") await this.voiceConversation?.controller.pauseInput();
+        if (action === "input-resume") this.voiceConversation?.controller.resumeInput();
         if (action === "stop") await this.voiceConversation?.stop();
         if (action === "playback") await this.voiceConversation?.controller.stopPlayback();
         if (action === "cancel") await this.voiceConversation?.controller.cancelTask();
