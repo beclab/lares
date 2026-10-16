@@ -4,88 +4,92 @@ import { reduceUtterance } from "./speech.js";
 
 export const SPOKEN_PROMPT = "This is a voice conversation. Keep user-facing answers concise and natural for speech. Do not read reasoning or tool payloads aloud. Preserve the task's factual results and use the user's language.";
 
-/** The Host owns the binding; model tools cannot pick a workspace or session. */
+/** dsh opens a turn before claiming input; rpcId associates input with that open turn. */
 export function createVoiceAgentSession(api, { sessionId = null, preset, workspaceId, metric = () => {} } = {}) {
   let creating;
   let following;
   let closed = false;
-  let running = false;
   let utterance = null;
   let error = null;
   let version = 0;
   let cursor = -1;
-  let pending = null;
-  let firstTextAt = null;
+  let openTurn = null;
+  let latestRequest = null;
   let followTask = null;
   let ready = null;
   let readyTimer;
-  let recovering = false;
+  let observedRunning = false;
   const requests = new Map();
   const decoder = createSessionFollow();
-  const snapshot = () => ({ sessionId, running, utterance, error, version });
+  const unfinished = (task) => ["accepted", "running", "waiting", "unknown"].includes(task.status);
+  const snapshot = () => ({ sessionId, running: observedRunning || [...requests.values()].some(unfinished), utterance, error, version,
+    requestId: latestRequest,
+    tasks: [...requests.values()].map(({ requestId, turn, status, utterance: reply, error: taskError }) => ({ requestId, turn, status, text: reply?.silent ? "" : reply?.text || "", error: taskError })),
+  });
   const ensure = async () => {
     if (sessionId) return sessionId;
     creating ??= Promise.resolve(api.create({ agentPreset: preset, workspaceId })).then((value) => {
+      if (!value?.sessionId) throw new Error("voice_session_failed");
       sessionId = value.sessionId;
       return sessionId;
     });
     return creating;
   };
-  const publish = (event) => {
+  const publish = (event, replay = false) => {
     if (!event || typeof event !== "object") return;
     if (typeof event.seq === "number") {
       if (event.seq <= cursor) return;
       cursor = event.seq;
     }
-    if (!event || typeof event !== "object") return;
-    if (event.type === "user/message" && (event.data?.requestId ?? event.data?.source?.rpcId) === pending?.id) pending.seen = true;
-    if (!pending?.seen) return;
-    if (event.type === "turn/start") running = true;
-    if (event.type === "turn/end") {
-      running = false;
-      error = event.data?.reason?.kind === "error" ? "voice_agent_failed" : null;
-      if (event.data?.reason?.kind === "cancelled") error = "voice_cancelled";
+    if (event.type === "turn/start") { openTurn = event.data.turn; observedRunning = true; }
+    if (event.type === "user/message") {
+      const id = event.data?.requestId ?? event.data?.source?.rpcId;
+      const task = requests.get(id);
+      if (task && openTurn !== null) { task.turn = openTurn; task.status = "running"; }
     }
-    utterance = reduceUtterance(utterance, event);
-    if (!firstTextAt && utterance?.text) {
-      firstTextAt = Date.now();
-      metric({ stage: "agent_first_text", durationMs: firstTextAt - pending.at });
+    const turn = event.data?.turn ?? openTurn;
+    const owned = [...requests.values()].filter((task) => task.turn != null && task.turn === turn && unfinished(task));
+    for (const task of owned) {
+      task.utterance = reduceUtterance(task.utterance, event);
+      if (event.type === "approval/asked") task.status = "waiting";
+      if (event.type === "approval/decided") task.status = "running";
+      if (event.type === "turn/end") {
+        const reason = event.data?.reason?.kind;
+        task.status = reason === "error" ? "failed" : reason === "cancelled" ? "cancelled" : "completed";
+        task.error = reason === "error" ? "voice_agent_failed" : reason === "cancelled" ? "voice_cancelled" : null;
+      }
+      if (!replay && task.utterance?.text && !task.firstTextAt) {
+        task.firstTextAt = Date.now();
+        metric({ stage: "agent_first_text", requestId: task.requestId, durationMs: task.firstTextAt - task.at });
+      }
+      if (!replay && task.requestId === latestRequest) { utterance = task.utterance; error = task.error; }
     }
+    if (event.type === "turn/end" && openTurn === event.data?.turn) { openTurn = null; observedRunning = false; }
     version++;
   };
-  const follow = async () => {
-    following = new AbortController();
+  const follow = () => {
+    if (following && !following.signal.aborted) return ready;
+    const abort = new AbortController();
+    following = abort;
     let resolveReady;
     let rejectReady;
     ready = new Promise((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
-    readyTimer = setTimeout(() => { rejectReady(new Error("voice_agent_timeout")); following.abort(); }, 15_000);
+    readyTimer = setTimeout(() => { rejectReady(new Error("voice_agent_timeout")); abort.abort(); }, 15_000);
     ready.catch(() => {});
-    following.signal.addEventListener("abort", () => rejectReady(new Error("voice_session_closed")), { once: true });
+    abort.signal.addEventListener("abort", () => rejectReady(new Error("voice_session_closed")), { once: true });
     followTask = (async () => {
       try {
-        for await (const frame of api.follow({ address: { kind: "session", sessionId }, assistantStream: true }, following.signal)) {
+        for await (const frame of api.follow({ address: { kind: "session", sessionId }, assistantStream: true }, abort.signal)) {
           const decoded = decoder.push(frame);
           if (frame.type === "snapshot") {
-            for (const event of decoded?.events ?? []) cursor = Math.max(cursor, event.seq ?? -1);
-            if (recovering) {
-              running = false;
-              for (const event of decoded?.events ?? []) {
-                if (event.type === "turn/start") running = true;
-                if (event.type === "turn/end") running = false;
-              }
-              pending = running ? { id: "@resume", seen: true, at: Date.now() } : null;
-              recovering = false;
-              version++;
-            }
-            clearTimeout(readyTimer);
-            resolveReady();
+            for (const event of decoded?.events ?? []) publish(event, true);
+            clearTimeout(readyTimer); resolveReady();
           } else for (const event of decoded?.events ?? []) publish(event);
         }
-        if (!following.signal.aborted) throw new Error("voice_agent_disconnected");
+        if (!abort.signal.aborted) throw new Error("voice_agent_disconnected");
       } catch (cause) {
-        clearTimeout(readyTimer);
-        rejectReady(cause);
-        if (!following.signal.aborted) { error = "voice_agent_disconnected"; version++; }
+        clearTimeout(readyTimer); rejectReady(cause);
+        if (!abort.signal.aborted) { error = "voice_agent_disconnected"; version++; abort.abort(); }
       }
     })();
     followTask.catch(() => {});
@@ -93,36 +97,34 @@ export function createVoiceAgentSession(api, { sessionId = null, preset, workspa
   };
   return {
     snapshot,
-    async open() { if (sessionId) { recovering = true; await follow(); } },
+    async open() { if (sessionId) await follow(); },
     async resume() {
       following?.abort(); await followTask;
-      closed = false; recovering = true; error = null; utterance = null; cursor = -1; decoder.reset();
+      closed = false; error = null; utterance = null; cursor = -1; openTurn = null; observedRunning = false; decoder.reset();
       if (sessionId) await follow();
     },
     async submit(text, requestId = mintRpcId(), mode = "queue") {
       if (closed) throw new Error("voice_session_closed");
       if (!String(text).trim()) return snapshot();
-      if (requests.has(requestId)) return requests.get(requestId);
+      if (requests.has(requestId)) return requests.get(requestId).operation;
       if (requests.size >= 256) throw new Error("voice_session_limit");
-      const operation = (async () => {
-        await ensure();
-        if (!following || following.signal.aborted || error === "voice_agent_disconnected") await follow();
-        else await ready;
-        pending = { id: requestId, seen: false, at: Date.now() };
-        running = true; utterance = null; error = null; firstTextAt = null; version++;
-        await api.prompt({ sessionId, requestId, mode: mode === "steer" ? "steer" : "queue", content: [{ type: "text", text }] }, following.signal);
-        return snapshot();
+      const task = { requestId, turn: null, status: "accepted", utterance: null, error: null, at: Date.now(), firstTextAt: null };
+      requests.set(requestId, task);
+      latestRequest = requestId; utterance = null; error = null; version++;
+      task.operation = (async () => {
+        try {
+          await ensure();
+          await follow();
+          await api.prompt({ sessionId, requestId, mode: mode === "steer" ? "steer" : "queue", content: [{ type: "text", text }] }, following.signal);
+          return snapshot();
+        } catch (cause) {
+          task.status = "unknown"; task.error = "submission_outcome_unknown"; version++;
+          throw cause;
+        }
       })();
-      // Keep failed/unknown submissions too: a retry must never execute the task twice.
-      requests.set(requestId, operation);
-      return operation;
+      return task.operation;
     },
     async cancel() { if (sessionId) await api.cancel({ sessionId }); },
-    async close() {
-      closed = true;
-      clearTimeout(readyTimer);
-      following?.abort();
-      await followTask;
-    },
+    async close() { closed = true; clearTimeout(readyTimer); following?.abort(); await followTask; },
   };
 }
