@@ -114,10 +114,15 @@ export function foldTranscript(entries) {
   let utterance = null;
   let streamCursor = { loc: "", kind: "", index: 0 };
   let activeTurn = 0;
+  let activeSeq = -1;
+  let activeRequest = null;
   const ended = new Map();
 
   const tag = (row) => {
     row.turn = activeTurn;
+    row.anchorSeq = activeSeq;
+    row.key ||= `dsh:${activeSeq}:${row.type}`;
+    if (row.type === "user") row.requestId = activeRequest;
     return row;
   };
 
@@ -234,6 +239,8 @@ export function foldTranscript(entries) {
 
   for (const entry of Array.isArray(entries) ? entries : []) {
     const event = eventOf(entry);
+    activeSeq = event?.seq ?? activeSeq;
+    if (event?.type === "user/message") activeRequest = event.data?.requestId ?? event.data?.source?.rpcId ?? null;
     if (!event) continue;
     const data = event.data ?? {};
     const view = entryView(entry, event);

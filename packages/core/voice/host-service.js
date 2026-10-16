@@ -10,8 +10,8 @@ const failure = (code, status) => Object.assign(new Error(code), { code, status 
 export function createVoiceHostService(api, { env = process.env, metric = () => {}, records = createVoiceRecords(), config = readConfig, chat } = {}) {
   const ownerOf = (scope) => scope.owner || "@local";
   const keyOf = (scope) => scope.session?.snapshot().sessionId || `voice:${scope.contextId || scope.id}`;
-  const append = (scope, role, text, turnId, taskId = null) => records.append(ownerOf(scope), keyOf(scope), {
-    id: `${scope.id}:${turnId}:${role}`, voiceId: scope.id, clientId: scope.id, turnId, role, text: text.slice(0, 16000), taskId,
+  const append = (scope, role, text, turnId, taskId = null, fields = {}) => records.append(ownerOf(scope), keyOf(scope), {
+    id: `${scope.id}:${turnId}:${role}`, voiceId: scope.id, clientId: scope.id, turnId, role, text: text.slice(0, 16000), taskId, anchorSeq: scope.session?.snapshot().cursor ?? -1, ...fields,
   });
   const scopes = new Set();
   const service = {
@@ -26,6 +26,7 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
       try {
       if (body.sessionId != null && (typeof body.sessionId !== "string" || !body.sessionId || body.sessionId.length > 256)) throw failure("voice_session_invalid", 400);
       if (body.contextId != null && (typeof body.contextId !== "string" || !/^[a-zA-Z0-9_-]{8,128}$/.test(body.contextId))) throw failure("voice_context_invalid", 400);
+      scope.presentationSession = body.presentationSession === true;
       scope.contextId = body.contextId || scope.id;
       const binding = records.read(ownerOf(scope), `voice:${scope.contextId}`).binding;
       const boundSessionId = body.sessionId || binding || null;
@@ -58,6 +59,8 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
           const id = `${requestId}:delegate`;
           // The source transcript is persisted before any side effect, even for lazy business sessions.
           const before = keyOf(scope);
+          const source = records.read(ownerOf(scope), keyOf(scope)).records.find((row) => row.id === `${scope.id}:${requestId}:user`);
+          if (source) append(scope, "user", source.text, requestId, id);
           append(scope, "task", text, requestId, id);
           let state;
           try { state = await scope.session.submit(text, id, scope.submitMode || "queue"); }
@@ -76,6 +79,14 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
       if (!scope.active || !scope.session) throw failure("voice_session_closed", 409);
       if (typeof body.text !== "string" || !body.text.trim() || body.text.length > 16000 || typeof body.requestId !== "string" || !body.requestId || body.requestId.length > 128) throw failure("voice_session_invalid", 400);
       if (scope.voiceConfig.preset === "dictation") return { ...service.state(scope), text: body.text };
+      if (scope.presentationSession && !scope.session.snapshot().sessionId) {
+        const before = keyOf(scope);
+        await scope.session.ensureSession();
+        if (!scope.active) throw failure("voice_session_closed", 409);
+        for (const row of records.read(ownerOf(scope), before).records) records.append(ownerOf(scope), keyOf(scope), row);
+        records.clear(ownerOf(scope), before);
+        records.bind(ownerOf(scope), scope.contextId, keyOf(scope));
+      }
       if (scope.voiceConfig.preset === "direct") {
         const before = keyOf(scope);
         append(scope, "user", body.text, body.requestId, body.requestId);
@@ -96,15 +107,24 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
         scope.voiceState.running = true; scope.voiceState.error = null; scope.voiceState.version++;
         append(scope, "user", body.text, body.requestId);
         try {
-          const text = await scope.dialogue.reply(body.text, body.requestId, scope.voiceAbort.signal);
-          append(scope, "assistant", text, body.requestId);
+          const text = await scope.dialogue.reply(body.text, body.requestId, scope.voiceAbort.signal, (partial) => {
+            const source = records.read(ownerOf(scope), keyOf(scope)).records.find((row) => row.id === `${scope.id}:${body.requestId}:user`);
+            append(scope, "assistant", partial, body.requestId, source?.taskId || null, { status: "streaming" });
+          });
+          const source = records.read(ownerOf(scope), keyOf(scope)).records.find((row) => row.id === `${scope.id}:${body.requestId}:user`);
+          append(scope, "assistant", text, body.requestId, source?.taskId || null);
           const key = keyOf(scope);
           const checkpointVersion = records.read(ownerOf(scope), key).version;
           scope.summaryTask = scope.dialogue.summarize().then((summary) => records.checkpoint(ownerOf(scope), key, summary, checkpointVersion)).catch((cause) => {
             scope.summaryError = cause.code || cause.message || "voice_summary_failed";
           });
           scope.voiceState.utterance = { key: body.requestId, turn: scope.voiceState.version, step: 0, text, done: true, silent: false };
-        } catch (cause) { scope.voiceState.error = cause.code || cause.message || "voice_failed"; throw cause; }
+        } catch (cause) {
+          scope.voiceState.error = cause.code || cause.message || "voice_failed";
+          const partial = records.read(ownerOf(scope), keyOf(scope)).records.find((row) => row.id === `${scope.id}:${body.requestId}:assistant`);
+          if (partial) append(scope, "assistant", partial.text, body.requestId, partial.taskId, { status: "failed" });
+          throw cause;
+        }
         finally { scope.voiceState.running = false; scope.voiceState.version++; }
         return service.state(scope);
       });
@@ -130,7 +150,7 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
         scope.dialogue.observeTask(task);
         const text = task.status === "completed" ? task.text : `Task ${task.status}: ${task.error || ""}`;
         scope.voiceState.utterance = { key: `task:${task.requestId}`, turn: ++scope.voiceState.version, step: 0, text, done: true, silent: false };
-        append(scope, "assistant", text, `result:${task.requestId}`, task.requestId);
+        append(scope, "assistant", text, `result:${task.requestId}`, task.requestId, { taskTurn: task.turn });
       }
       return { ...state, ...scope.voiceState, contextId: scope.contextId, active: scope.active === true, backgroundRunning: state.running, summaryError: scope.summaryError || null, preset: scope.voiceConfig.preset };
     },
@@ -147,6 +167,26 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
       }
       scope.recordKey = key;
       return append(scope, role, text.slice(0, 16000), String(turnId || scope.voiceState.version), role === "task" ? String(turnId) : null);
+    },
+    async history(scope, body, signal) {
+      const { sessionId, version, waitMs = 0 } = body;
+      if (typeof sessionId !== "string" || !sessionId || sessionId.length > 256 || !Number.isInteger(waitMs) || waitMs < 0 || waitMs > 20000) throw failure("voice_records_invalid", 400);
+      await api.inspect(sessionId);
+      const owner = ownerOf(scope);
+      const page = () => records.page(owner, sessionId, body);
+      let result = page();
+      if (waitMs && result.version === version && !signal?.aborted) {
+        await new Promise((resolve) => {
+          let timer;
+          const done = () => { clearTimeout(timer); unsubscribe(); signal?.removeEventListener("abort", done); resolve(); };
+          const unsubscribe = records.subscribe(owner, sessionId, done);
+          signal?.addEventListener("abort", done, { once: true });
+          timer = setTimeout(done, waitMs);
+          if (signal?.aborted) done();
+        });
+        result = page();
+      }
+      return result;
     },
     records(scope) { return records.read(ownerOf(scope), keyOf(scope)); },
     async clearRecords(scope) { const key = keyOf(scope); await service.close(scope); records.clear(ownerOf(scope), key); },
