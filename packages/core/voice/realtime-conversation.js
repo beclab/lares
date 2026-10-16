@@ -2,7 +2,7 @@ import { createVoiceController } from "./controller.js";
 import { createPcmBrowserAudio } from "./realtime-audio.js";
 import { mintRpcId } from "../larepass/rpc.js";
 
-export function createRealtimeConversation({ request, socket: openSocket, device = "device", playback, onCaption = () => {} }) {
+export function createRealtimeConversation({ request, socket: openSocket, device = "device", playback, onCaption = () => {}, idleTimeoutMs, recoveryTimeoutMs, readAloud = true }) {
   const voiceId = mintRpcId();
   const headers = { "x-lares-voice-id": voiceId, "x-lares-voice-device": device };
   let socket;
@@ -31,12 +31,14 @@ export function createRealtimeConversation({ request, socket: openSocket, device
     if (currentItem && device === "device") send({ type: "conversation.item.truncate", item_id: currentItem, content_index: 0, audio_end_ms: played });
     controller.observePlayback(false);
   };
-  const controller = createVoiceController({
+  const controller = createVoiceController({ voiceId, idleTimeoutMs, recoveryTimeoutMs,
+    onExpired: async () => { intentional = true; clearTimeout(pollTimer); socket?.close(); await audio?.stop(); await call("/session/close", {}); },
     input: { capabilities: { duplex: device === "device", bargeIn: false, listenWhileWorking: true, audio: "pcm16-24000" },
       capture: ({ signal }) => new Promise((resolve, reject) => {
+        send({ type: "lares.input.resume" });
         if (device === "device") void audio.start().catch(reject);
         signal.addEventListener("abort", () => resolve(""), { once: true });
-      }), cancel: async () => { await audio?.stop(); socket?.close(); },
+      }), cancel: async () => { send({ type: "lares.input.pause" }); audio?.pauseInput(); },
     }, output: { stop: stopPlayback }, agent: {
       create: async () => boundSessionId,
       submit: async () => {},
@@ -57,6 +59,7 @@ export function createRealtimeConversation({ request, socket: openSocket, device
         let event;
         try { event = JSON.parse(message.data); } catch { return; }
         if (!event || typeof event !== "object") return;
+        if (event.type === "input_audio_buffer.speech_started") controller.noteActivity();
         if (event.type === "lares.ready") { clearTimeout(timeout); resolve(); }
         else if (event.type === "lares.error") { clearTimeout(timeout); reject(new Error(event.code)); void controller.disconnect(event.code); }
         else if (["response.output_audio.delta", "response.audio.delta"].includes(event.type)) {
@@ -69,7 +72,7 @@ export function createRealtimeConversation({ request, socket: openSocket, device
         else if (event.type === "lares.task") {
           if (event.sessionId) { boundSessionId = event.sessionId; controller.bindSession(boundSessionId); }
           controller.observeAgent(event.status === "pending");
-        } else if (["response.output_audio_transcript.delta", "response.audio_transcript.delta"].includes(event.type)) onCaption(event.delta, "assistant");
+        } else if (["response.output_audio_transcript.delta", "response.audio_transcript.delta", "response.output_text.delta", "response.text.delta"].includes(event.type)) onCaption(event.delta, "assistant");
       });
       socket.addEventListener("error", () => { if (socket !== connectedSocket) return; clearTimeout(timeout); reject(new Error("voice_disconnected")); });
       socket.addEventListener("close", () => {
@@ -89,23 +92,30 @@ export function createRealtimeConversation({ request, socket: openSocket, device
     pollTimer = setTimeout(watch, 1000);
   };
   return {
-    controller,
+    controller, headers,
     async start({ sessionId = null } = {}) {
       boundSessionId = sessionId;
-      const initial = await call("/session", { sessionId, readAloud: false });
+      const initial = await call("/session", { sessionId, readAloud });
       await connect();
       await controller.start({ sessionId, continuous: true, running: initial.running });
+      controller.setOutputMuted(!readAloud);
       void watch();
+    },
+    async setReadAloud(value) {
+      readAloud = value === true; controller.setOutputMuted(!readAloud);
+      if (!readAloud) await stopPlayback();
+      send({ type: "lares.output", enabled: readAloud });
     },
     async stop() {
       intentional = true; clearTimeout(pollTimer);
-      await controller.disconnect(); socket?.close();
+      await controller.disconnect(); await audio?.stop(); socket?.close();
       await call("/session/close", {});
     },
     async resume() {
       const state = await call("/session");
-      if (!state.active) await call("/session", { sessionId: boundSessionId, readAloud: false });
+      if (!state.active) await call("/session", { sessionId: boundSessionId, readAloud });
       else await call("/session/resume", {});
+      await audio?.stop();
       await connect(); await controller.resume(); void watch();
     },
   };

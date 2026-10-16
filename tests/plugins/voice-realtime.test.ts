@@ -57,3 +57,22 @@ test("streaming PCM conversion preserves sample count across uneven frames", () 
   assert.throws(() => pcmSamples(new Uint8Array(3)), /voice_audio_format/);
   assert.throws(() => createPcmResampler(0), /voice_audio_format/);
 });
+
+test("background delegation returns pending promptly and reports its own durable result later", async () => {
+  const signal = new AbortController();
+  const sent: any[] = [], completed: any[] = [];
+  let task: any;
+  let wake: () => void = () => {};
+  const bridge = createRealtimeDelegate({ background: true, signal: signal.signal,
+    agent: { snapshot: () => ({ sessionId: "bound", running: task?.status === "running", tasks: task ? [task] : [] }),
+      submit: async (_text: string, requestId: string) => { task = { requestId, status: "running", text: "" }; } },
+    send: (event: any) => sent.push(event), onCompleted: (value: any) => completed.push(value),
+    sleep: () => new Promise<void>((resolve) => { wake = resolve; }),
+  });
+  await bridge.handle({ call_id: "background", name: "ask_lares", arguments: JSON.stringify({ operation: "run", task: "slow lookup" }) });
+  assert.equal(JSON.parse(sent[0].item.output).status, "pending");
+  task = { ...task, status: "completed", text: "actual result" }; wake();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(completed[0].text, "actual result");
+  signal.abort();
+});

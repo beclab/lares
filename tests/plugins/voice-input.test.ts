@@ -61,7 +61,7 @@ test("voice settings map the auto sentinel to an empty stored value", () => {
   assert.equal(voiceValueFromMenu("auto"), "");
   assert.equal(voiceValueFromMenu("zh"), "zh");
   assert.deepEqual(STT_LANGUAGE_CHOICES.map((item) => item.id), ["zh", "en", "ja", "ko"]);
-  assert.deepEqual(EMPTY_VOICE_CONFIG, { mode: "single", device: "auto", backend: "pipeline", realtimeModel: "", model: "", ttsModel: "", language: "", speak: false, streaming: false });
+  assert.deepEqual(EMPTY_VOICE_CONFIG, { preset: "assistant", dictationCleanup: false, chatModel: "default-chat", instructions: "", voice: "", mode: "single", mobileMode: "continuous", endpointSilenceMs: 500, idleTimeoutMs: 300_000, recoveryTimeoutMs: 120_000, device: "auto", backend: "pipeline", realtimeModel: "", model: "", ttsModel: "", language: "", speak: false, streaming: false });
   assert.equal(voiceLanguageItems("Auto")[0].label, "Auto");
   assert.deepEqual(voiceModelItems(["whisper-a"], "Auto"), [
     { id: "auto", label: "Auto" },
@@ -653,7 +653,7 @@ test("readConfig / writeConfig round-trip through DSH_HOME", async () => {
     const { readConfig, validateConfigPatch, writeConfig } = await import(
       `../../packages/core/voice/config.js?cfg=${Date.now()}`
     );
-    assert.deepEqual(readConfig(), { mode: "single", device: "auto", backend: "pipeline", realtimeModel: "", model: "", ttsModel: "", language: "", speak: false, streaming: false });
+    assert.deepEqual(readConfig(), { preset: "assistant", dictationCleanup: false, chatModel: "default-chat", instructions: "", voice: "", mode: "single", mobileMode: "continuous", endpointSilenceMs: 500, idleTimeoutMs: 300_000, recoveryTimeoutMs: 120_000, device: "auto", backend: "pipeline", realtimeModel: "", model: "", ttsModel: "", language: "", speak: false, streaming: false });
     const saved = writeConfig({ model: "  whisper-x  ", language: "zh" });
     assert.equal(saved.model, "whisper-x");
     assert.equal(saved.language, "zh");
@@ -663,6 +663,9 @@ test("readConfig / writeConfig round-trip through DSH_HOME", async () => {
     for (const patch of [
       { streaming: "yes" },
       { mode: "invalid" },
+      { mobileMode: "invalid" },
+      { idleTimeoutMs: -1 },
+      { recoveryTimeoutMs: 3.5 },
       { backend: "invalid" },
       { device: "invalid" },
       { ignored: "value" },

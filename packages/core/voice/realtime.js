@@ -13,10 +13,12 @@ export function validatedRealtimeModels(models, env = process.env) {
 }
 
 /** One tool execution per provider call id, including unknown submission outcomes. */
-export function createRealtimeDelegate({ agent, send, notify = () => {}, calls = new Map(), timeoutMs = 120_000, signal, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) }) {
+export function createRealtimeDelegate({ agent, send, notify = () => {}, calls = new Map(), timeoutMs = 120_000, signal, background = false, onCompleted = () => {}, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) }) {
   let active = false;
-  const result = () => {
+  const result = (requestId) => {
     const state = agent.snapshot();
+    const task = requestId && state.tasks?.find((value) => value.requestId === requestId);
+    if (task) return { ...task, status: ["accepted", "running", "waiting"].includes(task.status) ? "pending" : task.status, sessionId: state.sessionId };
     return { status: state.error ? "failed" : state.running ? "pending" : "completed", sessionId: state.sessionId, text: state.utterance?.silent ? "" : (state.utterance?.text || "").slice(0, 16000), error: state.error || undefined };
   };
   const run = async (event) => {
@@ -25,14 +27,22 @@ export function createRealtimeDelegate({ agent, send, notify = () => {}, calls =
     if (event.name !== "ask_lares" || !args || typeof args !== "object" || Array.isArray(args) || Object.keys(args).some((key) => !["operation", "task"].includes(key))) return { status: "failed", error: "invalid_tool" };
     if (args.operation === "status") return result();
     if (args.operation !== "run" || typeof args.task !== "string" || !args.task.trim() || args.task.length > 16000) return { status: "failed", error: "invalid_task" };
-    if (active || agent.snapshot().running) return { ...result(), status: "pending" };
+    if (!background && (active || agent.snapshot().running)) return { ...result(), status: "pending" };
     active = true;
     try {
-      await agent.submit(args.task, `voice-${mintRpcId()}`);
-      notify({ type: "lares.task", ...result() });
+      const requestId = `voice-${mintRpcId()}`;
+      await agent.submit(args.task, requestId);
+      notify({ type: "lares.task", ...result(requestId) });
+      if (background && result(requestId).status === "pending") {
+        void (async () => {
+          while (!signal?.aborted && result(requestId).status === "pending") await sleep(250);
+          if (!signal?.aborted) { const value = result(requestId); notify({ type: "lares.task", ...value }); onCompleted(value); }
+        })().catch(() => notify({ type: "lares.task", status: "unknown", requestId, sessionId: agent.snapshot().sessionId }));
+        return result(requestId);
+      }
       const deadline = Date.now() + timeoutMs;
       while (agent.snapshot().running && !signal?.aborted && Date.now() < deadline) await sleep(100);
-      const value = result();
+      const value = result(requestId);
       notify({ type: "lares.task", ...value });
       return value;
     } catch {

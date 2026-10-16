@@ -90,3 +90,19 @@ test("continuous listening keeps waiting through silence without creating a task
   assert.equal(h.submitted.length, 1);
   await h.controller.disconnect();
 });
+
+test("idle expiry releases voice without cancelling business work", async () => {
+  const scheduled = new Map<number, () => void>();
+  let key = 0, cancelled = 0, expired = "";
+  const controller = createVoiceController({
+    input: { capture: () => new Promise(() => {}), cancel() {} }, output: { stop() {} },
+    agent: { create: async () => "session", submit: async () => {}, running: async () => true, cancel() { cancelled++; } },
+    schedule: (callback: () => void) => { scheduled.set(++key, callback); return key; }, unschedule: (id: number) => scheduled.delete(id),
+    onExpired: (code: string) => { expired = code; },
+  });
+  await controller.start({ sessionId: "bound", continuous: true });
+  const timeout = [...scheduled.values()][0]; timeout(); await flush();
+  assert.equal(controller.getSnapshot().connection, "closed");
+  assert.equal(controller.getSnapshot().sessionId, "bound");
+  assert.equal(expired, "voice_idle_timeout"); assert.equal(cancelled, 0);
+});

@@ -59,7 +59,7 @@ export function createPcmBrowserAudio({ send, onPlayback = () => {}, onError = (
       if (closed || epoch !== generation) { opened.getTracks().forEach((track) => track.stop()); return; }
       stream = opened;
       for (const track of stream.getTracks()) track.addEventListener("ended", () => { if (!closed) onError(new Error("voice_device_lost")); }, { once: true });
-      context = new AudioCtx(); await context.resume();
+      context ??= new AudioCtx(); await context.resume();
       source = context.createMediaStreamSource(stream);
       processor = context.createScriptProcessor(2048, 1, 1);
       mute = context.createGain(); mute.gain.value = 0;
@@ -69,6 +69,13 @@ export function createPcmBrowserAudio({ send, onPlayback = () => {}, onError = (
         send({ type: "input_audio_buffer.append", audio: base64(convert(event.inputBuffer.getChannelData(0))) });
       };
       source.connect(processor); processor.connect(mute); mute.connect(context.destination);
+    },
+    pauseInput() {
+      generation++;
+      if (processor) processor.onaudioprocess = null;
+      source?.disconnect(); processor?.disconnect(); mute?.disconnect();
+      source = null; processor = null; mute = null;
+      stream?.getTracks().forEach((track) => track.stop()); stream = null;
     },
     write(value) {
       if (!context || closed) return;

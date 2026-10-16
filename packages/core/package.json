@@ -1,7 +1,7 @@
 {
   "name": "@olares/lares-core",
   "version": "0.15.11",
-  "description": "Lares 共享业务核心：Router、workspace、文件/媒体、Olares 身份（无 UI、无平台壳）",
+  "description": "Lares \u5171\u4eab\u4e1a\u52a1\u6838\u5fc3\uff1aRouter\u3001workspace\u3001\u6587\u4ef6/\u5a92\u4f53\u3001Olares \u8eab\u4efd\uff08\u65e0 UI\u3001\u65e0\u5e73\u53f0\u58f3\uff09",
   "type": "module",
   "repository": {
     "type": "git",
@@ -182,7 +182,14 @@
     "./voice/realtime-gateway": "./voice/realtime-gateway.js",
     "./voice/realtime-audio": "./voice/realtime-audio.js",
     "./voice/realtime-conversation": "./voice/realtime-conversation.js",
-    "./voice/host-service": "./voice/host-service.js"
+    "./voice/host-service": "./voice/host-service.js",
+    "./voice/options": "./voice/options.js",
+    "./voice/records": "./voice/records.js",
+    "./voice/dialogue": "./voice/dialogue.js",
+    "./voice/external": "./voice/external.js",
+    "./voice/composite-gateway": "./voice/composite-gateway.js",
+    "./voice/router-audio": "./voice/router-audio.js",
+    "./voice/protocol-client": "./voice/protocol-client.js"
   },
   "dependencies": {
     "ws": "^8.22.0"

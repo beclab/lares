@@ -134,6 +134,7 @@ export async function voiceModelsPayload(options) {
     models: ids,
     stt,
     tts,
+    chat: models.filter((model) => model.mode === "chat").map((model) => model.id),
     realtime: realtimeModelIds(models),
     realtimeReady: validatedRealtimeModels(models),
     selected: pickSttModelId(models, config.model),
@@ -347,7 +348,7 @@ function startReadout(coordinator, id, model, options) {
       });
     },
   };
-  readout.result = pinnedVoice(model, options.listVoices)
+  readout.result = Promise.resolve(options.config?.voice || pinnedVoice(model, options.listVoices))
     .then((voice) => readAloud(readout, model, voice, lease, options));
   readout.result.catch(() => {});
   readouts.set(coordinator, readout);
@@ -547,13 +548,14 @@ export async function openRealtimeHostAudio(scope, send) {
   deviceLease.acquire(scope);
   let closed = false;
   let capturing = false;
+  let inputPaused = true;
   let offset = 0;
   let player = null;
   let timer = null;
   let generation = 0;
   const convert = createPcmResampler(16000);
   const start = async () => {
-    if (closed || capturing) return;
+    if (closed || capturing || inputPaused) return;
     const opened = await beginHostCapture();
     if (!opened.ready) throw new VoiceError("voice_bluetooth_not_ready", 503, "headset is not ready");
     capturing = true; offset = opened.offset;
@@ -565,13 +567,15 @@ export async function openRealtimeHostAudio(scope, send) {
     if (capturing) {
       const bytes = await readHostCapture(offset, { maxBytes: 32_000 });
       offset += bytes.length;
-      if (bytes.length) send({ type: "input_audio_buffer.append", audio: Buffer.from(convert(pcmSamples(bytes))).toString("base64") });
+      if (capturing && bytes.length) send({ type: "input_audio_buffer.append", audio: Buffer.from(convert(pcmSamples(bytes))).toString("base64") });
     }
     if (!closed) timer = setTimeout(() => { void read().catch(() => scope.realtimeSocket?.close()); }, 100);
   };
   try { await start(); void read(); }
   catch (error) { deviceLease.release(scope); throw error; }
   return {
+    async pauseInput() { inputPaused = true; if (capturing) { capturing = false; await endHostCapture(); } },
+    async resumeInput() { inputPaused = false; if (!player) await start(); },
     async write(bytes) {
       if (closed) return;
       if (capturing) { capturing = false; await endHostCapture(); }

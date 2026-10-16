@@ -101,6 +101,7 @@ export function createHostSettings(request) {
           status: payload(status, "/api/lares/voice/status"),
           sttModels: modelIds(listed, "stt"),
           ttsModels: modelIds(listed, "tts"),
+          chatModels: modelIds(listed, "chat"),
           realtimeModels: modelIds(listed, "realtime"),
           realtimeReady: modelIds(listed, "realtimeReady"),
         };

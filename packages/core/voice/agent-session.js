@@ -5,7 +5,7 @@ import { reduceUtterance } from "./speech.js";
 export const SPOKEN_PROMPT = "This is a voice conversation. Keep user-facing answers concise and natural for speech. Do not read reasoning or tool payloads aloud. Preserve the task's factual results and use the user's language.";
 
 /** dsh opens a turn before claiming input; rpcId associates input with that open turn. */
-export function createVoiceAgentSession(api, { sessionId = null, preset, workspaceId, metric = () => {} } = {}) {
+export function createVoiceAgentSession(api, { sessionId = null, preset, workspaceId, restoredRequests = [], metric = () => {} } = {}) {
   let creating;
   let following;
   let closed = false;
@@ -20,6 +20,9 @@ export function createVoiceAgentSession(api, { sessionId = null, preset, workspa
   let readyTimer;
   let observedRunning = false;
   const requests = new Map();
+  for (const restored of restoredRequests.slice(-256)) {
+    requests.set(restored.requestId, { requestId: restored.requestId, turn: null, status: "unknown", utterance: null, error: null, at: Date.now(), firstTextAt: null });
+  }
   const decoder = createSessionFollow();
   const unfinished = (task) => ["accepted", "running", "waiting", "unknown"].includes(task.status);
   const snapshot = () => ({ sessionId, running: observedRunning || [...requests.values()].some(unfinished), utterance, error, version,
@@ -106,7 +109,7 @@ export function createVoiceAgentSession(api, { sessionId = null, preset, workspa
     async submit(text, requestId = mintRpcId(), mode = "queue") {
       if (closed) throw new Error("voice_session_closed");
       if (!String(text).trim()) return snapshot();
-      if (requests.has(requestId)) return requests.get(requestId).operation;
+      if (requests.has(requestId)) return requests.get(requestId).operation || snapshot();
       if (requests.size >= 256) throw new Error("voice_session_limit");
       const task = { requestId, turn: null, status: "accepted", utterance: null, error: null, at: Date.now(), firstTextAt: null };
       requests.set(requestId, task);
