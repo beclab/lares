@@ -78,18 +78,15 @@ test("paused input discards late results and resumes without submitting them", a
   await call.stop();
 });
 
-test("cancel during cleanup cannot insert late text even if the transport ignores abort", async () => {
+test("dictation hands raw text to preview without making any cleanup model call", async () => {
   let transcript: (text: string) => void = () => {};
-  let clean: (response: any) => void = () => {};
-  const inserted: string[] = [];
+  const texts: string[] = [];
   const call = createVoiceConversation({
     input: { capture: () => new Promise<string>((resolve) => { transcript = resolve; }), cancel() {} },
-    playback: { stop() {} }, onTranscript: ({ text }: any) => { inserted.push(text); },
-    request: async (path: string) => path.endsWith("/dictation/clean") ? new Promise((resolve) => { clean = resolve; }) : ({ ok: true, body: {} }),
+    playback: { stop() {} }, onTranscript: ({ text }: any) => { texts.push(text); },
+    request: async (path: string) => { assert.equal(path.endsWith("/dictation/clean"), false); return { ok: true, body: {} }; },
   });
-  await call.start(); transcript("text"); await tick();
-  await call.stop(); clean({ ok: true, body: { text: "late" } }); await tick();
-  assert.deepEqual(inserted, []);
+  await call.start(); transcript("raw text"); await tick(); assert.deepEqual(texts, ["raw text"]); await call.stop();
 });
 
 test("a state poll returning after stop cannot rebind or restart speech", async () => {

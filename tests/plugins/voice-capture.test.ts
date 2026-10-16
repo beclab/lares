@@ -346,3 +346,24 @@ test("a live microphone with only room noise times out without rebuilding the li
   assert.equal(reset, 0);
   assert.equal(transcribed, 0);
 });
+
+test("manual host capture keeps speech followed by silence until explicit finish", async () => {
+  let wake: () => void = () => {}; let transcribed = 0;
+  const audio = Buffer.concat([pcm(16, .2), pcm(80, 0)]);
+  const capture = createCaptureSession({ open: async () => ({ ready: true }), read: async (offset: number) => audio.subarray(offset), close: async () => {},
+    transcribe: async () => { transcribed++; return "manual turn"; }, now: () => 0,
+    sleep: () => new Promise<void>((resolve) => { wake = resolve; }),
+  });
+  await capture.start({ manual: true }); await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(capture.status().phase, "recording"); assert.equal(transcribed, 0);
+  capture.stop(false); wake(); const result = await settle(capture, "done");
+  assert.equal(result.text, "manual turn"); assert.equal(transcribed, 1);
+});
+test("manual host capture at the recording bound reports an error without submitting", async () => {
+  let clock = 0, transcribed = 0;
+  const capture = createCaptureSession({ open: async () => ({ ready: true }), read: async () => { clock = 61000; return pcm(16, .2); }, close: async () => {},
+    transcribe: async () => { transcribed++; return "should not submit"; }, now: () => clock,
+  });
+  await capture.start({ manual: true }); const result = await settle(capture, "error");
+  assert.equal(result.error, "voice_capture_limit"); assert.equal(transcribed, 0);
+});

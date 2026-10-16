@@ -109,7 +109,9 @@ export async function saveVoiceSettings(patch) {
     body: JSON.stringify(patch),
   });
   if (!res.ok) throw new Error(String(res.status));
-  return loadVoiceSettings({ force: true });
+  const next = await loadVoiceSettings({ force: true });
+  globalThis.window?.dispatchEvent?.(new Event("lares-voice-settings"));
+  return next;
 }
 
 /** Reading mode and the GPU slicing it needs; see core/voice/gpu-mode.js. */
@@ -239,7 +241,10 @@ export async function postBluetoothReady(signal) {
  * do ride the port — all succeed.
  */
 export async function postTranscribe(blob, language, signal, options = {}) {
-  const query = language ? `?language=${encodeURIComponent(language)}` : "";
+  const params = new URLSearchParams();
+  if (language !== undefined) params.set("language", language || "");
+  if (options.model !== undefined) params.set("model", options.model || "");
+  const query = params.size ? `?${params}` : "";
   const base = String(options.baseUrl ?? API).replace(/\/$/, "");
   const url = `${base}/transcribe${query}`;
   const headers = { "content-type": blob.type || "audio/webm" };

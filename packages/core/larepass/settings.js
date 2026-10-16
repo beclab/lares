@@ -8,6 +8,8 @@ import {
 
 const modelsStore = createSnapshotStore();
 const voiceStore = createSnapshotStore();
+const voiceListeners = new Set();
+export function subscribeVoiceSettings(listener) { voiceListeners.add(listener); const current = voiceStore.peek(); if (current) listener(current); return () => voiceListeners.delete(listener); }
 const searchStore = createSnapshotStore();
 const conversationStore = createSnapshotStore();
 const conversationListeners = new Set();
@@ -112,7 +114,9 @@ export function createHostSettings(request) {
         await request("/api/lares/voice/config", { method: "POST", body: patch }),
         "/api/lares/voice/config",
       );
-      return this.voice(true);
+      const value = await this.voice(true);
+      for (const listener of voiceListeners) listener(value);
+      return value;
     },
     async search(options = {}) {
       const query = options.force ? "?refresh=1" : "";

@@ -15,7 +15,7 @@ function panelHarness() {
   const panel = createVoicePanel({ complete: async (value: any) => { completed.push(value); }, create: async (options: any) => {
     let say: any;
     const controller = createVoiceController({ onTranscript: options.onTranscript,
-      input: { capture: () => new Promise((resolve) => { say = resolve; }), stop: () => say("dictated"), cancel: () => say("") },
+      input: { capture: ({ onReady }: any) => { onReady?.(); return new Promise((resolve) => { say = resolve; }); }, stop: () => say("dictated"), cancel: () => say("") },
       agent: { create: async () => "new", submit: async () => {}, running: async () => false, cancel: () => assert.fail("cancel task") }, output: { stop() {} } });
     const call = { controller, options, start: (args: any) => controller.start(args), stop: () => controller.disconnect(), pause: () => controller.pause(), resume: () => controller.resume(), say: (text: string) => say(text) };
     calls.push(call); return call;

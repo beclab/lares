@@ -6,6 +6,9 @@ export { STT_LANGUAGE_CHOICES, VOICE_AUTO, voiceMenuValue, voiceValueFromMenu } 
 
 import { VOICE_DEFAULTS as DEFAULTS, VOICE_PRESETS } from "./options.js";
 
+import { DICTATION_PRESETS, validateDictationProfiles } from "./dictation.js";
+import { validateVoiceShortcuts } from "./shortcuts.js";
+
 const WRITABLE = new Set(Object.keys(DEFAULTS));
 const SUPPORTED_LANGUAGES = new Set(["", ...STT_LANGUAGE_CHOICES.map((item) => item.id)]);
 const SAFE_MODEL = /^[^\u0000-\u001f\u007f]{0,512}$/;
@@ -20,6 +23,14 @@ export function validateConfigPatch(raw) {
   const patch = {};
   for (const [key, value] of Object.entries(raw)) {
     if (!WRITABLE.has(key)) invalid(`unknown voice setting: ${key}`);
+    if (key === "dictationPreset") {
+      if (!DICTATION_PRESETS.includes(value)) invalid("invalid dictation preset");
+      patch[key] = value; continue;
+    }
+    if (key === "dictationProfiles" || key === "dictationShortcuts") {
+      try { patch[key] = key === "dictationProfiles" ? validateDictationProfiles(value) : validateVoiceShortcuts(value); } catch { invalid("invalid dictation configuration"); }
+      continue;
+    }
     if (key === "preset") {
       if (!VOICE_PRESETS.includes(value)) invalid("invalid voice preset");
       patch[key] = value; continue;
@@ -33,7 +44,7 @@ export function validateConfigPatch(raw) {
       patch[key] = value;
       continue;
     }
-    if (key === "speak" || key === "streaming" || key === "dictationCleanup") {
+    if (key === "speak" || key === "streaming") {
       if (typeof value !== "boolean") invalid(`${key} must be a boolean`);
       patch[key] = value;
       continue;
@@ -61,12 +72,13 @@ function configPath() {
 /** @returns {typeof DEFAULTS} */
 export function readConfig() {
   const stored = readJsonFile(configPath());
-  const merged = { ...DEFAULTS };
+  const merged = structuredClone(DEFAULTS);
   for (const key of Object.keys(DEFAULTS)) {
     if (stored?.[key] !== undefined) {
       try { Object.assign(merged, validateConfigPatch({ [key]: stored[key] })); } catch {}
     }
   }
+  if (!stored?.dictationPreset && typeof stored?.dictationCleanup === "boolean") merged.dictationPreset = stored.dictationCleanup ? "clean" : "raw";
   return merged;
 }
 

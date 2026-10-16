@@ -864,11 +864,11 @@ export function createChatRuntime(client) {
     },
     voiceSocket(ticket) { return client.voiceSocket(ticket); },
     voiceRequest(path, options) { return client.voiceRequest(path, options); },
-    transcribe(blob, language, signal) {
+    transcribe(blob, language, signal, model) {
       if (typeof client.transcribe !== "function") {
         return Promise.reject(new Error("voice_failed"));
       }
-      return client.transcribe(blob, language, signal);
+      return client.transcribe(blob, language, signal, model);
     },
     reportLog(scope, event, fields) {
       if (typeof client.reportLog !== "function") return Promise.resolve(false);

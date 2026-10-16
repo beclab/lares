@@ -3,7 +3,7 @@ import { createDeviceInput } from "./device-input.js";
 import { createHostInput } from "./host-input.js";
 import { mintRpcId } from "../larepass/rpc.js";
 
-export function createVoiceConversation({ request, transcribe, playback, onReply = () => {}, onPhase, mode = () => "queue", device = "device", metric = () => {}, readAloud = true, preset, presentationSession = false, endpointSilenceMs, idleTimeoutMs, recoveryTimeoutMs, onText = () => {}, onTranscript = null, input: inputPort }) {
+export function createVoiceConversation({ request, transcribe, playback, onReply = () => {}, onPhase, mode = () => "queue", device = "device", metric = () => {}, readAloud = true, preset, presentationSession = false, endpointSilenceMs, idleTimeoutMs, recoveryTimeoutMs, onText = () => {}, onTranscript = null, input: inputPort, captureConfig }) {
   const voiceId = mintRpcId();
   const headers = { "x-lares-voice-id": voiceId, "x-lares-voice-device": device };
   let timer = null;
@@ -16,6 +16,7 @@ export function createVoiceConversation({ request, transcribe, playback, onReply
   let submitted = false;
   let finalSeen = false;
   let continuous = false;
+  let manualCapture = false;
   let reading = false;
   const call = async (path, body, signal) => {
     const res = await request(`/api/lares/voice${path}`, { method: body === undefined ? "GET" : "POST", headers: { ...headers, "x-lares-voice-speaking": controller.getSnapshot().userSpeaking ? "true" : "false" }, ...(body === undefined ? {} : { body }), signal });
@@ -23,10 +24,10 @@ export function createVoiceConversation({ request, transcribe, playback, onReply
     return res.body;
   };
   const input = inputPort ?? (device === "headset" ? createHostInput({
-    start: (signal) => call("/capture", {}, signal), status: (signal) => call("/capture", undefined, signal),
+    start: (signal) => call("/capture", { config: captureConfig, manual: manualCapture || Boolean(onTranscript) }, signal), status: (signal) => call("/capture", undefined, signal),
     stop: () => call("/capture/stop", {}), cancel: () => call("/capture/cancel", {}),
   }) : createDeviceInput({ transcribe, onPhase, endpointSilenceMs }));
-  const controller = createVoiceController({ voiceId, input, idleTimeoutMs, recoveryTimeoutMs, onExpired: () => stop(), onTranscript: onTranscript ? async (value) => { const cleaned = await call("/dictation/clean", { text: value.text }, value.signal); value.signal.throwIfAborted(); if (typeof cleaned.text !== "string") throw new Error("voice_cleanup_failed"); await onTranscript({ ...value, text: cleaned.text }); if (!continuous) await stop(); } : null, metric: (event) => {
+  const controller = createVoiceController({ voiceId, input, idleTimeoutMs, recoveryTimeoutMs, onExpired: () => stop(), onTranscript: onTranscript ? async (value) => { await onTranscript(value); if (!continuous) await stop(); } : null, metric: (event) => {
     metric(event);
     void call("/session/metric", { stage: event.stage, durationMs: event.durationMs }).catch(() => {});
   }, output: { async stop() { playback.stop(); await call("/playback/stop", {}); } }, agent: {
@@ -55,6 +56,7 @@ export function createVoiceConversation({ request, transcribe, playback, onReply
       if (reply?.text && !reply.silent) onText(reply.text);
       const key = reply ? `${state.sessionId}:${reply.key}` : null;
       lastReplyKey = key;
+      if (["recording", "transcribing"].includes(controller.getSnapshot().capture)) mutedKey = key;
       const reserve = readAloud && key !== mutedKey && reply?.text && !reply.silent && key !== spokenKey;
       if (reserve) spokenKey = key;
       controller.observeAgent(Boolean(state.running), Boolean(reserve));
@@ -91,19 +93,21 @@ export function createVoiceConversation({ request, transcribe, playback, onReply
       else controller.observePlayback(playing);
     },
     get sessionId() { return lastSessionId; },
-    async start({ sessionId = null, continuous: nextContinuous = false } = {}) {
+    async start({ sessionId = null, continuous: nextContinuous = false, manual = false, shouldStart = () => true } = {}) {
+      manualCapture = manual;
       continuous = nextContinuous; submitted = false; finalSeen = false; spokenKey = null;
       disposed = false; version = -1;
       clearTimeout(timer);
       const initial = onTranscript ? {} : await call("/session", { sessionId, readAloud, presentationSession, ...(preset ? { preset } : {}) });
-      await controller.start({ sessionId, continuous, running: initial.running });
+      if (!shouldStart()) { await stop(); return; }
+      await controller.start({ sessionId, continuous, manual, running: initial.running, shouldStart });
       controller.setOutputMuted(!readAloud);
       if (!onTranscript) void watch();
     },
     stop,
     async pause() { clearTimeout(timer); await controller.pause(); },
-    async resume() {
-      if (onTranscript) { disposed = false; await controller.resume(); return; }
+    async resume(options = {}) {
+      if (onTranscript) { disposed = false; await controller.resume(options); return; }
       const current = await call("/session");
       version = current.version;
       mutedKey = current.utterance ? `${current.sessionId}:${current.utterance.key}` : null;
@@ -111,7 +115,7 @@ export function createVoiceConversation({ request, transcribe, playback, onReply
       if (!current.active) await call("/session", { sessionId: lastSessionId, readAloud });
       else await call("/session/resume", {});
       disposed = false;
-      await controller.resume();
+      await controller.resume(options);
       void watch();
     },
     async setReadAloud(value) {
