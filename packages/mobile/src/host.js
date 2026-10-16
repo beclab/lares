@@ -270,6 +270,10 @@ export function createHostClient(ports = {}) {
         request: direct,
       });
     },
+    voiceSocket(ticket) {
+      const auth = socketProtocols(ports);
+      return new WebSocket(muxWsUrl(urlFor(`${VOICE_API}/realtime`), pageOrigin()), ["lares-voice", `lares-ticket.${ticket}`, ...(Array.isArray(auth) ? auth : auth ? [auth] : [])]);
+    },
     voiceRequest(path, options) { return request(path, options); },
     transcribe(blob, language, signal) {
       return postTranscribe(blob, language, signal, {

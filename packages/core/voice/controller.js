@@ -27,8 +27,7 @@ export function createVoiceController({ input, agent, output, metric = () => {},
     const old = take;
     take = null;
     old?.abort.abort();
-    await input.cancel?.();
-    change({ capture: "idle" });
+    try { if (old) await input.cancel?.(); } finally { change({ capture: "idle" }); }
   };
   const stopPlayback = async () => {
     const started = now();
@@ -38,12 +37,15 @@ export function createVoiceController({ input, agent, output, metric = () => {},
   };
   const listen = async () => {
     if (state.connection !== "open" || take || state.capture !== "idle") return;
-    if ((state.agent !== "idle" || state.playback !== "idle") && state.continuous && !input.capabilities?.bargeIn) return;
+    if (state.continuous && (
+      (state.agent !== "idle" && !input.capabilities?.listenWhileWorking)
+      || (state.playback !== "idle" && !input.capabilities?.bargeIn)
+    )) return;
     const run = { epoch, abort: new AbortController(), id: mintRpcId(), started: now() };
     take = run;
     change({ capture: "recording", error: null });
     try {
-      const text = String(await input.capture({ signal: run.abort.signal, onSpeech: () => {
+      const text = String(await input.capture({ signal: run.abort.signal, continuous: state.continuous, onSpeech: () => {
         if (live(run) && input.capabilities?.bargeIn) void stopPlayback();
       }, onTranscribing: () => { if (live(run)) change({ capture: "transcribing" }); } }) ?? "").trim();
       if (!live(run)) return;
@@ -57,7 +59,7 @@ export function createVoiceController({ input, agent, output, metric = () => {},
     } catch (error) {
       if (live(run)) {
         change({ connection: "paused", capture: "idle", error: error.code || error.message || "voice_failed" });
-        await output.stop();
+        try { await output.stop(); } catch {}
       }
     } finally {
       if (take === run) {
@@ -73,12 +75,14 @@ export function createVoiceController({ input, agent, output, metric = () => {},
     getSnapshot: () => state,
     bindSession(sessionId) { if (sessionId) change({ sessionId }); },
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
-    async start({ sessionId = null, continuous = false } = {}) {
-      epoch += 1;
+    async start({ sessionId = null, continuous = false, running = false } = {}) {
+      const startedEpoch = ++epoch;
       creating = null;
       await cancelInput();
+      if (startedEpoch !== epoch) return;
       await stopPlayback();
-      change({ voiceId: mintRpcId(), sessionId, continuous, connection: "open", agent: "idle", error: null });
+      if (startedEpoch !== epoch) return;
+      change({ voiceId: mintRpcId(), sessionId, continuous, connection: "open", agent: running ? "running" : "idle", error: null });
       void listen();
     },
     listen,
@@ -99,8 +103,7 @@ export function createVoiceController({ input, agent, output, metric = () => {},
     async disconnect(code = null) {
       epoch += 1;
       change({ connection: code ? "paused" : "closed", error: code });
-      await cancelInput();
-      await stopPlayback();
+      await Promise.allSettled([cancelInput(), stopPlayback()]);
     },
     async resume() {
       if (state.connection !== "paused") return;

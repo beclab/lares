@@ -67,3 +67,26 @@ test("device lease rejects a different owner until release or expiry", () => {
   now = 101; lease.acquire("second");
   lease.release("first"); assert.equal(lease.owns("second"), true);
 });
+
+test("concurrent starts cannot bind a capture to the losing session", async () => {
+  const captures: string[] = [];
+  let controller: any;
+  controller = createVoiceController({
+    input: { capture: () => { captures.push(controller.getSnapshot().sessionId); return new Promise(() => {}); }, cancel() {} },
+    output: { stop: async () => { await flush(); } },
+    agent: { create: async () => "new", submit: async () => {}, cancel: async () => {}, running: async () => false },
+  });
+  await Promise.all([controller.start({ sessionId: "first" }), controller.start({ sessionId: "second" })]);
+  assert.deepEqual(captures, ["second"]);
+  await controller.disconnect();
+});
+
+test("continuous listening keeps waiting through silence without creating a task", async () => {
+  const h = harness();
+  await h.controller.start({ continuous: true });
+  h.say(""); await flush();
+  assert.equal(h.creates(), 0);
+  h.say("a valid task"); await flush();
+  assert.equal(h.submitted.length, 1);
+  await h.controller.disconnect();
+});

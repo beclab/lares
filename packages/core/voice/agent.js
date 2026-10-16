@@ -29,7 +29,15 @@ export async function liveAgent(options = {}) {
   return agentIsLive(info, now()) ? info : null;
 }
 
-export async function askAgent(op, fields, options) {
+const requests = new Map();
+export function askAgent(op, fields, options = {}) {
+  const key = voiceDir(options);
+  const result = (requests.get(key) ?? Promise.resolve()).catch(() => {}).then(() => performAgentRequest(op, fields, options));
+  requests.set(key, result);
+  void result.finally(() => { if (requests.get(key) === result) requests.delete(key); }).catch(() => {});
+  return result;
+}
+async function performAgentRequest(op, fields, options) {
   const dir = voiceDir(options);
   const now = options.now ?? Date.now;
   const sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));

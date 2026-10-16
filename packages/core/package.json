@@ -177,6 +177,14 @@
     "./voice/device-input": "./voice/device-input.js",
     "./voice/host-input": "./voice/host-input.js",
     "./voice/conversation": "./voice/conversation.js",
-    "./voice/browser-playback": "./voice/browser-playback.js"
+    "./voice/browser-playback": "./voice/browser-playback.js",
+    "./voice/realtime": "./voice/realtime.js",
+    "./voice/realtime-gateway": "./voice/realtime-gateway.js",
+    "./voice/realtime-audio": "./voice/realtime-audio.js",
+    "./voice/realtime-conversation": "./voice/realtime-conversation.js",
+    "./voice/host-service": "./voice/host-service.js"
+  },
+  "dependencies": {
+    "ws": "^8.22.0"
   }
 }

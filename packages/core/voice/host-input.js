@@ -2,7 +2,7 @@ export function createHostInput(port) {
   let abort = null;
   return {
     capabilities: { duplex: false, bargeIn: false, audio: "pcm16-16000" },
-    async capture({ signal, onTranscribing } = {}) {
+    async capture({ signal, onTranscribing, continuous = false } = {}) {
       abort = new AbortController();
       const current = abort;
       const cancel = () => current.abort();
@@ -15,7 +15,10 @@ export function createHostInput(port) {
           const state = await port.status(current.signal);
           if (state.phase === "transcribing") onTranscribing?.();
           if (state.phase === "done") return state.text;
-          if (state.phase === "error") throw new Error(state.error);
+          if (state.phase === "error") {
+            if (continuous && ["voice_no_input", "voice_too_short"].includes(state.error)) return "";
+            throw new Error(state.error);
+          }
           if (state.phase === "idle") return "";
           await new Promise((resolve) => {
             const finish = () => { clearTimeout(timer); current.signal.removeEventListener("abort", finish); resolve(); };

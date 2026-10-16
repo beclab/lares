@@ -60,6 +60,7 @@ export function createVoiceAgentSession(api, { sessionId = null, preset, workspa
     ready = new Promise((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
     readyTimer = setTimeout(() => { rejectReady(new Error("voice_agent_timeout")); following.abort(); }, 15_000);
     ready.catch(() => {});
+    following.signal.addEventListener("abort", () => rejectReady(new Error("voice_session_closed")), { once: true });
     followTask = (async () => {
       try {
         for await (const frame of api.follow({ address: { kind: "session", sessionId }, assistantStream: true }, following.signal)) {
@@ -93,6 +94,11 @@ export function createVoiceAgentSession(api, { sessionId = null, preset, workspa
   return {
     snapshot,
     async open() { if (sessionId) { recovering = true; await follow(); } },
+    async resume() {
+      following?.abort(); await followTask;
+      closed = false; recovering = true; error = null; utterance = null; cursor = -1; decoder.reset();
+      if (sessionId) await follow();
+    },
     async submit(text, requestId = mintRpcId(), mode = "queue") {
       if (closed) throw new Error("voice_session_closed");
       if (!String(text).trim()) return snapshot();
@@ -104,7 +110,7 @@ export function createVoiceAgentSession(api, { sessionId = null, preset, workspa
         else await ready;
         pending = { id: requestId, seen: false, at: Date.now() };
         running = true; utterance = null; error = null; firstTextAt = null; version++;
-        await api.prompt({ sessionId, requestId, mode: mode === "steer" ? "steer" : "queue", content: [{ type: "text", text }] });
+        await api.prompt({ sessionId, requestId, mode: mode === "steer" ? "steer" : "queue", content: [{ type: "text", text }] }, following.signal);
         return snapshot();
       })();
       // Keep failed/unknown submissions too: a retry must never execute the task twice.

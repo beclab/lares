@@ -3,7 +3,7 @@ import { createDeviceInput } from "./device-input.js";
 import { createHostInput } from "./host-input.js";
 import { mintRpcId } from "../larepass/rpc.js";
 
-export function createVoiceConversation({ request, transcribe, playback, onReply = () => {}, onPhase, mode = () => "queue", device = "device", metric = () => {}, readAloud = true }) {
+export function createVoiceConversation({ request, transcribe, playback, onReply = () => {}, onPhase, mode = () => "queue", device = "device", metric = () => {}, readAloud = true, input: inputPort }) {
   const voiceId = mintRpcId();
   const headers = { "x-lares-voice-id": voiceId, "x-lares-voice-device": device };
   let timer = null;
@@ -20,10 +20,10 @@ export function createVoiceConversation({ request, transcribe, playback, onReply
     if (!res?.ok) throw new Error(res?.body?.error?.code || "voice_failed");
     return res.body;
   };
-  const input = device === "headset" ? createHostInput({
+  const input = inputPort ?? (device === "headset" ? createHostInput({
     start: (signal) => call("/capture", {}, signal), status: (signal) => call("/capture", undefined, signal),
     stop: () => call("/capture/stop", {}), cancel: () => call("/capture/cancel", {}),
-  }) : createDeviceInput({ transcribe, onPhase });
+  }) : createDeviceInput({ transcribe, onPhase }));
   const controller = createVoiceController({ input, metric: (event) => {
     metric(event);
     void call("/session/metric", { stage: event.stage, durationMs: event.durationMs }).catch(() => {});
@@ -67,7 +67,8 @@ export function createVoiceConversation({ request, transcribe, playback, onReply
     try { await poll(); }
     catch { await controller.disconnect("voice_disconnected"); return; }
     if (!continuous && finalSeen && controller.getSnapshot().playback === "idle") {
-      await stop(); return;
+      try { await stop(); } catch { await controller.disconnect("voice_disconnected"); }
+      return;
     }
     if (!disposed) timer = setTimeout(watch, 250);
   };
@@ -88,14 +89,15 @@ export function createVoiceConversation({ request, transcribe, playback, onReply
       continuous = nextContinuous; submitted = false; finalSeen = false; spokenKey = null;
       disposed = false; version = -1;
       clearTimeout(timer);
-      await call("/session", { sessionId, readAloud });
-      await controller.start({ sessionId, continuous });
+      const initial = await call("/session", { sessionId, readAloud });
+      await controller.start({ sessionId, continuous, running: initial.running });
       void watch();
     },
     stop,
     async resume() {
       const current = await call("/session");
       if (!current.active) await call("/session", { sessionId: lastSessionId, readAloud });
+      else await call("/session/resume", {});
       disposed = false;
       await controller.resume();
       void watch();

@@ -62,3 +62,22 @@
     opacity: 0.25;
   }
 }
+
+.lares-voice-mic[data-connected="true"] {
+  width: auto;
+  min-width: 28px;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+
+.lares-voice-call-controls {
+  flex-wrap: wrap;
+  max-width: 360px;
+}
+
+.lares-voice-caption {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

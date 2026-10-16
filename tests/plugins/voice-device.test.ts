@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createVoiceCapture } from "../../packages/mobile/src/chat/voice.js";
+import { createVoiceCapture } from "@olares/lares-core/voice/browser-capture";
 import { defaultRequest } from "../../packages/mobile/src/host.js";
 
 test("the default request port sends a recorded Blob as bytes, not as JSON", async () => {

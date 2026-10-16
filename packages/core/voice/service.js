@@ -1,3 +1,6 @@
+import { writeReport } from "../log/report.js";
+import { createPcmResampler, pcmSamples } from "./realtime-audio.js";
+import { realtimeModelIds, validatedRealtimeModels } from "./realtime.js";
 import { readConfig, validateConfigPatch, writeConfig } from "./config.js";
 import {
   chartModelId,
@@ -57,7 +60,7 @@ export function voiceScope(id, owner = "", device = "headset") {
   for (const [other, scope] of scopes) {
     if (Date.now() - scope.seen > 120_000 && !deviceLease.owns(scope)) {
       scopes.delete(other);
-      void scope.duplex.interrupt();
+      void scope.duplex.interrupt().catch(() => {});
       scope.capture?.stop(true);
       void scope.session?.close();
     }
@@ -85,7 +88,7 @@ export function voiceScope(id, owner = "", device = "headset") {
 function scopedPlayback(scope) {
   if (scope.device === "device") return Promise.resolve({ skipped: true });
   deviceLease.acquire(scope);
-  return openBluetoothPlayback().then((player) => {
+  return openBluetoothPlayback({ waitForDrain: true }).then((player) => {
     if (player.skipped) deviceLease.release(scope);
     return {
       ...player,
@@ -131,6 +134,8 @@ export async function voiceModelsPayload(options) {
     models: ids,
     stt,
     tts,
+    realtime: realtimeModelIds(models),
+    realtimeReady: validatedRealtimeModels(models),
     selected: pickSttModelId(models, config.model),
     ttsSelected: pickTtsModelId(models, config.ttsModel),
     charts,
@@ -139,8 +144,10 @@ export async function voiceModelsPayload(options) {
 
 export async function saveVoiceConfig(body) {
   const patch = validateConfigPatch(body);
-  if (patch.model || patch.ttsModel) {
+  if (patch.model || patch.ttsModel || patch.realtimeModel || patch.backend === "realtime") {
     const models = await listModels();
+    if (patch.realtimeModel && !realtimeModelIds(models).includes(patch.realtimeModel)) throw new VoiceError("voice_model_unavailable", 400, "Realtime model is not available");
+    if (patch.backend === "realtime" && !validatedRealtimeModels(models).includes(patch.realtimeModel || readConfig().realtimeModel)) throw new VoiceError("voice_realtime_unavailable", 409, "Realtime model has not been validated");
     if (patch.model && !sttModelIds(models).includes(patch.model)) {
       throw new VoiceError("voice_model_unavailable", 400, "selected voice model is not available");
     }
@@ -307,6 +314,8 @@ function startReadout(coordinator, id, model, options) {
   let wake = () => {};
   const readout = {
     id,
+    createdAt: Date.now(),
+    firstAudio: false,
     active: lease.active,
     signal: lease.signal,
     segments: [],
@@ -380,6 +389,10 @@ async function readAloud(readout, model, voice, lease, options) {
   let feeding = Promise.resolve();
   const writeChunk = (chunk) => {
     if (!chunk?.length) return;
+    if (!readout.firstAudio) {
+      readout.firstAudio = true;
+      if (options.scope) writeReport({ scope: "voice", event: "metric", voiceId: options.scope.id, stage: "synthesis_first_audio", durationMs: Date.now() - readout.createdAt, queueDepth: readout.segments.length });
+    }
     pcm.push(chunk);
     sentence.push(chunk);
     if (!lease.active()) return;
@@ -468,13 +481,14 @@ export function languageForTranscribe(requestedLanguage, configLanguage) {
   return validateConfigPatch({ language: requestedLanguage }).language || undefined;
 }
 
-export async function transcribeFromHttp({ languageParam, contentType, bytes }) {
+export async function transcribeFromHttp({ languageParam, contentType, bytes, signal }) {
   const config = readConfig();
   const text = await transcribeAudio({
     bytes,
     contentType,
     language: languageForTranscribe(languageParam, config.language),
     preferred: config.model,
+    signal,
   });
   return { text };
 }
@@ -483,10 +497,10 @@ function createHostCapture(scope) {
   return createCaptureSession({
     async open() {
       deviceLease.acquire(scope);
-      try { return await beginHostCapture(); } catch (error) { deviceLease.release(scope); throw error; }
+      try { const opened = await beginHostCapture(); if (!opened.ready) deviceLease.release(scope); return opened; } catch (error) { deviceLease.release(scope); throw error; }
     },
-    read(from) { deviceLease.touch(scope); return readHostCapture(from); },
-    async close() { try { await endHostCapture(); } finally { deviceLease.release(scope); } },
+    read(from) { if (!deviceLease.owns(scope)) throw new VoiceError("voice_device_busy", 409, "audio lease expired"); deviceLease.touch(scope); return readHostCapture(from); },
+    async close() { if (!deviceLease.owns(scope)) return; try { await endHostCapture(); } finally { deviceLease.release(scope); } },
     reset: resetHostCapture,
     transcribe(wav, signal) {
       const config = readConfig();
@@ -514,6 +528,7 @@ export async function transcribeAudio({ bytes, contentType, language, preferred,
   }
   if (bytes.length === 0) throw new VoiceError("voice_audio_unreadable", 400, "audio content is empty");
   const pcm = await normalizeSttPcm(bytes, contentType);
+  signal?.throwIfAborted();
   return transcribe({
     bytes: pcm,
     filename: "voice.wav",
@@ -523,4 +538,68 @@ export async function transcribeAudio({ bytes, contentType, language, preferred,
     preferred,
     signal,
   });
+}
+
+
+/** Host input and output share one physical lease; half-duplex is intentional. */
+export async function openRealtimeHostAudio(scope, send) {
+  if (scope.device !== "headset") return null;
+  deviceLease.acquire(scope);
+  let closed = false;
+  let capturing = false;
+  let offset = 0;
+  let player = null;
+  let timer = null;
+  let generation = 0;
+  const convert = createPcmResampler(16000);
+  const start = async () => {
+    if (closed || capturing) return;
+    const opened = await beginHostCapture();
+    if (!opened.ready) throw new VoiceError("voice_bluetooth_not_ready", 503, "headset is not ready");
+    capturing = true; offset = opened.offset;
+  };
+  const read = async () => {
+    if (closed) return;
+    if (!deviceLease.owns(scope)) throw new VoiceError("voice_device_busy", 409, "audio lease expired");
+    deviceLease.touch(scope);
+    if (capturing) {
+      const bytes = await readHostCapture(offset, { maxBytes: 32_000 });
+      offset += bytes.length;
+      if (bytes.length) send({ type: "input_audio_buffer.append", audio: Buffer.from(convert(pcmSamples(bytes))).toString("base64") });
+    }
+    if (!closed) timer = setTimeout(() => { void read().catch(() => scope.realtimeSocket?.close()); }, 100);
+  };
+  try { await start(); void read(); }
+  catch (error) { deviceLease.release(scope); throw error; }
+  return {
+    async write(bytes) {
+      if (closed) return;
+      if (capturing) { capturing = false; await endHostCapture(); }
+      if (!player) {
+        player = await openBluetoothPlayback({ waitForDrain: true });
+        if (player.skipped) throw new VoiceError("voice_device_unavailable", 503, "headset speaker is unavailable");
+      }
+      deviceLease.touch(scope);
+      await player.write(bytes);
+    },
+    async finish() {
+      const epoch = generation;
+      const current = player; player = null;
+      await current?.close();
+      if (!closed && epoch === generation) await start();
+    },
+    async interrupt() {
+      generation++;
+      player?.abort(); player = null;
+      await stopBluetoothPlayback();
+      if (!closed) await start();
+    },
+    async stop() {
+      if (closed) return;
+      closed = true; generation++; clearTimeout(timer);
+      player?.abort(); player = null;
+      try { if (deviceLease.owns(scope)) { await endHostCapture(); await stopBluetoothPlayback(); } }
+      finally { deviceLease.release(scope); }
+    },
+  };
 }

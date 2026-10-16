@@ -29,17 +29,6 @@ function steeringAvailable(snap) {
   return subagent === null || subagent.address?.mode === "continuable";
 }
 
-async function sendTranscript(scope, sessionId, text) {
-  const spoken = String(text ?? "").trim();
-  if (!spoken) return;
-  const session = scope.sessions.binding(sessionId)?.session;
-  if (!session) throw new Error("voice_failed");
-  const snap = session.getSnapshot();
-  const preferred = scope.configForms.get("ui-conversation").getSnapshot().value?.busyEnter;
-  const mode = resolveSubmitMode(Boolean(snap.running), false, steeringAvailable(snap), preferred);
-  const outcome = await scope.conversation.sendSession(session, spoken, [], mode);
-  if (outcome?.kind === "error") throw new Error("voice_failed");
-}
 
 export function apply(ctx) {
   installPluginStyle(ctx, "@lares/composer-voice", PLUGIN_CSS, "lares-composer-voice-css");
@@ -72,7 +61,6 @@ export function apply(ctx) {
               const preferred = scope.configForms.get("ui-conversation").getSnapshot().value?.busyEnter;
               return resolveSubmitMode(Boolean(snap?.running), false, steeringAvailable(snap || {}), preferred);
             },
-            send: (sessionId, text) => sendTranscript(scope, sessionId, text),
           });
         },
       ),

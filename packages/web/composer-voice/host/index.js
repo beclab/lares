@@ -1,3 +1,5 @@
+import { createVoiceHostService } from "@olares/lares-core/voice/host-service";
+import { registerRealtime } from "./realtime.js";
 /**
  * Voice-input Host routes under /api/lares/voice (STT via /llm/v1 shim).
  */
@@ -29,7 +31,7 @@ import {
 import { bluetoothRequest, ensureBluetoothReady } from "@olares/lares-core/voice/link";
 import { gpuAppAction, gpuModePayload, saveSlicePlan, switchReadingMode } from "@olares/lares-core/voice/gpu-mode";
 import { routerEndUser } from "@olares/lares-core/router/gateway";
-import { createVoiceAgentSession, SPOKEN_PROMPT } from "@olares/lares-core/voice/agent-session";
+import { SPOKEN_PROMPT } from "@olares/lares-core/voice/agent-session";
 import { writeReport } from "@olares/lares-core/log/report";
 
 export const name = "lares-composer-voice";
@@ -180,7 +182,10 @@ async function handleTranscribe(req, res) {
     type: String(contentType),
   });
   try {
+    const controller = new AbortController();
+    res.once("close", () => controller.abort());
     const result = await transcribeFromHttp({
+      signal: controller.signal,
       languageParam: url.searchParams.get("language"),
       contentType,
       bytes,
@@ -196,56 +201,43 @@ async function handleTranscribe(req, res) {
       scope: "voice",
       event: "transcribe-fail",
       code: err?.code || "voice_failed",
-      message: err instanceof Error ? err.message : String(err),
     });
     throw err;
   }
 }
 
 /** @type {Record<string, Record<string, (req, res) => Promise<void>>>} */
-let sessionApi;
+let voiceHost;
+let realtime;
 async function handleVoiceSession(req, res) {
   const scope = scopeFor(req);
   const body = await readJsonObject(req);
-  if (scope.active) throw Object.assign(new Error("voice_session_active"), { code: "voice_session_active", status: 409 });
-  if (body.sessionId != null && (typeof body.sessionId !== "string" || body.sessionId.length > 256)) throw Object.assign(new Error("invalid session"), { code: "voice_session_invalid", status: 400 });
-  if (body.sessionId) await sessionApi.inspect(body.sessionId);
-  await scope.session?.close();
-  scope.session = createVoiceAgentSession(sessionApi, {
-    sessionId: body.sessionId || null,
-    preset: process.env.LARES_VOICE_AGENT_PRESET || undefined,
-    metric: (fields) => writeReport({ scope: "voice", event: "metric", voiceId: scope.id, ...fields }),
-  });
-  await scope.session.open();
-  scope.active = true;
-  scope.readAloud = body.readAloud === true;
-  sendJson(res, 200, scope.session.snapshot());
+  sendJson(res, 200, await voiceHost.open(scope, body));
 }
 async function handleVoiceState(req, res) {
   const scope = scopeFor(req);
-  sendJson(res, 200, { ...scope.session?.snapshot(), active: scope.active === true });
+  sendJson(res, 200, voiceHost.state(scope));
 }
 async function handleVoicePrompt(req, res) {
   const scope = scopeFor(req);
   const body = await readJsonObject(req);
-  if (!scope.active || !scope.session) throw Object.assign(new Error("voice session closed"), { code: "voice_session_closed", status: 409 });
-  if (typeof body.text !== "string" || body.text.length > 16_000 || typeof body.requestId !== "string" || body.requestId.length > 128) throw Object.assign(new Error("invalid voice task"), { code: "voice_session_invalid", status: 400 });
-  sendJson(res, 200, await scope.session.submit(body.text, body.requestId, body.mode));
+  sendJson(res, 200, await voiceHost.prompt(scope, body));
 }
 async function handleVoiceCancel(req, res) {
-  await scopeFor(req).session?.cancel();
+  await voiceHost.cancel(scopeFor(req));
   sendJson(res, 200, { cancelled: true });
 }
 async function handleVoiceClose(req, res) {
   const scope = scopeFor(req);
-  scope.active = false;
+  await voiceHost.close(scope);
   captureStop(true, scope);
   await interruptSpeech(scope);
-  await scope.session?.close();
   sendJson(res, 200, { closed: true });
 }
 
 const ROUTES = {
+  "/realtime/ticket": { POST: async (req, res) => sendJson(res, 200, await realtime.ticket(scopeFor(req))) },
+  "/session/resume": { POST: async (req, res) => { const scope = scopeFor(req); await voiceHost.resume(scope); sendJson(res, 200, voiceHost.state(scope)); } },
   "/session/metric": { POST: async (req, res) => {
     const scope = scopeFor(req);
     const value = await readJsonObject(req);
@@ -305,7 +297,8 @@ async function voiceHandler(req, res) {
  * @param {import('@deepseek-ai/cordis').Context} ctx
  */
 export function apply(ctx) {
-  sessionApi = ctx.sessionController;
+  voiceHost = createVoiceHostService(ctx.sessionController, { metric: (fields) => writeReport({ scope: "voice", event: "metric", ...fields }) });
+  ctx.effect(() => { realtime = registerRealtime(ctx); return () => realtime.dispose(); });
   ctx.effect(
     () => ctx.webServer.register({ kind: "prefix", path: ROUTE_PREFIX, handler: voiceHandler }),
     "lares-composer-voice-routes",

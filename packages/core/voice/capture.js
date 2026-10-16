@@ -7,6 +7,8 @@ const FRAME_MS = 32;
 const NO_INPUT_MS = 10_000;
 const POLL_MS = 40;
 const CLIENT_LOST_MS = 5000;
+const MAX_CAPTURE_MS = 60_000;
+const MAX_CAPTURE_BYTES = 16_000 * 2 * MAX_CAPTURE_MS / 1000;
 const HOST_RATE = 16_000;
 const PLAYBACK_SETTLE_MS = 320;
 const PLAYBACK_LEADING_MS = 2500;
@@ -167,7 +169,9 @@ export function createCaptureSession(io) {
       try {
         while (run === job && run.phase !== "done" && run.phase !== "error" && run.phase !== "idle") {
           if (run.phase === "recording" && now() - run.seen > CLIENT_LOST_MS) run.cancel = true;
-          const fresh = await io.read(offset);
+          const available = await io.read(offset);
+          const fresh = available.subarray(0, Math.max(0, MAX_CAPTURE_BYTES - pcm.length));
+          if (fresh.length < available.length || now() - started >= MAX_CAPTURE_MS) run.stop = true;
           offset += fresh.length;
           if (fresh.length) {
             pcm = Buffer.concat([pcm, fresh]);

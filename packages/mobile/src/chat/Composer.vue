@@ -182,6 +182,7 @@
       </div>
     </div>
     <div v-if="voiceCall" class="lares-composer__hint" role="status" aria-live="polite">
+      <span v-if="voiceCall.caption">{{ voiceCall.caption }}</span>
       <span>{{ t(`call.${voiceCall.capture === 'recording' ? 'listening' : voiceCall.agent === 'running' ? 'working' : voiceCall.playback !== 'idle' ? 'speaking' : 'waiting'}`) }}</span>
       <button type="button" @click="$emit('voice-action', voiceCall.connection === 'paused' ? 'resume' : 'stop')">{{ t(voiceCall.connection === 'paused' ? 'call.resume' : 'call.end') }}</button>
       <button v-if="voiceCall.playback !== 'idle'" type="button" @click="$emit('voice-action', 'playback')">{{ t('call.stopPlayback') }}</button>
@@ -195,7 +196,7 @@
 </template>
 
 <script>
-import { formatElapsed } from "./voice.js";
+import { formatElapsed } from "@olares/lares-core/voice/recorder";
 import {
   REFERENCE_DEBOUNCE_MS,
   activeReference,

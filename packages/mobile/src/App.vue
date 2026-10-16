@@ -109,6 +109,8 @@ import { pickHostPorts } from "@olares/lares-core/larepass/host";
 import { connectChat } from "./runtime.js";
 import { createT } from "./i18n.js";
 import { failText, withPendingUser } from "./chat/format.js";
+import { captureSource } from "@olares/lares-core/voice/input";
+import { createRealtimeConversation } from "@olares/lares-core/voice/realtime-conversation";
 import { createVoiceConversation } from "@olares/lares-core/voice/conversation";
 import { createAnswerPlayer } from "./chat/playback.js";
 import { createReplySpeaker, createSentencePlayer, speakable } from "@olares/lares-core/voice/speech";
@@ -219,6 +221,7 @@ export default {
       upload: { pending: 0, failures: [] },
       draftImages: [],
       voiceCall: null,
+      voiceCaption: "",
       voicePhase: "idle",
       voiceElapsed: 0,
       voiceError: "",
@@ -1182,7 +1185,15 @@ export default {
       try {
         const settings = await this.runtime.settings.voice(true);
         if (this.sessionId !== target) return;
-        if (settings.config.backend === "realtime") throw new Error("voice_realtime_unavailable");
+        if (settings.config.backend === "realtime") {
+          const conversation = createRealtimeConversation({
+            request: (path, options) => this.runtime.voiceRequest(path, options), socket: (ticket) => this.runtime.voiceSocket(ticket),
+            device: captureSource("mobile", settings.config.device), playback: this.player,
+            onCaption: (text) => { this.voiceCaption = `${this.voiceCaption}${text}`.slice(-300); },
+          });
+          await this.attachVoiceConversation(conversation, target, true);
+          return;
+        }
         this.reader.stop(); this.player?.stop(); this.player?.unlock();
         let conversation;
         const reader = createSentencePlayer({
@@ -1195,23 +1206,26 @@ export default {
         conversation = createVoiceConversation({
           request: (path, options) => this.runtime.voiceRequest(path, options),
           transcribe: (blob, signal) => this.runtime.transcribe(blob, this.voiceLanguage, signal),
-          device: settings.config.device === "headset" ? "headset" : "device",
+          device: captureSource("mobile", settings.config.device),
           readAloud: settings.config.mode === "continuous" || settings.config.speak,
           mode: () => resolveSubmitMode(this.running, false, true, this.busyEnter),
           playback: { stop: () => { reader.stop(); this.player.stop(); } },
           onReply: (reply) => { const value = speakable(reply, settings.config.streaming); if (value) reader.follow(value); },
         });
-        this.voiceConversation = conversation;
-        this.voiceUnsub?.();
-        this.voiceUnsub = conversation.controller.subscribe(() => {
-          const state = conversation.controller.getSnapshot();
-          this.voiceCall = state.connection === "closed" ? null : state;
-          this.voicePhase = state.error ? "error" : state.capture;
-          this.voiceError = state.error || "";
-        });
-        await conversation.start({ sessionId: target || null, continuous: settings.config.mode === "continuous" });
-        if (this.voiceReleased && settings.config.mode !== "continuous") conversation.controller.stopRecording();
+        await this.attachVoiceConversation(conversation, target, settings.config.mode === "continuous");
       } catch (error) { this.voicePhase = "error"; this.voiceError = error.message; }
+    },
+    async attachVoiceConversation(conversation, target, continuous) {
+      this.voiceConversation = conversation;
+      this.voiceUnsub?.();
+      this.voiceUnsub = conversation.controller.subscribe(() => {
+        const state = conversation.controller.getSnapshot();
+        this.voiceCall = state.connection === "closed" ? null : { ...state, caption: this.voiceCaption };
+        this.voicePhase = state.error ? "error" : state.capture;
+        this.voiceError = state.error || "";
+      });
+      await conversation.start({ sessionId: target || null, continuous });
+      if (this.voiceReleased && !continuous) conversation.controller.stopRecording();
     },
     onHoldEnd() {
       this.voiceReleased = true;
@@ -1400,27 +1414,6 @@ export default {
     archiveSession(sessionId) {
       if (!sessionId) return;
       return this.runtime.archiveSession(sessionId);
-    },
-    async sendTranscript(text) {
-      const spoken = String(text ?? "").trim();
-      if (!spoken || !this.sessionId || this.modelBlocked || this.historyLoading || this.upload?.pending) return;
-      const mode = resolveSubmitMode(this.running, false, true, this.busyEnter);
-      this.sending = true;
-      this.pendingUser = this.running ? "" : spoken;
-      this.runtime.pinToBottom();
-      this.pinLog();
-      try {
-        const sent = await this.runtime.send([{ type: "text", text: spoken }], mode);
-        if (!sent.ok) {
-          this.pendingUser = "";
-          this.failed = sent.error?.message || sent.error?.code || "send";
-        }
-      } catch (err) {
-        this.pendingUser = "";
-        this.failed = err instanceof Error ? err.message : "send";
-      } finally {
-        this.sending = false;
-      }
     },
     async send(mode = "queue") {
       const text = this.draft.trim();

@@ -36,6 +36,7 @@
     "@ricky0123/vad-web": "^0.0.31",
     "sentencex": "^1.0.32",
     "sharp": "^0.35.3",
+    "ws": "^8.22.0",
     "yaml": "^2.9.0"
   },
   "devDependencies": {

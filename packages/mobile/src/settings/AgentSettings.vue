@@ -61,6 +61,19 @@
           @click="openSheet('voiceLang')"
         />
       </div>
+      <label class="lares-agent__hint">{{ tVoice('settings.backend') }}
+        <select :value="voice?.config?.backend || 'pipeline'" @change="patchVoice('backend', $event.target.value)">
+          <option value="pipeline">{{ tVoice('settings.backend.pipeline') }}</option>
+          <option v-if="voice?.realtimeReady?.includes(voice?.config?.realtimeModel)" value="realtime">Realtime</option>
+        </select>
+      </label>
+      <label v-if="voice?.realtimeModels?.length" class="lares-agent__hint">{{ tVoice('settings.realtime.model') }}
+        <select :value="voice?.config?.realtimeModel || ''" @change="patchVoice('realtimeModel', $event.target.value)">
+          <option value="" disabled>—</option>
+          <option v-for="model in voice.realtimeModels" :key="model" :value="model">{{ model }}</option>
+        </select>
+      </label>
+      <p class="lares-agent__hint">{{ tVoice('settings.realtime.hint') }}</p>
       <label class="lares-agent__hint">{{ tVoice('settings.mode') }}
         <select :value="voice?.config?.mode || 'single'" @change="patchVoice('mode', $event.target.value)">
           <option value="single">{{ tVoice('settings.mode.single') }}</option>

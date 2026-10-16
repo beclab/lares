@@ -27,6 +27,8 @@ export async function loadVoiceSettings(options = {}) {
       status,
       sttModels: Array.isArray(models.stt) ? models.stt : [],
       ttsModels: Array.isArray(models.tts) ? models.tts : [],
+      realtimeModels: Array.isArray(models.realtime) ? models.realtime : [],
+      realtimeReady: Array.isArray(models.realtimeReady) ? models.realtimeReady : [],
       charts: {
         stt: chartView(models.charts?.stt),
         tts: chartView(models.charts?.tts),

@@ -1,4 +1,11 @@
 export const ZH = {
+  "settings.backend": "语音后端",
+  "settings.backend.pipeline": "STT → Lares → TTS",
+  "settings.realtime.model": "Realtime 模型",
+  "settings.realtime.hint": "Realtime 模型完成实际验收后才可启用。普通语音模式始终可用。",
+  "error.voice_host_upgrade_required": "需要更新 Lares 主机音频助手",
+  "error.voice_device_lost": "音频设备已断开，请重新连接后恢复语音",
+
   "call.start": "开始语音",
   "call.end": "结束语音",
   "call.resume": "恢复语音",
@@ -151,6 +158,13 @@ export const ZH = {
 };
 
 export const EN = {
+  "settings.backend": "Voice backend",
+  "settings.backend.pipeline": "STT → Lares → TTS",
+  "settings.realtime.model": "Realtime model",
+  "settings.realtime.hint": "Realtime is available only after model validation. Pipeline mode remains available.",
+  "error.voice_host_upgrade_required": "Update the Lares host audio helper",
+  "error.voice_device_lost": "Audio device disconnected. Reconnect it and resume voice.",
+
   "call.start": "Start voice",
   "call.end": "End voice",
   "call.resume": "Resume voice",

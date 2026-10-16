@@ -282,6 +282,8 @@ export function VoiceSettings() {
     }),
     h(Notice, { notice: scoped("page") }),
     Group(t("settings.conversation"), null,
+      Row(t("settings.backend"), t("settings.realtime.hint"), h(SettingsSelector, { value: config.backend || "pipeline", items: [{ id: "pipeline", label: t("settings.backend.pipeline") }, ...((view.realtimeReady || []).includes(config.realtimeModel) ? [{ id: "realtime", label: "Realtime" }] : [])], onSelect: (backend) => patch({ backend }), disabled: busy })),
+      (view.realtimeModels || []).length ? Row(t("settings.realtime.model"), null, h(SettingsSelector, { value: config.realtimeModel || "__none__", items: [{ id: "__none__", label: "—", disabled: true }, ...(view.realtimeModels || []).map((id) => ({ id, label: id }))], onSelect: (realtimeModel) => { if (realtimeModel !== "__none__") void patch({ realtimeModel }); }, disabled: busy })) : null,
       Row(t("settings.mode"), null, h(SettingsSelector, { value: config.mode || "single", items: ["single", "continuous"].map((id) => ({ id, label: t(`settings.mode.${id}`) })), onSelect: (mode) => patch({ mode }), disabled: busy })),
       Row(t("settings.device"), null, h(SettingsSelector, { value: config.device || "auto", items: ["auto", "device", "headset"].map((id) => ({ id, label: t(`settings.device.${id}`) })), onSelect: (device) => patch({ device }), disabled: busy })),
     ),

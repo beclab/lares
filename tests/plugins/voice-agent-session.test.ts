@@ -18,7 +18,7 @@ function harness() {
         await new Promise<void>((resolve) => { wake = resolve; signal.addEventListener("abort", resolve, { once: true }); });
       }
     },
-    prompt: async () => { prompted++; if (fail) throw new Error("unknown outcome"); return { accepted: true }; },
+    prompt: async (_request: unknown, signal: AbortSignal) => { signal.throwIfAborted(); prompted++; if (fail) throw new Error("unknown outcome"); return { accepted: true }; },
     cancel: async () => { cancelled++; },
   };
   const session = createVoiceAgentSession(api);
