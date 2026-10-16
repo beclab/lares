@@ -1,26 +1,49 @@
 .lares-voice-entries { display: inline-flex; align-items: center; gap: 8px; }
 .lares-voice-entries button { border: 0; border-radius: 16px; padding: 6px 10px; font: inherit; background: var(--color-background-tertiary, #f4f5f6); color: inherit; cursor: pointer; }
 .lares-voice-entries [role=status] { font-size: 12px; opacity: .65; }
-.lares-voice-panel { padding: 0; border: 1px solid #ddd; border-radius: 24px; color: inherit; background: var(--color-background-primary, white); width: min(520px, calc(100vw - 32px)); max-height: 90dvh; box-shadow: 0 20px 80px #0003; }
-.lares-voice-panel::backdrop { background: #10182866; }
-.lares-voice-panel-body { padding: 24px; }
-.lares-voice-panel header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.lares-voice-panel h2 { font-size: 20px; margin: 0 0 12px; }
-.lares-voice-panel button { font: inherit; color: inherit; cursor: pointer; border: 1px solid #ddd; border-radius: 14px; padding: 10px 16px; background: transparent; }
-.lares-voice-panel button:focus-visible { outline: 2px solid #3478f6; outline-offset: 2px; }
+.lares-voice-panel { position: fixed; inset: auto; margin: 0; box-sizing: border-box; padding: 0; border: 1px solid #8883; border-radius: 20px; color: var(--color-text-primary, #202124); background: var(--color-background-primary, white); width: min(400px, calc(var(--voice-view-width, 100vw) - 24px)); max-width: none; max-height: calc(var(--voice-view-height, 100dvh) * .85); box-shadow: 0 12px 48px #0002; overflow: hidden; }
+.lares-voice-panel::backdrop { background: #10182826; }
+.lares-voice-panel-body { padding: 16px; display: flex; flex-direction: column; box-sizing: border-box; max-height: calc(var(--voice-view-height, 100dvh) * .85 - 2px); }
+.lares-voice-panel header { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 16px; }
+.lares-voice-panel h2 { font-size: 16px; line-height: 24px; margin: 0; font-weight: 600; }
+.lares-voice-panel button { font: inherit; color: inherit; cursor: pointer; border: 1px solid #8883; border-radius: 12px; padding: 10px 16px; min-height: 44px; box-sizing: border-box; background: transparent; }
+.lares-voice-panel button:focus-visible, .lares-voice-panel summary:focus-visible, .lares-voice-panel textarea:focus-visible, .lares-voice-panel select:focus-visible { outline: 2px solid #3478f6; outline-offset: 2px; }
 .lares-voice-panel button:disabled { opacity: .45; cursor: default; }
-.lares-voice-panel section { text-align: center; }
-.lares-voice-device { opacity: .65; font-size: 14px; }
-.lares-voice-wave { width: 160px; height: 64px; margin: 16px auto 0; color: #3478f6; stroke: currentColor; stroke-width: 3; stroke-linecap: round; }
-.lares-voice-draft { min-height: 80px; max-height: 180px; overflow: auto; padding: 16px; border-radius: 12px; text-align: start; background: #8881; white-space: pre-wrap; }
-.lares-voice-panel-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
+.lares-voice-panel .lares-voice-close { border: 0; padding: 0; font-size: 24px; min-width: 44px; }
+.lares-voice-content { text-align: center; display: flex; flex-direction: column; min-height: 0; overflow: auto; }
+.lares-voice-capture { flex: none; display: flex; flex-direction: column; align-items: center; }
+.lares-voice-cancel { display: flex; flex: none; justify-content: center; align-items: center; gap: 8px; height: 40px; padding: 0 12px; margin: 4px 0; border: 1px solid transparent; border-radius: 12px; box-sizing: border-box; opacity: 0; font-size: 13px; }
+.lares-voice-cancel span { font-size: 22px; }
+.lares-voice-cancel[data-visible=true] { opacity: 1; }
+.lares-voice-cancel[data-armed=true] { background: #b4231814; color: #b42318; border-color: currentColor; font-weight: 600; }
+.lares-voice-wave { flex: none; width: 132px; height: 48px; margin: 12px auto 0; color: #3478f6; stroke: currentColor; stroke-width: 3; stroke-linecap: round; }
+.lares-voice-panel[data-phase=cancel] .lares-voice-wave { color: #b42318; }
+.lares-voice-timer { margin: 4px 0; font-size: 12px; opacity: .6; font-variant-numeric: tabular-nums; }
+.lares-voice-status { margin: 12px 0; min-height: 24px; line-height: 24px; font-size: 14px; }
+.lares-voice-panel[data-phase=cancel] .lares-voice-status, .lares-voice-panel[data-phase=error] .lares-voice-status { color: #b42318; }
+.lares-voice-panel-actions { display: flex; flex: none; justify-content: center; align-items: center; gap: 10px; margin-top: 12px; }
+.lares-voice-panel .lares-voice-primary, .lares-voice-panel .lares-voice-hold { background: #3478f6; color: white; border-color: transparent; }
+.lares-voice-panel .lares-voice-hold { width: 100%; min-height: 56px; touch-action: none; user-select: none; -webkit-touch-callout: none; }
+.lares-voice-panel .lares-voice-hold[aria-pressed=true] { background: #1d55b9; }
+.lares-voice-panel[data-phase=cancel] .lares-voice-hold { background: #b42318; }
+.lares-voice-panel[data-mode=continuous] .lares-voice-panel-actions { flex-direction: column; gap: 4px; }
+.lares-voice-panel .lares-voice-end { border: 0; font-size: 13px; }
+.lares-voice-panel .lares-voice-end:disabled { visibility: hidden; }
+.lares-voice-help { flex: none; margin: 4px 0 0; font-size: 11px; opacity: .65; text-align: center; }
+.lares-voice-panel textarea { display: block; flex: 1 1 180px; width: 100%; box-sizing: border-box; min-height: 80px; height: 180px; max-height: 32dvh; margin: 12px 0 0; padding: 12px; color: inherit; background: #88808; font: inherit; line-height: 1.6; border: 1px solid #8883; border-radius: 12px; resize: none; overflow: auto; }
+.lares-voice-panel select { font: inherit; padding: 8px 12px; border-radius: 10px; color: inherit; background: transparent; max-width: 100%; }
+.lares-voice-menu { flex: none; text-align: start; font-size: 13px; }
+.lares-voice-menu summary { display: inline-block; list-style: none; cursor: pointer; padding: 6px 10px; border-radius: 8px; background: #8881; }
+.lares-voice-menu summary::-webkit-details-marker { display: none; }
+.lares-voice-menu-body { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 0; }
+.lares-voice-menu-body button { font-size: 12px; }
+.lares-voice-original { text-align: start; white-space: pre-wrap; overflow: auto; max-height: 100px; padding: 12px; margin-top: 8px; background: #8881; border-radius: 8px; font-size: 13px; }
 .lares-voice-message { margin: 12px 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; line-height: 1.6; }
 .lares-voice-message[data-role=user] { margin-left: auto; max-width: 85%; width: fit-content; padding: 10px 16px; border-radius: 18px; background: #3478f61a; }
 .lares-voice-message[data-summary=true] { border-left: 2px solid #3478f6; padding-left: 12px; font-size: 13px; opacity: .8; }
-@media(max-width:600px) { .lares-voice-panel { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; border: 0; } .lares-voice-panel-body { padding: max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom)); } }
-
-.lares-voice-panel textarea { display: block; width: 100%; box-sizing: border-box; min-height: 180px; margin: 16px 0; padding: 16px; color: inherit; background: transparent; font: inherit; border: 1px solid #8884; border-radius: 12px; resize: vertical; }
-.lares-voice-panel .lares-voice-hold { background: #3478f6; color: white; border: 0; min-width: 220px; min-height: 56px; touch-action: none; user-select: none; }
-.lares-voice-panel .lares-voice-hold[aria-pressed=true] { background: #1d55b9; }
-.lares-voice-panel select { font: inherit; padding: 8px 12px; border-radius: 10px; color: inherit; background: transparent; max-width: 100%; }
-.lares-voice-panel details { text-align: start; font-size: 13px; opacity: .8; } .lares-voice-original { white-space: pre-wrap; }
+@media(max-width:599px) {
+  .lares-voice-panel { width: var(--voice-view-width, 100vw); border-radius: 24px 24px 0 0; border-bottom: 0; }
+  .lares-voice-panel-body { padding: 16px 20px max(16px, env(safe-area-inset-bottom)); }
+  .lares-voice-help { display: none; }
+  .lares-voice-panel textarea { flex-basis: 220px; height: 220px; }
+}

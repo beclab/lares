@@ -100,7 +100,7 @@
       @toggle-speak="toggleSpeak"
     />
     <LaresVoicePanel v-if="voicePanelState" :view="voicePanelState" :t="t"
-      @close="runVoicePanel('close')" @start="runVoicePanel('start')" @finish="runVoicePanel('finish')" @hold-start="runVoicePanel('holdStart')" @hold-end="voicePanel.holdEnd($event).catch(() => {})" @edit="voicePanel.edit($event)" @preset="voicePanel.selectPreset($event, true).catch(() => {})"
+      @close="runVoicePanel('close')" @start="runVoicePanel('start')" @finish="runVoicePanel('finish')" @hold-start="runVoicePanel('holdStart')" @hold-end="voicePanel.holdEnd($event).catch(() => {})" @cancel-armed="voicePanel.setCancelArmed($event)" @edit="voicePanel.edit($event)" @preset="voicePanel.selectPreset($event, true).catch(() => {})"
       @complete="runVoicePanel('complete')" @discard="runVoicePanel('discard')" @end="runVoicePanel('end')" />
   </div>
 </template>

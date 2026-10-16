@@ -11,8 +11,10 @@ export function MicButton({ panel, sessionId, inputActions, useInput, mode, onAc
   const [config, setConfig] = React.useState({ mode: "single" });
   const view = React.useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const latest = React.useRef(null);
+  const trigger = React.useRef(null);
   panel.target = { sessionId: sessionId || null, inputActions, draft, mode };
   const open = async (choice, preset) => {
+    panel.anchor = trigger.current;
     const settings = await loadVoiceSettings({ force: true }); setConfig(settings.config);
     await panel.open({ mode: choice || settings.config.mode, sessionId: sessionId || null, preset });
   };
@@ -35,6 +37,6 @@ export function MicButton({ panel, sessionId, inputActions, useInput, mode, onAc
     return () => { alive = false; window.removeEventListener("keydown", keydown); window.removeEventListener("lares-voice-settings", refresh); };
   }, [panel]);
   return h("span", { className: "lares-voice-entries" },
-    h("button", { type: "button", onClick: () => { void open().catch(() => {}); }, "aria-haspopup": "dialog", title: t(`settings.mode.${config.mode}`) }, t(config.mode === "continuous" ? "call.start" : "mic.idle")),
+    h("button", { ref: trigger, type: "button", onClick: () => { void open().catch(() => {}); }, "aria-haspopup": "dialog", title: t(`settings.mode.${config.mode}`) }, t(config.mode === "continuous" ? "call.start" : "mic.idle")),
     view.snapshot?.connection === "paused" ? h("span", { role: "status" }, t("panel.paused")) : null);
 }
