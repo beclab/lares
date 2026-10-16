@@ -43,8 +43,24 @@ Final local verification: 168 focused voice/mobile-layout tests passed. The full
 
 Deliver documentation, core projection and dual-platform UI as separate validated commits. This implementation does not authorize another release, package publication or deployment.
 
-### Panel implementation verification
+### Previous panel implementation verification
 
 184 focused voice/mobile-layout tests pass. Full suite: 692/693 pass; the sole failure remains the pre-existing macOS file-preview symlink cleanup (`ERR_FS_EISDIR`). Typecheck and client/mobile/server builds pass. Browser inspection used the actual local Host and two synthetic stored voice records: the official web Chat and Vue Transcript both display the records after refresh; no Agent prompt or manufactured execution event was required. Web dialog and 390×844 Vue full-screen panel entry/close/focus behavior were inspected. Core/mock tests cover delegation through approval and completion using both native client message shapes.
 
 This is not human microphone or audible output acceptance. The complete physical-device/browser failure matrix, yaotest004 speech, iOS/Android background/lock behavior, Bluetooth and native Realtime remain unverified. Existing gates stay closed; no release or deployment is included.
+
+## Simplified voice entry and dictation preset delivery
+
+This section supersedes earlier two-entry/tab and automatic-listening UI instructions.
+
+- [x] One composer voice entry follows separate web/mobile defaults; settings changes update the entry.
+- [x] Four dictation presets with independent LLM models/instructions for clean, outline and summary; raw bypasses the LLM. Validate settings and migrate the explicit legacy cleanup choice.
+- [x] Immediate dictation capture, explicit Done, editable preview, original transcript, retry/use-original, preset regeneration and explicit insertion/discard.
+- [x] Shared manual-turn controller and hold/release/slide-up behavior; no VAD endpoint or automatic re-listen for Lares conversation UI. Stop output independently of task cancellation.
+- [x] Optional validated page-focused preset shortcuts; mobile settings configure the same processing profiles.
+- [x] Core regressions cover pending startup, late results, editing, original-text reuse, cleanup failure and model/tool boundaries.
+- [x] 204 focused tests pass; full suite 712/713 with the existing macOS file-preview cleanup failure (`ERR_FS_EISDIR`, file-preview.test.ts:1341). Typecheck and client/mobile/server builds pass.
+- [x] Inspect actual React/Vue panels in a disposable browser harness with synthetic audio/model ports: recording/preview, preset regeneration, editing/insertion, keyboard turns, close/focus return and retained drafts. Vue 390×844 has no horizontal overflow.
+- [ ] Human speech/playback, physical iOS/Android and host/Bluetooth validation after separately authorized deployment.
+
+Native Realtime remains gated; the current UI rejects Realtime push-to-talk explicitly until its protocol supports and passes manual-turn acceptance. Generic SDK/native protocol behavior is retained. No version change, publication or deployment is included. Dictionaries, automatic style learning, native global hotkeys and input-method integration remain deferred.
