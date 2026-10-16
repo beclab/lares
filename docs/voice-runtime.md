@@ -1,89 +1,108 @@
 # Voice runtime
 
-Target architecture and lifecycle contracts: [Voice service design](voice-service-design.md). Delivery status: [implementation plan](voice-service-plan.md). The sections below describe current implementation, not completion of that design.
+Architecture and lifecycle contracts: [Voice service design](voice-service-design.md). Delivery/acceptance status: [implementation plan](voice-service-plan.md).
 
-Lares owns the Agent, task history, tools, skills and approvals through dsh. Voice transports never execute business tools directly. This implementation takes lifecycle and streaming ideas from LiveKit without installing its Agent runtime.
+## Implemented behavior
 
-## Modes
+- Web defaults to dictation; mobile defaults to continuous conversation. `mode` and `mobileMode` are independent. Each client offers explicit mode selection.
+- Dictation manually finishes or cancels, optionally cleans punctuation/fillers through Router, and inserts editable text. It does not open or submit a dsh task. Draft text and attachments survive asynchronous insertion; cancellation invalidates pending recognition/cleanup.
+- Continuous conversations support `chat`, `assistant` and `direct` presets. The `dictation` preset supports successive transcript insertions without an Agent. Native Realtime supports assistant/chat only and stays behind its real-model gate.
+- Assistant mode uses Router Chat Completions for conversational turns and delegates business work through a controlled `ask_lares`. Direct mode submits each turn to dsh. Existing presets/skills/tools remain owned by dsh.
+- Read-aloud is independent of input mode. Per-connection mute does not alter the saved global setting; unmute does not replay the muted answer. Stop speaking, pause input, close voice and cancel a business task have separate semantics.
+- Microphone level and elapsed recording time are shown when the browser exposes levels. No synthetic waveform is used for host devices without a meter. Mobile uses tap-to-start, not hold-to-start continuous capture.
+- Background/visibility loss pauses capture/playback. Resumption is explicit. Default idle resource timeout is 300 seconds; default recovery grace is 120 seconds. Silence-only input does not keep a conversation alive forever.
 
-- **Single recording** currently submits a valid transcript to the bound dsh session. The target design changes this to editable draft insertion; see the delivery plan.
-- **Continuous conversation** repeats capture, task execution and playback until explicitly stopped. It enables speech for that connection without changing other conversations.
-- **Realtime** uses Router's compatible Realtime WebSocket protocol. The speech model delegates business work through the single `ask_lares` tool. Its `status` operation checks the current task without submitting another prompt.
+The shared `voice/controller` owns connection, input, Agent and playback states. `voice/conversation` supplies pipeline adapters; `voice/realtime-conversation` supplies native PCM/Realtime adapters. `voice/host-service` is the server-side service boundary. Host files only mount routes/adapters.
 
-Browser audio uses the device microphone and speaker. Host audio uses the existing Olares audio helper and an exclusive lease. The default remains host audio on desktop and device audio on mobile; Settings can override it. All shipped device adapters currently advertise **no validated voice barge-in**. They wait for playback and offer an explicit stop-speaking action. No hardware has been certified for simultaneous speech interruption by this change.
+## Binding and recovery
 
-## Ownership and state
+`x-lares-voice-id` identifies a connection, not a credential. Host scopes are also partitioned by the authenticated owner. `x-lares-voice-device` selects browser/device or host audio. Different clients may explicitly bind the same business session while retaining independent input/output and request ownership.
 
-`voice/controller` has independent connection, capture, Agent and playback state. Input, output and Agent ports are injected. Both UI surfaces use `voice/conversation`; Realtime uses the same controller with PCM ports.
+Existing-chat entry binds its session. Standalone business delegation creates lazily, with the server's Agent preset/workspace. Voice close never cancels durable tasks. Mobile follows a lazily created task without interpreting that adoption as a user-requested session switch.
 
-Each connection gets an opaque ID carried in `x-lares-voice-id`. Host state is additionally partitioned by the authenticated Olares user. Device selection is carried in `x-lares-voice-device`. These are correlation headers within Lares's existing platform authentication boundary, not a new authentication system. Lares remains a per-user application; the voice API does not introduce multi-tenant hosting.
+dsh `turn/start` precedes claimed user messages; `user/message.source.rpcId` identifies their requests. Replies and completion carry turn numbers. The adapter tracks each request/turn, including multiple steer messages in one turn, and ignores foreign turns for speech. Acceptance is not completion. Unknown submissions remain deduplicated; recovery follows the original task rather than sending it again.
 
-A connection binds one existing dsh session or creates one after its first valid transcript. Capture fixes that binding before asynchronous work. Switching sessions closes the old voice connection. A user can stop recording, stop speaking, cancel the dsh task, or close voice independently. Closing voice never cancels the durable task.
+Records live under `$DSH_HOME/voice-records`, partitioned by hashed owner/context paths. Files contain allowlisted text records, task associations, versions and recovery context; no raw audio or model credentials. Writes are synchronous atomic transactions within this single Host process, not a multi-replica storage protocol. Files have mode 0600.
 
-Agent follow is established before prompt submission. Request IDs are retained on unknown outcomes and deduplicated by dsh. Resuming refreshes the existing task's state and does not submit its input again. Completed history and opening snapshots stay silent. Pending approvals remain in the ordinary Lares UI.
+Pipeline conversation turns checkpoint a Router-generated recovery summary; recent text remains available if summarization fails, with `summaryError` in session state. Native recovery consumes available transcript events and saved context; the real-model gate must remain closed until that model's transcript/restore behavior passes acceptance. Records are inspectable and clearable, and removed with their parent dsh session. Clearing records ends that voice runtime before deleting its memory.
 
-The Host registers spoken-answer guidance only for the active voice session. It does not toggle a global persona or replace a session's preset, skills or tool permissions.
+Independent callers can explicitly resume their own `contextId`; there is no automatic cross-user or implicit old-context selection. The same opaque context value under another owner cannot read those records. Bound context handles preserve business bindings; parent deletion removes those handles too.
 
-## Host endpoints
+## Settings and internal endpoints
 
-All endpoints use the existing Lares Host authentication and CORS rules under `/api/lares/voice`:
+Voice settings are stored in `$DSH_HOME/voice-input/config.json`.
+
+| Setting | Default / meaning |
+| --- | --- |
+| `mode`, `mobileMode` | `single`, `continuous` |
+| `preset` | `assistant`; also `dictation`, `chat`, `direct` |
+| `backend` | `pipeline`; optional validated `realtime` |
+| `model`, `ttsModel`, `realtimeModel` | Router model IDs |
+| `chatModel` | `default-chat` |
+| `dictationCleanup` | false; faithful cleanup, never task execution |
+| `instructions`, `voice`, `language` | Speech instructions, explicit voice and recognition language |
+| `endpointSilenceMs` | 500; allowed range 200–3000 |
+| `idleTimeoutMs`, `recoveryTimeoutMs` | 300000, 120000; range 10000–3600000 |
+| `speak`, `streaming` | false; saved read-aloud preference and sentence streaming |
+
+Authenticated routes remain under `/api/lares/voice`:
 
 | Endpoint | Purpose |
 | --- | --- |
-| `POST /session` | Bind an existing session or prepare lazy creation |
-| `GET /session` | Current bound session, execution state and reply revision |
-| `POST /session/prompt` | Submit text with a stable request ID and queue/steer mode |
-| `POST /session/resume` | Reattach the observer without replaying a prompt |
-| `POST /session/cancel` | Explicitly request task cancellation |
-| `POST /session/close` | Release voice resources, preserving the task |
-| `GET /playback/status` | Scoped synthesis/playback lifecycle |
-| `POST /session/metric` | Bounded, allowlisted duration metrics |
-| `POST /realtime/ticket` | Issue a single-use, 30-second WebSocket ticket |
-| `GET /realtime` (upgrade) | Realtime audio/event connection |
+| `POST /session` | Create runtime; bind optional session / owner-scoped context |
+| `GET /session` | Conversation state, individual tasks and reply revision |
+| `POST /session/prompt` | Stable request ID and queue/steer submission |
+| `POST /session/resume` | Refresh task observer without resubmission |
+| `POST /session/output` | Change this connection's read-aloud flag |
+| `POST /session/cancel` | Explicit dsh cancellation |
+| `POST /session/close` | Release voice, preserve tasks |
+| `POST /dictation/clean` | Optional faithful text cleanup |
+| `GET /records`, `DELETE /records` | Inspect / clear current owner-scoped history |
+| `POST /realtime/ticket`, `GET /realtime` upgrade | Sealed native Realtime transport |
+| `GET /bridge/capabilities` | Composite protocol's actual declared subset and enabled state |
+| `GET /bridge/realtime` upgrade | Signed, granted external composite connection |
 
-Existing capture and speech routes now use scoped connection headers. TTS synthesis stays at most two requested parts ahead. Host FIFO writes apply backpressure, and playback completion is confirmed before listening restarts. A host helper upgrade is required for its new `playback-status` command; an older helper produces an explicit upgrade-required error.
+Capture, transcription, synthesis, playback and bounded metrics routes remain in use. Metrics omit transcript/audio/credentials. Synthesis prefetch remains bounded to two requested sentence parts. Host helpers must support playback status; outdated helpers produce an explicit upgrade error.
 
-## Realtime rollout
+## External composite WebSocket
 
-Configure `realtimeModel` from the Router catalog in Voice settings. Realtime models must advertise `mode=realtime`; names alone are not capability evidence.
+This endpoint is disabled by default. It implements `olares-voice-ws-v1`, not all OpenAI Realtime APIs. It accepts mono PCM16 at 24 kHz, manual commit or server energy/VAD endpointing, and returns transcript/text/audio events. It supports explicit context resume and text-only output. No client tools, arbitrary instructions/business binding, WebRTC, SIP or precise truncation are advertised.
 
-Realtime stays unavailable until the operator sets both:
+External clients may use `@olares/lares-core/voice/protocol-client` with an already authenticated Router socket. Call `configure`, append base64 PCM frames, then `commit`; `discard` clears input and `stopOutput` stops generation without cancelling Lares. Reconfiguration with `contextId` is allowed only before input/turns; wait for `session.updated` before sending audio after a context change. Call `playbackCompleted()` only after output actually drains; until that acknowledgement, the half-duplex server rejects new audio. Applications must not feed their speaker output back into ASR. There is no automatic transport replay.
 
-```sh
-LARES_VOICE_REALTIME_ENABLED=1
-LARES_VOICE_REALTIME_VALIDATED_MODELS=<exact catalog model ID>
-```
-
-The allowlist records actual validation, not model discovery. Leave it empty until the model, tools and intended devices pass the checklist below. Pipeline mode remains independently selectable.
-
-The Host connects to Router using the existing application identity or configured Router key. A short-lived ticket is exchanged via `lares-ticket.<ticket>` in the WebSocket subprotocol list; only `lares-voice` is selected in the response. LarePass's platform authentication protocol is retained. Browsers receive no Router or provider key.
-
-The model cannot choose a task session, workspace, preset, permissions or extra tools. Client events are restricted to audio input, cancellation and validated truncation of the current audio item. Queue limits close a stalled connection rather than accumulate unbounded audio. Provider call IDs are deduplicated, including unknown task outcomes. A timed-out tool wait returns `pending`; checking progress uses `status`, not another `run`.
-
-Realtime captions are transient voice presentation. dsh stores the delegated tasks and results. The entire voice conversation is not replayed into task history.
-
-## Verification
-
-Run:
+Operator configuration (use real deployment secrets; no runtime change is made by source defaults):
 
 ```sh
-node --import tsx --test tests/plugins/voice-*.test.ts
-npm run typecheck
-npm run build
+LARES_VOICE_EXTERNAL_ENABLED=0
+LARES_VOICE_ROUTER_SECRET=<at-least-32-random-bytes>
+LARES_VOICE_EXTERNAL_GRANTS='{"alice":{"presets":["dictation","chat","assistant","direct"],"lares":true}}'
 ```
 
-The tests cover binding, stale recognition, independent cancellation, exclusive device leases, task completion versus acceptance, history silence, prompt deduplication, pending/unknown task outcomes, PCM conversion, actual local WebSocket negotiation, one-use tickets and client injection rejection.
+Grants are server-controlled. Business grants may pin `sessionId`, `workspaceId` and `agentPreset`; app-only callers cannot receive a business grant. A Lares business grant must match this Host's actual owner. Unidentified callers fail closed. The service verifies HMAC-signed Router principal/model/time/nonce claims and rejects replay; client identity headers do not grant access.
 
-Before enabling Realtime or declaring hardware support, validate with actual devices and a real model:
+Router registration uses an OpenAI-compatible provider whose base URL ends in `/api/lares/voice/bridge`, with the shared signing secret as the encrypted provider credential. Register model names `voice-dictation`, `voice-chat`, `voice-assistant`, `voice-direct`, `mode=realtime`, and explicit metadata:
 
-1. Complete multiple turns on a browser microphone, host audio and Bluetooth headset.
-2. Confirm speaker output does not become another user task; stop-speaking releases output before new capture.
-3. Switch sessions while recognition or synthesis is pending and verify no cross-session result.
-4. Disconnect and reconnect during a tool call; verify one task and no historical playback.
-5. Exercise a task requiring approval and a failing tool. Voice must neither auto-approve nor claim success.
-6. Test a long answer and a slow output device; queues remain bounded and stop clears pending audio.
-7. Measure recognition, Agent first text, synthesis first audio and interruption duration. Metrics omit recognized text, source audio and credentials.
+```json
+{"extensions":{"voice_service":{"protocol":"olares-voice-ws-v1","billing":"child-models"}}}
+```
 
-A real local Lares Host/dsh instance was also exercised against a simulated Router through lazy session creation, prompt submission, streamed result collection and connection closure.
+Router signs a fresh resolved identity on each upstream dial. Composite responses are trace records with zero extra model charge and `usage_in_child_models`; actual child ASR/LLM/TTS calls retain their own usage. No native token counts are invented. Dependency IDs may not point back to the public voice models. See Router ADR-81 and branch `codex/composite-voice-service` (commit `de57be9b`).
 
-Local simulated tests and a browser settings/layout check do not replace this hardware/model checklist. This implementation does not certify voice barge-in, deploy to Olares, or enable Realtime in a running installation.
+## Native Realtime gate
+
+Keep both settings disabled/unset until a real model passes acceptance:
+
+```sh
+LARES_VOICE_REALTIME_ENABLED=0
+LARES_VOICE_REALTIME_VALIDATED_MODELS=
+```
+
+Native sockets expose only server-selected tools. Assistant tasks return pending promptly and are monitored independently; actual completion can trigger a later response. User speech and an active model response defer completion announcements. Chat preset has no business tool. Only acknowledged browser playout is eligible for truncation. All shipped hardware adapters still advertise no validated automatic barge-in.
+
+## Verification and remaining acceptance
+
+Run `node --import tsx --test tests/plugins/voice-*.test.ts tests/plugins/mobile-layout.test.ts`, `npm run typecheck`, `npm run build` and the complete suite. Protocol tests use actual local WebSockets with mocked inference; they are not real-model or microphone acceptance.
+
+The full suite has a pre-existing failure at `tests/plugins/file-preview.test.ts:1341`: temporary path cleanup raises `ERR_FS_EISDIR`. It is unrelated to voice and was not changed.
+
+Before enabling either external service or native Realtime: verify real models, PostgreSQL composite usage settlement, grants/revocation, browser/iOS/Android permissions and audio unlock, host/Bluetooth leases, long replies, approvals, interrupted speech, background/lock, disconnect/recovery and latency. This change does not deploy, certify hardware barge-in or repeat the earlier yaotest004 single-recording acceptance against the new build.
