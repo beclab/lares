@@ -72,7 +72,8 @@ test("mobile new session uses a centered hero; model and effort live on the top 
   assert.match(composer, /data-hero/);
   assert.match(composer, /data-kind="attach"/);
   assert.match(composer, /data-mode="inputMode"/);
-  assert.match(composer, /composer\.holdToTalk/);
+  assert.match(composer, /@click="onVoiceClick"/);
+  assert.doesNotMatch(composer, /@touchstart/);
   assert.match(composer, /data-kind="keyboard"/);
   assert.match(composer, /setMode\('voice'\)/);
   assert.match(composer, /data-expanded/);

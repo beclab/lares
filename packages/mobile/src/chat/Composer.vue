@@ -82,6 +82,10 @@
           </button>
         </figure>
       </div>
+      <select v-if="inputMode === 'voice' && !voiceCall" :value="voiceSelection || voiceDefaultMode" @change="voiceSelection = $event.target.value" class="lares-composer__voice-mode" :aria-label="t('settings.mode')">
+        <option value="single">{{ t('settings.mode.single') }}</option>
+        <option value="continuous">{{ t('settings.mode.continuous') }}</option>
+      </select>
       <div class="lares-composer__line" :data-expanded="expanded ? 'true' : 'false'">
         <button
           type="button"
@@ -117,8 +121,7 @@
           :data-phase="voicePhase"
           :disabled="voiceBlocked"
           :aria-label="voiceLabel"
-          @pointerdown="onVoiceDown"
-          @touchstart.prevent="onVoiceTouchStart"
+          @click="onVoiceClick"
           @contextmenu.prevent
         >
           <span v-if="voicePhase === 'preparing' || voicePhase === 'transcribing'" class="lares-composer__talk-status">
@@ -181,6 +184,25 @@
         </div>
       </div>
     </div>
+    <div v-if="voiceCall" class="lares-composer__hint" role="status" aria-live="polite">
+      <button v-if="voiceCall.continuous" type="button" @click="$emit('voice-action', 'mute')">{{ t(voiceCall.outputMuted ? 'call.unmute' : 'call.mute') }}</button>
+      <button v-if="voiceCall.continuous" type="button" @click="$emit('voice-action', 'history')">{{ t('call.history') }}</button>
+      <details v-if="voiceCall.history" open>
+        <summary>{{ t('call.history') }}</summary>
+        <p v-for="row in voiceCall.history" :key="row.id">{{ row.role }}: {{ row.text }}</p>
+        <button type="button" @click="$emit('voice-action', 'clear-history')">{{ t('call.clearHistory') }}</button>
+      </details>
+      <svg v-if="voiceCall.capture === 'recording' && voiceCall.inputLevel != null" width="80" height="24" aria-hidden="true">
+        <line v-for="(level, index) in levels" :key="index" :x1="index * 5" :x2="index * 5" :y1="12 - Math.min(11, level * 800)" :y2="12 + Math.min(11, level * 800)" stroke="currentColor" stroke-width="2" />
+      </svg>
+      <span v-if="voiceCall.caption">{{ voiceCall.caption }}</span>
+      <span>{{ voiceCall.capture === 'transcribing' ? t('mic.transcribing') : voiceCall.capture === 'recording' ? t('call.listening') : voiceCall.inputPaused ? t('call.inputPaused') : voiceCall.playback !== 'idle' ? t('call.halfDuplex') : t('call.waiting') }}</span>
+      <span v-if="voiceCall.playback !== 'idle'">{{ t('call.speaking') }}</span>
+      <button v-if="!voiceCall.continuous && voiceCall.capture === 'recording'" type="button" @click="$emit('hold-end')">{{ t('mic.finish') }}</button>
+      <button v-if="voiceCall.continuous && voiceCall.connection === 'open'" type="button" @click="$emit('voice-action', voiceCall.inputPaused ? 'input-resume' : 'input-pause')">{{ t(voiceCall.inputPaused ? 'call.resumeInput' : 'call.pauseInput') }}</button>
+      <button type="button" @click="$emit('voice-action', voiceCall.connection === 'paused' ? 'resume' : 'stop')">{{ t(voiceCall.connection === 'paused' ? 'call.resume' : voiceCall.continuous ? 'call.end' : 'mic.cancel') }}</button>
+      <button v-if="voiceCall.playback !== 'idle'" type="button" @click="$emit('voice-action', 'playback')">{{ t('call.stopPlayback') }}</button>
+    </div>
     <p v-if="voiceError && voicePhase === 'error'" class="lares-composer__hint" data-status="error">{{ voiceError }}</p>
     <p v-for="item in failures" :key="item.id" class="lares-composer__hint" data-status="error">
       {{ t("upload.failed", { name: item.name, reason: t(`error.${item.code}`) }) }}
@@ -189,7 +211,7 @@
 </template>
 
 <script>
-import { formatElapsed } from "./voice.js";
+import { formatElapsed } from "@olares/lares-core/voice/recorder";
 import {
   REFERENCE_DEBOUNCE_MS,
   activeReference,
@@ -208,6 +230,7 @@ export default {
     canSend: { type: Boolean, default: false },
     attachPending: { type: Boolean, default: false },
     attachDisabled: { type: Boolean, default: false },
+    voiceCall: { type: Object, default: null },
     voicePhase: { type: String, default: "idle" },
     voiceElapsed: { type: Number, default: 0 },
     voiceError: { type: String, default: "" },
@@ -219,11 +242,12 @@ export default {
     commands: { type: Array, default: null },
     commandsError: { type: String, default: "" },
     hero: { type: Boolean, default: false },
+    voiceDefaultMode: { type: String, default: "continuous" },
     inputMode: { type: String, default: "text" },
     t: { type: Function, required: true },
   },
   emits: [
-    "update:draft", "update:inputMode", "send", "files", "voice", "hold-start", "hold-end",
+    "update:draft", "update:inputMode", "send", "files", "voice", "voice-action", "hold-start", "hold-end",
     "open-commands", "open-references", "pick-command", "remove-image",
   ],
   data() {
@@ -232,6 +256,8 @@ export default {
       commandsOpen: false,
       commandTyped: false,
       commandIndex: 0,
+      levels: [],
+      voiceSelection: "",
       referenceOpen: false,
       referenceToken: null,
       referenceIndex: 0,
@@ -244,10 +270,10 @@ export default {
     },
     talkLabel() {
       if (this.voicePhase === "preparing") return this.t("composer.opening");
-      if (this.voicePhase === "recording") return `${this.t("composer.hold")} · ${this.elapsed}`;
+      if (this.voicePhase === "recording") return `${this.t("call.listening")} · ${this.elapsed}`;
       if (this.voicePhase === "transcribing") return this.t("mic.transcribing");
       if (this.holding) return this.t("composer.hold");
-      return this.t("composer.holdToTalk");
+      return this.t("call.start");
     },
     voiceBusy() {
       return this.voicePhase === "preparing"
@@ -264,9 +290,9 @@ export default {
     voiceLabel() {
       if (this.voicePhase === "error" && this.voiceError) return this.voiceError;
       if (this.voicePhase === "preparing") return this.t("composer.opening");
-      if (this.voicePhase === "recording") return this.t("composer.hold");
+      if (this.voicePhase === "recording") return this.t("call.listening");
       if (this.voicePhase === "transcribing") return this.t("mic.transcribing");
-      return this.t("composer.voice");
+      return this.t("call.start");
     },
     voiceBlocked() {
       return this.voicePhase === "transcribing" || this.sending;
@@ -285,6 +311,7 @@ export default {
     },
   },
   watch: {
+    "voiceCall.inputLevel"(level) { if (level != null) this.levels = [...this.levels.slice(-15), level]; },
     draft(value) {
       this.autosize();
       if (value && this.inputMode === "voice" && !this.voiceBusy) this.setMode("text");
@@ -447,55 +474,15 @@ export default {
         event.preventDefault();
       }
     },
-    onVoiceDown(event) {
-      if (event.pointerType === "touch") return;
-      if (event.button > 0 || this.voiceBlocked || this.holding) return;
-      event.preventDefault();
-      event.currentTarget.setPointerCapture?.(event.pointerId);
-      this.beginHold("mouse");
-    },
-    onVoiceTouchStart() {
-      if (this.voiceBlocked || this.holdKind === "touch") return;
-      this.beginHold("touch");
-    },
-    beginHold(kind) {
-      const starting = !this.holding;
-      this.detachHold();
-      this.holding = true;
-      this.holdKind = kind;
-      if (starting) this.$refs.input?.blur();
-      const end = (event) => {
-        if (kind === "touch" && event.type.startsWith("pointer")) return;
-        if (kind === "mouse" && event.type.startsWith("touch")) return;
-        this.detachHold();
-        if (!this.holding) return;
-        this.holding = false;
-        this.holdKind = "";
-        this.$emit("hold-end", { via: event.type });
-      };
-      this.holdEnd = end;
-      if (kind === "touch") {
-        window.addEventListener("touchend", end);
-        window.addEventListener("touchcancel", end);
-      } else {
-        window.addEventListener("pointerup", end, true);
-        window.addEventListener("pointercancel", end, true);
-      }
-      if (starting) this.$emit("hold-start", { via: kind });
-    },
-    detachHold() {
-      if (!this.holdEnd) return;
-      window.removeEventListener("touchend", this.holdEnd);
-      window.removeEventListener("touchcancel", this.holdEnd);
-      window.removeEventListener("pointerup", this.holdEnd, true);
-      window.removeEventListener("pointercancel", this.holdEnd, true);
-      this.holdEnd = null;
+    onVoiceClick() {
+      if (this.voiceBusy) return;
+      this.$emit("hold-start", { mode: this.voiceSelection || undefined });
     },
     clearHold() {
-      this.detachHold();
       this.holding = false;
       this.holdKind = "";
     },
+    detachHold() {},
     pickFiles() {
       this.$refs.picker?.click();
     },
@@ -914,4 +901,9 @@ export default {
     animation: none;
   }
 }
+</style>
+
+<style scoped>
+.lares-composer__voice-mode { margin: 8px 12px; border: 0; border-radius: 8px; padding: 6px; background: transparent; color: inherit; font: inherit; }
+.lares-composer__hint button { min-height: 44px; border: 0; border-radius: 12px; padding: 8px 12px; background: var(--lares-bg-secondary, #f0f0f0); color: inherit; font: inherit; }
 </style>

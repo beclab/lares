@@ -71,7 +71,7 @@ export async function synthesize(request) {
         response_format: "wav",
         ...(request.voice ? { voice: request.voice } : {}),
       }),
-      signal: AbortSignal.timeout(request.timeoutMs ?? REQUEST_TIMEOUT_MS),
+      signal: request.signal ? AbortSignal.any([request.signal, AbortSignal.timeout(request.timeoutMs ?? REQUEST_TIMEOUT_MS)]) : AbortSignal.timeout(request.timeoutMs ?? REQUEST_TIMEOUT_MS),
     });
   } catch (err) {
     const timedOut = err?.name === "TimeoutError" || err?.name === "AbortError";

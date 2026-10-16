@@ -862,6 +862,8 @@ export function createChatRuntime(client) {
       }
       return client.upload(id, file, options);
     },
+    voiceSocket(ticket) { return client.voiceSocket(ticket); },
+    voiceRequest(path, options) { return client.voiceRequest(path, options); },
     transcribe(blob, language, signal) {
       if (typeof client.transcribe !== "function") {
         return Promise.reject(new Error("voice_failed"));

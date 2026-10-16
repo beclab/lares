@@ -1,8 +1,14 @@
+import { mintRpcId } from "../larepass/rpc.js";
 import { createSnapshotStore } from "../tools/async.js";
 
 export const API = "/api/lares/voice";
 
 const settings = createSnapshotStore();
+export const voiceClientId = mintRpcId();
+export function voiceHeaders(device) {
+  const selected = device ?? settings.peek()?.config?.device;
+  return { "x-lares-voice-id": voiceClientId, "x-lares-voice-device": selected === "device" ? "device" : "headset" };
+}
 
 export function rememberedVoiceSettings() {
   return settings.peek();
@@ -21,6 +27,9 @@ export async function loadVoiceSettings(options = {}) {
       status,
       sttModels: Array.isArray(models.stt) ? models.stt : [],
       ttsModels: Array.isArray(models.tts) ? models.tts : [],
+      chatModels: Array.isArray(models.chat) ? models.chat : [],
+      realtimeModels: Array.isArray(models.realtime) ? models.realtime : [],
+      realtimeReady: Array.isArray(models.realtimeReady) ? models.realtimeReady : [],
       charts: {
         stt: chartView(models.charts?.stt),
         tts: chartView(models.charts?.tts),
@@ -67,7 +76,7 @@ export function wavBlob(base64) {
 export async function postSpeak({ key, text, done, part }) {
   const res = await fetch(`${API}/speak`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...voiceHeaders() },
     body: JSON.stringify(Number.isInteger(part) ? { key, text, done, part } : { key, text, done }),
   });
   let body = null;
@@ -88,7 +97,7 @@ export async function postSpeak({ key, text, done, part }) {
 }
 
 export async function postPlaybackStop(signal) {
-  const res = await fetch(`${API}/playback/stop`, { method: "POST", signal });
+  const res = await fetch(`${API}/playback/stop`, { method: "POST", signal, headers: voiceHeaders() });
   if (!res.ok) throw new Error(String(res.status));
   return res.json();
 }
@@ -193,19 +202,19 @@ async function readVoiceJson(res) {
 
 /** Host recording. `skipped` means the headset microphone is not available. */
 export async function postCaptureStart(signal) {
-  return readVoiceJson(await fetch(`${API}/capture`, { method: "POST", signal }));
+  return readVoiceJson(await fetch(`${API}/capture`, { method: "POST", signal, headers: voiceHeaders() }));
 }
 
 export async function getCapture(signal) {
-  return readVoiceJson(await fetch(`${API}/capture`, { signal }));
+  return readVoiceJson(await fetch(`${API}/capture`, { signal, headers: voiceHeaders() }));
 }
 
 export async function postCaptureStop(signal) {
-  return readVoiceJson(await fetch(`${API}/capture/stop`, { method: "POST", signal }));
+  return readVoiceJson(await fetch(`${API}/capture/stop`, { method: "POST", signal, headers: voiceHeaders() }));
 }
 
 export async function postCaptureCancel(signal) {
-  return readVoiceJson(await fetch(`${API}/capture/cancel`, { method: "POST", signal }));
+  return readVoiceJson(await fetch(`${API}/capture/cancel`, { method: "POST", signal, headers: voiceHeaders() }));
 }
 
 export async function postBluetoothReady(signal) {

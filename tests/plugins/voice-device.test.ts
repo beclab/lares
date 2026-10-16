@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createVoiceCapture } from "../../packages/mobile/src/chat/voice.js";
+import { createVoiceCapture } from "@olares/lares-core/voice/browser-capture";
 import { defaultRequest } from "../../packages/mobile/src/host.js";
 
 test("the default request port sends a recorded Blob as bytes, not as JSON", async () => {
@@ -231,4 +231,32 @@ test("silence from the recognizer is an error, not an empty send", async () => {
   assert.equal(box.phases.at(-1)?.error, "voice_no_input");
   assert.equal(box.sent.length, 0);
   box.cap.dispose();
+});
+
+
+test("single recordings wait for manual stop while continuous turns use endpointing", async () => {
+  const { createDeviceInput } = await import("@olares/lares-core/voice/device-input");
+  for (const continuous of [false, true]) {
+    let endpoints = 0;
+    let opened = () => {};
+    const ready = new Promise<void>((resolve) => { opened = resolve; });
+    class Recorder {
+      state = "inactive";
+      mimeType = "audio/webm";
+      static isTypeSupported() { return true; }
+      start() { this.state = "recording"; }
+      stop() { this.state = "inactive"; }
+      requestData() {}
+    }
+    const input = createDeviceInput({
+      media: { mediaDevices: { getUserMedia: async () => ({ getTracks: () => [] }) }, MediaRecorder: Recorder },
+      transcribe: async () => "test",
+      endpoint: () => { endpoints++; return { stop() {} }; },
+      onPhase: (phase: string) => { if (phase === "recording") opened(); },
+    });
+    const pending = input.capture({ continuous });
+    await ready;
+    try { assert.equal(endpoints, continuous ? 1 : 0); }
+    finally { input.cancel(); await pending; }
+  }
 });

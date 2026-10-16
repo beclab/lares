@@ -87,7 +87,7 @@ export function parseQuantity(text) {
  * @returns {Promise<{ app: string, title: string, source: string, phase: string, required: number }[]>}
  */
 export async function gpuApps(options = {}) {
-  const mine = await runOlaresCli(["market", "list", "--mine", "-o", "json"], options.spawnFn);
+  const mine = await runOlaresCli(["market", "list", "--mine", "-o", "json"], options.spawnFn, MANIFEST_LIMIT);
   if (mine.code !== 0 || !Array.isArray(mine.json)) throw new GpuError(cliProblem(mine, "voice_gpu_failed"));
   const apps = await Promise.all(mine.json.map(async (row) => {
     const app = typeof row?.name === "string" ? row.name : "";

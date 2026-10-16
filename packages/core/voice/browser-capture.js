@@ -2,7 +2,7 @@ import {
   formatElapsed,
   isRecordingTooShort,
   pickRecordingMime,
-} from "@olares/lares-core/voice/recorder";
+} from "./recorder.js";
 
 export { formatElapsed };
 
@@ -35,6 +35,7 @@ async function openDeviceMic(mediaDevices) {
 export function createVoiceCapture({
   transcribe,
   submit,
+  onStream,
   onPhase,
   onTrace,
   now = Date.now,
@@ -43,6 +44,7 @@ export function createVoiceCapture({
   const mediaDevices = media?.mediaDevices ?? globalThis.navigator?.mediaDevices;
   const Recorder = media?.MediaRecorder ?? globalThis.MediaRecorder;
   let recorder = null;
+  let detector = null;
   let stream = null;
   let chunks = [];
   let started = 0;
@@ -77,6 +79,8 @@ export function createVoiceCapture({
   };
 
   const release = () => {
+    detector?.stop?.();
+    detector = null;
     stream?.getTracks().forEach((track) => track.stop());
     stream = null;
     recorder = null;
@@ -122,9 +126,9 @@ export function createVoiceCapture({
         fail("voice_no_input");
         return;
       }
-      trace("transcript", { chars: text.length, head: text.slice(0, 40) });
+      trace("transcript", { chars: text.length });
       emit("idle", { error: "", elapsed: 0 });
-      submit?.(text);
+      await submit?.(text);
     } catch (err) {
       if (dead || abort.signal.aborted || cancel) return;
       const code = err instanceof Error ? err.message : "voice_failed";
@@ -204,6 +208,7 @@ export function createVoiceCapture({
         if (recorder?.state === "inactive") scheduleFinish();
       };
       recorder.onstop = () => scheduleFinish();
+      try { detector = await onStream?.(stream); } catch { release(); fail("voice_unsupported"); return; }
       started = now();
       try {
         recorder.start(CHUNK_MS);

@@ -1,7 +1,7 @@
 import { LAREPASS_PAGE_ORIGINS } from "../larepass/host.js";
 import { pageOrigin } from "../olares/trusted-host.js";
 
-const CORS_HEADERS = "content-type, x-authorization, x-unauth-error, x-lares-session-id, x-lares-file-name, x-lares-upload-request-id";
+const CORS_HEADERS = "content-type, x-authorization, x-unauth-error, x-lares-session-id, x-lares-file-name, x-lares-upload-request-id, x-lares-voice-id, x-lares-voice-device";
 
 /** @returns {boolean} true when the request came from a LarePass page. */
 function allowLarepassOrigin(req, res) {

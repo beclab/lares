@@ -1131,6 +1131,8 @@ def dispatch(payload, directory):
         return play_file(directory, payload.get("file"))
     if op == "play-stream":
         return open_stream(directory, payload.get("file"), payload.get("rate"), payload.get("channels"))
+    if op == "playback-status":
+        return {"op": op, "playing": playback_proc is not None and playback_proc.poll() is None}
     if op == "playback-stop":
         return stop_playback_request()
     if op == "capture-start":

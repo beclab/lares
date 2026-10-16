@@ -15,11 +15,12 @@ const PLUGIN_CSS = [spinCss, micCss, settingsCss].join("");
 export const inject = [];
 
 function VoiceComposer(props) {
+  const [active, setActive] = React.useState(false);
   return h(
     React.Fragment,
     null,
-    h(MicButton, props),
-    h(SpeechPlayer, { sessionId: props.sessionId, conversation: props.uiConversation }),
+    h(MicButton, { ...props, onActive: setActive }),
+    h(SpeechPlayer, { sessionId: props.sessionId, conversation: props.uiConversation, suspended: active }),
   );
 }
 
@@ -28,17 +29,6 @@ function steeringAvailable(snap) {
   return subagent === null || subagent.address?.mode === "continuable";
 }
 
-async function sendTranscript(scope, sessionId, text) {
-  const spoken = String(text ?? "").trim();
-  if (!spoken) return;
-  const session = scope.sessions.binding(sessionId)?.session;
-  if (!session) throw new Error("voice_failed");
-  const snap = session.getSnapshot();
-  const preferred = scope.configForms.get("ui-conversation").getSnapshot().value?.busyEnter;
-  const mode = resolveSubmitMode(Boolean(snap.running), false, steeringAvailable(snap), preferred);
-  const outcome = await scope.conversation.sendSession(session, spoken, [], mode);
-  if (outcome?.kind === "error") throw new Error("voice_failed");
-}
 
 export function apply(ctx) {
   installPluginStyle(ctx, "@lares/composer-voice", PLUGIN_CSS, "lares-composer-voice-css");
@@ -65,7 +55,12 @@ export function apply(ctx) {
           return h(VoiceComposer, {
             ...props,
             uiConversation: scope.uiConversation,
-            send: (sessionId, text) => sendTranscript(scope, sessionId, text),
+            mode: () => {
+              const session = scope.sessions.binding(props.sessionId)?.session;
+              const snap = session?.getSnapshot();
+              const preferred = scope.configForms.get("ui-conversation").getSnapshot().value?.busyEnter;
+              return resolveSubmitMode(Boolean(snap?.running), false, steeringAvailable(snap || {}), preferred);
+            },
           });
         },
       ),

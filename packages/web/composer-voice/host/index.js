@@ -1,3 +1,7 @@
+import { createCompositeGateway } from "@olares/lares-core/voice/composite-gateway";
+import { createRouterAudio } from "@olares/lares-core/voice/router-audio";
+import { createVoiceHostService } from "@olares/lares-core/voice/host-service";
+import { registerRealtime } from "./realtime.js";
 /**
  * Voice-input Host routes under /api/lares/voice (STT via /llm/v1 shim).
  */
@@ -6,9 +10,12 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRouteHandler, readBody, readJsonObject, sendJson } from "@olares/lares-core/tools/http";
-import { readConfig, spokenReplyPrompt } from "@olares/lares-core/voice/config";
+import { readConfig } from "@olares/lares-core/voice/config";
 import {
   STT_MAX_AUDIO_BYTES,
+  voiceScope,
+  voiceSessionPrompt,
+  playbackStatus,
   installVoice,
   probeVoice,
   resumeVoice,
@@ -25,10 +32,12 @@ import {
 } from "@olares/lares-core/voice/service";
 import { bluetoothRequest, ensureBluetoothReady } from "@olares/lares-core/voice/link";
 import { gpuAppAction, gpuModePayload, saveSlicePlan, switchReadingMode } from "@olares/lares-core/voice/gpu-mode";
+import { routerEndUser } from "@olares/lares-core/router/gateway";
+import { SPOKEN_PROMPT } from "@olares/lares-core/voice/agent-session";
 import { writeReport } from "@olares/lares-core/log/report";
 
 export const name = "lares-composer-voice";
-export const inject = ["webServer"];
+export const inject = ["webServer", "sessionController"];
 
 const ROUTE_PREFIX = "/api/lares/voice";
 const require = createRequire(import.meta.url);
@@ -43,6 +52,12 @@ const VAD_ASSETS = {
   "ort-wasm-simd-threaded.mjs": { path: join(ORT_DIST, "ort-wasm-simd-threaded.mjs"), type: "text/javascript; charset=utf-8" },
   "ort-wasm-simd-threaded.wasm": { path: join(ORT_DIST, "ort-wasm-simd-threaded.wasm"), type: "application/wasm" },
 };
+
+function scopeFor(req) {
+  const scope = voiceScope(String(req.headers["x-lares-voice-id"] || ""), routerEndUser(process.env, req.headers), req.headers["x-lares-voice-device"] === "device" ? "device" : "headset");
+  scope.voiceInputActive = req.headers["x-lares-voice-speaking"] === "true";
+  return scope;
+}
 
 function wantsRefresh(req) {
   return new URL(req.url ?? "/", "http://x").searchParams.get("refresh") === "1";
@@ -112,7 +127,7 @@ async function handleSpeak(req, res) {
   try {
     spoken = await speakFromConfig(
       typeof body.text === "string" ? body.text : "",
-      { signal: controller.signal, part, key, done: body.done === true },
+      { signal: controller.signal, part, key, done: body.done === true, scope: scopeFor(req), config: { ...readConfig(), speak: scopeFor(req).active ? scopeFor(req).readAloud : readConfig().speak } },
     );
   } finally {
     res.off("close", abort);
@@ -127,25 +142,25 @@ async function handleSpeak(req, res) {
   });
 }
 
-async function handlePlaybackStop(_req, res) {
-  await interruptSpeech();
+async function handlePlaybackStop(req, res) {
+  await interruptSpeech(scopeFor(req));
   sendJson(res, 200, { stopped: true });
 }
 
-async function handleCaptureStart(_req, res) {
-  sendJson(res, 200, await captureStart());
+async function handleCaptureStart(req, res) {
+  sendJson(res, 200, await captureStart(scopeFor(req)));
 }
 
-async function handleCaptureStop(_req, res) {
-  sendJson(res, 200, captureStop(false));
+async function handleCaptureStop(req, res) {
+  sendJson(res, 200, captureStop(false, scopeFor(req)));
 }
 
-async function handleCaptureCancel(_req, res) {
-  sendJson(res, 200, captureStop(true));
+async function handleCaptureCancel(req, res) {
+  sendJson(res, 200, captureStop(true, scopeFor(req)));
 }
 
-async function handleCaptureStatus(_req, res) {
-  sendJson(res, 200, captureStatus());
+async function handleCaptureStatus(req, res) {
+  sendJson(res, 200, captureStatus(scopeFor(req)));
 }
 
 async function handleReady(_req, res) {
@@ -169,11 +184,12 @@ async function handleTranscribe(req, res) {
     event: "transcribe-in",
     bytes: bytes.length,
     type: String(contentType),
-    head: bytes.subarray(0, 16).toString("hex"),
-    ascii: bytes.subarray(0, 24).toString("utf8").replace(/[^\x20-\x7e]/g, "."),
   });
   try {
+    const controller = new AbortController();
+    res.once("close", () => controller.abort());
     const result = await transcribeFromHttp({
+      signal: controller.signal,
       languageParam: url.searchParams.get("language"),
       contentType,
       bytes,
@@ -182,7 +198,6 @@ async function handleTranscribe(req, res) {
       scope: "voice",
       event: "transcribe-ok",
       chars: String(result?.text ?? "").length,
-      head: String(result?.text ?? "").slice(0, 40),
     });
     sendJson(res, 200, result);
   } catch (err) {
@@ -190,14 +205,62 @@ async function handleTranscribe(req, res) {
       scope: "voice",
       event: "transcribe-fail",
       code: err?.code || "voice_failed",
-      message: err instanceof Error ? err.message : String(err),
     });
     throw err;
   }
 }
 
 /** @type {Record<string, Record<string, (req, res) => Promise<void>>>} */
+let voiceHost;
+let realtime;
+let composite;
+async function handleVoiceSession(req, res) {
+  const scope = scopeFor(req);
+  const body = await readJsonObject(req);
+  sendJson(res, 200, await voiceHost.open(scope, body));
+}
+async function handleVoiceState(req, res) {
+  const scope = scopeFor(req);
+  sendJson(res, 200, voiceHost.state(scope));
+}
+async function handleVoicePrompt(req, res) {
+  const scope = scopeFor(req);
+  const body = await readJsonObject(req);
+  sendJson(res, 200, await voiceHost.prompt(scope, body));
+}
+async function handleVoiceCancel(req, res) {
+  await voiceHost.cancel(scopeFor(req));
+  sendJson(res, 200, { cancelled: true });
+}
+async function handleVoiceClose(req, res) {
+  const scope = scopeFor(req);
+  await voiceHost.close(scope);
+  captureStop(true, scope);
+  await interruptSpeech(scope);
+  sendJson(res, 200, { closed: true });
+}
+
 const ROUTES = {
+  "/realtime/ticket": { POST: async (req, res) => sendJson(res, 200, await realtime.ticket(scopeFor(req))) },
+  "/bridge/capabilities": { GET: (_req, res) => sendJson(res, 200, composite.capabilities()) },
+  "/dictation/clean": { POST: async (req, res) => { const value = await readJsonObject(req); sendJson(res, 200, { text: await voiceHost.clean(scopeFor(req), value.text) }); } },
+  "/records": {
+    GET: (req, res) => sendJson(res, 200, voiceHost.records(scopeFor(req))),
+    DELETE: async (req, res) => { await voiceHost.clearRecords(scopeFor(req)); sendJson(res, 200, { ok: true }); },
+  },
+  "/session/output": { POST: async (req, res) => { const value = await readJsonObject(req); voiceHost.output(scopeFor(req), value.readAloud); sendJson(res, 200, { ok: true }); } },
+  "/session/resume": { POST: async (req, res) => { const scope = scopeFor(req); await voiceHost.resume(scope); sendJson(res, 200, voiceHost.state(scope)); } },
+  "/session/metric": { POST: async (req, res) => {
+    const scope = scopeFor(req);
+    const value = await readJsonObject(req);
+    if (["recognition", "interrupt"].includes(value.stage) && Number.isFinite(value.durationMs) && value.durationMs >= 0 && value.durationMs <= 3_600_000) writeReport({ scope: "voice", event: "metric", voiceId: scope.id, stage: value.stage, durationMs: value.durationMs });
+    sendJson(res, 200, { ok: true });
+  } },
+  "/playback/status": { GET: (req, res) => sendJson(res, 200, playbackStatus(scopeFor(req))) },
+  "/session": { POST: handleVoiceSession, GET: handleVoiceState },
+  "/session/prompt": { POST: handleVoicePrompt },
+  "/session/cancel": { POST: handleVoiceCancel },
+  "/session/close": { POST: handleVoiceClose },
   "/status": { GET: handleStatus },
   "/models": { GET: handleModels },
   "/config": { GET: handleGetConfig, POST: handleSetConfig },
@@ -246,11 +309,22 @@ async function voiceHandler(req, res) {
  * @param {import('@deepseek-ai/cordis').Context} ctx
  */
 export function apply(ctx) {
+  voiceHost = createVoiceHostService(ctx.sessionController, { metric: (fields) => writeReport({ scope: "voice", event: "metric", ...fields }) });
+  ctx.effect(() => {
+    let grants;
+    try { grants = JSON.parse(process.env.LARES_VOICE_EXTERNAL_GRANTS || "{}"); } catch { throw new Error("Invalid voice grants configuration"); }
+    composite = createCompositeGateway({ service: voiceHost, config: readConfig, ...createRouterAudio(readConfig),
+      secret: process.env.LARES_VOICE_ROUTER_SECRET, grants, hostOwner: routerEndUser(), enabled: process.env.LARES_VOICE_EXTERNAL_ENABLED === "1" });
+    const unregister = ctx.webServer.registerUpgrade({ path: "/api/lares/voice/bridge/realtime", handler: (req, socket, head) => composite.upgrade(req, socket, head) });
+    return () => { unregister(); composite.close(); };
+  });
+  ctx.on("api-session/removed", (sessionId) => voiceHost.remove(sessionId));
+  ctx.effect(() => { realtime = registerRealtime(ctx, voiceHost); return () => realtime.dispose(); });
   ctx.effect(
     () => ctx.webServer.register({ kind: "prefix", path: ROUTE_PREFIX, handler: voiceHandler }),
     "lares-composer-voice-routes",
   );
   ctx.inject(["systemPrompt"], (promptCtx) => {
-    promptCtx.systemPrompt.section({ name: "app:spoken-reply", order: 9800, text: () => spokenReplyPrompt() });
+    promptCtx.systemPrompt.section({ name: "app:spoken-reply", order: 9800, text: (assembly) => voiceSessionPrompt(assembly.scope?.id) ? SPOKEN_PROMPT : "" });
   });
 }

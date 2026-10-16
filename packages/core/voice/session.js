@@ -65,6 +65,16 @@ export async function openBluetoothPlayback(options = {}) {
         });
         stream.end();
       });
+      if (options.waitForDrain) {
+        const until = Date.now() + 120_000;
+        while (true) {
+          const state = await askAgent("playback-status", {}, options);
+          if (state.error) throw new VoiceError("voice_host_upgrade_required", 409, "update the Lares host audio helper");
+          if (!state.playing) break;
+          if (Date.now() >= until) throw new VoiceError("voice_playback_timeout", 408, "host playback did not finish");
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+      }
     },
     abort() {
       stream.destroy();
@@ -102,7 +112,7 @@ export async function readHostCapture(from = 0, options = {}) {
   try {
     handle = await open(`${voiceDir(options)}/${CAPTURE_FILE}`, "r");
     const { size } = await handle.stat();
-    const length = size - start;
+    const length = Math.min(size - start, options.maxBytes ?? 64 * 1024);
     if (length <= 0) return Buffer.alloc(0);
     const buf = Buffer.alloc(length);
     const { bytesRead } = await handle.read(buf, 0, length, start);

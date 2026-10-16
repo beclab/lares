@@ -89,6 +89,7 @@
       @files="attachFiles"
       @hold-start="onHoldStart"
       @hold-end="onHoldEnd"
+      @voice-action="voiceAction"
       @close-model="modelSheet = false"
       @choose-model="chooseModel"
       @close-effort="effortSheet = false"
@@ -108,11 +109,12 @@ import { pickHostPorts } from "@olares/lares-core/larepass/host";
 import { connectChat } from "./runtime.js";
 import { createT } from "./i18n.js";
 import { failText, withPendingUser } from "./chat/format.js";
-import { createVoiceCapture } from "./chat/voice.js";
+import { captureSource } from "@olares/lares-core/voice/input";
+import { createRealtimeConversation } from "@olares/lares-core/voice/realtime-conversation";
+import { createVoiceConversation } from "@olares/lares-core/voice/conversation";
 import { createAnswerPlayer } from "./chat/playback.js";
 import { createReplySpeaker, createSentencePlayer, speakable } from "@olares/lares-core/voice/speech";
 import { wavBlob } from "@olares/lares-core/voice/client";
-import { captureSource } from "@olares/lares-core/voice/input";
 import { browserPlays } from "@olares/lares-core/voice/playback";
 import { speakProblemText, speakToggleNotice } from "@olares/lares-core/voice/problem";
 import { appendDraftMentions } from "@olares/lares-core/files/mention";
@@ -218,11 +220,15 @@ export default {
       effortSheet: false,
       upload: { pending: 0, failures: [] },
       draftImages: [],
+      voiceCall: null,
+      voiceHistory: null,
+      voiceCaption: "",
       voicePhase: "idle",
       voiceElapsed: 0,
       voiceError: "",
       voiceLanguage: "",
       voiceSpeak: false,
+      voiceDefaultMode: "continuous",
       voiceStreaming: false,
       speakBusy: false,
       speakNotice: "",
@@ -329,6 +335,8 @@ export default {
         effortDisabled: this.effortDisabled,
         upload: this.upload,
         draftImages: this.draftImages,
+        voiceDefaultMode: this.voiceDefaultMode,
+        voiceCall: this.voiceCall,
         voicePhase: this.voicePhase,
         voiceElapsed: this.voiceElapsed,
         voiceErrorText: this.voiceErrorText,
@@ -538,25 +546,7 @@ export default {
       silence: () => void this.runtime.interruptSpeech?.(),
       fail: (err) => this.showSpeakProblem(err),
     });
-    this.voiceCap = createVoiceCapture({
-      transcribe: (blob, signal) => this.runtime.transcribe(blob, this.voiceLanguage, signal),
-      onPhase: (phase, extra = {}) => {
-        this.voicePhase = phase;
-        if (extra.elapsed != null) this.voiceElapsed = extra.elapsed;
-        if (extra.error != null) this.voiceError = extra.error;
-      },
-      onTrace: (event, fields) => {
-        void this.runtime.reportLog?.("voice", event, fields);
-      },
-      submit: (text) => {
-        void this.runtime.reportLog?.("voice", "submit", {
-          chars: String(text ?? "").trim().length,
-          running: Boolean(this.running),
-          session: Boolean(this.sessionId),
-        });
-        void this.sendTranscript(text);
-      },
-    });
+
     this.bindIntake(this.sessionId);
     this.bindRuntime();
     try {
@@ -572,6 +562,13 @@ export default {
     this.conversationUnsub = subscribeConversationSettings((section) => {
       this.busyEnter = section.busyEnter;
     });
+    this.voiceVisibilityHandler = () => {
+      if (document.hidden) void this.voiceConversation?.controller.disconnect("voice_background");
+    };
+    document.addEventListener("visibilitychange", this.voiceVisibilityHandler);
+    this.voiceClock = setInterval(() => {
+      if (this.voicePhase === "recording") this.voiceElapsed += 1;
+    }, 1000);
     this.retry();
   },
   activated() {
@@ -581,11 +578,14 @@ export default {
     this.captureLog();
   },
   beforeUnmount() {
+    document.removeEventListener("visibilitychange", this.voiceVisibilityHandler);
+    clearInterval(this.voiceClock);
     this.captureLog();
     this.noteSeen(this.sessionId);
     for (const controller of this.imageUploadControllers?.values?.() ?? []) controller.abort();
     this.imageUploadControllers?.clear?.();
-    this.voiceCap?.dispose();
+    void this.voiceConversation?.stop().catch(() => {});
+    this.voiceUnsub?.();
     this.conversationUnsub?.();
     this.intakeUnsub?.();
     if (this.sessionId) this.intake?.cancelSession(this.sessionId);
@@ -642,10 +642,12 @@ export default {
         this.commands = null;
         this.commandsError = "";
       }
-      if (sessionChanged) {
+      if (sessionChanged && snap.sessionId !== this.voiceAdoptingSession) {
+        void this.voiceConversation?.stop().catch(() => {});
         this.reader.stop();
         this.player?.stop();
       }
+      if (sessionChanged) this.voiceAdoptingSession = null;
       const utterance = this.replySpeaker.observe({
         sessionChanged,
         wasRunning: this.running,
@@ -656,7 +658,7 @@ export default {
       this.items = snap.items;
       this.running = snap.running;
       this.runningSince = snap.runningSince || 0;
-      const target = this.voiceSpeak ? speakable(utterance, this.voiceStreaming) : null;
+      const target = this.voiceSpeak && !this.voiceCall ? speakable(utterance, this.voiceStreaming) : null;
       if (target) this.reader.follow({ ...target, key: `${snap.sessionId}:${target.key}` });
       this.failed = snap.failed;
       this.error = snap.error;
@@ -951,7 +953,7 @@ export default {
       this.unsub = this.runtime.subscribe((snap) => this.applySnap(snap));
     },
     switchHost() {
-      this.voiceCap?.stop?.(true);
+      void this.voiceConversation?.stop().catch(() => {});
       for (const controller of this.imageUploadControllers.values()) controller.abort();
       this.imageUploadControllers.clear();
       this.releaseDraftImages();
@@ -1030,6 +1032,7 @@ export default {
       if (settings) {
         jobs.push(settings.voice().then((voice) => {
           this.voiceLanguage = voice.config?.language || "";
+          this.voiceDefaultMode = voice.config?.mobileMode || "continuous";
           this.voiceSpeak = voice.config?.speak === true;
           this.voiceStreaming = voice.config?.streaming === true;
         }).catch(() => {
@@ -1186,24 +1189,90 @@ export default {
       this.draftImages = [];
       this.imagesBySession = {};
     },
-    onHoldStart(detail) {
-      void this.runtime.reportLog?.("voice", "hold-start", {
-        via: detail?.via || "",
-        phase: this.voicePhase,
-      });
-      if (captureSource("mobile") !== "device") return;
-      if (this.voicePhase === "idle" || this.voicePhase === "error") void this.voiceCap?.start();
-      this.reader.stop();
-      this.player?.stop();
-      this.player?.unlock();
-      void this.runtime.interruptSpeech?.();
+    async onHoldStart({ mode: selectedMode } = {}) {
+      this.voiceReleased = false;
+      if (this.voiceCall?.connection === "open") {
+        await this.voiceConversation.stop(); return;
+      }
+      const target = this.sessionId;
+      this.voicePhase = "preparing"; this.voiceElapsed = 0;
+      try {
+        const settings = await this.runtime.settings.voice(true);
+        if (this.sessionId !== target) return;
+        const continuous = (selectedMode || settings.config.mobileMode || "continuous") === "continuous";
+        if (settings.config.backend === "realtime" && continuous) {
+          const conversation = createRealtimeConversation({ readAloud: settings.config.speak, idleTimeoutMs: settings.config.idleTimeoutMs, recoveryTimeoutMs: settings.config.recoveryTimeoutMs,
+            request: (path, options) => this.runtime.voiceRequest(path, options), socket: (ticket) => this.runtime.voiceSocket(ticket),
+            device: captureSource("mobile", settings.config.device), playback: this.player,
+            onCaption: (text) => { this.voiceCaption = `${this.voiceCaption}${text}`.slice(-300); },
+          });
+          await this.attachVoiceConversation(conversation, target, true);
+          return;
+        }
+        this.reader.stop(); this.player?.stop(); this.player?.unlock();
+        let conversation;
+        const reader = createSentencePlayer({
+          send: (value) => conversation.speak(value),
+          play: (sentence) => sentence.bluetooth === "played" ? Promise.resolve() : this.player.play(wavBlob(sentence.audio)),
+          halt: () => this.player.stop(), silence: () => {},
+          onState: (playing) => conversation?.playbackState(playing),
+          fail: (error) => { this.showSpeakProblem(error); void conversation.controller.disconnect("voice_playback_failed"); },
+        });
+        conversation = createVoiceConversation({
+          request: (path, options) => this.runtime.voiceRequest(path, options),
+          transcribe: (blob, signal) => this.runtime.transcribe(blob, this.voiceLanguage, signal),
+          device: captureSource("mobile", settings.config.device),
+          readAloud: continuous && settings.config.speak,
+          preset: settings.config.preset, endpointSilenceMs: settings.config.endpointSilenceMs, idleTimeoutMs: settings.config.idleTimeoutMs, recoveryTimeoutMs: settings.config.recoveryTimeoutMs,
+          onText: (text) => { this.voiceCaption = text; if (this.voiceCall) this.voiceCall = { ...this.voiceCall, caption: text }; },
+          onTranscript: continuous && settings.config.preset !== "dictation" ? null : ({ text }) => {
+            if (this.sessionId !== target) return;
+            this.draft = [this.draft, text].filter(Boolean).join(" ");
+            this.draftBySession = { ...this.draftBySession, [target || "@pending"]: this.draft };
+          },
+          mode: () => resolveSubmitMode(this.running, false, true, this.busyEnter),
+          playback: { stop: () => { reader.stop(); this.player.stop(); } },
+          onReply: (reply) => { const value = speakable(reply, settings.config.streaming); if (value) reader.follow(value); },
+        });
+        await this.attachVoiceConversation(conversation, target, continuous);
+      } catch (error) { this.voicePhase = "error"; this.voiceError = error.message; }
     },
-    onHoldEnd(detail) {
-      void this.runtime.reportLog?.("voice", "hold-end", {
-        via: detail?.via || "",
-        phase: this.voicePhase,
+    async attachVoiceConversation(conversation, target, continuous) {
+      this.voiceCaption = ""; this.voiceHistory = null;
+      this.voiceConversation = conversation;
+      this.voiceUnsub?.();
+      this.voiceUnsub = conversation.controller.subscribe(() => {
+        const state = conversation.controller.getSnapshot();
+        if (state.connection === "open" && !target && !this.sessionId && !this.voiceAdoptingSession && state.sessionId) {
+          this.voiceAdoptingSession = state.sessionId;
+          void Promise.resolve(this.runtime.openSession(state.sessionId)).catch((error) => { this.voiceError = error.message; this.voiceAdoptingSession = null; });
+        }
+        this.voiceCall = state.connection === "closed" ? null : { ...state, caption: this.voiceCaption, history: this.voiceHistory };
+        this.voicePhase = state.error ? "error" : state.capture;
+        this.voiceError = state.error || "";
       });
-      this.voiceCap?.stop(false);
+      await conversation.start({ sessionId: target || null, continuous });
+      if (this.voiceReleased && !continuous) conversation.controller.stopRecording();
+    },
+    onHoldEnd() {
+      this.voiceReleased = true;
+      if (!this.voiceConversation?.controller.getSnapshot().continuous) this.voiceConversation?.controller.stopRecording();
+    },
+    async voiceAction(action) {
+      try {
+        if (action === "mute") await this.voiceConversation?.setReadAloud(this.voiceCall.outputMuted);
+        if (action === "history") {
+          this.voiceHistory = (await this.voiceConversation?.records()).records;
+          if (this.voiceCall) this.voiceCall = { ...this.voiceCall, history: this.voiceHistory };
+        }
+        if (action === "clear-history") { await this.voiceConversation?.clearRecords(); this.voiceHistory = null; }
+        if (action === "input-pause") await this.voiceConversation?.controller.pauseInput();
+        if (action === "input-resume") this.voiceConversation?.controller.resumeInput();
+        if (action === "stop") await this.voiceConversation?.stop();
+        if (action === "playback") await this.voiceConversation?.controller.stopPlayback();
+        if (action === "cancel") await this.voiceConversation?.controller.cancelTask();
+        if (action === "resume") await this.voiceConversation?.resume();
+      } catch (error) { this.voiceError = error.message; }
     },
     showSpeakProblem(err) {
       this.speakNotice = speakProblemText(this.t, err);
@@ -1380,27 +1449,6 @@ export default {
     archiveSession(sessionId) {
       if (!sessionId) return;
       return this.runtime.archiveSession(sessionId);
-    },
-    async sendTranscript(text) {
-      const spoken = String(text ?? "").trim();
-      if (!spoken || !this.sessionId || this.modelBlocked || this.historyLoading || this.upload?.pending) return;
-      const mode = resolveSubmitMode(this.running, false, true, this.busyEnter);
-      this.sending = true;
-      this.pendingUser = this.running ? "" : spoken;
-      this.runtime.pinToBottom();
-      this.pinLog();
-      try {
-        const sent = await this.runtime.send([{ type: "text", text: spoken }], mode);
-        if (!sent.ok) {
-          this.pendingUser = "";
-          this.failed = sent.error?.message || sent.error?.code || "send";
-        }
-      } catch (err) {
-        this.pendingUser = "";
-        this.failed = err instanceof Error ? err.message : "send";
-      } finally {
-        this.sending = false;
-      }
     },
     async send(mode = "queue") {
       const text = this.draft.trim();

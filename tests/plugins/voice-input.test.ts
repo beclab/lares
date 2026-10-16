@@ -61,7 +61,7 @@ test("voice settings map the auto sentinel to an empty stored value", () => {
   assert.equal(voiceValueFromMenu("auto"), "");
   assert.equal(voiceValueFromMenu("zh"), "zh");
   assert.deepEqual(STT_LANGUAGE_CHOICES.map((item) => item.id), ["zh", "en", "ja", "ko"]);
-  assert.deepEqual(EMPTY_VOICE_CONFIG, { model: "", ttsModel: "", language: "", speak: false, streaming: false });
+  assert.deepEqual(EMPTY_VOICE_CONFIG, { preset: "assistant", dictationCleanup: false, chatModel: "default-chat", instructions: "", voice: "", mode: "single", mobileMode: "continuous", endpointSilenceMs: 500, idleTimeoutMs: 300_000, recoveryTimeoutMs: 120_000, device: "auto", backend: "pipeline", realtimeModel: "", model: "", ttsModel: "", language: "", speak: false, streaming: false });
   assert.equal(voiceLanguageItems("Auto")[0].label, "Auto");
   assert.deepEqual(voiceModelItems(["whisper-a"], "Auto"), [
     { id: "auto", label: "Auto" },
@@ -441,7 +441,7 @@ test("chart status reads the live row across every market source", async () => {
   assert.equal((await voiceChartStatus("stt", { spawnFn })).phase, "running");
 });
 
-test("GPU apps come from every source, read from the source each was installed from", async () => {
+test("GPU apps parse large inventories and read each installed source", async () => {
   const { gpuApps, parseQuantity } = await import(`../../packages/core/voice/gpu-mode.js?apps=${Date.now()}`);
   assert.equal(parseQuantity("6Gi"), 6 * 2 ** 30);
   assert.equal(parseQuantity("512Mi"), 512 * 2 ** 20);
@@ -453,7 +453,7 @@ test("GPU apps come from every source, read from the source each was installed f
     if (args[1] === "list") {
       body = JSON.stringify([
         { name: "flowstudio", title: "FlowStudio", source: "market.olares", state: "stopped" },
-        { name: "router", title: "Router", source: "market.olares", state: "running" },
+        { name: "router", title: "Router".repeat(2000), source: "market.olares", state: "running" },
         { name: "sglang", title: "Qwen (SGLang)", source: "upload", state: "running" },
       ]);
     } else {
@@ -650,20 +650,24 @@ test("readConfig / writeConfig round-trip through DSH_HOME", async () => {
   const prev = process.env.DSH_HOME;
   process.env.DSH_HOME = home;
   try {
-    const { readConfig, spokenReplyPrompt, validateConfigPatch, writeConfig } = await import(
+    const { readConfig, validateConfigPatch, writeConfig } = await import(
       `../../packages/core/voice/config.js?cfg=${Date.now()}`
     );
-    assert.deepEqual(readConfig(), { model: "", ttsModel: "", language: "", speak: false, streaming: false });
-    assert.equal(spokenReplyPrompt(), "");
+    assert.deepEqual(readConfig(), { preset: "assistant", dictationCleanup: false, chatModel: "default-chat", instructions: "", voice: "", mode: "single", mobileMode: "continuous", endpointSilenceMs: 500, idleTimeoutMs: 300_000, recoveryTimeoutMs: 120_000, device: "auto", backend: "pipeline", realtimeModel: "", model: "", ttsModel: "", language: "", speak: false, streaming: false });
     const saved = writeConfig({ model: "  whisper-x  ", language: "zh" });
     assert.equal(saved.model, "whisper-x");
     assert.equal(saved.language, "zh");
     assert.equal(writeConfig({ speak: true, ttsModel: "kokoro/hexgrad/Kokoro-82M" }).speak, true);
-    assert.match(spokenReplyPrompt(), /read aloud/);
     assert.equal(readConfig().model, "whisper-x");
     assert.equal(writeConfig({ streaming: true }).streaming, true);
     for (const patch of [
       { streaming: "yes" },
+      { mode: "invalid" },
+      { mobileMode: "invalid" },
+      { idleTimeoutMs: -1 },
+      { recoveryTimeoutMs: 3.5 },
+      { backend: "invalid" },
+      { device: "invalid" },
       { ignored: "value" },
       { language: "zh\r\nX-Injected: yes" },
       { language: "fr" },

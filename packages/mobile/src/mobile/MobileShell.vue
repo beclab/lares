@@ -72,6 +72,8 @@
             :can-send="state.canSend"
             :attach-pending="state.upload.pending > 0"
             :attach-disabled="!state.sessionId || state.historyLoading || state.starting"
+            :voice-call="state.voiceCall"
+            :voice-default-mode="state.voiceDefaultMode"
             :voice-phase="state.voicePhase"
             :voice-elapsed="state.voiceElapsed"
             :voice-error="state.voiceErrorText"
@@ -91,6 +93,7 @@
             @voice="$emit('voice')"
             @hold-start="$emit('hold-start', $event)"
             @hold-end="$emit('hold-end', $event)"
+            @voice-action="$emit('voice-action', $event)"
             @open-commands="$emit('open-commands')"
             @open-references="$emit('open-references', $event)"
             @pick-command="$emit('pick-command', $event)"
@@ -133,6 +136,8 @@
             :can-send="state.canSend"
             :attach-pending="state.upload.pending > 0"
             :attach-disabled="!state.sessionId || state.historyLoading || state.starting"
+            :voice-call="state.voiceCall"
+            :voice-default-mode="state.voiceDefaultMode"
             :voice-phase="state.voicePhase"
             :voice-elapsed="state.voiceElapsed"
             :voice-error="state.voiceErrorText"
@@ -152,6 +157,7 @@
             @voice="$emit('voice')"
             @hold-start="$emit('hold-start', $event)"
             @hold-end="$emit('hold-end', $event)"
+            @voice-action="$emit('voice-action', $event)"
             @open-commands="$emit('open-commands')"
             @open-references="$emit('open-references', $event)"
             @pick-command="$emit('pick-command', $event)"
@@ -249,7 +255,7 @@ export default {
   emits: [
     "history", "create", "toggle-speak", "close-history", "pick-session", "retry", "open-file",
     "answer", "update-draft", "send", "queue-action", "open-model", "open-effort", "files",
-    "voice", "hold-start", "hold-end", "close-model", "choose-model",
+    "voice", "voice-action", "hold-start", "hold-end", "close-model", "choose-model",
     "close-effort", "choose-effort", "close-preview",
     "open-commands", "open-references", "pick-command", "remove-image",
     "refresh-workspaces", "browse-workspaces", "browse-directory",

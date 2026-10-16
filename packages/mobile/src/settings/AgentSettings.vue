@@ -41,7 +41,6 @@
       <p class="lares-agent__hint">{{ t("settings.input.busyEnter.hint") }}</p>
       <p v-if="conversationError" class="lares-agent__hint" data-status="error">{{ conversationError }}</p>
     </section>
-    <!-- Voice input parked.
     <section class="lares-agent__group">
       <h2>{{ tVoice("settings.title") }}</h2>
       <div class="lares-agent__list">
@@ -62,9 +61,43 @@
           @click="openSheet('voiceLang')"
         />
       </div>
+      <label class="lares-agent__hint">{{ tVoice('settings.preset') }}
+        <select :value="voice?.config?.preset || 'assistant'" @change="patchVoice('preset', $event.target.value)">
+          <option v-for="preset in ['dictation', 'chat', 'assistant', 'direct']" :key="preset" :value="preset">{{ tVoice(`settings.preset.${preset}`) }}</option>
+        </select>
+      </label>
+      <label class="lares-agent__hint">{{ tVoice('settings.chatModel') }}
+        <select :value="voice?.config?.chatModel || 'default-chat'" @change="patchVoice('chatModel', $event.target.value)">
+          <option value="default-chat">default-chat</option>
+          <option v-for="model in voice?.chatModels || []" :key="model" :value="model">{{ model }}</option>
+        </select>
+      </label>
+      <label class="lares-agent__hint">{{ tVoice('settings.backend') }}
+        <select :value="voice?.config?.backend || 'pipeline'" @change="patchVoice('backend', $event.target.value)">
+          <option value="pipeline">{{ tVoice('settings.backend.pipeline') }}</option>
+          <option v-if="voice?.realtimeReady?.includes(voice?.config?.realtimeModel)" value="realtime">Realtime</option>
+        </select>
+      </label>
+      <label v-if="voice?.realtimeModels?.length" class="lares-agent__hint">{{ tVoice('settings.realtime.model') }}
+        <select :value="voice?.config?.realtimeModel || ''" @change="patchVoice('realtimeModel', $event.target.value)">
+          <option value="" disabled>—</option>
+          <option v-for="model in voice.realtimeModels" :key="model" :value="model">{{ model }}</option>
+        </select>
+      </label>
+      <p class="lares-agent__hint">{{ tVoice('settings.realtime.hint') }}</p>
+      <label class="lares-agent__hint">{{ tVoice('settings.mobileMode') }}
+        <select :value="voice?.config?.mobileMode || 'continuous'" @change="patchVoice('mobileMode', $event.target.value)">
+          <option value="single">{{ tVoice('settings.mode.single') }}</option>
+          <option value="continuous">{{ tVoice('settings.mode.continuous') }}</option>
+        </select>
+      </label>
+      <label class="lares-agent__hint">{{ tVoice('settings.device') }}
+        <select :value="voice?.config?.device || 'auto'" @change="patchVoice('device', $event.target.value)">
+          <option v-for="device in ['auto', 'device', 'headset']" :key="device" :value="device">{{ tVoice(`settings.device.${device}`) }}</option>
+        </select>
+      </label>
       <p v-if="voiceError" class="lares-agent__hint" data-status="error">{{ voiceError }}</p>
     </section>
-    -->
     <section class="lares-agent__group">
       <h2>{{ tSearch("settings.title") }}</h2>
       <LaresSelect
