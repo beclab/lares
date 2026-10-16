@@ -123,7 +123,7 @@
             class="lares-composer__icon"
             data-kind="voice"
             :disabled="sending"
-            :aria-label="t('call.start')"
+            :aria-label="t(voiceDefaultMode === 'single' ? 'settings.mode.single' : 'call.start')"
             aria-haspopup="dialog"
             @click="onVoiceClick"
           >
@@ -145,7 +145,6 @@
               <path d="M12 19V5M5 12.5 12 5l7 7.5" />
             </svg>
           </button>
-          <button type="button" class="lares-composer__voice-entry" aria-haspopup="dialog" @click="$emit('hold-start', { mode: 'single' })">{{ t('settings.mode.single') }}</button>
         </div>
       </div>
     </div>
@@ -379,7 +378,7 @@ export default {
       }
     },
     onVoiceClick() {
-      this.$emit("hold-start", { mode: "continuous" });
+      this.$emit("hold-start", { mode: this.voiceDefaultMode });
     },
     clearHold() {
       this.holding = false;
@@ -410,8 +409,6 @@ export default {
 </script>
 
 <style scoped>
-.lares-composer__voice-entry { border: 0; border-radius: 12px; padding: 6px 8px; background: var(--q-background-3); color: var(--q-ink-2); font: inherit; font-size: 12px; min-height: 36px; cursor: pointer; }
-.lares-composer__voice-entry:focus-visible { outline: 2px solid var(--q-blue-default); }
 
 .lares-composer {
   display: flex;
@@ -810,8 +807,6 @@ export default {
 </style>
 
 <style scoped>
-.lares-composer__voice-entry { border: 0; border-radius: 12px; padding: 6px 8px; background: var(--q-background-3); color: var(--q-ink-2); font: inherit; font-size: 12px; min-height: 36px; cursor: pointer; }
-.lares-composer__voice-entry:focus-visible { outline: 2px solid var(--q-blue-default); }
 
 .lares-composer__voice-mode { margin: 8px 12px; border: 0; border-radius: 8px; padding: 6px; background: transparent; color: inherit; font: inherit; }
 .lares-composer__hint button { min-height: 44px; border: 0; border-radius: 12px; padding: 8px 12px; background: var(--lares-bg-secondary, #f0f0f0); color: inherit; font: inherit; }

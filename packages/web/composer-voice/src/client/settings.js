@@ -1,3 +1,5 @@
+import { DICTATION_PRESETS, DICTATION_INSTRUCTIONS } from "@olares/lares-core/voice/dictation";
+import { shortcutFromEvent, validateVoiceShortcuts } from "@olares/lares-core/voice/shortcuts";
 import { VOICE_PRESETS } from "@olares/lares-core/voice/options";
 import React from "react";
 import { Button, Switch, Tag } from "@deepseek-ai/dsh-client-ui-primitives";
@@ -76,6 +78,7 @@ function Row(title, hint, control) {
 export function VoiceSettings() {
   const t = useT();
   const [view, setView] = useState(rememberedVoiceSettings);
+  const [dictationEditor, setDictationEditor] = useState("clean");
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [installing, setInstalling] = useState(null);
@@ -282,8 +285,21 @@ export function VoiceSettings() {
       t,
     }),
     h(Notice, { notice: scoped("page") }),
+    Group(t("dictation.settings"), scoped("tts"),
+      Row(t("dictation.preset"), null, h(SettingsSelector, { value: config.dictationPreset, items: DICTATION_PRESETS.map((id) => ({ id, label: t(`dictation.${id}`) })), disabled: busy, onSelect: (dictationPreset) => patch({ dictationPreset }) })),
+      Row(t("dictation.configure"), null, h(SettingsSelector, { value: dictationEditor, items: DICTATION_PRESETS.map((id) => ({ id, label: t(`dictation.${id}`) })), onSelect: setDictationEditor })),
+      dictationEditor !== "raw" ? h(React.Fragment, null,
+        Row(t("dictation.model"), null, h(SettingsSelector, { value: config.dictationProfiles[dictationEditor].model || "__none__", items: [{ id: "__none__", label: "—" }, ...(view.chatModels || []).map((id) => ({ id, label: id }))], disabled: busy,
+          onSelect: (model) => patch({ dictationProfiles: { ...config.dictationProfiles, [dictationEditor]: { ...config.dictationProfiles[dictationEditor], model: model === "__none__" ? "" : model } } }) })),
+        Row(t("dictation.instructions"), null, h("textarea", { key: `${dictationEditor}:${config.dictationProfiles[dictationEditor].instructions}`, defaultValue: config.dictationProfiles[dictationEditor].instructions, disabled: busy, maxLength: 8000,
+          onBlur: (event) => { if (event.target.value !== config.dictationProfiles[dictationEditor].instructions) void patch({ dictationProfiles: { ...config.dictationProfiles, [dictationEditor]: { ...config.dictationProfiles[dictationEditor], instructions: event.target.value } } }); } })),
+        h(Button, { disabled: busy, onClick: () => patch({ dictationProfiles: { ...config.dictationProfiles, [dictationEditor]: { ...config.dictationProfiles[dictationEditor], instructions: DICTATION_INSTRUCTIONS[dictationEditor] } } }) }, t("dictation.reset"))) : h("p", null, t("dictation.noLlm")),
+      ...["default", ...DICTATION_PRESETS].map((id) => Row(t(id === "default" ? "dictation.shortcut" : `dictation.${id}`), t("dictation.shortcutHint"), h("input", { readOnly: true, value: config.dictationShortcuts[id] || "", "aria-label": `${t("dictation.shortcut")} ${id}`, disabled: busy,
+        onKeyDown: (event) => { if (event.key === "Tab") return; event.preventDefault(); if (event.repeat) return; const key = ["Backspace", "Delete"].includes(event.key) ? "" : shortcutFromEvent(event); if (!key && !["Backspace", "Delete"].includes(event.key)) return;
+          try { const dictationShortcuts = validateVoiceShortcuts({ ...config.dictationShortcuts, [id]: key }); void patch({ dictationShortcuts }); } catch { setNotice({ scope: "tts", kind: "error", text: t("dictation.shortcutConflict") }); } } }))),
+    ),
     Group(t("settings.conversation"), null,
-      Row(t("settings.dictationCleanup"), null, h(Switch, { checked: config.dictationCleanup === true, disabled: busy, onChange: (dictationCleanup) => patch({ dictationCleanup }) })),
+
       Row(t("settings.preset"), null, h(SettingsSelector, { value: config.preset || "assistant", items: VOICE_PRESETS.map((id) => ({ id, label: t(`settings.preset.${id}`) })), onSelect: (preset) => patch({ preset }), disabled: busy })),
       Row(t("settings.chatModel"), null, h(SettingsSelector, { value: config.chatModel || "default-chat", disabled: busy, items: [...new Set(["default-chat", config.chatModel, ...(view.chatModels || [])].filter(Boolean))].map((id) => ({ id, label: id })), onSelect: (chatModel) => patch({ chatModel }) })),
       Row(t("settings.backend"), t("settings.realtime.hint"), h(SettingsSelector, { value: config.backend || "pipeline", items: [{ id: "pipeline", label: t("settings.backend.pipeline") }, ...((view.realtimeReady || []).includes(config.realtimeModel) ? [{ id: "realtime", label: "Realtime" }] : [])], onSelect: (backend) => patch({ backend }), disabled: busy })),
@@ -295,6 +311,7 @@ export function VoiceSettings() {
     Group(
       t("settings.group.stt"),
       scoped("stt"),
+      Row(t("settings.model.title"), null, h(SettingsSelector, { value: config.model || "__auto__", items: [{ id: "__auto__", label: t("settings.model.auto") }, ...(view.sttModels || []).map((id) => ({ id, label: id }))], disabled: busy, onSelect: (model) => patch({ model: model === "__auto__" ? "" : model }) })),
       Row(
         t("settings.language.title"),
         t("settings.language.hint"),
