@@ -74,8 +74,9 @@ test("mobile new session uses a centered hero; model and effort live on the top 
   assert.match(composer, /data-mode="inputMode"/);
   assert.match(composer, /@click="onVoiceClick"/);
   assert.doesNotMatch(composer, /@touchstart/);
-  assert.match(composer, /data-kind="keyboard"/);
-  assert.match(composer, /setMode\('voice'\)/);
+  assert.match(composer, /aria-haspopup="dialog"/);
+  assert.match(composer, /mode: 'single'/);
+  assert.doesNotMatch(composer, /voiceCall\.caption|voiceCall\.history/);
   assert.match(composer, /data-expanded/);
   assert.match(composer, /v-if="expanded"/);
   assert.doesNotMatch(composer, /lares-composer__pills/);

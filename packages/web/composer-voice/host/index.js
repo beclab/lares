@@ -244,6 +244,13 @@ const ROUTES = {
   "/realtime/ticket": { POST: async (req, res) => sendJson(res, 200, await realtime.ticket(scopeFor(req))) },
   "/bridge/capabilities": { GET: (_req, res) => sendJson(res, 200, composite.capabilities()) },
   "/dictation/clean": { POST: async (req, res) => { const value = await readJsonObject(req); sendJson(res, 200, { text: await voiceHost.clean(scopeFor(req), value.text) }); } },
+  "/history": { POST: async (req, res) => {
+    const abort = new AbortController();
+    const close = () => abort.abort();
+    res.once("close", close);
+    try { sendJson(res, 200, await voiceHost.history({ owner: routerEndUser(process.env, req.headers) }, await readJsonObject(req), abort.signal)); }
+    finally { res.removeListener("close", close); }
+  } },
   "/records": {
     GET: (req, res) => sendJson(res, 200, voiceHost.records(scopeFor(req))),
     DELETE: async (req, res) => { await voiceHost.clearRecords(scopeFor(req)); sendJson(res, 200, { ok: true }); },

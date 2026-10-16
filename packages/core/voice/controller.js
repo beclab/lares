@@ -125,6 +125,13 @@ export function createVoiceController({ input, agent, output, voiceId = mintRpcI
       change({ playback: playing ? "playing" : "idle" });
       if (!playing && state.continuous) void listen();
     },
+    async pause() {
+      clearTimers(); epoch += 1;
+      change({ connection: "paused", error: null });
+      recoveryTimer = schedule(() => { void expire("voice_recovery_expired"); }, recoveryTimeoutMs);
+      recoveryTimer.unref?.();
+      await Promise.allSettled([cancelInput(), stopPlayback()]);
+    },
     async disconnect(code = null) {
       clearTimers();
       if (code) {

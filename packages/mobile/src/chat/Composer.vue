@@ -82,10 +82,6 @@
           </button>
         </figure>
       </div>
-      <select v-if="inputMode === 'voice' && !voiceCall" :value="voiceSelection || voiceDefaultMode" @change="voiceSelection = $event.target.value" class="lares-composer__voice-mode" :aria-label="t('settings.mode')">
-        <option value="single">{{ t('settings.mode.single') }}</option>
-        <option value="continuous">{{ t('settings.mode.continuous') }}</option>
-      </select>
       <div class="lares-composer__line" :data-expanded="expanded ? 'true' : 'false'">
         <button
           type="button"
@@ -100,7 +96,7 @@
           </svg>
         </button>
         <textarea
-          v-show="inputMode === 'text'"
+
           ref="input"
           :value="draft"
           class="lares-composer__input"
@@ -114,24 +110,6 @@
           @select="onCaretMove"
           @contextmenu="onContextMenu"
         />
-        <button
-          v-show="inputMode === 'voice'"
-          type="button"
-          class="lares-composer__talk"
-          :data-phase="voicePhase"
-          :disabled="voiceBlocked"
-          :aria-label="voiceLabel"
-          @click="onVoiceClick"
-          @contextmenu.prevent
-        >
-          <span v-if="voicePhase === 'preparing' || voicePhase === 'transcribing'" class="lares-composer__talk-status">
-            <svg class="lares-composer__spin" viewBox="0 0 16 16" aria-hidden="true">
-              <circle cx="8" cy="8" r="6" />
-            </svg>
-            <span>{{ talkLabel }}</span>
-          </span>
-          <span v-else>{{ talkLabel }}</span>
-        </button>
         <div class="lares-composer__tools">
           <input
             ref="picker"
@@ -141,13 +119,13 @@
             @change="onFiles"
           />
           <button
-            v-if="inputMode === 'text'"
             type="button"
             class="lares-composer__icon"
             data-kind="voice"
             :disabled="sending"
-            :aria-label="t('composer.voice')"
-            @click="setMode('voice')"
+            :aria-label="t('call.start')"
+            aria-haspopup="dialog"
+            @click="onVoiceClick"
           >
             <svg class="lares-composer__wave" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M5 8v8" />
@@ -167,43 +145,11 @@
               <path d="M12 19V5M5 12.5 12 5l7 7.5" />
             </svg>
           </button>
-          <button
-            v-if="inputMode === 'voice'"
-            type="button"
-            class="lares-composer__icon"
-            data-kind="keyboard"
-            :disabled="voiceBusy"
-            :aria-label="t('composer.keyboard')"
-            @click="setMode('text')"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <rect x="3.5" y="6" width="17" height="12" rx="2" />
-              <path d="M7 10h2M11 10h2M15 10h2M8 14h8" />
-            </svg>
-          </button>
+          <button type="button" class="lares-composer__voice-entry" aria-haspopup="dialog" @click="$emit('hold-start', { mode: 'single' })">{{ t('settings.mode.single') }}</button>
         </div>
       </div>
     </div>
-    <div v-if="voiceCall" class="lares-composer__hint" role="status" aria-live="polite">
-      <button v-if="voiceCall.continuous" type="button" @click="$emit('voice-action', 'mute')">{{ t(voiceCall.outputMuted ? 'call.unmute' : 'call.mute') }}</button>
-      <button v-if="voiceCall.continuous" type="button" @click="$emit('voice-action', 'history')">{{ t('call.history') }}</button>
-      <details v-if="voiceCall.history" open>
-        <summary>{{ t('call.history') }}</summary>
-        <p v-for="row in voiceCall.history" :key="row.id">{{ row.role }}: {{ row.text }}</p>
-        <button type="button" @click="$emit('voice-action', 'clear-history')">{{ t('call.clearHistory') }}</button>
-      </details>
-      <svg v-if="voiceCall.capture === 'recording' && voiceCall.inputLevel != null" width="80" height="24" aria-hidden="true">
-        <line v-for="(level, index) in levels" :key="index" :x1="index * 5" :x2="index * 5" :y1="12 - Math.min(11, level * 800)" :y2="12 + Math.min(11, level * 800)" stroke="currentColor" stroke-width="2" />
-      </svg>
-      <span v-if="voiceCall.caption">{{ voiceCall.caption }}</span>
-      <span>{{ voiceCall.capture === 'transcribing' ? t('mic.transcribing') : voiceCall.capture === 'recording' ? t('call.listening') : voiceCall.inputPaused ? t('call.inputPaused') : voiceCall.playback !== 'idle' ? t('call.halfDuplex') : t('call.waiting') }}</span>
-      <span v-if="voiceCall.playback !== 'idle'">{{ t('call.speaking') }}</span>
-      <button v-if="!voiceCall.continuous && voiceCall.capture === 'recording'" type="button" @click="$emit('hold-end')">{{ t('mic.finish') }}</button>
-      <button v-if="voiceCall.continuous && voiceCall.connection === 'open'" type="button" @click="$emit('voice-action', voiceCall.inputPaused ? 'input-resume' : 'input-pause')">{{ t(voiceCall.inputPaused ? 'call.resumeInput' : 'call.pauseInput') }}</button>
-      <button type="button" @click="$emit('voice-action', voiceCall.connection === 'paused' ? 'resume' : 'stop')">{{ t(voiceCall.connection === 'paused' ? 'call.resume' : voiceCall.continuous ? 'call.end' : 'mic.cancel') }}</button>
-      <button v-if="voiceCall.playback !== 'idle'" type="button" @click="$emit('voice-action', 'playback')">{{ t('call.stopPlayback') }}</button>
-    </div>
-    <p v-if="voiceError && voicePhase === 'error'" class="lares-composer__hint" data-status="error">{{ voiceError }}</p>
+    <p v-if="voiceCall?.connection === 'paused'" class="lares-composer__hint" role="status">{{ t('panel.paused') }}</p>
     <p v-for="item in failures" :key="item.id" class="lares-composer__hint" data-status="error">
       {{ t("upload.failed", { name: item.name, reason: t(`error.${item.code}`) }) }}
     </p>
@@ -211,7 +157,6 @@
 </template>
 
 <script>
-import { formatElapsed } from "@olares/lares-core/voice/recorder";
 import {
   REFERENCE_DEBOUNCE_MS,
   activeReference,
@@ -256,8 +201,6 @@ export default {
       commandsOpen: false,
       commandTyped: false,
       commandIndex: 0,
-      levels: [],
-      voiceSelection: "",
       referenceOpen: false,
       referenceToken: null,
       referenceIndex: 0,
@@ -265,37 +208,12 @@ export default {
     };
   },
   computed: {
-    elapsed() {
-      return formatElapsed(this.voiceElapsed);
-    },
-    talkLabel() {
-      if (this.voicePhase === "preparing") return this.t("composer.opening");
-      if (this.voicePhase === "recording") return `${this.t("call.listening")} · ${this.elapsed}`;
-      if (this.voicePhase === "transcribing") return this.t("mic.transcribing");
-      if (this.holding) return this.t("composer.hold");
-      return this.t("call.start");
-    },
-    voiceBusy() {
-      return this.voicePhase === "preparing"
-        || this.voicePhase === "recording"
-        || this.voicePhase === "transcribing";
-    },
     attachLabel() {
       return this.attachPending ? this.t("button.uploading", { count: 1 }) : this.t("composer.attach");
     },
     placeholder() {
       if (this.hero) return this.t("chat.placeholderNewSession");
       return this.t("chat.placeholder");
-    },
-    voiceLabel() {
-      if (this.voicePhase === "error" && this.voiceError) return this.voiceError;
-      if (this.voicePhase === "preparing") return this.t("composer.opening");
-      if (this.voicePhase === "recording") return this.t("call.listening");
-      if (this.voicePhase === "transcribing") return this.t("mic.transcribing");
-      return this.t("call.start");
-    },
-    voiceBlocked() {
-      return this.voicePhase === "transcribing" || this.sending;
     },
     expanded() {
       return this.inputMode === "text" && (this.draft.trim().length > 0 || this.draftImages.length > 0);
@@ -311,10 +229,8 @@ export default {
     },
   },
   watch: {
-    "voiceCall.inputLevel"(level) { if (level != null) this.levels = [...this.levels.slice(-15), level]; },
     draft(value) {
       this.autosize();
-      if (value && this.inputMode === "voice" && !this.voiceBusy) this.setMode("text");
     },
     overlayPointerActive(active) {
       if (active) window.addEventListener("pointerdown", this.onTokenPointer, true);
@@ -410,18 +326,6 @@ export default {
     imageStatus(image) {
       return draftImageStatus(image);
     },
-    setMode(mode) {
-      if (mode === this.inputMode) return;
-      if (mode === "text" && this.voiceBusy) return;
-      if (mode === "voice") {
-        this.closeReferences();
-        this.commandsOpen = false;
-        this.commandTyped = false;
-        this.$refs.input?.blur();
-      }
-      this.$emit("update:inputMode", mode);
-      if (mode === "text") this.$nextTick(() => this.focus());
-    },
     onSend() {
       if (this.referenceOpen || this.commandsOpen) return;
       if (this.canSend) this.$emit("send");
@@ -475,8 +379,7 @@ export default {
       }
     },
     onVoiceClick() {
-      if (this.voiceBusy) return;
-      this.$emit("hold-start", { mode: this.voiceSelection || undefined });
+      this.$emit("hold-start", { mode: "continuous" });
     },
     clearHold() {
       this.holding = false;
@@ -507,6 +410,9 @@ export default {
 </script>
 
 <style scoped>
+.lares-composer__voice-entry { border: 0; border-radius: 12px; padding: 6px 8px; background: var(--q-background-3); color: var(--q-ink-2); font: inherit; font-size: 12px; min-height: 36px; cursor: pointer; }
+.lares-composer__voice-entry:focus-visible { outline: 2px solid var(--q-blue-default); }
+
 .lares-composer {
   display: flex;
   flex-direction: column;
@@ -904,6 +810,9 @@ export default {
 </style>
 
 <style scoped>
+.lares-composer__voice-entry { border: 0; border-radius: 12px; padding: 6px 8px; background: var(--q-background-3); color: var(--q-ink-2); font: inherit; font-size: 12px; min-height: 36px; cursor: pointer; }
+.lares-composer__voice-entry:focus-visible { outline: 2px solid var(--q-blue-default); }
+
 .lares-composer__voice-mode { margin: 8px 12px; border: 0; border-radius: 8px; padding: 6px; background: transparent; color: inherit; font: inherit; }
 .lares-composer__hint button { min-height: 44px; border: 0; border-radius: 12px; padding: 8px 12px; background: var(--lares-bg-secondary, #f0f0f0); color: inherit; font: inherit; }
 </style>

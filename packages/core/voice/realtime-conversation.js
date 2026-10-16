@@ -2,7 +2,7 @@ import { createVoiceController } from "./controller.js";
 import { createPcmBrowserAudio } from "./realtime-audio.js";
 import { mintRpcId } from "../larepass/rpc.js";
 
-export function createRealtimeConversation({ request, socket: openSocket, device = "device", playback, onCaption = () => {}, idleTimeoutMs, recoveryTimeoutMs, readAloud = true }) {
+export function createRealtimeConversation({ request, socket: openSocket, device = "device", playback, onCaption = () => {}, idleTimeoutMs, recoveryTimeoutMs, readAloud = true, presentationSession = false }) {
   const voiceId = mintRpcId();
   const headers = { "x-lares-voice-id": voiceId, "x-lares-voice-device": device };
   let socket;
@@ -95,7 +95,7 @@ export function createRealtimeConversation({ request, socket: openSocket, device
     controller, headers,
     async start({ sessionId = null } = {}) {
       boundSessionId = sessionId;
-      const initial = await call("/session", { sessionId, readAloud });
+      const initial = await call("/session", { sessionId, readAloud, presentationSession });
       await connect();
       await controller.start({ sessionId, continuous: true, running: initial.running });
       controller.setOutputMuted(!readAloud);
@@ -110,6 +110,10 @@ export function createRealtimeConversation({ request, socket: openSocket, device
       intentional = true; clearTimeout(pollTimer);
       await controller.disconnect(); await audio?.stop(); socket?.close();
       await call("/session/close", {});
+    },
+    async pause() {
+      intentional = true; clearTimeout(pollTimer);
+      await controller.pause(); await audio?.stop(); socket?.close();
     },
     async resume() {
       const state = await call("/session");

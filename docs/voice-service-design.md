@@ -115,3 +115,37 @@ Attribute composite service usage separately from child model usage; do not fabr
 ## Acceptance
 
 Test stale input, cancellation, session switching, multi-client shared tasks, queue/steer correlation, approvals, deduplication across uncertain outcomes, context recovery, backpressure and identity isolation. Run focused/full tests, typecheck and build. Verify real browser, iOS/Android, host and Bluetooth chains separately; report transcription, first text, first audio and interruption latency without logging transcripts or credentials as metrics. No deployment, push, PR or release version change is implicit.
+
+## Voice panel and session message presentation
+
+The composer exposes Voice input and Voice conversation entries only, plus a short paused indicator. Entries open one in-app panel with Dictation and Conversation tabs (full screen on mobile). The panel owns device, waveform, elapsed time, temporary transcription and audio controls; complete replies and history belong in the existing session message area. Switching tabs pauses capture/playback first and preserves dictation drafts; the user explicitly starts the next mode.
+
+Panel visibility is independent of VoiceSession lifetime. Close, Escape and backdrop pause capture/playback while retaining conversation context and leaving dsh work running. Reopening only shows the panel; Continue explicitly resumes audio. Closing during dictation finishes recognition into a panel draft; it never inserts or sends automatically. Complete appends to the original session draft, preserving existing text and attachments. Discard removes only the panel draft. End voice releases resources without deleting records. Task cancellation stays in the chat area. Session changes pause the old exchange and fence late results to its original target.
+
+Existing Lares sessions bind directly. On an empty Lares page, the first valid continuous transcript creates a presentation session without submitting an Agent prompt. Empty audio, noise and cancellation create nothing. Generic Voice Service clients retain their own binding policy.
+
+Voice user/assistant records are read-only projections alongside native dsh chat nodes (mobile Transcript uses the same projection rules). Records are persisted independently, never synthesized as dsh execution events or resubmitted as prompts. Streaming updates replace the same stable record ID. Host ordering and persisted dsh sequence anchors provide stable interleaving after refresh and across clients. Historical records never trigger speech. Session-scoped authorized paginated reads and subscriptions are independent of an active VoiceSession; /records alone is insufficient.
+
+Delegations correlate voiceId / turnId / requestId / taskId. Native dsh input/results take over corresponding temporary projections; spoken summaries are attached to the task result. Tool progress, approvals and cancellation use native chat components. Core owns panel lifecycle, drafts, binding and projection; React/Vue own presentation and devices.
+
+```mermaid
+flowchart TD
+    Entry[Voice input / Voice conversation] --> Panel[Open panel without starting capture]
+    Panel --> Start[Explicit Start / Continue]
+    Start --> Capture[Capture and recognize]
+    Capture --> Dictation{Dictation?}
+    Dictation -->|yes| Draft[Keep panel draft]
+    Draft --> Complete[Complete: append to original composer draft]
+    Dictation -->|no| Bind[Bind existing session or create on first valid transcript]
+    Bind --> Records[Persist voice records and project in session messages]
+    Records --> Delegate{Business task?}
+    Delegate -->|yes| DSH[Native dsh task, approval and result]
+    Delegate -->|no| Reply[Voice model reply]
+    DSH --> Reply
+    Reply --> Records
+    Panel --> Close[Close / Escape / backdrop]
+    Close --> Pause[Pause audio; retain context; tasks continue]
+    Pause --> Panel
+```
+
+The initial implementation uses bounded long polling for session history, stable record sequences for pagination, and a persisted `anchorSeq` for native dsh ordering. A read-only external activity marker expands the official Chat on voice-only sessions. Presentation markers and projected rows never become execution events. Client subscriptions share one web history feed per mounted session and stop when the last subscriber leaves.

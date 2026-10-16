@@ -1,0 +1,24 @@
+--- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
+@@ -2918,6 +2918,12 @@
+ 		//#region lib/types/client/conversation/assembly.js
+ 		/** Per-Session target-neutral Conversation assembly. */
+ 		var BoundConversation = class {
++			externalActivity = new Map();
++			setExternalActivity(source, target, active) {
++				if ((this.externalActivity.get(source) === target) === active) return;
++				if (active) this.externalActivity.set(source, target); else this.externalActivity.delete(source);
++				this.snapshot.set(this.currentSnapshot());
++			}
+ 			assembler;
+ 			snapshot;
+ 			openTurn;
+@@ -3020,7 +3026,7 @@
+ 			currentSnapshot() {
+ 				return {
+ 					views: this.viewStore,
+-					activeTargets: this.assembler.activityTargets()
++					activeTargets: new Set([...this.assembler.activityTargets(), ...this.externalActivity.values()])
+ 				};
+ 			}
+ 		};

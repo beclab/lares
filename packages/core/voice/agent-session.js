@@ -5,7 +5,7 @@ import { reduceUtterance } from "./speech.js";
 export const SPOKEN_PROMPT = "This is a voice conversation. Keep user-facing answers concise and natural for speech. Do not read reasoning or tool payloads aloud. Preserve the task's factual results and use the user's language.";
 
 /** dsh opens a turn before claiming input; rpcId associates input with that open turn. */
-export function createVoiceAgentSession(api, { sessionId = null, preset, workspaceId, restoredRequests = [], metric = () => {} } = {}) {
+export function createVoiceAgentSession(api, { sessionId = null, preset, workspaceId, restoredRequests = [], onChange = () => {}, metric = () => {} } = {}) {
   let creating;
   let following;
   let closed = false;
@@ -26,7 +26,7 @@ export function createVoiceAgentSession(api, { sessionId = null, preset, workspa
   const decoder = createSessionFollow();
   const unfinished = (task) => ["accepted", "running", "waiting", "unknown"].includes(task.status);
   const snapshot = () => ({ sessionId, running: observedRunning || [...requests.values()].some(unfinished), utterance, error, version,
-    requestId: latestRequest,
+    requestId: latestRequest, cursor,
     tasks: [...requests.values()].map(({ requestId, turn, status, utterance: reply, error: taskError }) => ({ requestId, turn, status, text: reply?.silent ? "" : reply?.text || "", error: taskError })),
   });
   const ensure = async () => {
@@ -68,7 +68,7 @@ export function createVoiceAgentSession(api, { sessionId = null, preset, workspa
       if (!replay && task.requestId === latestRequest) { utterance = task.utterance; error = task.error; }
     }
     if (event.type === "turn/end" && openTurn === event.data?.turn) { openTurn = null; observedRunning = false; }
-    version++;
+    version++; onChange();
   };
   const follow = () => {
     if (following && !following.signal.aborted) return ready;
@@ -100,6 +100,7 @@ export function createVoiceAgentSession(api, { sessionId = null, preset, workspa
   };
   return {
     snapshot,
+    async ensureSession() { await ensure(); await follow(); return snapshot(); },
     async open() { if (sessionId) await follow(); },
     async resume() {
       following?.abort(); await followTask;

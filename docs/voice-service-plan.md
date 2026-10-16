@@ -30,3 +30,21 @@ Cross-client records append independently. Request tracking follows dsh turn bou
 - External voice stays disabled; native Realtime and automatic barge-in remain gated. No code was deployed, pushed or published.
 
 Final local verification: 168 focused voice/mobile-layout tests passed. The full Lares suite passed 676/677, with only the documented pre-existing file-preview cleanup failure. Typecheck and web/mobile/server builds passed. Local desktop and 390×844 mobile entry layouts were inspected; this is layout verification, not real microphone/device acceptance.
+
+## Voice panel and message projection delivery
+
+- [x] Specify separate panel/session lifetimes, pause-on-close, explicit resume, draft completion, first-valid-input session creation and session-scoped projection.
+- [x] Add stable updatable records, ordering, anchors, authenticated pagination/subscription and task correlation.
+- [x] Add shared panel/draft lifecycle and SDK binding; fence late results on session changes.
+- [x] Migrate web and LarePass Vue controls to an accessible overlay/full-screen panel; retain the official dsh chat shell.
+- [x] Verify close/reopen, tab switches, draft preservation, empty input, multi-client history, native task deduplication, approvals, failures and reconnects.
+- [x] Run focused/full tests, typecheck/build and desktop/narrow-screen browser inspection.
+- [ ] Verify new build on yaotest004 with human speech/playback and physical mobile devices after a separately authorized deployment.
+
+Deliver documentation, core projection and dual-platform UI as separate validated commits. This implementation does not authorize another release, package publication or deployment.
+
+### Panel implementation verification
+
+184 focused voice/mobile-layout tests pass. Full suite: 692/693 pass; the sole failure remains the pre-existing macOS file-preview symlink cleanup (`ERR_FS_EISDIR`). Typecheck and client/mobile/server builds pass. Browser inspection used the actual local Host and two synthetic stored voice records: the official web Chat and Vue Transcript both display the records after refresh; no Agent prompt or manufactured execution event was required. Web dialog and 390×844 Vue full-screen panel entry/close/focus behavior were inspected. Core/mock tests cover delegation through approval and completion using both native client message shapes.
+
+This is not human microphone or audible output acceptance. The complete physical-device/browser failure matrix, yaotest004 speech, iOS/Android background/lock behavior, Bluetooth and native Realtime remain unverified. Existing gates stay closed; no release or deployment is included.

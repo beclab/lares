@@ -3,7 +3,7 @@ import { createDeviceInput } from "./device-input.js";
 import { createHostInput } from "./host-input.js";
 import { mintRpcId } from "../larepass/rpc.js";
 
-export function createVoiceConversation({ request, transcribe, playback, onReply = () => {}, onPhase, mode = () => "queue", device = "device", metric = () => {}, readAloud = true, preset, endpointSilenceMs, idleTimeoutMs, recoveryTimeoutMs, onText = () => {}, onTranscript = null, input: inputPort }) {
+export function createVoiceConversation({ request, transcribe, playback, onReply = () => {}, onPhase, mode = () => "queue", device = "device", metric = () => {}, readAloud = true, preset, presentationSession = false, endpointSilenceMs, idleTimeoutMs, recoveryTimeoutMs, onText = () => {}, onTranscript = null, input: inputPort }) {
   const voiceId = mintRpcId();
   const headers = { "x-lares-voice-id": voiceId, "x-lares-voice-device": device };
   let timer = null;
@@ -95,15 +95,19 @@ export function createVoiceConversation({ request, transcribe, playback, onReply
       continuous = nextContinuous; submitted = false; finalSeen = false; spokenKey = null;
       disposed = false; version = -1;
       clearTimeout(timer);
-      const initial = onTranscript ? {} : await call("/session", { sessionId, readAloud, ...(preset ? { preset } : {}) });
+      const initial = onTranscript ? {} : await call("/session", { sessionId, readAloud, presentationSession, ...(preset ? { preset } : {}) });
       await controller.start({ sessionId, continuous, running: initial.running });
       controller.setOutputMuted(!readAloud);
       if (!onTranscript) void watch();
     },
     stop,
+    async pause() { clearTimeout(timer); await controller.pause(); },
     async resume() {
-      if (onTranscript) { await controller.resume(); return; }
+      if (onTranscript) { disposed = false; await controller.resume(); return; }
       const current = await call("/session");
+      version = current.version;
+      mutedKey = current.utterance ? `${current.sessionId}:${current.utterance.key}` : null;
+      spokenKey = mutedKey;
       if (!current.active) await call("/session", { sessionId: lastSessionId, readAloud });
       else await call("/session/resume", {});
       disposed = false;

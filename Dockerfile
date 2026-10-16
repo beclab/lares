@@ -8,7 +8,9 @@ USER root
 WORKDIR /app
 
 COPY package.json package-lock.json tsconfig.base.json tsconfig.server.json ./
-COPY scripts/build-client.mjs ./scripts/
+COPY scripts/build-client.mjs scripts/apply-vendor-patches.mjs ./scripts/
+COPY patches/ ./patches/
+RUN node scripts/apply-vendor-patches.mjs
 COPY packages/ ./packages/
 RUN mkdir -p node_modules/@olares \
   && ln -sfn ../../packages/core node_modules/@olares/lares-core

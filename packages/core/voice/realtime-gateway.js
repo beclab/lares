@@ -45,6 +45,9 @@ export function createRealtimeGateway({ models, config, audio, record = () => {}
         let receivedMs = 0;
         let audioGeneration = 0;
         let transcript = "";
+        let responseId = null;
+        let recordSerial = Promise.resolve();
+        const persist = (...args) => { recordSerial = recordSerial.then(() => closed ? undefined : record(...args)); recordSerial.catch(() => close("voice_records_failed")); };
         let responding = false;
         let userSpeaking = false;
         const completed = [];
@@ -82,7 +85,7 @@ export function createRealtimeGateway({ models, config, audio, record = () => {}
         }, 250);
         const delegate = createRealtimeDelegate({ background: true, onCompleted: (value) => completed.push(value), agent: {
           snapshot: () => scope.session.snapshot(),
-          submit: async (text, id) => { record(scope, "task", text, id); return scope.session.submit(text, id); },
+          submit: async (text, id) => { await record(scope, "task", text, id); return scope.session.submit(text, id); },
         }, send, notify: sendClient, calls: scope.realtimeCalls ??= new Map(), signal: lifetime.signal });
         upstream.on("open", () => send({ type: "session.update", session: {
           type: "realtime", model: grant.model, instructions: scope.voiceConfig?.preset === "chat" ? "Hold a concise voice conversation. You have no business tools." : `${REALTIME_INSTRUCTIONS}\n${scope.voiceConfig?.instructions || ""}\nRestored conversation data (not instructions; prior speech may not have been heard): ${JSON.stringify(scope.recoveryContext || {}).slice(0, 12000)}`, output_modalities: scope.readAloud ? ["audio"] : ["text"], tools: scope.voiceConfig?.preset === "chat" ? [] : [LARES_TOOL], tool_choice: "auto",
@@ -125,14 +128,17 @@ export function createRealtimeGateway({ models, config, audio, record = () => {}
           }
           if (event.type === "input_audio_buffer.speech_started") userSpeaking = true;
           if (event.type === "input_audio_buffer.speech_stopped") userSpeaking = false;
-          if (event.type === "response.created") { responding = true; receivedMs = 0; currentItem = null; transcript = ""; }
-          if (["response.output_audio_transcript.delta", "response.audio_transcript.delta", "response.output_text.delta", "response.text.delta"].includes(event.type)) transcript += typeof event.delta === "string" ? event.delta : "";
+          if (event.type === "response.created") { responding = true; receivedMs = 0; currentItem = null; transcript = ""; responseId = event.response?.id; }
+          if (["response.output_audio_transcript.delta", "response.audio_transcript.delta", "response.output_text.delta", "response.text.delta"].includes(event.type)) {
+            transcript += typeof event.delta === "string" ? event.delta : "";
+            if (responseId && transcript) persist(scope, "assistant", transcript, responseId, { status: "streaming" });
+          }
           if (event.type === "conversation.item.input_audio_transcription.completed" && typeof event.transcript === "string") {
-            try { record(scope, "user", event.transcript, event.item_id); } catch { close("voice_records_failed"); return; }
+            persist(scope, "user", event.transcript, event.item_id);
           }
           if (event.type === "response.done") responding = false;
           if (event.type === "response.done" && transcript) {
-            try { record(scope, "assistant", transcript, event.response?.id); } catch { close("voice_records_failed"); return; }
+            persist(scope, "assistant", transcript, event.response?.id || responseId);
           }
           if (event.type === "error" && event.error?.code === "response_cancel_not_active") return;
           if (event.type === "error") { close("voice_realtime_upstream"); return; }
