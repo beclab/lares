@@ -441,7 +441,7 @@ test("chart status reads the live row across every market source", async () => {
   assert.equal((await voiceChartStatus("stt", { spawnFn })).phase, "running");
 });
 
-test("GPU apps come from every source, read from the source each was installed from", async () => {
+test("GPU apps parse large inventories and read each installed source", async () => {
   const { gpuApps, parseQuantity } = await import(`../../packages/core/voice/gpu-mode.js?apps=${Date.now()}`);
   assert.equal(parseQuantity("6Gi"), 6 * 2 ** 30);
   assert.equal(parseQuantity("512Mi"), 512 * 2 ** 20);
@@ -453,7 +453,7 @@ test("GPU apps come from every source, read from the source each was installed f
     if (args[1] === "list") {
       body = JSON.stringify([
         { name: "flowstudio", title: "FlowStudio", source: "market.olares", state: "stopped" },
-        { name: "router", title: "Router", source: "market.olares", state: "running" },
+        { name: "router", title: "Router".repeat(2000), source: "market.olares", state: "running" },
         { name: "sglang", title: "Qwen (SGLang)", source: "upload", state: "running" },
       ]);
     } else {
