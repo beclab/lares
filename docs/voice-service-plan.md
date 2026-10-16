@@ -30,3 +30,15 @@ Cross-client records append independently. Request tracking follows dsh turn bou
 - External voice stays disabled; native Realtime and automatic barge-in remain gated. No code was deployed, pushed or published.
 
 Final local verification: 168 focused voice/mobile-layout tests passed. The full Lares suite passed 676/677, with only the documented pre-existing file-preview cleanup failure. Typecheck and web/mobile/server builds passed. Local desktop and 390×844 mobile entry layouts were inspected; this is layout verification, not real microphone/device acceptance.
+
+## Voice panel and message projection delivery
+
+- [x] Specify separate panel/session lifetimes, pause-on-close, explicit resume, draft completion, first-valid-input session creation and session-scoped projection.
+- [ ] Add stable updatable records, ordering, anchors, authenticated pagination/subscription and task correlation.
+- [ ] Add shared panel/draft lifecycle and SDK binding; fence late results on session changes.
+- [ ] Migrate web and LarePass Vue controls to an accessible overlay/full-screen panel; retain the official dsh chat shell.
+- [ ] Verify close/reopen, tab switches, draft preservation, empty input, multi-client history, native task deduplication, approvals, failures and reconnects.
+- [ ] Run focused/full tests, typecheck/build and desktop/narrow-screen browser inspection.
+- [ ] Verify new build on yaotest004 with human speech/playback and physical mobile devices after a separately authorized deployment.
+
+Deliver documentation, core projection and dual-platform UI as separate validated commits. This implementation does not authorize another release, package publication or deployment.

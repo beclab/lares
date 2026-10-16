@@ -106,3 +106,7 @@ Run `node --import tsx --test tests/plugins/voice-*.test.ts tests/plugins/mobile
 The full suite has a pre-existing failure at `tests/plugins/file-preview.test.ts:1341`: temporary path cleanup raises `ERR_FS_EISDIR`. It is unrelated to voice and was not changed.
 
 Before enabling either external service or native Realtime: verify real models, PostgreSQL composite usage settlement, grants/revocation, browser/iOS/Android permissions and audio unlock, host/Bluetooth leases, long replies, approvals, interrupted speech, background/lock, disconnect/recovery and latency. This change does not deploy, certify hardware barge-in or repeat the earlier yaotest004 single-recording acceptance against the new build.
+
+## Voice panel migration status
+
+The released 0.26.46 UI places voice controls and reply captions in the composer. Voice model exchanges are not yet projected into native chat. The target behavior is specified in [Voice service design](voice-service-design.md#voice-panel-and-session-message-presentation); implementation and acceptance are tracked in [Voice service plan](voice-service-plan.md#voice-panel-and-message-projection-delivery). Local changes are not evidence of deployment or real-device acceptance.
