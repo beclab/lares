@@ -232,3 +232,31 @@ test("silence from the recognizer is an error, not an empty send", async () => {
   assert.equal(box.sent.length, 0);
   box.cap.dispose();
 });
+
+
+test("single recordings wait for manual stop while continuous turns use endpointing", async () => {
+  const { createDeviceInput } = await import("@olares/lares-core/voice/device-input");
+  for (const continuous of [false, true]) {
+    let endpoints = 0;
+    let opened = () => {};
+    const ready = new Promise<void>((resolve) => { opened = resolve; });
+    class Recorder {
+      state = "inactive";
+      mimeType = "audio/webm";
+      static isTypeSupported() { return true; }
+      start() { this.state = "recording"; }
+      stop() { this.state = "inactive"; }
+      requestData() {}
+    }
+    const input = createDeviceInput({
+      media: { mediaDevices: { getUserMedia: async () => ({ getTracks: () => [] }) }, MediaRecorder: Recorder },
+      transcribe: async () => "test",
+      endpoint: () => { endpoints++; return { stop() {} }; },
+      onPhase: (phase: string) => { if (phase === "recording") opened(); },
+    });
+    const pending = input.capture({ continuous });
+    await ready;
+    try { assert.equal(endpoints, continuous ? 1 : 0); }
+    finally { input.cancel(); await pending; }
+  }
+});
