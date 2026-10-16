@@ -1,10 +1,12 @@
 # Voice runtime
 
+Target architecture and lifecycle contracts: [Voice service design](voice-service-design.md). Delivery status: [implementation plan](voice-service-plan.md). The sections below describe current implementation, not completion of that design.
+
 Lares owns the Agent, task history, tools, skills and approvals through dsh. Voice transports never execute business tools directly. This implementation takes lifecycle and streaming ideas from LiveKit without installing its Agent runtime.
 
 ## Modes
 
-- **Single recording** is the default. A valid transcript enters the bound dsh session; optional read-aloud follows its answer.
+- **Single recording** currently submits a valid transcript to the bound dsh session. The target design changes this to editable draft insertion; see the delivery plan.
 - **Continuous conversation** repeats capture, task execution and playback until explicitly stopped. It enables speech for that connection without changing other conversations.
 - **Realtime** uses Router's compatible Realtime WebSocket protocol. The speech model delegates business work through the single `ask_lares` tool. Its `status` operation checks the current task without submitting another prompt.
 
