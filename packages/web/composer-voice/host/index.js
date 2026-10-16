@@ -9,6 +9,7 @@ import { createRouteHandler, readBody, readJsonObject, sendJson } from "@olares/
 import { readConfig, spokenReplyPrompt } from "@olares/lares-core/voice/config";
 import {
   STT_MAX_AUDIO_BYTES,
+  voiceScope,
   installVoice,
   probeVoice,
   resumeVoice,
@@ -25,6 +26,7 @@ import {
 } from "@olares/lares-core/voice/service";
 import { bluetoothRequest, ensureBluetoothReady } from "@olares/lares-core/voice/link";
 import { gpuAppAction, gpuModePayload, saveSlicePlan, switchReadingMode } from "@olares/lares-core/voice/gpu-mode";
+import { routerEndUser } from "@olares/lares-core/router/gateway";
 import { writeReport } from "@olares/lares-core/log/report";
 
 export const name = "lares-composer-voice";
@@ -43,6 +45,10 @@ const VAD_ASSETS = {
   "ort-wasm-simd-threaded.mjs": { path: join(ORT_DIST, "ort-wasm-simd-threaded.mjs"), type: "text/javascript; charset=utf-8" },
   "ort-wasm-simd-threaded.wasm": { path: join(ORT_DIST, "ort-wasm-simd-threaded.wasm"), type: "application/wasm" },
 };
+
+function scopeFor(req) {
+  return voiceScope(String(req.headers["x-lares-voice-id"] || ""), routerEndUser(process.env, req.headers), req.headers["x-lares-voice-device"] === "device" ? "device" : "headset");
+}
 
 function wantsRefresh(req) {
   return new URL(req.url ?? "/", "http://x").searchParams.get("refresh") === "1";
@@ -112,7 +118,7 @@ async function handleSpeak(req, res) {
   try {
     spoken = await speakFromConfig(
       typeof body.text === "string" ? body.text : "",
-      { signal: controller.signal, part, key, done: body.done === true },
+      { signal: controller.signal, part, key, done: body.done === true, scope: scopeFor(req) },
     );
   } finally {
     res.off("close", abort);
@@ -127,25 +133,25 @@ async function handleSpeak(req, res) {
   });
 }
 
-async function handlePlaybackStop(_req, res) {
-  await interruptSpeech();
+async function handlePlaybackStop(req, res) {
+  await interruptSpeech(scopeFor(req));
   sendJson(res, 200, { stopped: true });
 }
 
-async function handleCaptureStart(_req, res) {
-  sendJson(res, 200, await captureStart());
+async function handleCaptureStart(req, res) {
+  sendJson(res, 200, await captureStart(scopeFor(req)));
 }
 
-async function handleCaptureStop(_req, res) {
-  sendJson(res, 200, captureStop(false));
+async function handleCaptureStop(req, res) {
+  sendJson(res, 200, captureStop(false, scopeFor(req)));
 }
 
-async function handleCaptureCancel(_req, res) {
-  sendJson(res, 200, captureStop(true));
+async function handleCaptureCancel(req, res) {
+  sendJson(res, 200, captureStop(true, scopeFor(req)));
 }
 
-async function handleCaptureStatus(_req, res) {
-  sendJson(res, 200, captureStatus());
+async function handleCaptureStatus(req, res) {
+  sendJson(res, 200, captureStatus(scopeFor(req)));
 }
 
 async function handleReady(_req, res) {
@@ -169,8 +175,6 @@ async function handleTranscribe(req, res) {
     event: "transcribe-in",
     bytes: bytes.length,
     type: String(contentType),
-    head: bytes.subarray(0, 16).toString("hex"),
-    ascii: bytes.subarray(0, 24).toString("utf8").replace(/[^\x20-\x7e]/g, "."),
   });
   try {
     const result = await transcribeFromHttp({
@@ -182,7 +186,6 @@ async function handleTranscribe(req, res) {
       scope: "voice",
       event: "transcribe-ok",
       chars: String(result?.text ?? "").length,
-      head: String(result?.text ?? "").slice(0, 40),
     });
     sendJson(res, 200, result);
   } catch (err) {

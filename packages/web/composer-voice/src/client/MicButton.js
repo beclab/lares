@@ -34,6 +34,7 @@ export function MicButton(props) {
   const mountedRef = useRef(true);
   const errorTimerRef = useRef(0);
   const hostRef = useRef(false);
+  const capturedSession = useRef(null);
   const pollRef = useRef(0);
   const startAbortRef = useRef(null);
 
@@ -62,6 +63,15 @@ export function MicButton(props) {
       if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
     };
   }, [stopHostPoll, stopTimer]);
+
+  useEffect(() => {
+    startAbortRef.current?.abort();
+    if (hostRef.current) void postCaptureCancel();
+    hostRef.current = false;
+    stopHostPoll();
+    stopTimer();
+    setPhase("idle");
+  }, [props.sessionId, stopHostPoll, stopTimer]);
 
   const failWith = useCallback((code) => {
     if (!mountedRef.current) return;
@@ -102,7 +112,8 @@ export function MicButton(props) {
           return;
         }
         try {
-          await sendRef.current?.(sessionIdRef.current, text);
+          if (capturedSession.current !== sessionIdRef.current) return;
+          await sendRef.current?.(capturedSession.current, text);
         } catch (err) {
           failWith(err instanceof Error ? err.message : "voice_failed");
           return;
@@ -136,6 +147,7 @@ export function MicButton(props) {
     setError(null);
     hostRef.current = false;
     setPhase("preparing");
+    capturedSession.current = sessionIdRef.current;
     const controller = new AbortController();
     startAbortRef.current = controller;
     let opened;

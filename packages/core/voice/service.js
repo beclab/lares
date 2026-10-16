@@ -18,6 +18,7 @@ import {
 } from "./session.js";
 import { createCaptureSession } from "./capture.js";
 import { createDuplexCoordinator } from "./duplex.js";
+import { createDeviceLease } from "./lease.js";
 import { normalizeSttPcm } from "./pcm.js";
 import { gapAfter, speechSegments } from "./script.js";
 import {
@@ -43,6 +44,48 @@ import {
 export { STT_MAX_AUDIO_BYTES };
 
 const duplex = createDuplexCoordinator(stopBluetoothPlayback);
+const deviceLease = createDeviceLease();
+const scopes = new Map();
+
+export function voiceScope(id, owner = "", device = "headset") {
+  if (!/^[a-zA-Z0-9_-]{8,128}$/.test(id)) throw new VoiceError("voice_session_invalid", 400, "invalid voice connection");
+  const key = `${owner}:${id}`;
+  for (const [other, scope] of scopes) {
+    if (Date.now() - scope.seen > 120_000 && !deviceLease.owns(scope)) {
+      scopes.delete(other);
+      void scope.duplex.interrupt();
+      scope.capture?.stop(true);
+    }
+  }
+  let scope = scopes.get(key);
+  if (!scope) {
+    if (scopes.size >= 128) throw new VoiceError("voice_busy", 429, "too many voice connections");
+    scope = { id, device, seen: Date.now(), capture: null, duplex: null };
+    scope.duplex = createDuplexCoordinator(async () => {
+      if (deviceLease.owns(scope)) {
+        await stopBluetoothPlayback();
+        deviceLease.release(scope);
+      }
+    });
+    scopes.set(key, scope);
+  }
+  scope.seen = Date.now();
+  return scope;
+}
+
+function scopedPlayback(scope) {
+  if (scope.device === "device") return Promise.resolve({ skipped: true });
+  deviceLease.acquire(scope);
+  return openBluetoothPlayback().then((player) => {
+    if (player.skipped) deviceLease.release(scope);
+    return {
+      ...player,
+      async write(chunk) { deviceLease.touch(scope); return player.write(chunk); },
+      async close() { try { return await player.close?.(); } finally { deviceLease.release(scope); } },
+      abort() { try { player.abort?.(); } finally { deviceLease.release(scope); } },
+    };
+  }, (error) => { deviceLease.release(scope); throw error; });
+}
 
 export async function voiceStatusPayload(options) {
   const config = readConfig();
@@ -228,7 +271,7 @@ export async function speakFromConfig(text, options = {}) {
   const done = key ? options.done === true : true;
   const segments = speechSegments(text, { done });
   const part = partIndex(options.part);
-  const coordinator = options.coordinator ?? duplex;
+  const coordinator = options.coordinator ?? options.scope?.duplex ?? duplex;
   const id = key ?? text;
   let readout = joinable(readouts.get(coordinator), id, key, part);
   if (!readout) {
@@ -245,6 +288,8 @@ export async function speakFromConfig(text, options = {}) {
   if (part >= readout.segments.length) {
     throw new VoiceError("voice_config_invalid", 400, `answer has ${readout.segments.length} sentence(s)`);
   }
+  readout.requestedPart = Math.max(readout.requestedPart, part);
+  readout.extend([], false);
   return readout.parts[part].promise;
 }
 
@@ -258,8 +303,9 @@ function startReadout(coordinator, id, model, options) {
     segments: [],
     parts: [],
     final: false,
+    requestedPart: 0,
     extend(segments, done) {
-      if (readout.final) return;
+      if (readout.final) { wake(); return; }
       for (const sentence of segments.slice(readout.segments.length)) {
         readout.segments.push(sentence);
         readout.parts.push(deferred());
@@ -291,9 +337,13 @@ function startReadout(coordinator, id, model, options) {
 }
 
 async function readAloud(readout, model, voice, lease, options) {
-  const openPlayback = options.openPlayback ?? openBluetoothPlayback;
+  const openPlayback = options.openPlayback ?? (options.scope ? () => scopedPlayback(options.scope) : openBluetoothPlayback);
   const synthesize = options.synthesize ?? synthesizeStream;
-  const playFile = options.playFile ?? playBluetoothAudio;
+  const playFile = options.playFile ?? (options.scope ? async (audio) => {
+    if (options.scope.device === "device") return { played: false };
+    deviceLease.acquire(options.scope);
+    try { return await playBluetoothAudio(audio); } finally { deviceLease.release(options.scope); }
+  } : playBluetoothAudio);
   const toWav = options.pcmToWav ?? pcmToWav;
   const gap = options.silencePcm ?? silencePcm;
   const idleMs = options.idleMs ?? STREAM_IDLE_MS;
@@ -324,7 +374,8 @@ async function readAloud(readout, model, voice, lease, options) {
     pcm.push(chunk);
     sentence.push(chunk);
     if (!lease.active()) return;
-    opening ??= openPlayback().catch(() => ({ skipped: true }));
+    opening ??= openPlayback();
+    opening.catch(() => {});
     feeding = feeding.then(async () => {
       player ??= await opening;
       if (player.skipped || !lease.active()) return;
@@ -341,6 +392,10 @@ async function readAloud(readout, model, voice, lease, options) {
       if (index >= readout.segments.length) {
         if (readout.final) break;
         if (!(await readout.more(idleMs))) readout.final = true;
+        continue;
+      }
+      if (options.key && index > readout.requestedPart + 1) {
+        if (!(await readout.more(idleMs))) throw new VoiceError("voice_playback_timeout", 408, "playback consumer stopped");
         continue;
       }
       sentence = [];
@@ -392,8 +447,8 @@ async function readAloud(readout, model, voice, lease, options) {
   return { bluetooth, audio };
 }
 
-export function interruptSpeech() {
-  return duplex.interrupt();
+export function interruptSpeech(scope) {
+  return (scope?.duplex ?? duplex).interrupt();
 }
 
 export function languageForTranscribe(requestedLanguage, configLanguage) {
@@ -412,36 +467,33 @@ export async function transcribeFromHttp({ languageParam, contentType, bytes }) 
   return { text };
 }
 
-const hostCapture = createCaptureSession({
-  open: beginHostCapture,
-  read: (from) => readHostCapture(from),
-  close: endHostCapture,
-  reset: resetHostCapture,
-  transcribe(wav, signal) {
-    const config = readConfig();
-    return transcribeAudio({
-      bytes: wav,
-      contentType: "audio/wav",
-      language: languageForTranscribe(null, config.language),
-      preferred: config.model,
-      signal,
-    });
-  },
-});
-
-export async function captureStart() {
-  await interruptSpeech();
-  return hostCapture.start();
+function createHostCapture(scope) {
+  return createCaptureSession({
+    async open() {
+      deviceLease.acquire(scope);
+      try { return await beginHostCapture(); } catch (error) { deviceLease.release(scope); throw error; }
+    },
+    read(from) { deviceLease.touch(scope); return readHostCapture(from); },
+    async close() { try { await endHostCapture(); } finally { deviceLease.release(scope); } },
+    reset: resetHostCapture,
+    transcribe(wav, signal) {
+      const config = readConfig();
+      return transcribeAudio({ bytes: wav, contentType: "audio/wav", language: languageForTranscribe(null, config.language), preferred: config.model, signal });
+    },
+  });
 }
-
-export function captureStop(cancel) {
-  hostCapture.stop(cancel);
-  return hostCapture.status();
+const defaultScope = { duplex };
+function captureFor(scope = defaultScope) { return scope.capture ??= createHostCapture(scope); }
+export async function captureStart(scope = defaultScope) {
+  deviceLease.acquire(scope);
+  await interruptSpeech(scope);
+  return captureFor(scope).start();
 }
-
-export function captureStatus() {
-  return hostCapture.status();
+export function captureStop(cancel, scope = defaultScope) {
+  captureFor(scope).stop(cancel);
+  return captureFor(scope).status();
 }
+export function captureStatus(scope = defaultScope) { return captureFor(scope).status(); }
 
 export async function transcribeAudio({ bytes, contentType, language, preferred, signal }) {
   const model = await resolveSttModel(preferred);

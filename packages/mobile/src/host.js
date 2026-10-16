@@ -12,7 +12,7 @@ import {
   rawFileUrl,
 } from "@olares/lares-core/files/preview-workspace";
 import { FILES_UPLOAD_PATH, uploadFile } from "@olares/lares-core/files/upload-client";
-import { API as VOICE_API, postTranscribe } from "@olares/lares-core/voice/client";
+import { API as VOICE_API, postTranscribe, voiceHeaders } from "@olares/lares-core/voice/client";
 import { postReport, REPORT_PATH } from "@olares/lares-core/log/report";
 
 function pageOrigin() {
@@ -286,6 +286,7 @@ export function createHostClient(ports = {}) {
     async speak({ key, text, done, part }) {
       const res = await request(`${VOICE_API}/speak`, {
         method: "POST",
+        headers: voiceHeaders("device"),
         body: Number.isInteger(part) ? { key, text, done, part } : { key, text, done },
       });
       const body = res?.body;
@@ -302,7 +303,7 @@ export function createHostClient(ports = {}) {
       throw Object.assign(new Error(message), { code });
     },
     async interruptSpeech() {
-      const res = await request(`${VOICE_API}/playback/stop`, { method: "POST" });
+      const res = await request(`${VOICE_API}/playback/stop`, { method: "POST", headers: voiceHeaders("device") });
       return Boolean(res?.ok);
     },
     async openMux(signal) {

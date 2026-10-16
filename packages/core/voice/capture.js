@@ -125,7 +125,13 @@ export function createCaptureSession(io) {
       controller: new AbortController(),
     };
     job = run;
-    const opened = await io.open();
+    let opened;
+    try { opened = await io.open(); }
+    catch (error) {
+      run.phase = "error";
+      run.error = error?.code || "voice_failed";
+      throw error;
+    }
     if (run.cancel) {
       await io.close?.();
       run.phase = "idle";

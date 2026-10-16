@@ -266,6 +266,9 @@ export function createSentencePlayer({ send, play, halt, silence, fail = () => {
       current.done = utterance.done;
       handOver(current);
     },
-    stop,
+    stop() {
+      stop();
+      silence();
+    },
   };
 }

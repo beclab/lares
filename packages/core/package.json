@@ -169,6 +169,9 @@
       "types": "./skills/state.d.ts",
       "default": "./skills/state.js"
     },
-    "./skills/client": "./skills/client.js"
+    "./skills/client": "./skills/client.js",
+    "./voice/controller": "./voice/controller.js",
+    "./voice/lease": "./voice/lease.js",
+    "./voice/browser-capture": "./voice/browser-capture.js"
   }
 }
