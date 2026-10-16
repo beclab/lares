@@ -144,3 +144,56 @@ test("resume guard prevents a late microphone start after the panel closes", asy
   let allowed = true; const pending = controller.resume({ shouldResume: () => allowed }); allowed = false; resolve(false); await pending;
   assert.equal(captures, 0); assert.equal(controller.getSnapshot().connection, "paused"); await controller.disconnect();
 });
+
+test("cancel selection is live and uses hysteresis without duplicate announcements", () => {
+  const selections: boolean[] = [], ends: boolean[] = [];
+  const gesture = createHoldGesture({ start() {}, end: (cancel: boolean) => ends.push(cancel), onCancelChange: (value: boolean) => selections.push(value) });
+  const event = { pointerId: 1, button: 0, clientY: 200, preventDefault() {}, currentTarget: { setPointerCapture() {} } };
+  gesture.pointerDown(event);
+  for (const clientY of [145, 140, 142, 145, 159]) gesture.pointerMove({ ...event, clientY });
+  assert.deepEqual(selections, [true]);
+  gesture.pointerMove({ ...event, clientY: 161 }); assert.deepEqual(selections, [true, false]);
+  gesture.pointerUp({ ...event, clientY: 150 }); gesture.cancel({ pointerId: 1 });
+  assert.deepEqual(ends, [false]);
+});
+test("multi-touch, pointer loss and keyboard repeat cannot double-submit", () => {
+  const ends: boolean[] = []; let starts = 0;
+  const gesture = createHoldGesture({ start: () => starts++, end: (cancel: boolean) => ends.push(cancel) });
+  const event = { pointerId: 1, button: 0, clientY: 200, preventDefault() {}, currentTarget: { setPointerCapture() {} } };
+  gesture.pointerDown(event); gesture.pointerDown({ ...event, pointerId: 2, isPrimary: false }); gesture.pointerUp(event);
+  assert.deepEqual(ends, [true]);
+  gesture.keyDown({ code: "Space", preventDefault() {} }); gesture.keyDown({ code: "Space", repeat: true, preventDefault() {} });
+  assert.equal(gesture.escape(), true); assert.equal(gesture.escape(), false); gesture.keyUp({ code: "Space", preventDefault() {} });
+  assert.deepEqual(ends, [true, true]); assert.equal(starts, 2);
+  gesture.keyDown({ code: "Enter", preventDefault() {} }); gesture.keyDown({ code: "Enter", repeat: true, preventDefault() {} }); gesture.keyDown({ code: "Enter", preventDefault() {} });
+  assert.deepEqual(ends, [true, true, false]); assert.equal(starts, 3);
+});
+test("armed cancellation reaches core and performs neither recognition finish nor task submission", async () => {
+  const h = harness(); await h.panel.open({ mode: "continuous" }); await h.panel.holdStart();
+  h.panel.setCancelArmed(true); assert.equal(h.panel.getSnapshot().cancelArmed, true);
+  await h.panel.holdEnd(); await flush();
+  assert.equal(h.panel.getSnapshot().cancelArmed, false); assert.equal(h.panel.getSnapshot().snapshot.agent, "idle");
+  assert.equal(h.panel.getSnapshot().snapshot.capture, "idle"); await h.panel.dispose();
+});
+
+test("a second finger outside the hold button cancels its captured pointer", () => {
+  const ends: boolean[] = [];
+  const gesture = createHoldGesture({ start() {}, end: (cancel: boolean) => ends.push(cancel) });
+  const event = { pointerId: 1, button: 0, clientY: 200, preventDefault() {}, currentTarget: { setPointerCapture() {} } };
+  gesture.additionalPointer(event); gesture.pointerDown(event);
+  gesture.additionalPointer({ pointerId: 2 }); gesture.pointerUp(event); gesture.cancel({ pointerId: 1 });
+  assert.deepEqual(ends, [true]);
+});
+
+test("releasing in the cancel zone never finishes ASR, creates a session or submits an agent", async () => {
+  let finish: any, recognized = 0, created = 0, submitted = 0;
+  const panel = createVoicePanel({ complete: async () => {}, create: async () => {
+    const controller = createVoiceController({ input: {
+      capture: ({ onReady }: any) => { onReady(); return new Promise((resolve) => { finish = resolve; }); },
+      stop: () => { recognized++; finish("must not submit"); }, cancel: () => finish?.("") },
+      output: { stop() {} }, agent: { create: async () => { created++; return "new"; }, submit: async () => { submitted++; } } });
+    return { controller, start: (args: any) => controller.start(args), stop: () => controller.disconnect() };
+  } });
+  await panel.open({ mode: "continuous" }); await panel.holdStart(); panel.setCancelArmed(true); await panel.holdEnd(); await flush();
+  assert.deepEqual({ recognized, created, submitted }, { recognized: 0, created: 0, submitted: 0 }); await panel.dispose();
+});

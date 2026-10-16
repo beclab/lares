@@ -1,4 +1,10 @@
 export const ZH = {
+  "gesture.cancelRelease": "松开取消",
+  "gesture.slideCancel": "上滑取消",
+  "gesture.release": "松开发送",
+  "gesture.waiting": "按住说话，松开发送",
+  "gesture.keyboard": "按住空格说话 · Esc 取消 · 回车开始／结束",
+
   "error.voice_capture_limit": "录音已达到一分钟上限，请重新录制较短内容；本次未自动提交。",
   "dictation.settings": "听写处理",
   "dictation.preset": "文字处理方式",
@@ -225,6 +231,12 @@ export const ZH = {
 };
 
 export const EN = {
+  "gesture.cancelRelease": "Release to cancel",
+  "gesture.slideCancel": "Slide up to cancel",
+  "gesture.release": "Release to send",
+  "gesture.waiting": "Hold to speak, release to send",
+  "gesture.keyboard": "Hold Space · Esc to cancel · Enter to start/finish",
+
   "error.voice_capture_limit": "Recording reached the one-minute limit. Record a shorter take; nothing was submitted.",
   "dictation.settings": "Dictation processing",
   "dictation.preset": "Text processing",
