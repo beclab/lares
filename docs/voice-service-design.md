@@ -118,11 +118,21 @@ Test stale input, cancellation, session switching, multi-client shared tasks, qu
 
 ## Voice panel and session message presentation
 
-The composer exposes one voice entry. Web defaults to dictation, mobile to conversation; each platform default is saved separately in Settings. Desktop uses a compact in-app panel and mobile a full-screen panel. Device, output and model preferences belong in Settings, not a row of panel controls.
+The composer exposes one voice entry. Web defaults to dictation, mobile to conversation; each platform default is saved separately in Settings. Desktop uses a compact modal anchored above the voice entry, flipping below or clamping to the visual viewport when needed. Below 600px, web uses the same bottom-sheet layout as mobile. Mobile recording/waiting leaves conversation context visible; preview grows within 85% of the available visual viewport, with scrollable text and a reachable action footer. There is no sheet drag-to-dismiss gesture. Device, output and model preferences belong in Settings, not a row of panel controls.
 
 Dictation starts immediately when the entry is opened with no retained draft. Recording shows waveform, elapsed time, any available partial transcript, and Done. Done ends capture and produces an editable preview. Insert appends to the original session draft without replacing text or attachments; Discard clears only this take. Close/Escape/backdrop stops capture and retains a draft without inserting or submitting it. Reopening a retained draft does not restart the microphone. Empty audio creates no task.
 
 Conversation uses a manual turn policy: hold to capture, release to submit, slide up to discard. Replies appear in session messages and optionally play aloud. Holding during playback stops output before recording. Keyboard Space supports hold/release and Enter or assistive activation supports start/finish. Release during asynchronous microphone preparation cancels pending capture. No automatic endpoint or automatic re-listen runs for these turns; automatic SDK clients retain their existing policy. Closing pauses audio, preserves context and leaves dsh work running. Ending releases VoiceSession resources. Cancel task remains in native Chat.
+
+### Live gesture feedback and panel presentation
+
+Pointer down captures the initiating pointer. The shared gesture publishes cancel selection on movement: 60px upward arms cancellation, returning below 40px disarms it. The hysteresis prevents boundary flicker. A target above the finger, text and color change immediately; the main button does not move or resize. Release uses the selected state; cancellation never finishes ASR, creates a business session or submits an Agent task. A second pointer anywhere in the panel, pointer loss, window focus loss, backgrounding and session changes cancel unsubmitted input. Release during media preparation retains the existing startup guard.
+
+Space holds/releases; Enter and assistive activation toggle start/finish. Escape first cancels an active turn and keeps the panel open; another Escape closes it. Repeated keys and late pointer events cannot double-submit. Timer and waveform updates are outside the polite status region; announcements change only with semantic status.
+
+The SDK gesture exposes `pointerMove`, `additionalPointer`, `escape` and `activate`, plus `onCancelChange`. Panel snapshots expose `cancelArmed` and `setCancelArmed`; `holdEnd()` defaults to the current selection. `voice/presentation` supplies common phase/status keys to React and Vue. DOM anchors, ResizeObserver and visual-viewport/keyboard geometry stay in client presentation code.
+
+Preview shows one small current-preset menu: preset selection, original transcript, retry and use-original live inside it. Recording/recognition states show only the necessary primary action and close affordance; complete replies remain in session. Close continues to preserve drafts/context without task cancellation. No long-press text-field entry, new backend, global shortcut or native Realtime capability is added.
 
 ### Dictation processing presets
 

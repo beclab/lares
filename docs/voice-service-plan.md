@@ -64,3 +64,14 @@ This section supersedes earlier two-entry/tab and automatic-listening UI instruc
 - [ ] Human speech/playback, physical iOS/Android and host/Bluetooth validation after separately authorized deployment.
 
 Native Realtime remains gated; the current UI rejects Realtime push-to-talk explicitly until its protocol supports and passes manual-turn acceptance. Generic SDK/native protocol behavior is retained. No version change, publication or deployment is included. Dictionaries, automatic style learning, native global hotkeys and input-method integration remain deferred.
+
+## Anchored voice panels and live cancellation delivery
+
+- [x] Shared live cancel selection with 60px/40px hysteresis; pointer capture, multi-touch cancellation, pointer loss and keyboard/assistive operation. Core exposes cancelArmed and shared presentation states.
+- [x] Desktop entry-anchored modal with flip/clamp/resize behavior; narrow web and Vue use bottom sheets. Preview is bounded by the visual viewport and keeps its footer reachable. No panel drag gesture.
+- [x] Stable hold-button geometry, visible cancel target, text/icon/color feedback and semantic-only live announcements. Presets/original/retry are grouped in a compact preview menu.
+- [x] 213 focused voice/mobile-layout tests pass; typecheck and client/mobile/server builds pass. Full suite: 721/722 pass, with only the existing file-preview.test.ts:1341 macOS cleanup failure (ERR_FS_EISDIR).
+- [x] Actual React/Vue components rendered in a disposable synthetic-audio/model harness. Captured waiting/recording/cancel/preview on both clients; checked menu selection, editing/insertion, two-step Escape/focus return, 390×844 bottom sheets, and editing/footer reachability at a simulated 390×400 keyboard-constrained viewport. Narrow React uses the same bottom placement. No horizontal overflow.
+- [ ] Physical keyboard/gesture and actual soft-keyboard acceptance on iOS/Android, real microphone/playback and host/Bluetooth tests after separately authorized deployment. Browser viewport simulation is not physical-device acceptance; visual cancel-state fixtures are not real microphone evidence.
+
+Deliver shared core, dual-platform presentation and documentation as separate commits. No push, PR, release, version bump or deployment is included.
