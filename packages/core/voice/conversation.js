@@ -3,7 +3,7 @@ import { createDeviceInput } from "./device-input.js";
 import { createHostInput } from "./host-input.js";
 import { mintRpcId } from "../larepass/rpc.js";
 
-export function createVoiceConversation({ request, transcribe, playback, onReply = () => {}, onPhase, mode = () => "queue", device = "device", metric = () => {}, readAloud = true, preset, presentationSession = false, endpointSilenceMs, idleTimeoutMs, recoveryTimeoutMs, onText = () => {}, onTranscript = null, input: inputPort, captureConfig }) {
+export function createVoiceConversation({ request, transcribe, playback, onReply = () => {}, onPhase, mode = () => "queue", device = "device", metric = () => {}, readAloud = true, preset, backend, presentationSession = false, endpointSilenceMs, idleTimeoutMs, recoveryTimeoutMs, onText = () => {}, onTranscript = null, input: inputPort, captureConfig }) {
   const voiceId = mintRpcId();
   const headers = { "x-lares-voice-id": voiceId, "x-lares-voice-device": device };
   let timer = null;
@@ -98,7 +98,7 @@ export function createVoiceConversation({ request, transcribe, playback, onReply
       continuous = nextContinuous; submitted = false; finalSeen = false; spokenKey = null;
       disposed = false; version = -1;
       clearTimeout(timer);
-      const initial = onTranscript ? {} : await call("/session", { sessionId, readAloud, presentationSession, ...(preset ? { preset } : {}) });
+      const initial = onTranscript ? {} : await call("/session", { sessionId, readAloud, presentationSession, ...(preset ? { preset } : {}), ...(backend ? { backend } : {}) });
       if (!shouldStart()) { await stop(); return; }
       await controller.start({ sessionId, continuous, manual, running: initial.running, shouldStart });
       controller.setOutputMuted(!readAloud);
@@ -112,7 +112,7 @@ export function createVoiceConversation({ request, transcribe, playback, onReply
       version = current.version;
       mutedKey = current.utterance ? `${current.sessionId}:${current.utterance.key}` : null;
       spokenKey = mutedKey;
-      if (!current.active) await call("/session", { sessionId: lastSessionId, readAloud });
+      if (!current.active) await call("/session", { sessionId: lastSessionId, readAloud, presentationSession, ...(preset ? { preset } : {}), ...(backend ? { backend } : {}) });
       else await call("/session/resume", {});
       disposed = false;
       await controller.resume(options);

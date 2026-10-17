@@ -2,6 +2,8 @@ import { createVoiceAgentSession } from "./agent-session.js";
 import { createVoiceRecords } from "./records.js";
 import { createVoiceDialogue, cleanDictation } from "./dialogue.js";
 import { readConfig, validateConfigPatch } from "./config.js";
+import { listModels } from "../router/stt.js";
+import { validatedRealtimeModels } from "./realtime.js";
 import { VOICE_PRESETS } from "./options.js";
 
 const failure = (code, status) => Object.assign(new Error(code), { code, status });
@@ -46,9 +48,12 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
       const selected = config();
       const preset = body.preset || selected.preset;
       if (!VOICE_PRESETS.includes(preset)) throw failure("voice_preset_invalid", 400);
+      const backend = body.backend === undefined ? selected.backend : validateConfigPatch({ backend: body.backend }).backend;
+      if (body.backend === "realtime" && !validatedRealtimeModels(await listModels(), env).includes(selected.realtimeModel)) throw failure("voice_realtime_unavailable", 409);
+      if (scope.epoch !== epoch) throw failure("voice_session_closed", 409);
       scopes.add(scope);
       scope.voiceAbort = new AbortController();
-      scope.voiceConfig = { ...selected, preset };
+      scope.voiceConfig = { ...selected, preset, backend };
       const history = records.read(ownerOf(scope), boundSessionId || `voice:${scope.contextId || scope.id}`);
       scope.recoveryContext = history.summary || null;
       const restoredRequests = [...new Set(history.records.map((row) => row.taskId).filter(Boolean))].map((requestId) => ({ requestId }));
@@ -64,7 +69,7 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
       scope.active = true; scope.readAloud = body.readAloud === true;
       scope.voiceState = { version: 0, running: false, utterance: null, error: null };
       scope.voiceRequests = new Map(); scope.deliveredTasks = new Set(restoredRequests.map((item) => item.requestId));
-      scope.dialogue = createVoiceDialogue({ config: scope.voiceConfig, owner: scope.owner, context: history.summary?.recent || [], summary: history.summary?.text || "", chat,
+      scope.dialogue = preset === "direct" ? null : createVoiceDialogue({ config: scope.voiceConfig, owner: scope.owner, context: history.summary?.recent || [], summary: history.summary?.text || "", chat,
         submit: async (text, requestId, operation) => {
           if (operation === "status") return scope.session.snapshot();
           const id = `${requestId}:delegate`;
