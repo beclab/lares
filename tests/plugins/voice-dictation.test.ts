@@ -197,3 +197,15 @@ test("releasing in the cancel zone never finishes ASR, creates a session or subm
   await panel.open({ mode: "continuous" }); await panel.holdStart(); panel.setCancelArmed(true); await panel.holdEnd(); await flush();
   assert.deepEqual({ recognized, created, submitted }, { recognized: 0, created: 0, submitted: 0 }); await panel.dispose();
 });
+
+test("repeated Done while processing performs one text conversion", async () => {
+  let converted = 0, release: any;
+  const panel = createVoicePanel({ loadConfig: async () => ({ dictationPreset: "clean" }), complete: async () => {}, process: async () => { converted++; return new Promise(resolve => { release = resolve; }); }, create: async ({ onTranscript }: any) => {
+    let say: any;
+    const controller = createVoiceController({ onTranscript, input: { capture: ({ onReady }: any) => { onReady(); return new Promise(resolve => { say = resolve; }); }, stop: () => say("words"), cancel: () => say("") }, agent: {}, output: { stop() {} } });
+    return { controller, start: (options: any) => controller.start(options), stop: () => controller.disconnect(), pause: () => controller.pause() };
+  } });
+  await panel.open({ sessionId: "s" }); const done = panel.finish();
+  while (!release) await new Promise(resolve => setImmediate(resolve));
+  await panel.finish(); assert.equal(converted, 1); release("clean words"); await done; await panel.dispose();
+});

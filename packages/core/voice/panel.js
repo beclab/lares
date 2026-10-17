@@ -2,12 +2,12 @@ import { DICTATION_PRESETS } from "./dictation.js";
 
 /** The panel owns drafts and turn policy; adapters only supply settings, audio and insertion ports. */
 export function createVoicePanel({ create, complete, loadConfig = async () => ({}), process = async ({ text }) => text, onSession = () => {} }) {
-  let state = { visible: false, mode: "single", sessionId: null, raw: "", draft: "", edited: false, preset: "clean", stage: "idle", snapshot: null, busy: false, error: null, device: "", levels: [], startedAt: null, elapsedMs: 0, holding: false, cancelArmed: false };
+  let state = { visible: false, inputActive: false, previewVisible: false, mode: "single", sessionId: null, raw: "", draft: "", edited: false, preset: "clean", stage: "idle", snapshot: null, busy: false, error: null, device: "", levels: [], startedAt: null, elapsedMs: 0, holding: false, cancelArmed: false };
   let call = null, config = null, generation = 0, intent = 0, processing = null;
   let unsubscribe = () => {};
   let serial = Promise.resolve();
   const drafts = new Map(), listeners = new Set();
-  const emit = (patch) => { state = { ...state, ...patch }; for (const listener of listeners) listener(); };
+  const emit = (patch) => { state = { ...state, ...patch }; state.previewVisible = state.visible && state.mode === "single" && (state.stage === "preview" || state.stage === "processing" && state.previewVisible); state.inputActive = state.visible && !state.previewVisible; for (const listener of listeners) listener(); };
   const save = () => state.mode === "single" && drafts.set(state.sessionId, { raw: state.raw, draft: state.draft, edited: state.edited, preset: state.preset, config });
   const cancelProcessing = () => { processing?.abort(); processing = null; };
   const enqueue = (operation) => {
@@ -98,14 +98,14 @@ export function createVoicePanel({ create, complete, loadConfig = async () => ({
     },
     bind(sessionId) {
       if (sessionId === state.sessionId) return Promise.resolve();
-      intent++; cancelProcessing(); emit({ holding: false, cancelArmed: false });
+      intent++; cancelProcessing(); emit({ visible: false, holding: false, cancelArmed: false });
       if (state.mode === "continuous") void call?.controller.cancelRecording();
       return enqueue(async () => { try { await pause(); } finally { await end(); save(); const held = drafts.get(sessionId); config = held?.config || null; emit({ sessionId, raw: held?.raw || "", draft: held?.draft || "", edited: held?.edited || false, preset: held?.preset || "clean", stage: held?.raw ? "preview" : "idle" }); } });
     },
     close() { intent++; cancelProcessing(); emit({ visible: false, holding: false, cancelArmed: false }); if (state.mode === "continuous") void call?.controller.cancelRecording(); return enqueue(pause); },
     pause() { intent++; cancelProcessing(); emit({ holding: false, cancelArmed: false }); if (state.mode === "continuous") void call?.controller.cancelRecording(); return enqueue(pause); },
     start() { const token = ++intent; return enqueue(() => prepare(token)); },
-    finish: () => enqueue(async () => { await finishCapture(); if (state.raw) await transform(state.preset); else renderDraft(); }),
+    finish: () => state.busy ? Promise.resolve() : enqueue(async () => { await finishCapture(); if (state.raw) await transform(state.preset); else renderDraft(); }),
     edit(text) { cancelProcessing(); emit({ draft: text, edited: true, stage: "preview" }); save(); },
     selectPreset(preset, replaceEdited = false) {
       if (state.edited && !replaceEdited) return Promise.resolve(false);
