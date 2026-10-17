@@ -7,7 +7,7 @@ import { voiceChat } from "@olares/lares-core/voice/dialogue";
 import { createVoicePanel } from "@olares/lares-core/voice/panel";
 import { createVoiceController } from "@olares/lares-core/voice/controller";
 import { createVoiceRecords } from "@olares/lares-core/voice/records";
-import { projectVoiceRecords, mergeVoiceTranscript, subscribeVoiceHistory } from "@olares/lares-core/voice/projection";
+import { projectVoiceRecords, mergeVoiceTranscript, subscribeVoiceHistory, activeVoiceReply } from "@olares/lares-core/voice/projection";
 import { createVoiceHostService } from "@olares/lares-core/voice/host-service";
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 function panelHarness() {
@@ -15,7 +15,7 @@ function panelHarness() {
   const panel = createVoicePanel({ complete: async (value: any) => { completed.push(value); }, create: async (options: any) => {
     let say: any;
     const controller = createVoiceController({ onTranscript: options.onTranscript,
-      input: { capture: () => new Promise((resolve) => { say = resolve; }), stop: () => say("dictated"), cancel: () => say("") },
+      input: { capture: ({ onReady }: any) => { onReady?.(); return new Promise((resolve) => { say = resolve; }); }, stop: () => say("dictated"), cancel: () => say("") },
       agent: { create: async () => "new", submit: async () => {}, running: async () => false, cancel: () => assert.fail("cancel task") }, output: { stop() {} } });
     const call = { controller, options, start: (args: any) => controller.start(args), stop: () => controller.disconnect(), pause: () => controller.pause(), resume: () => controller.resume(), say: (text: string) => say(text) };
     calls.push(call); return call;
@@ -171,4 +171,32 @@ test("delegation, approval and final results project once on both client shapes"
     const web = projectVoiceRecords(records, [{ key: "u", kind: "user", data: { source: { rpcId: "r:delegate" } }, location: { turn: { turn: 1 } } }, { key: "a", kind: "turn-tail", data: { turn: 1, closing: { blocks: [{ type: "text", text: "Usage is 20%." }] } } }]);
     assert.equal(web.length, 0); assert.equal(submitted, 1);
   } finally { await service.close(scope); rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("inline capture and preview visibility are separate; reopening a draft never records", async () => {
+  const h = panelHarness(); await h.panel.open({ sessionId: "one" });
+  assert.equal(h.panel.getSnapshot().inputActive, true); assert.equal(h.panel.getSnapshot().previewVisible, false);
+  await h.panel.finish(); assert.equal(h.panel.getSnapshot().inputActive, false); assert.equal(h.panel.getSnapshot().previewVisible, true);
+  await h.panel.close(); assert.equal(h.panel.getSnapshot().previewVisible, false);
+  await h.panel.open(); assert.equal(h.panel.getSnapshot().previewVisible, true); assert.equal(h.calls.length, 1);
+  await h.panel.bind("two"); assert.equal(h.panel.getSnapshot().inputActive, false); assert.equal(h.panel.getSnapshot().visible, false);
+  await h.panel.dispose();
+});
+test("returning to keyboard pauses conversation without replacing the connection or cancelling tasks", async () => {
+  const h = panelHarness(); await h.panel.open({ mode: "continuous", sessionId: "one" }); await h.panel.start();
+  assert.equal(h.panel.getSnapshot().inputActive, true); assert.equal(h.panel.getSnapshot().previewVisible, false);
+  await h.panel.close(); await h.panel.open(); assert.equal(h.calls.length, 1);
+  assert.equal(h.panel.getSnapshot().snapshot.connection, "paused"); assert.equal(h.panel.getSnapshot().snapshot.capture, "idle");
+  await h.panel.dispose();
+});
+
+test("deduplicated native replies retain playback ownership and other clients cannot stop this reply", () => {
+  const native = [{ key: "u", type: "user", requestId: "request", turn: 2 }, { key: "a", type: "assistant", turn: 2, text: "done" }];
+  const records = [{ id: "answer", voiceId: "phone", taskId: "request", role: "assistant", text: "done", sequence: 1, anchorSeq: 1 }];
+  const rows = mergeVoiceTranscript(native, records);
+  assert.equal(rows.length, 2); assert.deepEqual(rows[1].voicePlayback, { id: "answer", voiceId: "phone" });
+  assert.equal((native[1] as any).voicePlayback, undefined);
+  assert.equal(activeVoiceReply(records, { voiceId: "phone", playback: "playing" }), "answer");
+  assert.equal(activeVoiceReply(records, { voiceId: "web", playback: "playing" }), undefined);
+  assert.equal(activeVoiceReply(records, { voiceId: "phone", playback: "idle" }), null);
 });

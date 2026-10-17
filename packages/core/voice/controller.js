@@ -3,6 +3,7 @@ import { mintRpcId } from "../larepass/rpc.js";
 /** Device, agent and playback ports are injected; UI frameworks own no turn state. */
 export function createVoiceController({ input, agent, output, voiceId = mintRpcId(), metric = () => {}, onTranscript = null, idleTimeoutMs = 300_000, recoveryTimeoutMs = 120_000, onExpired = () => {}, now = Date.now, schedule = setTimeout, unschedule = clearTimeout }) {
   let epoch = 0;
+  let manualTurns = false;
   let take = null;
   let idleTimer = null;
   let recoveryTimer = null;
@@ -19,7 +20,7 @@ export function createVoiceController({ input, agent, output, voiceId = mintRpcI
     idleTimer.unref?.();
   };
   let creating = null;
-  let state = Object.freeze({ voiceId, sessionId: null, connection: "closed", capture: "idle", agent: "idle", playback: "idle", continuous: false, inputPaused: false, userSpeaking: false, inputLevel: null, outputMuted: false, error: null });
+  let state = Object.freeze({ voiceId, sessionId: null, connection: "closed", capture: "idle", agent: "idle", playback: "idle", continuous: false, inputPaused: false, userSpeaking: false, inputLevel: null, inputReady: false, outputMuted: false, error: null });
   const listeners = new Set();
   const change = (patch) => {
     state = Object.freeze({ ...state, ...patch });
@@ -51,15 +52,15 @@ export function createVoiceController({ input, agent, output, voiceId = mintRpcI
   };
   const listen = async () => {
     if (state.connection !== "open" || state.inputPaused || take || state.capture !== "idle") return;
-    if (state.continuous && (
+    if (!manualTurns && state.continuous && (
       (state.agent !== "idle" && !input.capabilities?.listenWhileWorking)
       || (state.playback !== "idle" && !input.capabilities?.bargeIn)
     )) return;
     const run = { epoch, abort: new AbortController(), id: mintRpcId(), started: now() };
     take = run;
-    change({ capture: "recording", error: null });
+    change({ capture: "recording", inputReady: false, error: null });
     try {
-      const text = String(await input.capture({ signal: run.abort.signal, continuous: state.continuous, onLevel: (level) => { if (live(run)) change({ inputLevel: Math.max(0, Math.min(1, level)) }); }, onSpeech: () => {
+      const text = String(await input.capture({ signal: run.abort.signal, continuous: state.continuous && !manualTurns, onReady: () => { if (live(run)) change({ inputReady: true }); }, onLevel: (level) => { if (live(run)) change({ inputLevel: Math.max(0, Math.min(1, level)) }); }, onSpeech: () => {
         if (live(run)) { touch(); change({ userSpeaking: true }); if (input.capabilities?.bargeIn) void stopPlayback(); }
       }, onTranscribing: () => { if (live(run)) change({ capture: "transcribing", userSpeaking: false }); } }) ?? "").trim();
       if (!live(run)) return;
@@ -83,7 +84,7 @@ export function createVoiceController({ input, agent, output, voiceId = mintRpcI
       if (take === run) {
         take = null;
         change({ capture: "idle", userSpeaking: false, inputLevel: null });
-        if (state.continuous && state.connection === "open" && (state.agent === "idle" || input.capabilities?.listenWhileWorking) && state.playback === "idle") {
+        if (!manualTurns && state.continuous && state.connection === "open" && (state.agent === "idle" || input.capabilities?.listenWhileWorking) && state.playback === "idle") {
           queueMicrotask(() => { void listen(); });
         }
       }
@@ -95,16 +96,18 @@ export function createVoiceController({ input, agent, output, voiceId = mintRpcI
     setOutputMuted(outputMuted) { change({ outputMuted }); },
     bindSession(sessionId) { if (sessionId) change({ sessionId }); },
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
-    async start({ sessionId = null, continuous = false, running = false } = {}) {
+    async start({ sessionId = null, continuous = false, running = false, manual = false, shouldStart = () => true } = {}) {
+      manualTurns = manual;
       const startedEpoch = ++epoch;
       creating = null;
       await cancelInput();
       if (startedEpoch !== epoch) return;
       await stopPlayback();
       if (startedEpoch !== epoch) return;
+      if (!shouldStart()) return;
       change({ voiceId, sessionId, continuous, inputPaused: false, connection: "open", agent: running ? "running" : "idle", error: null });
       clearTimers(); touch();
-      void listen();
+      if (!manualTurns) void listen();
     },
     listen,
     stopRecording: () => input.stop?.(),
@@ -118,12 +121,12 @@ export function createVoiceController({ input, agent, output, voiceId = mintRpcI
     observeAgent(running, playbackExpected = false) {
       if (playbackExpected && take && !input.capabilities?.bargeIn) void cancelInput();
       change({ agent: running ? "running" : "idle", ...(playbackExpected ? { playback: "pending" } : {}) });
-      if (!running && state.continuous) void listen();
+      if (!manualTurns && !running && state.continuous) void listen();
     },
     observePlayback(playing) {
       if (playing !== (state.playback === "playing")) touch();
       change({ playback: playing ? "playing" : "idle" });
-      if (!playing && state.continuous) void listen();
+      if (!manualTurns && !playing && state.continuous) void listen();
     },
     async pause() {
       clearTimers(); epoch += 1;
@@ -142,12 +145,14 @@ export function createVoiceController({ input, agent, output, voiceId = mintRpcI
       change({ connection: code ? "paused" : "closed", error: code });
       await Promise.allSettled([cancelInput(), stopPlayback()]);
     },
-    async resume() {
+    async resume({ shouldResume = () => true } = {}) {
+      const resumedEpoch = epoch;
       if (state.connection !== "paused") return;
       const running = state.sessionId ? await agent.running(state.sessionId) : false;
+      if (resumedEpoch !== epoch || !shouldResume()) return;
       clearTimers();
       change({ connection: "open", agent: running ? "running" : "idle", error: null });
-      touch(); void listen();
+      touch(); if (!manualTurns) void listen();
     },
   };
   return controller;

@@ -1,3 +1,14 @@
+function matchVoiceReply(record, native, tasks) {
+  const request = (row) => row.requestId || row.data?.source?.rpcId;
+  const turn = (row) => row.turn ?? row.data?.turn ?? row.location?.turn?.turn;
+  const role = (row) => row.type || row.kind;
+  const taskTurn = record.taskTurn ?? tasks.get(record.taskId) ?? turn(native.find((row) => request(row) === record.taskId) || {});
+  const match = record.taskId && [...native].reverse().find((row) => record.role === "user"
+      ? role(row) === "user" && request(row) === record.taskId
+      : ["assistant", "closing", "turn-tail"].includes(role(row)) && taskTurn != null && turn(row) === taskTurn);
+  return match;
+}
+
 /** Read-only records: native dsh events remain the authority for task execution. */
 export function projectVoiceRecords(records, native = []) {
   const tasks = new Map();
@@ -5,16 +16,10 @@ export function projectVoiceRecords(records, native = []) {
     if (row.role !== "task" || !row.taskId) continue;
     try { const task = JSON.parse(row.text); if (Number.isInteger(task.turn)) tasks.set(row.taskId, task.turn); } catch { /* A delegation request is text, not a result. */ }
   }
-  const request = (row) => row.requestId || row.data?.source?.rpcId;
-  const turn = (row) => row.turn ?? row.data?.turn ?? row.location?.turn?.turn;
-  const role = (row) => row.type || row.kind;
   const rows = [];
   for (const record of records) {
     if (!["user", "assistant"].includes(record.role) || !record.text) continue;
-    const taskTurn = record.taskTurn ?? tasks.get(record.taskId) ?? turn(native.find((row) => request(row) === record.taskId) || {});
-    const match = record.taskId && [...native].reverse().find((row) => record.role === "user"
-      ? role(row) === "user" && request(row) === record.taskId
-      : ["assistant", "closing", "turn-tail"].includes(role(row)) && taskTurn != null && turn(row) === taskTurn);
+    const match = matchVoiceReply(record, native, tasks);
     if (match) {
       if (record.role === "assistant" && tasks.has(record.taskId) && !record.turnId?.startsWith("result:")) continue;
       if (record.role === "assistant" && record.text !== (match.text || match.data?.text || (match.data?.closing?.blocks || match.data?.blocks || []).filter((block) => block.type === "text").map((block) => block.text).join(""))) rows.push({ ...record, attachedTo: match.key || match.id, summary: true });
@@ -27,7 +32,16 @@ export function projectVoiceRecords(records, native = []) {
 
 export function mergeVoiceTranscript(native, records) {
   const projected = projectVoiceRecords(records, native);
-  const rows = [...native];
+  const tasks = new Map();
+  for (const row of records) { if (row.role === "task" && row.taskId) { try { tasks.set(row.taskId, JSON.parse(row.text).turn); } catch {} } }
+  const rows = native.map(row => ({ ...row }));
+  for (const record of records) {
+    if (record.role !== "assistant") continue;
+    const match = matchVoiceReply(record, native, tasks);
+    if (!match) continue;
+    const index = native.indexOf(match);
+    if (index >= 0) rows[index].voicePlayback = { id: record.id, voiceId: record.voiceId };
+  }
   for (const row of projected.filter((item) => !item.summary)) {
     const next = rows.findIndex((item) => !item.voiceId && (item.anchorSeq ?? item.seq ?? Infinity) > row.anchorSeq);
     rows.splice(next < 0 ? rows.length : next, 0, row);
@@ -64,4 +78,8 @@ export function subscribeVoiceHistory({ request, sessionId, onRecords, onError =
     }
   })();
   return Object.assign(() => abort.abort(), { done: task });
+}
+
+export function activeVoiceReply(records, snapshot) {
+  return snapshot?.playback === "playing" ? records.findLast(row => row.role === "assistant" && row.voiceId === snapshot.voiceId)?.id : null;
 }

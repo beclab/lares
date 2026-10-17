@@ -106,7 +106,7 @@ export function createCaptureSession(io) {
     else job.stop = true;
   }
 
-  async function start() {
+  async function start({ manual = false } = {}) {
     if (job && (job.phase === "preparing" || job.phase === "recording" || job.phase === "transcribing")) {
       const previous = job;
       previous.cancel = true;
@@ -171,7 +171,10 @@ export function createCaptureSession(io) {
           if (run.phase === "recording" && now() - run.seen > CLIENT_LOST_MS) run.cancel = true;
           const available = await io.read(offset);
           const fresh = available.subarray(0, Math.max(0, MAX_CAPTURE_BYTES - pcm.length));
-          if (fresh.length < available.length || now() - started >= MAX_CAPTURE_MS) run.stop = true;
+          if (fresh.length < available.length || now() - started >= MAX_CAPTURE_MS) {
+            if (manual) { await io.close?.(); run.phase = "error"; run.error = "voice_capture_limit"; return; }
+            run.stop = true;
+          }
           offset += fresh.length;
           if (fresh.length) {
             pcm = Buffer.concat([pcm, fresh]);
@@ -192,7 +195,7 @@ export function createCaptureSession(io) {
             }
             if (level.audible) live = true;
             if (level.audible && level.rms >= ENDPOINT.floor) spoke = true;
-            if (live && endpoint.push(1, level.rms, FRAME_MS)) run.stop = true;
+            if (!manual && live && endpoint.push(1, level.rms, FRAME_MS)) run.stop = true;
           }
           if (run.cancel) {
             await io.close?.();

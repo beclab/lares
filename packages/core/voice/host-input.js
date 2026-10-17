@@ -2,7 +2,7 @@ export function createHostInput(port) {
   let abort = null;
   return {
     capabilities: { duplex: false, bargeIn: false, audio: "pcm16-16000" },
-    async capture({ signal, onTranscribing, continuous = false } = {}) {
+    async capture({ signal, onTranscribing, onReady, continuous = false } = {}) {
       abort = new AbortController();
       const current = abort;
       const cancel = () => current.abort();
@@ -11,6 +11,7 @@ export function createHostInput(port) {
         if (signal?.aborted) return "";
         const opened = await port.start(current.signal);
         if (!opened.recording) throw new Error("voice_bluetooth_not_ready");
+        onReady?.();
         while (!current.signal.aborted) {
           const state = await port.status(current.signal);
           if (state.phase === "transcribing") onTranscribing?.();

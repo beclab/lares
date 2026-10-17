@@ -482,13 +482,13 @@ export function languageForTranscribe(requestedLanguage, configLanguage) {
   return validateConfigPatch({ language: requestedLanguage }).language || undefined;
 }
 
-export async function transcribeFromHttp({ languageParam, contentType, bytes, signal }) {
+export async function transcribeFromHttp({ languageParam, modelParam, contentType, bytes, signal }) {
   const config = readConfig();
   const text = await transcribeAudio({
     bytes,
     contentType,
-    language: languageForTranscribe(languageParam, config.language),
-    preferred: config.model,
+    language: languageForTranscribe(languageParam, languageParam === null || languageParam === undefined ? config.language : ""),
+    preferred: modelParam == null ? config.model : validateConfigPatch({ model: modelParam }).model,
     signal,
   });
   return { text };
@@ -504,17 +504,19 @@ function createHostCapture(scope) {
     async close() { if (!deviceLease.owns(scope)) return; try { await endHostCapture(); } finally { deviceLease.release(scope); } },
     reset: resetHostCapture,
     transcribe(wav, signal) {
-      const config = readConfig();
+      const config = scope.captureConfig || readConfig();
       return transcribeAudio({ bytes: wav, contentType: "audio/wav", language: languageForTranscribe(null, config.language), preferred: config.model, signal });
     },
   });
 }
 const defaultScope = { duplex };
 function captureFor(scope = defaultScope) { return scope.capture ??= createHostCapture(scope); }
-export async function captureStart(scope = defaultScope) {
+export async function captureStart(scope = defaultScope, options = {}) {
+  if ((options.config && Object.keys(options.config).some((key) => !["model", "language"].includes(key))) || (options.manual !== undefined && typeof options.manual !== "boolean")) throw new VoiceError("voice_config_invalid", 400, "invalid capture options");
+  scope.captureConfig = { ...readConfig(), ...validateConfigPatch(options.config || {}) };
   deviceLease.acquire(scope);
   await interruptSpeech(scope);
-  return captureFor(scope).start();
+  return captureFor(scope).start({ manual: options.manual === true });
 }
 export function captureStop(cancel, scope = defaultScope) {
   captureFor(scope).stop(cancel);

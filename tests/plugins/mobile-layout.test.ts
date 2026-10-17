@@ -71,14 +71,15 @@ test("mobile new session uses a centered hero; model and effort live on the top 
   assert.match(composer, /chat\.placeholderNewSession/);
   assert.match(composer, /data-hero/);
   assert.match(composer, /data-kind="attach"/);
-  assert.match(composer, /data-mode="inputMode"/);
+  assert.match(composer, /<LaresVoiceInput/);
   assert.match(composer, /@click="onVoiceClick"/);
   assert.doesNotMatch(composer, /@touchstart/);
-  assert.match(composer, /aria-haspopup="dialog"/);
-  assert.match(composer, /mode: 'single'/);
+  assert.doesNotMatch(composer, /aria-haspopup="dialog"/);
+  assert.doesNotMatch(composer, /voice-entry/);
+  assert.match(composer, /mode: this.voiceDefaultMode/);
   assert.doesNotMatch(composer, /voiceCall\.caption|voiceCall\.history/);
   assert.match(composer, /data-expanded/);
-  assert.match(composer, /v-if="expanded"/);
+  assert.match(composer, /v-if="expanded && !voiceView\?\.inputActive"/);
   assert.doesNotMatch(composer, /lares-composer__pills/);
 });
 

@@ -79,6 +79,7 @@
       <template v-else-if="row.type === 'assistant'">
         <div class="lares-md" v-html="renderMarkdown(row.text)" />
         <p v-if="row.voiceSummary" class="lares-voice-summary">{{ row.voiceSummary }}</p>
+        <button v-if="isSpeaking(row)" type="button" class="lares-message-stop" @click="$emit('stop-speaking')">{{ t('input.stopSpeaking') }}</button>
         <LaresMessageActions
           :text="row.text"
           :reaction="reactions[actionKey(index)] || ''"
@@ -125,6 +126,7 @@ export default {
     running: { type: Boolean, default: false },
     runningSince: { type: Number, default: 0 },
     loading: { type: Boolean, default: false },
+    voiceView: { type: Object, default: null },
     previews: { type: Object, default: () => ({}) },
     mediaUrl: { type: Function, required: true },
     scrollTop: { type: Function, required: true },
@@ -137,7 +139,7 @@ export default {
     questionTakeover: { type: Boolean, default: false },
     t: { type: Function, required: true },
   },
-  emits: ["open", "media", "answer"],
+  emits: ["open", "media", "answer", "stop-speaking"],
   data() {
     return {
       applyingScroll: false,
@@ -181,6 +183,12 @@ export default {
     clearInterval(this.clock);
   },
   methods: {
+    isSpeaking(row) {
+      const snapshot = this.voiceView?.snapshot;
+      if (snapshot?.playback !== "playing") return false;
+      const latest = this.items.findLast(item => item.type === "assistant" && (item.voiceId || item.voicePlayback?.voiceId) === snapshot.voiceId);
+      return latest && (row.id || row.key) === (latest.id || latest.key);
+    },
     syncClock() {
       clearInterval(this.clock);
       this.clock = 0;
@@ -558,4 +566,8 @@ export default {
 .lares-md :deep(a) {
   color: var(--q-blue-default);
 }
+</style>
+
+<style scoped>
+.lares-message-stop { border: 0; background: transparent; color: var(--q-ink-2, #777); font: inherit; font-size: 12px; padding: 6px 0; cursor: pointer; }
 </style>

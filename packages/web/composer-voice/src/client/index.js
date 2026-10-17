@@ -1,5 +1,6 @@
 import React from "react";
 import { resolveSubmitMode } from "@olares/lares-core/larepass/submission-settings";
+import { InlineVoice } from "./inline.js";
 import { MicButton, micCss } from "./MicButton.js";
 import { createWebVoicePanel, VoicePanel } from "./panel.js";
 import { useVoiceHistory } from "./history.js";
@@ -60,7 +61,9 @@ export function apply(ctx) {
     const panel = createWebVoicePanel((sessionId) => scope.uiWorkspace.openSession(sessionId));
     scope.effect(() => () => { void panel.dispose().catch(() => {}); }, "lares-voice-panel-lifetime");
     scope.slots.inject("shell.overlay", () => scope.slots.register({ name: "shell.overlay", id: "lares-voice-panel" }, () => h(VoicePanel, { panel })));
-    scope.slots.inject("conversation.chat.timeline", () => scope.slots.register({ name: "conversation.chat.timeline", id: "lares-voice-records", select: () => ({}) }, VoiceTimeline));
+    scope.slots.inject("conversation.chat.timeline", () => scope.slots.register({ name: "conversation.chat.timeline", id: "lares-voice-records", select: () => ({}) }, (props) => h(VoiceTimeline, { ...props, panel })));
+
+    scope.slots.inject("conversation.input.overlay", () => scope.slots.register({ name: "conversation.input.overlay", id: "lares-voice-inline" }, () => h(InlineVoice, { panel })));
 
     scope.slots.inject("conversation.input.right", () =>
       scope.slots.register(

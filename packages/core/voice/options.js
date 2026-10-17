@@ -1,6 +1,10 @@
+import { defaultDictationProfiles } from "./dictation.js";
+
 export const VOICE_DEFAULTS = {
   preset: "assistant",
-  dictationCleanup: false,
+  dictationPreset: "clean",
+  dictationProfiles: defaultDictationProfiles(),
+  dictationShortcuts: { default: "", raw: "", clean: "", outline: "", summary: "" },
   chatModel: "default-chat",
   instructions: "",
   voice: "",

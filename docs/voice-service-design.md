@@ -31,7 +31,7 @@ Public voice model IDs must differ from dependency model IDs. Reject recursive s
 
 Continuous conversation uses either Router ASR + LLM + TTS or a validated native Realtime model. Server presets control models, instructions, voice, language, endpointing, interruptions, read-aloud and timeouts. Clients may override only allowlisted values. Business session/workspace/preset/tool permissions come from authenticated grants, never model arguments.
 
-Web defaults to dictation, mobile to continuous conversation. Each exposes both explicit entries. Dictation returns editable text, preserving existing text and attachments, and sends only on user confirmation. Mobile continuous conversation starts on a tap, not a hold gesture. Read-aloud is independent of mode.
+Web defaults to dictation, mobile to continuous conversation. A single composer entry follows the platform default; settings update its label and behavior. Dictation returns editable text, preserving existing text and attachments, and sends only on user confirmation. Conversation opens on a tap and uses hold-to-speak/release-to-submit turns. Read-aloud is independent of mode.
 
 ## Three lifecycles
 
@@ -116,36 +116,64 @@ Attribute composite service usage separately from child model usage; do not fabr
 
 Test stale input, cancellation, session switching, multi-client shared tasks, queue/steer correlation, approvals, deduplication across uncertain outcomes, context recovery, backpressure and identity isolation. Run focused/full tests, typecheck and build. Verify real browser, iOS/Android, host and Bluetooth chains separately; report transcription, first text, first audio and interruption latency without logging transcripts or credentials as metrics. No deployment, push, PR or release version change is implicit.
 
-## Voice panel and session message presentation
+## Inline voice input and session message presentation
 
-The composer exposes Voice input and Voice conversation entries only, plus a short paused indicator. Entries open one in-app panel with Dictation and Conversation tabs (full screen on mobile). The panel owns device, waveform, elapsed time, temporary transcription and audio controls; complete replies and history belong in the existing session message area. Switching tabs pauses capture/playback first and preserves dictation drafts; the user explicitly starts the next mode.
+Use the v0.26.44 Vue composer as the visual baseline on both platforms: one composer, one voice/keyboard entry, and a primary area that changes with input state. Web defaults to dictation and mobile to conversation; Settings persist each default separately. Model, device, output and preset defaults stay in Settings. Switching modes preserves text, attachments and native tools/permissions. There are no conversation tabs, history, mute, pause or End Voice buttons in the composer.
 
-Panel visibility is independent of VoiceSession lifetime. Close, Escape and backdrop pause capture/playback while retaining conversation context and leaving dsh work running. Reopening only shows the panel; Continue explicitly resumes audio. Closing during dictation finishes recognition into a panel draft; it never inserts or sends automatically. Complete appends to the original session draft, preserving existing text and attachments. Discard removes only the panel draft. End voice releases resources without deleting records. Task cancellation stays in the chat area. Session changes pause the old exchange and fence late results to its original target.
+Conversation stays inline. The entry replaces text editing with Hold to speak and becomes a keyboard icon. The primary area shows preparation, release-to-send plus elapsed time, cancellation or recognition without changing size. Replies, execution, approvals and task cancellation remain in the current session. Playback/execution have brief semantic status; a stop-speaking action appears on the corresponding assistant message only while this client owns playback. Holding during playback stops output before recording, without cancelling dsh work. Returning to the keyboard pauses audio and preserves the VoiceSession/context until existing idle/recovery deadlines expire; opening again waits for an explicit hold. No automatic endpoint or re-listen is enabled for these turns. Generic SDK clients retain their existing policies.
+
+Fresh dictation records immediately in the composer, showing available microphone levels, elapsed time and Done. Silence does not submit. Done ends capture, recognizes and applies the selected preset; repeated Done cannot repeat processing. Only the resulting editable preview opens a dialog: compact and entry-anchored on desktop, a bottom sheet on mobile/narrow web, bounded to 85% of the visual viewport. Text scrolls while the action footer remains reachable. Insert appends to the original session draft, preserving text and attachments; Discard removes only this take. Keyboard return stops capture and retains a draft without insertion or submission. Closing a preview retains edits, and reopening prioritizes that draft even if Settings now select conversation. Reopening never starts another microphone. Empty audio creates no task.
+
+### Live gesture feedback and preview lifecycle
+
+Pointer down captures the initiating pointer. Moving upward 60px arms cancellation; returning below 40px disarms it. The hint appears above the composer only during a hold; text, icon and color indicate cancellation without moving the main action or message list. Release submits or cancels once. A second pointer anywhere, pointer loss, window focus loss, backgrounding and session changes cancel unsubmitted input. Release during permission/device preparation invalidates the pending capture. Cancellation never completes ASR or creates/submits an Agent task.
+
+Focused Space holds/releases; Enter and assistive activation toggle start/finish. Escape first cancels an active take while retaining voice input; a second Escape returns to text. Repeated keys and late pointer events cannot double-submit. Timer and meter updates stay outside polite live announcements. Focus returns to the voice entry when the preview closes. The preview has no drag-to-dismiss gesture that could conflict with cancellation.
+
+The shared input controller exposes independent `inputActive` and `previewVisible` snapshots, plus `cancelArmed`/`setCancelArmed`. `holdEnd()` defaults to the current cancellation selection. `voice/presentation` provides shared labels, elapsed time and semantic phase/status. Native projected replies retain `voicePlayback` ownership metadata without modifying persisted dsh events. React/Vue own focus, DOM, anchors and visual-viewport geometry. The official web overlay slot replaces the visible editor region through stable composer attributes while leaving the native editor/draft mounted, attachments and tool row intact; it does not create another Chat shell.
+
+Preview offers editable text, Insert and secondary Discard, with one small preset menu containing preset selection, original text and recovery actions. Processing failure preserves text; retry/use-original remain reachable. No long-press text-field entry, backend endpoint, global shortcut or native Realtime capability is added.
+
+### Dictation processing presets
+
+Interaction references: [Typeless Dictate](https://www.typeless.com/help/quickstart/dictate) and [shortcut settings](https://www.typeless.com/help/quickstart/settings). Lares retains explicit editable preview/insertion as requested; outline/summary are Lares processing presets, not claims about Typeless preset names.
+
+| Preset | Chain | Contract |
+| --- | --- | --- |
+| raw | Router ASR | Return the ASR text verbatim; zero LLM calls |
+| clean (new-user default) | ASR → Router LLM | Remove fillers/repetition and apply explicit corrections, preserving meaning |
+| outline | ASR → Router LLM | Organize this take into title/key points without adding facts |
+| summary | ASR → Router LLM | Compress this take while preserving constraints and uncertainty |
+
+Settings configure the ASR model, default dictation preset and separate LLM model/instructions for each non-raw preset. Built-in instructions can be restored. All processing has a fixed boundary: no tools, no execution or answering of spoken instructions; retain names, numbers, negation and uncertainty. Missing models and failures retain the raw text and expose retry/use-original actions. Legacy explicitly stored dictationCleanup maps false to raw and true to clean; an explicit new preset takes precedence and subsequent writes contain only the new configuration.
+
+Preview supports manual editing and a compact preset selector. Reprocessing always uses the original transcript; replacing manual edits requires confirmation. A processing generation and AbortSignal fence stale results. Per-recording configuration snapshots fix the ASR and text profiles for that take. Raw audio is not newly persisted; the word dictionary and style learning are deferred.
+
+Optional page-focused keyboard bindings can trigger default dictation or a specific preset; a second activation finishes recording. They never change defaults or start a concurrent capture while a preview is open. Repeated/composing key events, duplicate bindings and common browser conflicts are rejected. Native system-wide shortcuts require future desktop integration.
 
 Existing Lares sessions bind directly. On an empty Lares page, the first valid continuous transcript creates a presentation session without submitting an Agent prompt. Empty audio, noise and cancellation create nothing. Generic Voice Service clients retain their own binding policy.
 
 Voice user/assistant records are read-only projections alongside native dsh chat nodes (mobile Transcript uses the same projection rules). Records are persisted independently, never synthesized as dsh execution events or resubmitted as prompts. Streaming updates replace the same stable record ID. Host ordering and persisted dsh sequence anchors provide stable interleaving after refresh and across clients. Historical records never trigger speech. Session-scoped authorized paginated reads and subscriptions are independent of an active VoiceSession; /records alone is insufficient.
 
-Delegations correlate voiceId / turnId / requestId / taskId. Native dsh input/results take over corresponding temporary projections; spoken summaries are attached to the task result. Tool progress, approvals and cancellation use native chat components. Core owns panel lifecycle, drafts, binding and projection; React/Vue own presentation and devices.
+Delegations correlate voiceId / turnId / requestId / taskId. Native dsh input/results take over corresponding temporary projections; spoken summaries are attached to the task result. Tool progress, approvals and cancellation use native chat components. Core owns inline input/preview lifecycle, drafts, binding and projection; React/Vue own presentation and devices.
 
 ```mermaid
 flowchart TD
-    Entry[Voice input / Voice conversation] --> Panel[Open panel without starting capture]
-    Panel --> Start[Explicit Start / Continue]
-    Start --> Capture[Capture and recognize]
-    Capture --> Dictation{Dictation?}
-    Dictation -->|yes| Draft[Keep panel draft]
-    Draft --> Complete[Complete: append to original composer draft]
-    Dictation -->|no| Bind[Bind existing session or create on first valid transcript]
-    Bind --> Records[Persist voice records and project in session messages]
-    Records --> Delegate{Business task?}
-    Delegate -->|yes| DSH[Native dsh task, approval and result]
-    Delegate -->|no| Reply[Voice model reply]
-    DSH --> Reply
-    Reply --> Records
-    Panel --> Close[Close / Escape / backdrop]
-    Close --> Pause[Pause audio; retain context; tasks continue]
-    Pause --> Panel
+    Entry[Single voice entry] --> Mode{Platform default}
+    Mode -->|Dictation| Capture[Record until Done]
+    Capture --> Preset{Processing preset}
+    Preset -->|raw| Preview[Editable preview]
+    Preset -->|clean / outline / summary| LLM[Router LLM without tools]
+    LLM --> Preview
+    Preview -->|Insert| Draft[Append to original composer draft]
+    Preview -->|Discard| Clear[Clear take]
+    Mode -->|Conversation| Hold[Hold to speak]
+    Hold -->|Release| Bind[Bind session and submit valid turn]
+    Hold -->|Slide up| Cancel[Discard take]
+    Bind --> Reply[Persist / project actual reply and optionally play]
+    Reply --> Hold
+    Entry --> Close[Close pauses audio and retains context]
+    Close --> Background[Existing dsh tasks continue]
 ```
 
 The initial implementation uses bounded long polling for session history, stable record sequences for pagination, and a persisted `anchorSeq` for native dsh ordering. A read-only external activity marker expands the official Chat on voice-only sessions. Presentation markers and projected rows never become execution events. Client subscriptions share one web history feed per mounted session and stop when the last subscriber leaves.

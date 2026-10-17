@@ -1,7 +1,7 @@
 import { createVoiceAgentSession } from "./agent-session.js";
 import { createVoiceRecords } from "./records.js";
 import { createVoiceDialogue, cleanDictation } from "./dialogue.js";
-import { readConfig } from "./config.js";
+import { readConfig, validateConfigPatch } from "./config.js";
 import { VOICE_PRESETS } from "./options.js";
 
 const failure = (code, status) => Object.assign(new Error(code), { code, status });
@@ -24,9 +24,10 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
   };
   const scopes = new Set();
   const service = {
-    async clean(scope, text) {
+    async clean(scope, text, options = {}) {
       if (typeof text !== "string" || text.length > 16000) throw failure("voice_input_invalid", 400);
-      return cleanDictation(text, { config: config(), owner: scope.owner, chat });
+      if (options.config && Object.keys(options.config).some((key) => key !== "dictationProfiles")) throw failure("voice_config_invalid", 400);
+      return cleanDictation(text, { config: { ...config(), ...validateConfigPatch(options.config || {}) }, owner: scope.owner, chat, preset: options.preset, signal: options.signal });
     },
     async open(scope, body) {
       if (scope.active || scope.opening || scope.closing) throw failure("voice_session_active", 409);

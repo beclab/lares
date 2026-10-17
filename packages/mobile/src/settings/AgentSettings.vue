@@ -61,6 +61,24 @@
           @click="openSheet('voiceLang')"
         />
       </div>
+      <template v-if="voice?.config?.dictationProfiles">
+        <label class="lares-agent__hint">{{ tVoice('dictation.preset') }}
+          <select :value="voice.config.dictationPreset" :disabled="busy" @change="patchVoice('dictationPreset', $event.target.value)"><option v-for="id in dictationPresets" :key="id" :value="id">{{ tVoice(`dictation.${id}`) }}</option></select>
+        </label>
+        <label class="lares-agent__hint">{{ tVoice('dictation.configure') }}
+          <select v-model="dictationEditor"><option v-for="id in dictationPresets" :key="id" :value="id">{{ tVoice(`dictation.${id}`) }}</option></select>
+        </label>
+        <template v-if="dictationEditor !== 'raw'">
+          <label class="lares-agent__hint">{{ tVoice('dictation.model') }}
+            <select :value="voice.config.dictationProfiles[dictationEditor].model" :disabled="busy" @change="patchDictation('model', $event.target.value)"><option value="">—</option><option v-for="id in voice.chatModels || []" :key="id" :value="id">{{ id }}</option></select>
+          </label>
+          <label class="lares-agent__hint">{{ tVoice('dictation.instructions') }}
+            <textarea :key="dictationEditor + voice.config.dictationProfiles[dictationEditor].instructions" :value="voice.config.dictationProfiles[dictationEditor].instructions" :disabled="busy" maxlength="8000" @change="patchDictation('instructions', $event.target.value)" />
+          </label>
+          <button type="button" :disabled="busy" @click="resetDictation">{{ tVoice('dictation.reset') }}</button>
+        </template>
+        <p v-else class="lares-agent__hint">{{ tVoice('dictation.noLlm') }}</p>
+      </template>
       <label class="lares-agent__hint">{{ tVoice('settings.preset') }}
         <select :value="voice?.config?.preset || 'assistant'" @change="patchVoice('preset', $event.target.value)">
           <option v-for="preset in ['dictation', 'chat', 'assistant', 'direct']" :key="preset" :value="preset">{{ tVoice(`settings.preset.${preset}`) }}</option>
@@ -91,6 +109,7 @@
           <option value="continuous">{{ tVoice('settings.mode.continuous') }}</option>
         </select>
       </label>
+      <label class="lares-agent__hint"><input type="checkbox" :checked="voice?.config?.speak === true" :disabled="busy" @change="patchVoice('speak', $event.target.checked)" /> {{ tVoice('settings.speak.title') }}</label>
       <label class="lares-agent__hint">{{ tVoice('settings.device') }}
         <select :value="voice?.config?.device || 'auto'" @change="patchVoice('device', $event.target.value)">
           <option v-for="device in ['auto', 'device', 'headset']" :key="device" :value="device">{{ tVoice(`settings.device.${device}`) }}</option>
@@ -140,6 +159,7 @@
 <script>
 import { t as translate } from "@olares/lares-core/i18n/t";
 import { EN as MODEL_EN, ZH as MODEL_ZH } from "@olares/lares-core/i18n/chat-model";
+import { DICTATION_PRESETS, DICTATION_INSTRUCTIONS } from "@olares/lares-core/voice/dictation";
 import { EN as VOICE_EN, ZH as VOICE_ZH } from "@olares/lares-core/i18n/voice";
 import { EN as SEARCH_EN, ZH as SEARCH_ZH } from "@olares/lares-core/i18n/search";
 import { groupModelsByProvider, selectionKey } from "@olares/lares-core/router/session-model";
@@ -198,6 +218,8 @@ export default {
       search: remembered.search,
       conversation: remembered.conversation,
       modelError: "",
+      dictationEditor: "clean",
+      dictationPresets: DICTATION_PRESETS,
       voiceError: "",
       searchError: "",
       conversationError: "",
@@ -443,6 +465,8 @@ export default {
         this.pending = "";
       }
     },
+    patchDictation(key, value) { return this.patchVoice("dictationProfiles", { ...this.voice.config.dictationProfiles, [this.dictationEditor]: { ...this.voice.config.dictationProfiles[this.dictationEditor], [key]: value } }); },
+    resetDictation() { return this.patchDictation("instructions", DICTATION_INSTRUCTIONS[this.dictationEditor]); },
     async patchVoice(key, value) {
       if (!this.voice || this.busy) return;
       const previous = this.voice;

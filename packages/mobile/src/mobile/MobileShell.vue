@@ -72,6 +72,7 @@
             :can-send="state.canSend"
             :attach-pending="state.upload.pending > 0"
             :attach-disabled="!state.sessionId || state.historyLoading || state.starting"
+            :voice-view="state.voicePanelState"
             :voice-call="state.voiceCall"
             :voice-default-mode="state.voiceDefaultMode"
             :voice-phase="state.voicePhase"
@@ -104,6 +105,8 @@
         <div v-else key="chat" class="lares-shell__chat">
           <LaresTranscript
             ref="transcript"
+            :voice-view="state.voicePanelState"
+            @stop-speaking="$emit('voice-action', { action: 'stopPlayback' })"
             :items="state.viewItems"
             :running="state.running"
             :running-since="state.runningSince"
@@ -136,6 +139,7 @@
             :can-send="state.canSend"
             :attach-pending="state.upload.pending > 0"
             :attach-disabled="!state.sessionId || state.historyLoading || state.starting"
+            :voice-view="state.voicePanelState"
             :voice-call="state.voiceCall"
             :voice-default-mode="state.voiceDefaultMode"
             :voice-phase="state.voicePhase"

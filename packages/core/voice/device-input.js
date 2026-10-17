@@ -48,7 +48,7 @@ export function createDeviceInput({ transcribe, onPhase = () => {}, endpoint = c
   };
   return {
     capabilities: { duplex: true, bargeIn: false, listenWhileWorking: true, audio: "encoded" },
-    capture({ signal, onTranscribing, onSpeech, onLevel = () => {}, continuous = false } = {}) {
+    capture({ signal, onTranscribing, onReady, onSpeech, onLevel = () => {}, continuous = false } = {}) {
       cancel();
       return new Promise((resolve, reject) => {
         settle = resolve;
@@ -62,6 +62,7 @@ export function createDeviceInput({ transcribe, onPhase = () => {}, endpoint = c
           } }, onSpeech, onLevel, { silenceMs: endpointSilenceMs });
         }, onPhase(phase, extra) {
           onPhase(phase, extra);
+          if (phase === "recording") onReady?.();
           if (phase === "transcribing") onTranscribing?.();
           if (phase === "error") {
             if (continuous && ["voice_no_input", "voice_too_short"].includes(extra.error)) { done(""); return; }
@@ -69,7 +70,7 @@ export function createDeviceInput({ transcribe, onPhase = () => {}, endpoint = c
         } });
         signal?.addEventListener("abort", cancel, { once: true });
         if (signal?.aborted) { cancel(); return; }
-        timer = setTimeout(() => recorder?.stop(), 60_000);
+        timer = setTimeout(() => { if (continuous) recorder?.stop(); else { settle = null; cancel(); reject(new Error("voice_capture_limit")); } }, 60_000);
         void recorder.start();
       });
     },

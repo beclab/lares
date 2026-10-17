@@ -4,9 +4,10 @@
       class="lares-composer__card"
       data-composer-card
       :data-hero="hero ? 'true' : 'false'"
-      :data-mode="inputMode"
+      :data-mode="voiceView?.inputActive ? 'voice' : 'text'"
       :data-expanded="expanded ? 'true' : 'false'"
-      :data-holding="holding ? 'true' : 'false'"
+      :data-holding="voiceView?.holding ? 'true' : 'false'"
+      :data-cancel-armed="Boolean(voiceView?.cancelArmed)"
     >
       <div v-if="referenceOpen" ref="referenceMenu" class="lares-composer__menu" role="listbox">
         <p v-if="referencesError" class="lares-composer__menu-status">{{ referencesError }}</p>
@@ -95,7 +96,8 @@
             <path d="M12 5v14M5 12h14" />
           </svg>
         </button>
-        <textarea
+        <LaresVoiceInput v-if="voiceView?.inputActive" :view="voiceView" :t="t" @action="$emit('voice-action', $event)" />
+        <textarea v-show="!voiceView?.inputActive"
 
           ref="input"
           :value="draft"
@@ -123,18 +125,19 @@
             class="lares-composer__icon"
             data-kind="voice"
             :disabled="sending"
-            :aria-label="t('call.start')"
-            aria-haspopup="dialog"
+            :aria-label="t(voiceView?.inputActive ? 'input.keyboard' : voiceDefaultMode === 'single' ? 'settings.mode.single' : 'call.start')"
+            :aria-expanded="Boolean(voiceView?.inputActive)"
             @click="onVoiceClick"
           >
-            <svg class="lares-composer__wave" viewBox="0 0 24 24" aria-hidden="true">
+            <svg v-if="!voiceView?.inputActive" class="lares-composer__wave" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M5 8v8" />
               <path d="M12 5v14" />
               <path d="M19 8v8" />
             </svg>
+            <svg v-else viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3" /><path d="M7 9h1m3 0h1m3 0h1M7 12h1m3 0h1m3 0h1M8 15h8" /></svg>
           </button>
           <button
-            v-if="expanded"
+            v-if="expanded && !voiceView?.inputActive"
             type="submit"
             class="lares-composer__icon"
             data-kind="send"
@@ -145,11 +148,10 @@
               <path d="M12 19V5M5 12.5 12 5l7 7.5" />
             </svg>
           </button>
-          <button type="button" class="lares-composer__voice-entry" aria-haspopup="dialog" @click="$emit('hold-start', { mode: 'single' })">{{ t('settings.mode.single') }}</button>
         </div>
       </div>
     </div>
-    <p v-if="voiceCall?.connection === 'paused'" class="lares-composer__hint" role="status">{{ t('panel.paused') }}</p>
+
     <p v-for="item in failures" :key="item.id" class="lares-composer__hint" data-status="error">
       {{ t("upload.failed", { name: item.name, reason: t(`error.${item.code}`) }) }}
     </p>
@@ -157,6 +159,7 @@
 </template>
 
 <script>
+import LaresVoiceInput from "./VoiceInput.vue";
 import {
   REFERENCE_DEBOUNCE_MS,
   activeReference,
@@ -169,12 +172,14 @@ import { draftImageStatus } from "@olares/lares-core/files/draft-images";
 
 export default {
   name: "LaresComposer",
+  components: { LaresVoiceInput },
   props: {
     draft: { type: String, default: "" },
     sending: { type: Boolean, default: false },
     canSend: { type: Boolean, default: false },
     attachPending: { type: Boolean, default: false },
     attachDisabled: { type: Boolean, default: false },
+    voiceView: { type: Object, default: null },
     voiceCall: { type: Object, default: null },
     voicePhase: { type: String, default: "idle" },
     voiceElapsed: { type: Number, default: 0 },
@@ -197,7 +202,6 @@ export default {
   ],
   data() {
     return {
-      holding: false,
       commandsOpen: false,
       commandTyped: false,
       commandIndex: 0,
@@ -216,7 +220,7 @@ export default {
       return this.t("chat.placeholder");
     },
     expanded() {
-      return this.inputMode === "text" && (this.draft.trim().length > 0 || this.draftImages.length > 0);
+      return !this.voiceView?.inputActive && (this.draft.trim().length > 0 || this.draftImages.length > 0);
     },
     referenceMenuRows() {
       return referenceRows(this.references, this.t);
@@ -241,7 +245,6 @@ export default {
     this.autosize();
   },
   beforeUnmount() {
-    this.clearHold();
     window.clearTimeout(this.referenceTimer);
     window.removeEventListener("pointerdown", this.onTokenPointer, true);
   },
@@ -379,13 +382,11 @@ export default {
       }
     },
     onVoiceClick() {
-      this.$emit("hold-start", { mode: "continuous" });
+      this.closeReferences(); this.commandsOpen = false; this.commandTyped = false;
+      this.$refs.input?.blur();
+      if (this.voiceView?.inputActive) { this.$emit("voice-action", { action: "close" }); this.$nextTick(() => this.$refs.input?.focus()); }
+      else this.$emit("hold-start", { mode: this.voiceDefaultMode });
     },
-    clearHold() {
-      this.holding = false;
-      this.holdKind = "";
-    },
-    detachHold() {},
     pickFiles() {
       this.$refs.picker?.click();
     },
@@ -410,8 +411,6 @@ export default {
 </script>
 
 <style scoped>
-.lares-composer__voice-entry { border: 0; border-radius: 12px; padding: 6px 8px; background: var(--q-background-3); color: var(--q-ink-2); font: inherit; font-size: 12px; min-height: 36px; cursor: pointer; }
-.lares-composer__voice-entry:focus-visible { outline: 2px solid var(--q-blue-default); }
 
 .lares-composer {
   display: flex;
@@ -552,6 +551,8 @@ export default {
   border-color: var(--q-blue-default);
   background: var(--q-blue-alpha);
 }
+
+.lares-composer__card[data-cancel-armed="true"] { border-color: var(--q-red-default); background: var(--q-background-1); }
 
 .lares-composer__attachments {
   display: flex;
@@ -810,8 +811,6 @@ export default {
 </style>
 
 <style scoped>
-.lares-composer__voice-entry { border: 0; border-radius: 12px; padding: 6px 8px; background: var(--q-background-3); color: var(--q-ink-2); font: inherit; font-size: 12px; min-height: 36px; cursor: pointer; }
-.lares-composer__voice-entry:focus-visible { outline: 2px solid var(--q-blue-default); }
 
 .lares-composer__voice-mode { margin: 8px 12px; border: 0; border-radius: 8px; padding: 6px; background: transparent; color: inherit; font: inherit; }
 .lares-composer__hint button { min-height: 44px; border: 0; border-radius: 12px; padding: 8px 12px; background: var(--lares-bg-secondary, #f0f0f0); color: inherit; font: inherit; }

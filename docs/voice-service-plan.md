@@ -9,7 +9,7 @@ Design authority: [Voice service design](voice-service-design.md). Runtime evide
 - [x] Implement shared service/session interfaces, presets, independent defaults, dictation and draft preservation.
 - [x] Implement owner-scoped text records, versioned recovery summaries and record inspection/deletion.
 - [x] Implement conversational Router LLM delegation, task progress, explicit pause/resume and resource deadlines.
-- [x] Update web and mobile controls; separate single dictation from tap-to-start conversation.
+- [x] Update web and mobile controls; separate dictation from manual hold-to-talk conversation.
 - [x] Add Router composite voice upstream, authorized user grants, capabilities and layered usage.
 - [x] Validate mocked native/composite protocol subset, signed identity and external SDK controls.
 - [ ] Validate against real native/composite models and PostgreSQL composite settlement.
@@ -43,8 +43,49 @@ Final local verification: 168 focused voice/mobile-layout tests passed. The full
 
 Deliver documentation, core projection and dual-platform UI as separate validated commits. This implementation does not authorize another release, package publication or deployment.
 
-### Panel implementation verification
+### Previous panel implementation verification
 
 184 focused voice/mobile-layout tests pass. Full suite: 692/693 pass; the sole failure remains the pre-existing macOS file-preview symlink cleanup (`ERR_FS_EISDIR`). Typecheck and client/mobile/server builds pass. Browser inspection used the actual local Host and two synthetic stored voice records: the official web Chat and Vue Transcript both display the records after refresh; no Agent prompt or manufactured execution event was required. Web dialog and 390×844 Vue full-screen panel entry/close/focus behavior were inspected. Core/mock tests cover delegation through approval and completion using both native client message shapes.
 
 This is not human microphone or audible output acceptance. The complete physical-device/browser failure matrix, yaotest004 speech, iOS/Android background/lock behavior, Bluetooth and native Realtime remain unverified. Existing gates stay closed; no release or deployment is included.
+
+## Simplified voice entry and dictation preset delivery
+
+This section supersedes earlier two-entry/tab and automatic-listening UI instructions.
+
+- [x] One composer voice entry follows separate web/mobile defaults; settings changes update the entry.
+- [x] Four dictation presets with independent LLM models/instructions for clean, outline and summary; raw bypasses the LLM. Validate settings and migrate the explicit legacy cleanup choice.
+- [x] Immediate dictation capture, explicit Done, editable preview, original transcript, retry/use-original, preset regeneration and explicit insertion/discard.
+- [x] Shared manual-turn controller and hold/release/slide-up behavior; no VAD endpoint or automatic re-listen for Lares conversation UI. Stop output independently of task cancellation.
+- [x] Optional validated page-focused preset shortcuts; mobile settings configure the same processing profiles.
+- [x] Core regressions cover pending startup, late results, editing, original-text reuse, cleanup failure and model/tool boundaries.
+- [x] 204 focused tests pass; full suite 712/713 with the existing macOS file-preview cleanup failure (`ERR_FS_EISDIR`, file-preview.test.ts:1341). Typecheck and client/mobile/server builds pass.
+- [x] Inspect actual React/Vue panels in a disposable browser harness with synthetic audio/model ports: recording/preview, preset regeneration, editing/insertion, keyboard turns, close/focus return and retained drafts. Vue 390×844 has no horizontal overflow.
+- [ ] Human speech/playback, physical iOS/Android and host/Bluetooth validation after separately authorized deployment.
+
+Native Realtime remains gated; the current UI rejects Realtime push-to-talk explicitly until its protocol supports and passes manual-turn acceptance. Generic SDK/native protocol behavior is retained. No version change, publication or deployment is included. Dictionaries, automatic style learning, native global hotkeys and input-method integration remain deferred.
+
+## Previous anchored-panel delivery (presentation superseded below)
+
+- [x] Shared live cancel selection with 60px/40px hysteresis; pointer capture, multi-touch cancellation, pointer loss and keyboard/assistive operation. Core exposes cancelArmed and shared presentation states.
+- [x] Desktop entry-anchored modal with flip/clamp/resize behavior; narrow web and Vue use bottom sheets. Preview is bounded by the visual viewport and keeps its footer reachable. No panel drag gesture.
+- [x] Stable hold-button geometry, visible cancel target, text/icon/color feedback and semantic-only live announcements. Presets/original/retry are grouped in a compact preview menu.
+- [x] 213 focused voice/mobile-layout tests pass; typecheck and client/mobile/server builds pass. Full suite: 721/722 pass, with only the existing file-preview.test.ts:1341 macOS cleanup failure (ERR_FS_EISDIR).
+- [x] Actual React/Vue components rendered in a disposable synthetic-audio/model harness. Captured waiting/recording/cancel/preview on both clients; checked menu selection, editing/insertion, two-step Escape/focus return, 390×844 bottom sheets, and editing/footer reachability at a simulated 390×400 keyboard-constrained viewport. Narrow React uses the same bottom placement. No horizontal overflow.
+- [ ] Physical keyboard/gesture and actual soft-keyboard acceptance on iOS/Android, real microphone/playback and host/Bluetooth tests after separately authorized deployment. Browser viewport simulation is not physical-device acceptance; visual cancel-state fixtures are not real microphone evidence.
+
+Deliver shared core, dual-platform presentation and documentation as separate commits. No push, PR, release, version bump or deployment is included.
+
+## Compact inline composer delivery
+
+- [x] Create and inspect a static four-state web/mobile preview against the original v0.26.44 Vue composer before implementation.
+- [x] Separate shared input activity from preview visibility; preserve draft/session ownership, preparation cancellation and deadlines. Reject duplicate Done while conversion is pending.
+- [x] Move conversation and dictation capture into the React/Vue composer. Keep one voice/keyboard entry; preserve drafts, attachments and native tools. Conversation has no dialog or resident End Voice control.
+- [x] Open a dialog only for editable dictation preview: desktop anchored above the entry, mobile/narrow web bottom sheet. Retain preset/original/retry menu and explicit insertion/discard.
+- [x] Keep stop-speaking on the owning reply, including deduplicated native task results; stopping output never cancels the task.
+- [x] Run 218 voice/mobile-layout tests, typecheck and client/mobile/server builds successfully. Full suite: 726/727 pass; the existing macOS file-preview symlink cleanup failure remains (ERR_FS_EISDIR).
+- [x] Inspect actual components using synthetic audio ports: web Escape cancels with zero submits; mobile Enter start/finish submits once; keyboard return retains text; preview edits survive close/reopen and take priority over conversation defaults; insertion appends without submitting; closing restores entry focus. Capture waiting, recording, cancel and preview states on both clients.
+- [x] Check 390px width and simulated 390×400 keyboard pressure: preview height 339px, footer bottom 384px, no horizontal overflow. Verify the native web zero-height overlay takes its inline content height rather than overlapping the tool row.
+- [ ] Verify actual installed dsh page, physical microphones, iOS/Android keyboards/safe areas/gestures and Bluetooth after separately authorized deployment. Synthetic component checks do not certify real audio/model behavior.
+
+Deliver shared state, dual-platform input presentation and documentation as separate local commits. No push, PR, version change, publication or deployment is included.
