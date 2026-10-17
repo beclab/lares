@@ -194,6 +194,7 @@
     "./voice/hold": "./voice/hold.js",
     "./voice/dictation": "./voice/dictation.js",
     "./voice/shortcuts": "./voice/shortcuts.js",
+    "./voice/preferences": "./voice/preferences.js",
     "./voice/panel": "./voice/panel.js",
     "./voice/startup": "./voice/startup.js",
     "./voice/projection": "./voice/projection.js"
