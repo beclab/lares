@@ -11,12 +11,16 @@ export function MicButton({ panel, sessionId, inputActions, useInput, mode, onAc
   const [config, setConfig] = React.useState({ mode: "single" });
   const view = React.useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const latest = React.useRef(null);
-  const trigger = React.useRef(null);
+  const trigger = React.useRef(null), opening = React.useRef(false);
   panel.target = { sessionId: sessionId || null, inputActions, draft, mode };
   const open = async (choice, preset) => {
-    panel.anchor = trigger.current;
-    const settings = await loadVoiceSettings({ force: true }); setConfig(settings.config);
-    await panel.open({ mode: choice || settings.config.mode, sessionId: sessionId || null, preset });
+    if (opening.current) return;
+    opening.current = true; panel.anchor = trigger.current;
+    try {
+      const settings = await loadVoiceSettings({ force: true }); setConfig(settings.config);
+      const state = panel.getSnapshot();
+      await panel.open({ mode: state.mode === "single" && state.raw ? "single" : choice || settings.config.mode, sessionId: sessionId || null, preset });
+    } finally { opening.current = false; }
   };
   latest.current = { open, config, sessionId };
   React.useEffect(() => { void panel.bind(sessionId || null).catch(() => {}); }, [sessionId, panel]);
@@ -37,6 +41,11 @@ export function MicButton({ panel, sessionId, inputActions, useInput, mode, onAc
     return () => { alive = false; window.removeEventListener("keydown", keydown); window.removeEventListener("lares-voice-settings", refresh); };
   }, [panel]);
   return h("span", { className: "lares-voice-entries" },
-    h("button", { ref: trigger, type: "button", onClick: () => { void open().catch(() => {}); }, "aria-haspopup": "dialog", title: t(`settings.mode.${config.mode}`) }, t(config.mode === "continuous" ? "call.start" : "mic.idle")),
-    view.snapshot?.connection === "paused" ? h("span", { role: "status" }, t("panel.paused")) : null);
+    h("button", { ref: trigger, type: "button", onClick: () => {
+      if (view.inputActive) { void panel.close().catch(() => {}); requestAnimationFrame(() => inputActions?.focus?.()); }
+      else void open().catch(() => {});
+    }, "aria-expanded": view.inputActive || view.previewVisible, "aria-label": t(view.inputActive ? "input.keyboard" : `settings.mode.${config.mode}`), title: t(view.inputActive ? "input.keyboard" : `settings.mode.${config.mode}`) },
+    h("svg", { width: 20, height: 20, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.7, strokeLinecap: "round", "aria-hidden": true }, view.inputActive
+      ? h(React.Fragment, null, h("rect", { x: 3, y: 5, width: 18, height: 14, rx: 3 }), h("path", { d: "M7 9h1m3 0h1m3 0h1M7 12h1m3 0h1m3 0h1M8 15h8" }))
+      : h("path", { d: "M5 8v8M12 5v14M19 8v8" }))));
 }

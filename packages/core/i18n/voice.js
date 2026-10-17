@@ -1,4 +1,6 @@
 export const ZH = {
+  "input.keyboard": "键盘",
+  "input.stopSpeaking": "停止朗读",
   "gesture.cancelRelease": "松开取消",
   "gesture.slideCancel": "上滑取消",
   "gesture.release": "松开发送",
@@ -231,6 +233,8 @@ export const ZH = {
 };
 
 export const EN = {
+  "input.keyboard": "Keyboard",
+  "input.stopSpeaking": "Stop speaking",
   "gesture.cancelRelease": "Release to cancel",
   "gesture.slideCancel": "Slide up to cancel",
   "gesture.release": "Release to send",

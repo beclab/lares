@@ -2,7 +2,6 @@ import React from "react";
 import { DICTATION_PRESETS } from "@olares/lares-core/voice/dictation";
 import { voicePanelPresentation } from "@olares/lares-core/voice/presentation";
 import { followVoiceAnchor } from "./floating.js";
-import { createHoldGesture } from "@olares/lares-core/voice/hold";
 import { createVoicePanel } from "@olares/lares-core/voice/panel";
 import { createVoiceConversation } from "@olares/lares-core/voice/conversation";
 import { createBrowserPlayer } from "@olares/lares-core/voice/browser-playback";
@@ -47,24 +46,15 @@ const h = React.createElement;
 export function VoicePanel({ panel }) {
   const t = useT(); const view = React.useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const dialog = React.useRef(null), focus = React.useRef(null), menu = React.useRef(null);
-  const [now, setNow] = React.useState(Date.now()), [showOriginal, setShowOriginal] = React.useState(false);
+  const [showOriginal, setShowOriginal] = React.useState(false);
   const act = (operation) => { void operation().catch(() => {}); };
-  const gesture = React.useMemo(() => createHoldGesture({ start: () => act(() => panel.holdStart()), end: (cancel) => act(() => panel.holdEnd(cancel)),
-    onCancelChange: (value) => panel.setCancelArmed(value), isActive: () => panel.getSnapshot().holding }), [panel]);
   React.useLayoutEffect(() => {
     const element = dialog.current;
-    if (view.visible && !element.open) { focus.current = document.activeElement; element.showModal(); }
-    else if (!view.visible && element.open) { gesture.cancel(); element.close(); focus.current?.focus?.(); }
-    if (view.visible) return followVoiceAnchor(element, () => panel.anchor || focus.current);
-  }, [view.visible, panel]);
-  React.useEffect(() => { if (!view.visible) { setShowOriginal(false); return; } const timer = setInterval(() => setNow(Date.now()), 250); return () => clearInterval(timer); }, [view.visible]);
-  React.useEffect(() => {
-    const pause = () => { if (document.hidden) { gesture.cancel(); act(() => panel.pause()); } };
-    const blur = () => gesture.cancel();
-    window.addEventListener("blur", blur);
-    document.addEventListener("visibilitychange", pause);
-    return () => { gesture.cancel(); window.removeEventListener("blur", blur); document.removeEventListener("visibilitychange", pause); };
-  }, [panel, gesture]);
+    if (view.previewVisible && !element.open) { focus.current = panel.anchor || document.activeElement; element.showModal(); }
+    else if (!view.previewVisible && element.open) { element.close(); focus.current?.focus?.(); }
+    if (view.previewVisible) return followVoiceAnchor(element, () => panel.anchor || focus.current);
+  }, [view.previewVisible, panel]);
+  React.useEffect(() => { if (!view.previewVisible) setShowOriginal(false); }, [view.previewVisible]);
   const button = (label, operation, disabled = view.busy, className) => h("button", { type: "button", className, disabled, onClick: () => act(operation) }, t(label));
   const ui = voicePanelPresentation(view);
   const closeMenu = () => { if (menu.current) menu.current.open = false; };
@@ -73,16 +63,10 @@ export function VoicePanel({ panel }) {
     closeMenu(); act(() => panel.selectPreset(preset, true));
   };
   return h("dialog", { ref: dialog, className: "lares-voice-panel", "data-mode": view.mode, "data-phase": ui.phase, "data-preview": ui.preview, "aria-labelledby": "lares-voice-panel-title",
-    onPointerDownCapture: gesture.additionalPointer,
-    onKeyDown: (event) => { if (event.key === "Escape" && (event.repeat || gesture.escape())) { event.preventDefault(); event.stopPropagation(); } },
     onCancel: (event) => { event.preventDefault(); act(() => panel.close()); }, onClick: (event) => { if (event.target === dialog.current) act(() => panel.close()); } },
     h("div", { className: "lares-voice-panel-body" },
       h("header", null, h("h2", { id: "lares-voice-panel-title" }, t(`settings.mode.${view.mode}`)), h("button", { type: "button", className: "lares-voice-close", "aria-label": t("panel.close"), onClick: () => act(() => panel.close()) }, "×")),
       h("section", { className: "lares-voice-content" },
-        !ui.preview ? h("div", { className: "lares-voice-capture" },
-          view.mode === "continuous" ? h("div", { className: "lares-voice-cancel", "data-visible": view.holding, "data-armed": view.cancelArmed, "aria-hidden": true }, h("span", null, "×"), t(view.cancelArmed ? "gesture.cancelRelease" : "gesture.slideCancel")) : null,
-          h("svg", { className: "lares-voice-wave", viewBox: "0 0 120 48", "aria-hidden": true }, ...(view.levels.length ? view.levels : Array(20).fill(0.003)).map((level, index) => h("line", { key: index, x1: index * 6 + 3, x2: index * 6 + 3, y1: 24 - Math.max(2, Math.min(22, level * 800)), y2: 24 + Math.max(2, Math.min(22, level * 800)) }))),
-          h("p", { className: "lares-voice-timer", "aria-label": t("panel.elapsed") }, `${Math.max(0, Math.floor(((view.elapsedMs || 0) + (view.startedAt ? now - view.startedAt : 0)) / 1000))}s`)) : null,
         h("p", { className: "lares-voice-status", role: "status", "aria-live": "polite", "aria-atomic": true }, ui.error ? messageFor(t, ui.error) : t(ui.status)),
         ui.preview ? h(React.Fragment, null,
           h("details", { ref: menu, className: "lares-voice-menu" }, h("summary", { "aria-label": t("dictation.preset") }, t(`dictation.${view.preset}`), " ▾"),
@@ -91,12 +75,6 @@ export function VoicePanel({ panel }) {
               ui.error ? h(React.Fragment, null, button("dictation.retry", async () => choose(view.preset)), button("dictation.useOriginal", async () => choose("raw"))) : null)),
           h("textarea", { className: "lares-voice-draft", "aria-label": t("panel.draft"), value: view.draft, disabled: ui.pending, onChange: (event) => panel.edit(event.target.value) }),
           showOriginal ? h("div", { className: "lares-voice-original", "aria-label": t("dictation.original") }, view.raw) : null) : null),
-      h("footer", { className: "lares-voice-panel-actions" }, view.mode === "single" ? ui.preview ? h(React.Fragment, null,
-        button("dictation.insert", () => panel.complete(), view.busy || !view.draft.trim(), "lares-voice-primary"), button("dictation.discard", () => panel.discard())) : button(ui.error ? "dictation.retry" : "dictation.finish", () => ui.recording ? panel.finish() : panel.start(), view.busy || !ui.recording && !ui.error, "lares-voice-primary") : h(React.Fragment, null,
-        h("button", { type: "button", className: "lares-voice-hold", "aria-pressed": view.holding, "aria-describedby": "lares-voice-hold-help", disabled: view.busy && !view.holding || view.snapshot?.capture === "transcribing",
-          onPointerDown: gesture.pointerDown, onPointerMove: gesture.pointerMove, onPointerUp: gesture.pointerUp, onPointerCancel: gesture.cancel, onLostPointerCapture: gesture.cancel,
-          onKeyDown: gesture.keyDown, onKeyUp: gesture.keyUp, onBlur: gesture.cancel,
-          onClick: (event) => { if (event.detail === 0) gesture.activate(); } }, t(view.cancelArmed ? "gesture.cancelRelease" : view.holding ? "gesture.release" : "dictation.hold")),
-        button("call.end", () => panel.end(), view.holding, "lares-voice-end"))),
-      view.mode === "continuous" ? h("p", { id: "lares-voice-hold-help", className: "lares-voice-help" }, t("gesture.keyboard")) : null));
+      h("footer", { className: "lares-voice-panel-actions" },
+        button("dictation.insert", () => panel.complete(), view.busy || !view.draft.trim(), "lares-voice-primary"), button("dictation.discard", () => panel.discard()))));
 }

@@ -88,6 +88,7 @@
       @open-effort="openEffortSheet"
       @files="attachFiles"
       @hold-start="onHoldStart"
+      @voice-action="onVoiceAction"
       @close-model="modelSheet = false"
       @choose-model="chooseModel"
       @close-effort="effortSheet = false"
@@ -100,8 +101,8 @@
       @toggle-speak="toggleSpeak"
     />
     <LaresVoicePanel v-if="voicePanelState" :view="voicePanelState" :t="t"
-      @close="runVoicePanel('close')" @start="runVoicePanel('start')" @finish="runVoicePanel('finish')" @hold-start="runVoicePanel('holdStart')" @hold-end="voicePanel.holdEnd($event).catch(() => {})" @cancel-armed="voicePanel.setCancelArmed($event)" @edit="voicePanel.edit($event)" @preset="voicePanel.selectPreset($event, true).catch(() => {})"
-      @complete="runVoicePanel('complete')" @discard="runVoicePanel('discard')" @end="runVoicePanel('end')" />
+      @close="runVoicePanel('close')" @edit="voicePanel.edit($event)" @preset="voicePanel.selectPreset($event, true).catch(() => {})"
+      @complete="runVoicePanel('complete')" @discard="runVoicePanel('discard')" />
   </div>
 </template>
 
@@ -341,6 +342,7 @@ export default {
         draftImages: this.draftImages,
         voiceDefaultMode: this.voiceDefaultMode,
         voiceCall: this.voiceCall,
+        voicePanelState: this.voicePanelState,
         voicePhase: this.voicePhase,
         voiceElapsed: this.voiceElapsed,
         voiceErrorText: this.voiceErrorText,
@@ -1223,7 +1225,12 @@ export default {
     async onHoldStart() {
       const settings = await this.runtime.settings.voice(true);
       this.voiceDefaultMode = settings.config.mobileMode;
-      await this.voicePanel.open({ mode: this.voiceDefaultMode, sessionId: this.sessionId || null });
+      await this.voicePanel.open({ mode: this.voicePanelState?.mode === "single" && this.voicePanelState.raw ? "single" : this.voiceDefaultMode, sessionId: this.sessionId || null });
+    },
+    onVoiceAction({ action, value }) {
+      if (action === "stopPlayback") { void this.voicePanel.conversation?.controller.stopPlayback().catch(() => {}); return; }
+      if (action === "setCancelArmed") { this.voicePanel.setCancelArmed(value); return; }
+      if (["holdStart", "holdEnd", "finish", "start", "close"].includes(action)) void Promise.resolve(this.voicePanel[action](value)).catch(() => {});
     },
     runVoicePanel(action) { void this.voicePanel[action]().catch(() => {}); },
     async createMobileVoiceConversation({ mode, onTranscript, onDevice, config }) {
