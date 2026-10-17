@@ -21,6 +21,12 @@ export function voiceInputPresentation(view, now = Date.now()) {
   return { ...ui, label, elapsed, disabled: ui.pending && !view.holding, timed: ui.recording || view.holding };
 }
 
+export function voiceDictationPresentation(view, now = Date.now()) {
+  const ui = voiceInputPresentation(view, now);
+  const processingFailed = Boolean(view.raw && view.error && view.error !== "voice_draft_changed");
+  return { ...ui, waveform: ui.phase === "recording" && !ui.error, processingFailed, recoverable: Boolean(view.raw && ui.error) };
+}
+
 /** Discovery establishes capability; a transient connection error does not revoke it. */
 export function voiceAvailability(settings) {
   if (!settings) return { dictation: false, conversation: false, reason: "loading" };

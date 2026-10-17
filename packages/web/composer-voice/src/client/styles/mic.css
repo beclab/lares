@@ -2,10 +2,13 @@
 .lares-voice-entries button, .lares-dictation-cancel { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }
 .lares-voice-entries button:hover { background: var(--dsw-alias-interactive-bg-hover, #8881); }
 .lares-voice-entries button:disabled { opacity: .4; cursor: default; }
-[data-composer-card] > div:has(> .lares-inline-voice) { position: relative; inset: auto; height: auto; z-index: auto; }
+[data-composer-overlay]:has(.lares-inline-voice[data-mode=single]) { position: relative; inset: auto; height: auto; min-width: 0; z-index: auto; }
 .lares-inline-voice { position: relative; display: flex; align-items: center; gap: 12px; min-height: 40px; color: inherit; padding: 4px 0; font-size: 13px; }
+.lares-inline-voice[data-mode=single] { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; box-sizing: border-box; width: 100%; min-width: 0; padding: 4px 12px; }
+.lares-inline-voice[data-mode=single] > .lares-inline-status { grid-column: 2 / -1; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+.lares-inline-voice[data-mode=single][data-phase=error] > .lares-inline-status { color: var(--dsw-alias-state-error-primary, #b83b30); }
 .lares-inline-time { white-space: nowrap; color: var(--dsw-alias-label-tertiary, #777); font-variant-numeric: tabular-nums; }
-.lares-dictation-meter { flex: 1; min-width: 0; height: 24px; stroke: var(--dsw-alias-label-tertiary, #aaa); stroke-width: 3; stroke-linecap: round; }
+.lares-dictation-meter { width: 100%; min-width: 0; height: 24px; stroke: var(--dsw-alias-label-tertiary, #aaa); stroke-width: 3; stroke-linecap: round; }
 .lares-inline-status { color: var(--dsw-alias-label-tertiary, #777); }
 .lares-inline-voice[data-mode=single][data-phase=recording] .lares-inline-status { position: absolute; width: 1px; height: 1px; clip-path: inset(50%); overflow: hidden; }
 .lares-dictation-cancel { flex: none; font-size: 22px; background: var(--dsw-alias-interactive-bg-hover, #8881); }
@@ -20,9 +23,11 @@
 .lares-voice-primary[data-action=conversation], .lares-voice-primary[data-action=resume] { background: var(--dsw-alias-state-business-primary, #3377ff); color: white; }
 .lares-voice-primary:focus-visible, .lares-voice-entries button:focus-visible, .lares-dictation-cancel:focus-visible { outline: 2px solid var(--dsw-focus-ring-color, #3377ff); outline-offset: 3px; }
 .lares-voice-spinner { transform-origin: center; animation: lares-voice-spin 1s linear infinite; }
-.lares-dictation-recovery { max-width: 100%; overflow-wrap: anywhere; pointer-events: auto; }
+.lares-dictation-recovery { grid-column: 2 / -1; min-width: 0; max-width: 100%; overflow-wrap: anywhere; pointer-events: auto; }
+.lares-dictation-recovery summary { width: fit-content; cursor: pointer; font-size: 12px; }
+.lares-dictation-recovery button { border: 0; padding: 4px 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.lares-dictation-recovery summary:focus-visible, .lares-dictation-recovery button:focus-visible { outline: 2px solid var(--dsw-focus-ring-color, #3377ff); outline-offset: 2px; }
 .lares-dictation-recovery p { white-space: pre-wrap; max-height: 100px; overflow: auto; }
-.lares-inline-voice:has(.lares-dictation-recovery) { flex-wrap: wrap; }
 .lares-inline-voice[data-mode=continuous]:has(button) { pointer-events: auto; }
 .lares-voice-message { margin: 12px 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; line-height: 1.6; }
 .lares-voice-message[data-role=user] { margin-left: auto; max-width: 85%; width: fit-content; padding: 10px 16px; border-radius: 18px; background: #3478f61a; }

@@ -1,13 +1,28 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
-import { voiceAvailability, voicePrimaryAction } from "@olares/lares-core/voice/presentation";
+import { voiceAvailability, voicePrimaryAction, voiceDictationPresentation } from "@olares/lares-core/voice/presentation";
 import { createVoicePanel } from "@olares/lares-core/voice/panel";
 import { createVoiceController } from "@olares/lares-core/voice/controller";
 import { SlotCore } from "@deepseek-ai/dsh-client-ui-slots";
 
 const flush = () => new Promise(resolve => setImmediate(resolve));
 const settings = { config: { model: "asr", ttsModel: "tts", chatModel: "default-chat", backend: "pipeline" }, sttModels: ["asr"], ttsModels: ["tts"], chatModels: ["llm"] };
+test("dictation shows a waveform only while recording, never during processing or failure", () => {
+  const view = { mode: "single", snapshot: { capture: "recording", inputReady: true } };
+  assert.equal(voiceDictationPresentation(view).waveform, true);
+  assert.equal(voiceDictationPresentation({ ...view, snapshot: { capture: "transcribing" } }).waveform, false);
+  assert.equal(voiceDictationPresentation({ mode: "single", stage: "processing", busy: true }).waveform, false);
+  assert.equal(voiceDictationPresentation({ ...view, error: "voice_failed" }).waveform, false);
+});
+test("cleanup failure preserves raw recovery and is distinguished from ASR or insertion failure", () => {
+  const conversion = voiceDictationPresentation({ mode: "single", raw: "Thursday, do not delete files", error: "voice_cleanup_failed", snapshot: { connection: "closed", capture: "idle" } });
+  assert.equal(conversion.processingFailed, true); assert.equal(conversion.recoverable, true); assert.equal(conversion.phase, "error");
+  const recognition = voiceDictationPresentation({ mode: "single", error: "voice_failed" });
+  assert.equal(recognition.processingFailed, false); assert.equal(recognition.recoverable, false);
+  const insertion = voiceDictationPresentation({ mode: "single", raw: "raw", error: "voice_draft_changed" });
+  assert.equal(insertion.processingFailed, false); assert.equal(insertion.recoverable, true);
+});
 test("PC primary registration satisfies the real dsh chain-slot contract", () => {
   const slots = new SlotCore();
   slots.register({ name: "root", children: { "conversation.input.primary": { kind: "chain", scope: "session" } } }, () => null);

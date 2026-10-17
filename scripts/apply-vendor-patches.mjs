@@ -14,6 +14,11 @@ const patches = [
   },
   {
     markerFile: "node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js",
+    marker: '"data-composer-overlay": true',
+    patch: "patches/dsh-composer-overlay-anchor.patch",
+  },
+  {
+    markerFile: "node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js",
     marker: "setExternalActivity(source, target, active)",
     patch: "patches/dsh-conversation-external-activity.patch",
   },
