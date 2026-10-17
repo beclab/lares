@@ -20,3 +20,26 @@ export function voiceInputPresentation(view, now = Date.now()) {
   const label = ui.pending ? ui.status : view.cancelArmed ? "gesture.cancelRelease" : view.holding ? "gesture.release" : view.mode === "single" ? ui.error ? "dictation.retry" : "dictation.finish" : "dictation.hold";
   return { ...ui, label, elapsed, disabled: ui.pending && !view.holding, timed: ui.recording || view.holding };
 }
+
+/** Discovery establishes capability; a transient connection error does not revoke it. */
+export function voiceAvailability(settings) {
+  if (!settings) return { dictation: false, conversation: false, reason: "loading" };
+  const config = settings.config || {};
+  const available = (models, selected) => Array.isArray(models) && models.length > 0 && (!selected || models.includes(selected));
+  const dictation = available(settings.sttModels, config.model);
+  const chat = config.preset === "direct" || available(settings.chatModels, config.chatModel === "default-chat" ? "" : config.chatModel);
+  const pipeline = dictation && available(settings.ttsModels, config.ttsModel) && chat;
+  // Automatic turns against native Realtime still require independent acceptance.
+  return { dictation, conversation: config.backend !== "realtime" && pipeline, reason: !dictation ? "asr" : !pipeline ? "conversation" : config.backend === "realtime" ? "realtime" : null };
+}
+
+export function voicePrimaryAction({ view, available, empty, running, disabled = false, nativeDisabled = false }) {
+  if (view.visible && view.mode === "single") return { action: view.error || view.snapshot?.error ? "retry" : "finish", disabled: disabled || view.busy || view.stage === "processing" || view.snapshot?.capture === "transcribing" };
+  if (!empty) return { action: "native", disabled: nativeDisabled };
+  if (view.visible && view.mode === "continuous") {
+    const active = view.busy || view.snapshot?.connection === "open";
+    return { action: active ? "pause" : available ? "resume" : "native", disabled: disabled || !active && !available };
+  }
+  if (running) return { action: "native", disabled: nativeDisabled };
+  return { action: available ? "conversation" : "native", disabled: disabled || !available };
+}

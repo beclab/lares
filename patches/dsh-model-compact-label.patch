@@ -1,0 +1,31 @@
+--- a/node_modules/@deepseek-ai/dsh-client-ui-model-selection/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-model-selection/lib/client.js
+@@ -810,9 +810,11 @@
+ 			};
+ 			const waiting = state.current === null && state.status === "loading";
+ 			const modelLabel = waiting ? t("trigger.loading") : currentChoice?.model.name ?? (state.current === null ? t("trigger.fallback") : `${state.current.provider}/${state.current.model}`);
+-			const triggerLabel = effortLabel === void 0 ? modelLabel : `${modelLabel} · ${effortLabel}`;
+-			const triggerAria = waiting ? t("trigger.loading") : state.current === null ? t("trigger.selectAria") : effortLabel === void 0 ? t("trigger.aria", { model: modelLabel }) : t("trigger.ariaEffort", {
+-				model: modelLabel,
++			const compactModelLabel = state.current?.model.split("/").at(-1) || modelLabel;
++			const fullModelLabel = state.current === null ? modelLabel : `${state.current.provider}/${state.current.model}`;
++			const triggerLabel = effortLabel === void 0 ? fullModelLabel : `${fullModelLabel} · ${effortLabel}`;
++			const triggerAria = waiting ? t("trigger.loading") : state.current === null ? t("trigger.selectAria") : effortLabel === void 0 ? t("trigger.aria", { model: fullModelLabel }) : t("trigger.ariaEffort", {
++				model: fullModelLabel,
+ 				effort: effortLabel
+ 			});
+ 			itemRefs.current = [];
+@@ -859,10 +861,12 @@
+ 							}),
+ 							(0, react_jsx_runtime.jsx)("span", {
+ 								className: ModelSelect_module_css_default.triggerLabel,
+-								children: modelLabel
++								style: { maxWidth: "160px" },
++								children: compactModelLabel
+ 							}),
+ 							effortLabel !== void 0 && (0, react_jsx_runtime.jsx)("span", {
+ 								className: ModelSelect_module_css_default.triggerEffort,
++								style: { flexShrink: 0 },
+ 								children: effortLabel
+ 							}),
+ 							busy ? (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.StateDot, { state: "ongoing" }) : (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutlineRegular, { className: clsx(ModelSelect_module_css_default.chevron, open && ModelSelect_module_css_default.chevronOpen) })

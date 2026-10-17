@@ -3,6 +3,16 @@ import { existsSync, readFileSync } from "node:fs";
 
 const patches = [
   {
+    markerFile: "node_modules/@deepseek-ai/dsh-client-ui-model-selection/lib/client.js",
+    marker: "const compactModelLabel =",
+    patch: "patches/dsh-model-compact-label.patch",
+  },
+  {
+    markerFile: "node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js",
+    marker: 'renderSlotChain("conversation.input.primary"',
+    patch: "patches/dsh-composer-primary-extension.patch",
+  },
+  {
     markerFile: "node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js",
     marker: "setExternalActivity(source, target, active)",
     patch: "patches/dsh-conversation-external-activity.patch",

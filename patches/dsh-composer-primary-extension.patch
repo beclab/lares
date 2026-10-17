@@ -1,0 +1,175 @@
+--- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
+@@ -13482,6 +13482,10 @@
+ 				removeAttachment: (id) => {
+ 					this.removeAttachment(id);
+ 				},
++				bindBeforeSubmit: (listener) => {
++					this.beforeSubmit.add(listener);
++					return () => this.beforeSubmit.delete(listener);
++				},
+ 				pruneAttachments: (ids) => {
+ 					this.pruneAttachments(ids);
+ 				},
+@@ -13629,7 +13633,22 @@
+ 			* (adjudicating/submitting) force-closes the transient layers: the popup
+ 			* dismisses and the menu tracks frozen.
+ 			*/
++			beforeSubmit = new Set();
++			submissionGuard = null;
+ 			submit(mode = "queue", source) {
++				if (this.disposed || this.submissionGuard) return;
++				if (this.beforeSubmit.size === 0) return this.submitPrepared(mode, source);
++				const revision = this.rev;
++				const attachments = [...this.attachmentIds];
++				const flight = Promise.all([...this.beforeSubmit].map(listener => Promise.resolve().then(listener)));
++				this.submissionGuard = flight;
++				void flight.then(() => {
++					if (!this.disposed && revision === this.rev && attachments.length === this.attachmentIds.length && attachments.every((id, index) => id === this.attachmentIds[index])) this.submitPrepared(mode, source);
++				}).catch(error => { this.notify("error", error instanceof Error ? error.message : String(error)); }).finally(() => {
++					if (this.submissionGuard === flight) this.submissionGuard = null;
++				});
++			}
++			submitPrepared(mode = "queue", source) {
+ 				if (this.disposed) return;
+ 				const timestamp = Date.now();
+ 				let state;
+@@ -17229,7 +17248,7 @@
+ 		* The no-session state renders the SAME div inert as the Workspace-picker
+ 		* trigger instead of a parallel tree.
+ 		*/
+-		const InputBar = (0, react.memo)(function InputBar({ useSession, useInput, inputActions, keyboard, addFiles, removeAttachment, resolveDraftAttachments, retryFileUpload, toggleCommandMenu, stop, t, renderSlot, useBusyEnter, useFileUploads, useNotices, useLexicon, useMenuLauncher, useStopShortcut, useProjection, sessionId, variant, disabled: inert = false, blocked, workspacePickerOpen = false, onRequestWorkspace, placeholder, accessory }) {
++		const InputBar = (0, react.memo)(function InputBar({ renderSlotChain, useSession, useInput, inputActions, keyboard, addFiles, removeAttachment, resolveDraftAttachments, retryFileUpload, toggleCommandMenu, stop, t, renderSlot, useBusyEnter, useFileUploads, useNotices, useLexicon, useMenuLauncher, useStopShortcut, useProjection, sessionId, variant, disabled: inert = false, blocked, workspacePickerOpen = false, onRequestWorkspace, placeholder, accessory }) {
+ 			const input = useInput((s) => s);
+ 			const notice = useNotices((s) => s);
+ 			const busyEnter = useBusyEnter((s) => s);
+@@ -17420,6 +17439,44 @@
+ 				/* v8 ignore next -- defensive: the primary button is disabled for empty, disabled, and pending-upload states. */
+ 				if (!empty && !disabled && !machineBusy && !uploadsPending) keyboard.submit(primarySubmitMode, "click");
+ 			};
++			const nativePrimary = (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
++											label: primaryStops ? t("input.stop") : primaryLabel,
++											shortcutKeys: primaryStops ? stopKeys : void 0,
++											side: "top",
++											delayMs: 500,
++											disabled: primaryDisabled,
++											children: (0, react_jsx_runtime.jsx)("button", {
++												type: "button",
++												className: InputBar_module_css_default.primary,
++												"aria-label": primaryLabel,
++												disabled: primaryDisabled,
++												onMouseDown: keepFocus,
++												onClick: onPrimary,
++												children: primaryStops ? (0, react_jsx_runtime.jsx)("svg", {
++													viewBox: "0 0 16 16",
++													width: "16",
++													height: "16",
++													"aria-hidden": true,
++													children: (0, react_jsx_runtime.jsx)("rect", {
++														x: "3",
++														y: "3",
++														width: "10",
++														height: "10",
++														rx: "3",
++														fill: "currentColor"
++													})
++												}) : (0, react_jsx_runtime.jsx)("svg", {
++													viewBox: "0 0 16 16",
++													width: "16",
++													height: "16",
++													"aria-hidden": true,
++													children: (0, react_jsx_runtime.jsx)("path", {
++														d: "M8.3125 0.980183C8.66767 1.0531 8.97902 1.20418 9.2627 1.43233C9.48724 1.61297 9.73029 1.85793 9.97949 2.10714L14.707 6.83468L13.293 8.24874L9 3.95577V15.0417H7V3.95577L2.70703 8.24874L1.29297 6.83468L6.02051 2.10714C6.26971 1.85793 6.51277 1.61297 6.7373 1.43233C6.97662 1.23986 7.28445 1.04402 7.6875 0.980183C7.8973 0.947006 8.1031 0.95516 8.3125 0.980183Z",
++														fill: "currentColor"
++													})
++												})
++											})
++										});
+ 			const claimActive = (input?.phase === "claimed" || input?.phase === "submitting") && input.claim !== void 0 && draft.startsWith(input.claim.token);
+ 			const rawHint = claimActive && input.claim.hint !== void 0 && draft.slice(input.claim.token.length).trim() === "" ? input.claim.hint : null;
+ 			const hint = (() => {
+@@ -17453,10 +17510,6 @@
+ 							e.stopPropagation();
+ 						} : void 0,
+ 						children: [
+-							sessionId !== void 0 && (0, react_jsx_runtime.jsx)("div", {
+-								className: InputBar_module_css_default.overlayAnchor,
+-								children: renderSlot("conversation.input.overlay", {})
+-							}),
+ 							accessory !== void 0 && (0, react_jsx_runtime.jsx)("div", {
+ 								className: InputBar_module_css_default.accessory,
+ 								children: accessory
+@@ -17491,6 +17544,10 @@
+ 								onWorkspaceKeyDown,
+ 								hint,
+ 								showPlaceholder: draft === "" && attachments.length === 0 && !claimActive
++							}),
++							sessionId !== void 0 && (0, react_jsx_runtime.jsx)("div", {
++								className: InputBar_module_css_default.overlayAnchor,
++								children: renderSlot("conversation.input.overlay", {})
+ 							}),
+ 							(0, react_jsx_runtime.jsxs)("div", {
+ 								ref: rowRef,
+@@ -17535,7 +17592,7 @@
+ 										(0, react_jsx_runtime.jsxs)("div", {
+ 											className: InputBar_module_css_default.standardControls,
+ 											hidden: activity,
+-											children: [input === void 0 || sessionId === void 0 ? null : renderSlot("conversation.input.right", {}), sessionId === void 0 ? null : renderSlot("conversation.input.model", { locked: modelSeatLocked })]
++											children: [sessionId === void 0 ? null : renderSlot("conversation.input.model", { locked: modelSeatLocked }), input === void 0 || sessionId === void 0 ? null : renderSlot("conversation.input.right", {})]
+ 										}),
+ 										input === void 0 || sessionId === void 0 ? null : (0, react_jsx_runtime.jsx)("div", {
+ 											className: activity ? InputBar_module_css_default.activityExpanded : InputBar_module_css_default.activity,
+@@ -17573,44 +17630,7 @@
+ 												})
+ 											})
+ 										}),
+-										(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
+-											label: primaryStops ? t("input.stop") : primaryLabel,
+-											shortcutKeys: primaryStops ? stopKeys : void 0,
+-											side: "top",
+-											delayMs: 500,
+-											disabled: primaryDisabled,
+-											children: (0, react_jsx_runtime.jsx)("button", {
+-												type: "button",
+-												className: InputBar_module_css_default.primary,
+-												"aria-label": primaryLabel,
+-												disabled: primaryDisabled,
+-												onMouseDown: keepFocus,
+-												onClick: onPrimary,
+-												children: primaryStops ? (0, react_jsx_runtime.jsx)("svg", {
+-													viewBox: "0 0 16 16",
+-													width: "16",
+-													height: "16",
+-													"aria-hidden": true,
+-													children: (0, react_jsx_runtime.jsx)("rect", {
+-														x: "3",
+-														y: "3",
+-														width: "10",
+-														height: "10",
+-														rx: "3",
+-														fill: "currentColor"
+-													})
+-												}) : (0, react_jsx_runtime.jsx)("svg", {
+-													viewBox: "0 0 16 16",
+-													width: "16",
+-													height: "16",
+-													"aria-hidden": true,
+-													children: (0, react_jsx_runtime.jsx)("path", {
+-														d: "M8.3125 0.980183C8.66767 1.0531 8.97902 1.20418 9.2627 1.43233C9.48724 1.61297 9.73029 1.85793 9.97949 2.10714L14.707 6.83468L13.293 8.24874L9 3.95577V15.0417H7V3.95577L2.70703 8.24874L1.29297 6.83468L6.02051 2.10714C6.26971 1.85793 6.51277 1.61297 6.7373 1.43233C6.97662 1.23986 7.28445 1.04402 7.6875 0.980183C7.8973 0.947006 8.1031 0.95516 8.3125 0.980183Z",
+-														fill: "currentColor"
+-													})
+-												})
+-											})
+-										})
++										sessionId === void 0 ? nativePrimary : renderSlotChain("conversation.input.primary", { nativePrimary, empty, running, disabled: disabled || machineBusy || uploadsPending, nativeDisabled: primaryDisabled }, { fallback: nativePrimary })
+ 									]
+ 								})]
+ 							})
+@@ -18328,6 +18348,7 @@
+ 						kind: "single",
+ 						scope: "session"
+ 					},
++					"conversation.input.primary": { kind: "chain", scope: "session" },
+ 					"conversation.input.activity": {
+ 						kind: "single",
+ 						scope: "session"

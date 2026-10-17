@@ -1,13 +1,13 @@
 import { DICTATION_PRESETS } from "./dictation.js";
 
 /** The panel owns drafts and turn policy; adapters only supply settings, audio and insertion ports. */
-export function createVoicePanel({ create, complete, loadConfig = async () => ({}), process = async ({ text }) => text, onSession = () => {} }) {
+export function createVoicePanel({ create, complete, loadConfig = async () => ({}), process = async ({ text }) => text, onSession = () => {}, manualTurns = true, inlineDictation = false }) {
   let state = { visible: false, inputActive: false, previewVisible: false, mode: "single", sessionId: null, raw: "", draft: "", edited: false, preset: "clean", stage: "idle", snapshot: null, busy: false, error: null, device: "", levels: [], startedAt: null, elapsedMs: 0, holding: false, cancelArmed: false };
   let call = null, config = null, generation = 0, intent = 0, processing = null;
   let unsubscribe = () => {};
   let serial = Promise.resolve();
   const drafts = new Map(), listeners = new Set();
-  const emit = (patch) => { state = { ...state, ...patch }; state.previewVisible = state.visible && state.mode === "single" && (state.stage === "preview" || state.stage === "processing" && state.previewVisible); state.inputActive = state.visible && !state.previewVisible; for (const listener of listeners) listener(); };
+  const emit = (patch) => { state = { ...state, ...patch }; state.previewVisible = !inlineDictation && state.visible && state.mode === "single" && (state.stage === "preview" || state.stage === "processing" && state.previewVisible); state.inputActive = state.visible && !state.previewVisible; for (const listener of listeners) listener(); };
   const save = () => state.mode === "single" && drafts.set(state.sessionId, { raw: state.raw, draft: state.draft, edited: state.edited, preset: state.preset, config });
   const cancelProcessing = () => { processing?.abort(); processing = null; };
   const enqueue = (operation) => {
@@ -72,12 +72,18 @@ export function createVoicePanel({ create, complete, loadConfig = async () => ({
       emit({ snapshot, ...(snapshot.inputLevel == null ? {} : { levels: [...state.levels.slice(-19), snapshot.inputLevel] }),
         ...(snapshot.capture === "recording" && state.snapshot?.capture !== "recording" ? { startedAt: Date.now(), elapsedMs: 0 } : snapshot.capture !== "recording" && state.startedAt ? { startedAt: null, elapsedMs: Date.now() - state.startedAt } : {}) });
     });
-    await call.start({ sessionId: target, continuous: state.mode === "continuous", manual: state.mode === "continuous", shouldStart: () => token === intent && state.visible });
+    await call.start({ sessionId: target, continuous: state.mode === "continuous", manual: state.mode === "continuous" && manualTurns, shouldStart: () => token === intent && state.visible });
     if (token !== intent || !state.visible) await call.controller.cancelRecording();
   };
   const pause = async () => {
     try { if (state.mode === "single") { await finishCapture(); renderDraft(); } else await call?.controller.cancelRecording(); }
     finally { if (call?.controller.getSnapshot().connection === "open") await call.pause(); }
+  };
+  const insertDraft = async () => {
+    if (!state.draft || state.stage !== "preview") return;
+    await complete({ sessionId: state.sessionId, text: state.draft });
+    drafts.delete(state.sessionId); config = null;
+    emit({ raw: "", draft: "", edited: false, stage: "idle", visible: false }); await end();
   };
   const panel = {
     getSnapshot: () => state,
@@ -105,7 +111,16 @@ export function createVoicePanel({ create, complete, loadConfig = async () => ({
     close() { intent++; cancelProcessing(); emit({ visible: false, holding: false, cancelArmed: false }); if (state.mode === "continuous") void call?.controller.cancelRecording(); return enqueue(pause); },
     pause() { intent++; cancelProcessing(); emit({ holding: false, cancelArmed: false }); if (state.mode === "continuous") void call?.controller.cancelRecording(); return enqueue(pause); },
     start() { const token = ++intent; return enqueue(() => prepare(token)); },
-    finish: () => state.busy ? Promise.resolve() : enqueue(async () => { await finishCapture(); if (state.raw) await transform(state.preset); else renderDraft(); }),
+    finish() {
+      if (state.busy) return Promise.resolve();
+      const token = intent;
+      return enqueue(async () => {
+        await finishCapture();
+        if (token !== intent) return;
+        if (state.raw) await transform(state.preset); else renderDraft();
+        if (inlineDictation && token === intent && state.visible && state.draft && !state.error) await insertDraft();
+      });
+    },
     edit(text) { cancelProcessing(); emit({ draft: text, edited: true, stage: "preview" }); save(); },
     selectPreset(preset, replaceEdited = false) {
       if (state.edited && !replaceEdited) return Promise.resolve(false);
@@ -127,12 +142,8 @@ export function createVoicePanel({ create, complete, loadConfig = async () => ({
       if (!call) return Promise.resolve();
       return Promise.resolve(cancel || !call.controller.getSnapshot().inputReady ? call.controller.cancelRecording() : call.controller.stopRecording());
     },
-    complete() { return enqueue(async () => {
-      if (!state.draft || state.stage !== "preview") return;
-      await complete({ sessionId: state.sessionId, text: state.draft });
-      drafts.delete(state.sessionId); config = null; emit({ raw: "", draft: "", edited: false, stage: "idle", visible: false }); await end();
-    }); },
-    discard() { intent++; cancelProcessing(); return enqueue(async () => { await end(); drafts.delete(state.sessionId); config = null; emit({ raw: "", draft: "", edited: false, stage: "idle", visible: false }); }); },
+    complete() { return enqueue(insertDraft); },
+    discard() { intent++; cancelProcessing(); void call?.controller.cancelRecording().catch(() => {}); return enqueue(async () => { await end(); drafts.delete(state.sessionId); config = null; emit({ raw: "", draft: "", edited: false, stage: "idle", visible: false }); }); },
     end() { intent++; emit({ holding: false, cancelArmed: false }); return enqueue(async () => { await end(); emit({ visible: false }); }); },
     dispose() { intent++; cancelProcessing(); return enqueue(async () => { try { await end(); } finally { listeners.clear(); drafts.clear(); } }); },
   };
