@@ -3,7 +3,7 @@ import { validateVoiceShortcuts } from "./shortcuts.js";
 
 /** Editing drafts are independent of confirmed recording configuration. Writes merge at execution time. */
 export function createVoicePreferences({ load, save }) {
-  let state = { editing: null, value: null, drafts: {}, pending: {}, errors: {}, loading: false, loadError: null };
+  let state = { value: null, drafts: {}, pending: {}, errors: {}, loading: false, loadError: null };
   let serial = Promise.resolve(), loading = null;
   const listeners = new Set();
   const emit = patch => { state = { ...state, ...patch }; for (const listener of listeners) listener(); };
@@ -22,14 +22,13 @@ export function createVoicePreferences({ load, save }) {
     getSnapshot: () => state,
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
     dirty,
-    accept(value) { emit({ value, editing: state.editing || value.config.dictationPreset }); },
-    selectPreset(id) { if (!DICTATION_PRESETS.includes(id)) throw new Error("voice_config_invalid"); emit({ editing: id }); },
+    accept(value) { emit({ value }); },
     dirtyIds: () => Object.keys(state.drafts).filter(dirty),
     profile: id => state.drafts[id] || state.value?.config.dictationProfiles[id],
     async load(force = false) {
       if (loading) return loading;
       emit({ loading: true, loadError: null });
-      loading = load({ force, diagnostics: false }).then(value => { emit({ value, editing: state.editing || value.config.dictationPreset }); return value; }, error => { emit({ loadError: error.code || error.message }); throw error; }).finally(() => { loading = null; emit({ loading: false }); });
+      loading = load({ force, diagnostics: false }).then(value => { emit({ value }); return value; }, error => { emit({ loadError: error.code || error.message }); throw error; }).finally(() => { loading = null; emit({ loading: false }); });
       return loading;
     },
     patch: partial => write(Object.keys(partial)[0], () => partial),
@@ -49,7 +48,7 @@ export function createVoicePreferences({ load, save }) {
 
 /** Shared three-way unsaved-edit guard; platforms only render its question. */
 export function createPreferencesGuard(preferences) {
-  let state = { open: false, saving: false, error: false }, pending = null;
+  let state = { open: false, saving: false, selecting: false, error: false }, pending = null, selection = null;
   const listeners = new Set();
   const emit = patch => { state = { ...state, ...patch }; for (const listener of listeners) listener(); };
   const finish = value => { pending?.resolve(value); pending = null; emit({ open: false, saving: false }); };
@@ -61,6 +60,20 @@ export function createPreferencesGuard(preferences) {
       if (!preferences.dirtyIds().length) return Promise.resolve(true);
       let resolve; const promise = new Promise(done => { resolve = done; }); pending = { promise, resolve };
       emit({ open: true, error: false }); return promise;
+    },
+    selectPreset(id) {
+      if (!DICTATION_PRESETS.includes(id)) return Promise.reject(new Error("voice_config_invalid"));
+      if (selection) return selection;
+      if (id === preferences.getSnapshot().value.config.dictationPreset) return Promise.resolve(true);
+      emit({ selecting: true });
+      selection = (async () => {
+        try {
+          if (!await this.request()) return false;
+          await preferences.patch({ dictationPreset: id });
+          return true;
+        } finally { selection = null; emit({ selecting: false }); }
+      })();
+      return selection;
     },
     async answer(action) {
       if (state.saving) return;

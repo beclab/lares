@@ -1,36 +1,30 @@
 <template>
   <div v-if="view.value" class="lares-voice-preferences">
-    <div class="lares-voice-preferences__list" :aria-label="t('preferences.defaultPreset')">
-      <div v-for="id in presets" :key="id" class="lares-voice-preferences__row">
-        <span>{{ t(`dictation.${id}`) }}<small v-if="preferences.dirty(id)"> · {{ t('preferences.modified') }}</small></span>
-        <div class="lares-voice-preferences__actions">
-          <span v-if="id === view.value.config.dictationPreset" class="lares-voice-preferences__default">{{ t('preferences.default') }}</span>
-          <button v-else type="button" :disabled="Boolean(view.pending.dictationPreset)" :aria-label="`${t('preferences.setDefault')} ${t(`dictation.${id}`)}`" @click="setDefault(id)">{{ t('preferences.setDefault') }}</button>
-          <button type="button" :aria-pressed="view.editing === id" :aria-label="`${t('preferences.edit')} ${t(`dictation.${id}`)}`" @click="preferences.selectPreset(id)">{{ t('preferences.edit') }}</button>
-        </div>
-      </div>
-    </div>
+    <label>{{ t('preferences.dictationStyle') }}
+      <select :value="view.value.config.dictationPreset" :disabled="guardView.selecting || Boolean(view.pending.dictationPreset)" @change="selectPreset($event)">
+        <option v-for="id in presets" :key="id" :value="id">{{ t(`dictation.${id}`) }}</option>
+      </select>
+    </label>
     <p v-if="view.errors.dictationPreset" role="alert">{{ t('settings.saveFailed') }}</p>
-    <h3>{{ t('preferences.editing') }}：{{ t(`dictation.${view.editing}`) }}</h3>
-    <p v-if="view.editing === 'raw'">{{ t('dictation.noLlm') }}</p>
+    <p v-if="view.value.config.dictationPreset === 'raw'">{{ t('dictation.noLlm') }}</p>
     <div v-else class="lares-voice-preferences__editor">
       <label>{{ t('dictation.model') }}
-        <select :value="profile.model" :disabled="profilePending" @change="preferences.edit(view.editing, { model: $event.target.value })">
+        <select :value="profile.model" :disabled="profilePending" @change="preferences.edit(view.value.config.dictationPreset, { model: $event.target.value })">
           <option value="">{{ t('settings.model.none') }}</option>
           <option v-for="item in models" :key="item.id" :value="item.id" :disabled="item.disabled">{{ item.label }}</option>
         </select>
       </label>
       <label>{{ t('dictation.instructions') }}
-        <textarea ref="instructions" :value="profile.instructions" :disabled="profilePending" rows="6" maxlength="8000" @input="preferences.edit(view.editing, { instructions: $event.target.value })" />
+        <textarea ref="instructions" :value="profile.instructions" :disabled="profilePending" rows="6" maxlength="8000" @input="preferences.edit(view.value.config.dictationPreset, { instructions: $event.target.value })" />
       </label>
       <div class="lares-voice-preferences__actions">
-        <button type="button" :disabled="profilePending" @click="preferences.restore(view.editing)">{{ t('dictation.reset') }}</button>
-        <template v-if="preferences.dirty(view.editing)">
-          <button type="button" :disabled="profilePending" @click="preferences.discard([view.editing])">{{ t('preferences.cancel') }}</button>
+        <button type="button" :disabled="profilePending" @click="preferences.restore(view.value.config.dictationPreset)">{{ t('dictation.reset') }}</button>
+        <template v-if="preferences.dirty(view.value.config.dictationPreset)">
+          <button type="button" :disabled="profilePending" @click="preferences.discard([view.value.config.dictationPreset])">{{ t('preferences.cancel') }}</button>
           <button type="button" :disabled="profilePending" @click="saveProfile">{{ t(profilePending ? 'preferences.saving' : 'preferences.save') }}</button>
         </template>
       </div>
-      <p v-if="view.errors[`profile:${view.editing}`]" role="alert">{{ t('settings.saveFailed') }}</p>
+      <p v-if="view.errors[`profile:${view.value.config.dictationPreset}`]" role="alert">{{ t('settings.saveFailed') }}</p>
     </div>
     <section v-if="device === 'desktop'" class="lares-voice-preferences__shortcuts">
       <h3>{{ t('preferences.shortcuts') }}</h3>
@@ -83,8 +77,8 @@ export default {
     return { preferences, guard, recorder, view: preferences.getSnapshot(), guardView: guard.getSnapshot(), shortcut: recorder.getSnapshot(), bindings: markRaw({}), presets: DICTATION_PRESETS, shortcutIds: ["default", ...DICTATION_PRESETS] };
   },
   computed: {
-    profile() { return this.view.value && this.view.editing !== "raw" ? this.preferences.profile(this.view.editing) : null; },
-    profilePending() { return Boolean(this.view.pending[`profile:${this.view.editing}`]); },
+    profile() { return this.view.value && this.view.value.config.dictationPreset !== "raw" ? this.preferences.profile(this.view.value.config.dictationPreset) : null; },
+    profilePending() { return this.guardView.selecting || Boolean(this.view.pending[`profile:${this.view.value.config.dictationPreset}`]); },
     models() {
       const available = this.view.value?.chatModels || [];
       return [...new Set([this.profile?.model, ...(available.length ? ["default-chat"] : []), ...available].filter(Boolean))].map(id => {
@@ -121,8 +115,12 @@ export default {
     beforeLeave() { return this.guard.request(); },
     async patch(partial) { if (!this.view.value) await this.preferences.load(); return this.preferences.patch(partial); },
     reload() { return this.preferences.load(true); },
-    async setDefault(id) { if (await this.beforeLeave()) await this.preferences.patch({ dictationPreset: id }).catch(() => {}); },
-    async saveProfile() { try { await this.preferences.saveProfile(this.view.editing); this.$refs.instructions?.focus(); } catch { /* The shared store retains the draft and error. */ } },
+    async selectPreset(event) {
+      const id = event.target.value;
+      event.target.value = this.view.value.config.dictationPreset;
+      await this.guard.selectPreset(id).catch(() => {});
+    },
+    async saveProfile() { try { await this.preferences.saveProfile(this.view.value.config.dictationPreset); this.$refs.instructions?.focus(); } catch { /* The shared store retains the draft and error. */ } },
     shortcutTitle(id) { return this.t(id === "default" ? "dictation.shortcut" : `dictation.${id}`); },
     shortcutLabel(id) {
       const mac = /Mac|iPhone|iPad/.test(globalThis.navigator?.platform || "");
@@ -141,11 +139,10 @@ export default {
 .lares-voice-preferences [role="alert"] { color: var(--q-orange-default); }
 .lares-voice-preferences__row { display: flex; gap: 8px; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--q-separator); }
 .lares-voice-preferences__row > span { flex: 1; min-width: 0; }
-.lares-voice-preferences small, .lares-voice-preferences__default { color: var(--q-ink-3); font-size: 12px; }
 .lares-voice-preferences__actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .lares-voice-preferences button, .lares-voice-preferences select { font: inherit; color: inherit; background: var(--q-background-2, transparent); border: 1px solid var(--q-separator); border-radius: 8px; padding: 6px 8px; cursor: pointer; max-width: 100%; }
 .lares-voice-preferences button:disabled { opacity: .45; cursor: default; }
-.lares-voice-preferences button[aria-pressed="true"], .lares-voice-preferences button[data-recording="true"] { outline: 2px solid var(--q-blue-default, #3978f6); }
+.lares-voice-preferences button[data-recording="true"] { outline: 2px solid var(--q-blue-default, #3978f6); }
 .lares-voice-preferences button:focus-visible, .lares-voice-preferences textarea:focus-visible { outline: 2px solid var(--q-blue-default, #3978f6); outline-offset: 2px; }
 .lares-voice-preferences__editor, .lares-voice-preferences label { display: flex; flex-direction: column; gap: 10px; }
 .lares-voice-preferences textarea { box-sizing: border-box; width: 100%; min-height: 144px; padding: 10px; resize: vertical; color: inherit; background: transparent; border: 1px solid var(--q-separator); border-radius: 8px; font: inherit; line-height: 1.5; }

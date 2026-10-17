@@ -19,5 +19,5 @@ export function usePreferencesLeave(preferences, bindBeforeLeave, t) {
       h(Button, { variant: "outline", disabled: view.saving, onClick: () => { void guard.answer("discard"); } }, t("preferences.discard")),
       h(Button, { variant: "primary", disabled: view.saving, onClick: () => { void guard.answer("save"); } }, t(view.saving ? "preferences.saving" : "preferences.save"))) },
     view.error ? h("p", { role: "alert", className: "lares-settings-notice is-error" }, t("settings.saveFailed")) : null);
-  return { request, modal };
+  return { request, modal, selecting: view.selecting, selectPreset: id => guard.selectPreset(id) };
 }

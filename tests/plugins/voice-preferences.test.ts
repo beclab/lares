@@ -107,14 +107,37 @@ test("opening and refreshing preferences call only config and capabilities, neve
   } finally { globalThis.fetch = original; }
 });
 
-test("editing another preset preserves drafts and default; shared leave guard supports continue/discard/save failure/retry", async () => {
-  let config = { dictationPreset: "clean", dictationProfiles: defaultDictationProfiles() }; let fail = true;
-  const preferences = createVoicePreferences({ load: async () => ({ config }), save: async patch => { if (fail) throw new Error("failed"); config = { ...config, ...patch }; return { config }; } });
-  await preferences.load(); assert.equal(preferences.getSnapshot().editing, "clean");
-  preferences.edit("clean", { instructions: "unsaved" }); preferences.selectPreset("outline"); assert.equal(preferences.getSnapshot().value.config.dictationPreset, "clean");
-  preferences.selectPreset("clean"); assert.equal(preferences.profile("clean").instructions, "unsaved");
-  const guard = createPreferencesGuard(preferences); let answer = guard.request(); await guard.answer("continue"); assert.equal(await answer, false);
-  answer = guard.request(); await guard.answer("save"); assert.equal(guard.getSnapshot().error, true); assert.equal(guard.getSnapshot().open, true);
-  fail = false; await guard.answer("save"); assert.equal(await answer, true); assert.equal(config.dictationProfiles.clean.instructions, "unsaved");
-  preferences.edit("clean", { instructions: "discard me" }); answer = guard.request(); await guard.answer("discard"); assert.equal(await answer, true); assert.deepEqual(preferences.dirtyIds(), []); guard.dispose();
+test("preset selection guards unsaved edits, retries failed saves, and retains independent profiles", async () => {
+  const h = harness(); await h.preferences.load();
+  const guard = createPreferencesGuard(h.preferences);
+  h.preferences.edit("clean", { instructions: "unsaved" });
+  let selection = guard.selectPreset("outline");
+  assert.equal(guard.getSnapshot().open, true);
+  await guard.answer("continue"); assert.equal(await selection, false);
+  assert.equal(h.config.dictationPreset, "clean"); assert.equal(h.preferences.profile("clean").instructions, "unsaved");
+  selection = guard.selectPreset("outline"); h.fail(); await guard.answer("save");
+  assert.equal(guard.getSnapshot().error, true); assert.equal(guard.getSnapshot().open, true); assert.equal(h.config.dictationPreset, "clean");
+  h.fail(false); await guard.answer("save"); assert.equal(await selection, true);
+  assert.equal(h.config.dictationPreset, "outline"); assert.equal(h.config.dictationProfiles.clean.instructions, "unsaved");
+  h.preferences.edit("outline", { instructions: "discard me" }); selection = guard.selectPreset("raw");
+  await guard.answer("discard"); assert.equal(await selection, true); assert.equal(h.config.dictationPreset, "raw");
+  assert.equal(h.config.dictationProfiles.outline.instructions, DICTATION_INSTRUCTIONS.outline);
+  assert.deepEqual(h.preferences.dirtyIds(), []);
+  await guard.selectPreset("clean"); assert.equal(h.preferences.profile("clean").instructions, "unsaved");
+  await h.preferences.load(true); assert.equal(h.preferences.getSnapshot().value.config.dictationPreset, "clean");
+  assert.equal("editing" in h.preferences.getSnapshot(), false); guard.dispose();
+});
+
+test("failed default write keeps selection and profiles; pending selection rejects competing changes", async () => {
+  const h = harness(); await h.preferences.load(); const guard = createPreferencesGuard(h.preferences);
+  const profiles = structuredClone(h.config.dictationProfiles); h.fail();
+  await assert.rejects(guard.selectPreset("raw"), /failed/);
+  assert.equal(h.config.dictationPreset, "clean"); assert.equal(h.preferences.getSnapshot().errors.dictationPreset, "failed");
+  assert.deepEqual(h.config.dictationProfiles, profiles); assert.equal(guard.getSnapshot().selecting, false);
+  h.fail(false); const gate = deferred<void>(); h.gate(gate.promise);
+  const first = guard.selectPreset("outline"); const second = guard.selectPreset("summary");
+  assert.equal(first, second); assert.equal(guard.getSnapshot().selecting, true); await flush();
+  assert.equal(h.config.dictationPreset, "clean"); gate.resolve(); await first;
+  assert.equal(h.config.dictationPreset, "outline"); assert.deepEqual(h.config.dictationProfiles, profiles);
+  assert.equal(guard.getSnapshot().selecting, false); await assert.rejects(guard.selectPreset("invalid"), /voice_config_invalid/); guard.dispose();
 });

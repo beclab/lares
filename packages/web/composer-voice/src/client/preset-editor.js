@@ -3,11 +3,11 @@ import { Button } from "@deepseek-ai/dsh-client-ui-primitives";
 import { SettingsSelector } from "../../../shared/client/settings-controls.js";
 const h = React.createElement;
 
-export function PresetEditor({ id, preferences, view, t }) {
+export function PresetEditor({ id, preferences, view, t, disabled = false }) {
   const labelId = React.useId();
   if (id === "raw") return h("p", { className: "lares-voice-hint" }, t("dictation.noLlm"));
   const profile = preferences.profile(id), key = `profile:${id}`;
-  const pending = Boolean(view.pending[key]), dirty = preferences.dirty(id);
+  const pending = disabled || Boolean(view.pending[key]), dirty = preferences.dirty(id);
   const available = view.value.chatModels || [];
   const models = [...new Set([profile.model, ...(available.length ? ["default-chat"] : []), ...available].filter(Boolean))];
   return h("div", { className: "lares-preset-editor", "aria-label": t(`dictation.${id}`) },

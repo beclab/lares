@@ -1,5 +1,5 @@
 import React from "react";
-import { Switch, Button } from "@deepseek-ai/dsh-client-ui-primitives";
+import { Switch } from "@deepseek-ai/dsh-client-ui-primitives";
 import { DICTATION_PRESETS } from "@olares/lares-core/voice/dictation";
 import { createVoicePreferences } from "@olares/lares-core/voice/preferences";
 import { voiceLanguageItems, voiceMenuValue, voiceValueFromMenu } from "@olares/lares-core/voice/languages";
@@ -45,22 +45,16 @@ export function VoiceSettings({ bindBeforeLeave } = {}) {
     ...[...new Set([selected, ...ids].filter(Boolean))].map(id => ({ id, label: id })),
   ];
   const modelHint = ids => ids.length ? null : t("preferences.modelsMissing");
-  const changeDefault = async dictationPreset => { if (dictationPreset !== config.dictationPreset && await leave.request()) await preferences.patch({ dictationPreset }).catch(() => {}); };
   return h("div", { className: "lares-voice" },
     h(SettingsHeader, { title: t("settings.title"), refreshing: view.loading, disabled: view.loading, onRefresh: () => { void preferences.load(true).catch(() => {}); }, routerRoute: "audio", t }),
     view.loadError ? h("p", { role: "alert", className: "lares-settings-notice is-error" }, t("settings.refreshFailed")) : null,
     Group(t("dictation.settings"),
       selector("model", t("settings.stt.model"), modelItems(sttModels, config.model), modelHint(sttModels)),
       Row(t("settings.language.title"), h(SettingsSelector, { value: voiceMenuValue(config.language), items: voiceLanguageItems(t("lang.auto")), disabled: Boolean(view.pending.language), onSelect: id => patch({ language: voiceValueFromMenu(id) }) }), t("settings.language.hint")),
-      h("div", { className: "lares-preset-list", "aria-label": t("preferences.defaultPreset") },
-        ...DICTATION_PRESETS.map(id => h("div", { key: id, className: "lares-preset-row" },
-          h("div", { className: "lares-voice-row-title" }, t(`dictation.${id}`), preferences.dirty(id) ? h("span", { className: "lares-voice-hint" }, ` · ${t("preferences.modified")}`) : null),
-          h("div", { className: "lares-voice-controls" },
-            id === config.dictationPreset ? h("span", { className: "lares-preset-default" }, t("preferences.default")) : h(Button, { variant: "ghost", size: "sm", disabled: Boolean(view.pending.dictationPreset), "aria-label": `${t("preferences.setDefault")} ${t(`dictation.${id}`)}`, onClick: () => { void changeDefault(id); } }, t("preferences.setDefault")),
-            h(Button, { variant: view.editing === id ? "outline" : "ghost", size: "sm", "aria-pressed": view.editing === id, "aria-label": `${t("preferences.edit")} ${t(`dictation.${id}`)}`, onClick: () => preferences.selectPreset(id) }, t("preferences.edit")))))),
-      view.errors.dictationPreset ? h("p", { role: "alert", className: "lares-settings-notice is-error" }, t("settings.saveFailed")) : null,
-      h("h3", { className: "lares-preset-heading" }, `${t("preferences.editing")}: ${t(`dictation.${view.editing}`)}`),
-      h(PresetEditor, { key: view.editing, id: view.editing, preferences, view, t })),
+      Row(t("preferences.dictationStyle"), h("div", { className: "lares-setting-field" },
+        h(SettingsSelector, { value: config.dictationPreset, items: DICTATION_PRESETS.map(id => ({ id, label: t(`dictation.${id}`) })), disabled: leave.selecting || Boolean(view.pending.dictationPreset), onSelect: id => { void leave.selectPreset(id).catch(() => {}); } }),
+        view.errors.dictationPreset ? h("p", { role: "alert", className: "lares-settings-notice is-error" }, t("settings.saveFailed")) : null)),
+      h(PresetEditor, { key: config.dictationPreset, id: config.dictationPreset, preferences, view, t, disabled: leave.selecting })),
     Group(t("settings.conversation"),
       selector("mobileMode", t("settings.mobileMode"), ["single", "continuous"].map(id => ({ id, label: t(`settings.mode.${id}`) }))),
       selector("device", t("settings.device"), ["auto", "device", "headset"].map(id => ({ id, label: t(`settings.device.${id}`) }))),
