@@ -130,6 +130,9 @@ export function createVoicePanel({ create, complete, loadConfig = async () => ({
     edit(text) { cancelProcessing(); emit({ draft: text, edited: true, stage: "preview" }); save(); },
     selectPreset(preset, replaceEdited = false) {
       if (state.edited && !replaceEdited) return Promise.resolve(false);
+      if (preset === "raw" && state.raw && state.stage === "processing") {
+        intent++; cancelProcessing();
+      }
       return enqueue(async () => { await transform(preset); return true; });
     },
     holdStart() {

@@ -28,6 +28,11 @@ test("cleanup failure preserves raw recovery and is distinguished from ASR or in
   const insertion = voiceDictationPresentation({ mode: "single", raw: "raw", error: "voice_draft_changed" });
   assert.equal(insertion.processingFailed, false); assert.equal(insertion.recoverable, true);
 });
+test("raw recovery is available while cleanup is still pending", () => {
+  const pending = voiceDictationPresentation({ mode: "single", stage: "processing", busy: true, raw: "recognized words" });
+  assert.equal(pending.recoverable, true); assert.equal(pending.processingFailed, false);
+  assert.equal(voiceDictationPresentation({ mode: "single", stage: "processing", busy: true }).recoverable, false);
+});
 test("PC primary registration satisfies the real dsh chain-slot contract", () => {
   const slots = new SlotCore();
   slots.register({ name: "root", children: { "conversation.input.primary": { kind: "chain", scope: "session" } } }, () => null);

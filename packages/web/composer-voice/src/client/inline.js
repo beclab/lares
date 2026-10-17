@@ -30,7 +30,7 @@ export function InlineVoice({ panel }) {
         })) : null),
     h("span", { className: "lares-inline-status", role: "status", "aria-live": "polite", "aria-atomic": true }, error ? ui.processingFailed ? t("dictation.processingFailed") : messageFor(t, error) : status),
     !continuous && ui.waveform ? h("span", { className: "lares-inline-time", "aria-hidden": true }, ui.elapsed) : null,
-    !continuous && ui.recoverable ? h("details", { className: "lares-dictation-recovery" },
-      h("summary", null, t("dictation.original")), h("p", null, view.raw),
-      h("button", { type: "button", disabled: view.busy, onClick: () => act(async () => { await panel.selectPreset("raw", true); await panel.complete(); }) }, t("dictation.useOriginal"))) : null);
+    !continuous && ui.recoverable ? h("div", { className: "lares-dictation-recovery" },
+      h("p", { "aria-label": t("dictation.original") }, view.raw),
+      h("button", { type: "button", disabled: view.busy && view.stage !== "processing", onClick: () => act(async () => { await panel.selectPreset("raw", true); await panel.complete(); }) }, t("dictation.useOriginal"))) : null);
 }

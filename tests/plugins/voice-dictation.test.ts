@@ -70,6 +70,30 @@ test("failed cleanup retains original and can recover without recording again", 
   assert.equal(h.panel.getSnapshot().raw, "raw words"); assert.equal(h.panel.getSnapshot().draft, "raw words"); assert.equal(h.panel.getSnapshot().error, "offline");
   await h.panel.selectPreset("raw", true); assert.equal(h.panel.getSnapshot().error, null); await h.panel.dispose();
 });
+test("using raw interrupts stalled cleanup and inserts once without waiting for its result", async () => {
+  let resolve: any; let signal: AbortSignal;
+  const h = harness({ inlineDictation: true, process: (request: any) => { signal = request.signal; return new Promise(done => { resolve = done; }); } });
+  await h.panel.open({ sessionId: "s" }); const finishing = h.panel.finish(); await flush();
+  assert.equal(h.panel.getSnapshot().stage, "processing");
+  assert.equal(h.panel.getSnapshot().raw, "raw words");
+  const original = h.panel.selectPreset("raw", true); await flush();
+  assert.equal(signal!.aborted, true);
+  await Promise.all([finishing, original]); await h.panel.complete();
+  assert.deepEqual(h.inserted, [{ sessionId: "s", text: "raw words" }]);
+  resolve("late cleanup"); await flush(); assert.equal(h.inserted.length, 1);
+  assert.equal(h.panel.getSnapshot().busy, false); await h.panel.dispose();
+});
+test("cleanup deadline exits loading with original intact even when the request ignores abort", async (t) => {
+  const deadline = new AbortController();
+  const h = harness({ inlineDictation: true, process: () => new Promise(() => {}) });
+  await h.panel.open();
+  t.mock.method(AbortSignal, "timeout", () => deadline.signal);
+  const finishing = h.panel.finish(); await flush();
+  deadline.abort(new DOMException("Timed out", "TimeoutError")); await finishing;
+  assert.equal(h.panel.getSnapshot().stage, "preview"); assert.equal(h.panel.getSnapshot().busy, false);
+  assert.equal(h.panel.getSnapshot().raw, "raw words"); assert.equal(h.panel.getSnapshot().draft, "raw words");
+  assert.ok(h.panel.getSnapshot().error); assert.equal(h.inserted.length, 0); await h.panel.dispose();
+});
 test("late processing cannot overwrite manual edits or a newly selected session", async () => {
   let resolve: any; const h = harness({ process: () => new Promise((done) => { resolve = done; }) });
   await h.panel.open({ sessionId: "old" }); const finishing = h.panel.finish(); await flush();

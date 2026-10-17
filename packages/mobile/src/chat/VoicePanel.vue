@@ -14,6 +14,7 @@
             </div>
           </details>
           <textarea class="lares-voice-draft" :aria-label="t('panel.draft')" :value="view.draft" :disabled="ui.pending" @input="$emit('edit', $event.target.value)" />
+          <button v-if="view.stage === 'processing' && view.raw" type="button" @click="choose('raw')">{{ t('dictation.useOriginal') }}</button>
           <div v-if="showOriginal" class="lares-voice-original" :aria-label="t('dictation.original')">{{ view.raw }}</div>
         </template>
       </section>
