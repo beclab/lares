@@ -3,6 +3,11 @@ import { existsSync, readFileSync } from "node:fs";
 
 const patches = [
   {
+    markerFile: "node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js",
+    marker: "const bindBeforeLeave =",
+    patch: "patches/dsh-settings-leave-guard.patch",
+  },
+  {
     markerFile: "node_modules/@deepseek-ai/dsh-client-ui-model-selection/lib/client.js",
     marker: "const compactModelLabel =",
     patch: "patches/dsh-model-compact-label.patch",

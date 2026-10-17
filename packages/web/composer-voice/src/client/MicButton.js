@@ -49,6 +49,7 @@ export function MicButton({ panel, sessionId, inputActions, useInput, mode, onAc
     const pause = () => { if (panel.getSnapshot().visible) void panel.pause().catch(() => {}); };
     const hidden = () => { if (document.hidden) pause(); };
     const keydown = event => {
+      if (event.composedPath?.().some(node => node?.hasAttribute?.("data-voice-shortcut-recorder"))) return;
       const state = panel.getSnapshot();
       if (event.key === "Escape" && state.visible) { event.preventDefault(); event.stopPropagation(); if (!event.repeat) void (state.mode === "single" ? panel.close() : panel.pause()).catch(() => {}); return; }
       const action = matchVoiceShortcut(event, latest.current.settings.value?.config?.dictationShortcuts);
