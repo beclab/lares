@@ -19,7 +19,7 @@ export function InlineVoice({ panel }) {
   const paused = ["paused", "closed"].includes(view.snapshot?.connection);
   const status = continuous ? t(paused ? "pc.paused" : ui.phase === "speaking" ? "pc.speaking" : ui.phase === "working" ? "call.working" : ui.phase === "recording" ? "call.listening" : ui.status) : t(ui.status);
   const error = view.error || view.snapshot?.error || settings.error;
-  return h("div", { className: "lares-inline-voice", "data-mode": view.mode, "data-phase": continuous && paused ? "paused" : ui.phase },
+  return h("div", { className: "lares-inline-voice", "data-mode": view.mode, "data-exclusive": ui.exclusive, "data-phase": continuous && paused ? "paused" : ui.phase },
     continuous ? h("div", { className: "lares-voice-orb", "aria-hidden": true }) : h(React.Fragment, null,
       h("button", { type: "button", className: "lares-dictation-cancel", "aria-label": t("dictation.discard"), onClick: () => act(() => panel.discard()) }, "×"),
       ui.waveform ? h("svg", { className: "lares-dictation-meter", viewBox: "0 0 400 24", preserveAspectRatio: "none", "aria-hidden": true },

@@ -4,7 +4,9 @@ Design authority: [Voice service design](voice-service-design.md). Runtime evide
 
 ## PC composer revision — 2026-10-17
 
-- [x] Keep the official editor visible; separate microphone dictation from the dynamic primary action. Compact model ID and preserve full title, accessibility text and reasoning effort.
+- [x] Keep the official editor visible during conversation; dictation temporarily replaces the whole composer presentation with voice controls while preserving mounted drafts and attachments. Separate microphone dictation from the dynamic primary action. Compact model ID and preserve full title, accessibility text and reasoning effort.
+- [x] Process dictated text with the authenticated request identity, independently of audio connection IDs; cover the actual HTTP route and raw zero-model bypass.
+- [ ] Deploy the exclusive dictation surface and cleanup-route correction, then repeat real microphone acceptance.
 - [x] Add a minimal native primary chain and session-scoped pre-submit hook; preserve native send/stop and queue/steer. Await audio pause before text sends and reject stale/double sends.
 - [x] Reuse automatic VAD turns on PC with an orb and explicit pause/resume. Keep mobile hold/release and preview behavior unchanged.
 - [x] Inline PC recording/recognition and append converted text directly; retain raw recovery, draft ownership and configuration snapshots.

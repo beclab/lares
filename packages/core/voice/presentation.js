@@ -24,7 +24,7 @@ export function voiceInputPresentation(view, now = Date.now()) {
 export function voiceDictationPresentation(view, now = Date.now()) {
   const ui = voiceInputPresentation(view, now);
   const processingFailed = Boolean(view.raw && view.error && view.error !== "voice_draft_changed");
-  return { ...ui, waveform: ui.phase === "recording" && !ui.error, processingFailed, recoverable: Boolean(view.raw && ui.error) };
+  return { ...ui, exclusive: Boolean(view.visible && view.mode === "single"), waveform: ui.phase === "recording" && !ui.error, processingFailed, recoverable: Boolean(view.raw && ui.error) };
 }
 
 /** Discovery establishes capability; a transient connection error does not revoke it. */

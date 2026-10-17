@@ -1,0 +1,30 @@
+--- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
+@@ -17552,9 +17552,11 @@
+ 							}),
+ 							(0, react_jsx_runtime.jsxs)("div", {
+ 								ref: rowRef,
++								"data-composer-actions": true,
+ 								className: InputBar_module_css_default.row,
+ 								children: [(0, react_jsx_runtime.jsxs)("div", {
+ 									className: InputBar_module_css_default.tools,
++									"data-composer-tools": true,
+ 									hidden: activity,
+ 									children: [
+ 										(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
+@@ -17592,6 +17594,7 @@
+ 									children: [
+ 										(0, react_jsx_runtime.jsxs)("div", {
+ 											className: InputBar_module_css_default.standardControls,
++											"data-composer-standard-controls": true,
+ 											hidden: activity,
+ 											children: [sessionId === void 0 ? null : renderSlot("conversation.input.model", { locked: modelSeatLocked }), input === void 0 || sessionId === void 0 ? null : renderSlot("conversation.input.right", {})]
+ 										}),
+@@ -17611,6 +17614,7 @@
+ 											children: (0, react_jsx_runtime.jsx)("button", {
+ 												type: "button",
+ 												className: InputBar_module_css_default.primary,
++												"data-composer-task-stop": true,
+ 												"aria-label": t("input.stop"),
+ 												disabled: stop === void 0,
+ 												onMouseDown: keepFocus,

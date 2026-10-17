@@ -8,6 +8,11 @@ import { SlotCore } from "@deepseek-ai/dsh-client-ui-slots";
 
 const flush = () => new Promise(resolve => setImmediate(resolve));
 const settings = { config: { model: "asr", ttsModel: "tts", chatModel: "default-chat", backend: "pipeline" }, sttModels: ["asr"], ttsModels: ["tts"], chatModels: ["llm"] };
+test("only an active dictation take owns the whole composer, including preparation and recovery", () => {
+  for (const stage of ["idle", "processing", "preview"]) assert.equal(voiceDictationPresentation({ visible: true, mode: "single", stage }).exclusive, true);
+  assert.equal(voiceDictationPresentation({ visible: false, mode: "single", error: "voice_failed" }).exclusive, false);
+  assert.equal(voiceDictationPresentation({ visible: true, mode: "continuous" }).exclusive, false);
+});
 test("dictation shows a waveform only while recording, never during processing or failure", () => {
   const view = { mode: "single", snapshot: { capture: "recording", inputReady: true } };
   assert.equal(voiceDictationPresentation(view).waveform, true);
