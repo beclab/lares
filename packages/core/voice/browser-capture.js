@@ -32,6 +32,43 @@ async function openDeviceMic(mediaDevices) {
   }
 }
 
+/** Request permission in the user gesture; transfer ownership to exactly one recorder. */
+export function prepareBrowserCapture({ media, onTrace = () => {}, now = Date.now } = {}) {
+  let stream = null, cancelled = false, consumed = false;
+  const started = now();
+  const devices = media?.mediaDevices ?? globalThis.navigator?.mediaDevices;
+  const ready = (async () => {
+    if (!devices?.getUserMedia) throw new Error("voice_unsupported");
+    const pending = openDeviceMic(devices);
+    try { onTrace("permission-request", { durationMs: now() - started }); } catch { /* Telemetry is optional. */ }
+    const next = await pending;
+    try { onTrace("permission", { durationMs: now() - started }); } catch { /* Telemetry is optional. */ }
+    if (cancelled) { next.getTracks().forEach(track => track.stop()); return null; }
+    stream = next;
+    return next;
+  })();
+  // Permission may fail while other initialization is still pending.
+  void ready.catch(() => {});
+  return {
+    recording() {
+      try { onTrace("ready", { durationMs: now() - started }); } catch { /* Telemetry is optional. */ }
+    },
+    async consume() {
+      if (consumed || cancelled) throw new Error("voice_cancelled");
+      consumed = true;
+      const next = await ready;
+      if (cancelled || !next) throw new Error("voice_cancelled");
+      stream = null;
+      return next;
+    },
+    cancel() {
+      cancelled = true;
+      stream?.getTracks().forEach(track => track.stop());
+      stream = null;
+    },
+  };
+}
+
 export function createVoiceCapture({
   transcribe,
   submit,
@@ -40,6 +77,7 @@ export function createVoiceCapture({
   onTrace,
   now = Date.now,
   media,
+  preparation,
 }) {
   const mediaDevices = media?.mediaDevices ?? globalThis.navigator?.mediaDevices;
   const Recorder = media?.MediaRecorder ?? globalThis.MediaRecorder;
@@ -171,6 +209,7 @@ export function createVoiceCapture({
     async start() {
       if (dead || phase === "preparing" || phase === "recording" || phase === "transcribing") return;
       if (typeof Recorder === "undefined" || !mediaDevices?.getUserMedia) {
+        preparation?.cancel();
         fail("voice_unsupported");
         return;
       }
@@ -181,8 +220,9 @@ export function createVoiceCapture({
       emit("preparing", { elapsed: 0, error: "" });
       let next;
       try {
-        next = await openDeviceMic(mediaDevices);
+        next = await (preparation ? preparation.consume() : openDeviceMic(mediaDevices));
       } catch (err) {
+        preparation?.cancel();
         const code = micFailure(err);
         trace("mic-fail", { code, name: err?.name || "" });
         if (!dead) fail(code);
@@ -208,7 +248,11 @@ export function createVoiceCapture({
         if (recorder?.state === "inactive") scheduleFinish();
       };
       recorder.onstop = () => scheduleFinish();
-      try { detector = await onStream?.(stream); } catch { release(); fail("voice_unsupported"); return; }
+      try {
+        const nextDetector = await onStream?.(stream);
+        if (dead || cancel) { nextDetector?.stop?.(); release(); return; }
+        detector = nextDetector;
+      } catch { release(); fail("voice_unsupported"); return; }
       started = now();
       try {
         recorder.start(CHUNK_MS);
@@ -224,6 +268,7 @@ export function createVoiceCapture({
         return;
       }
       emit("recording", { elapsed: 0, error: "" });
+      preparation?.recording();
       timer = setInterval(() => emit("recording", { elapsed: now() - started, error: "" }), 200);
     },
     /**
@@ -261,6 +306,7 @@ export function createVoiceCapture({
       }
     },
     dispose() {
+      preparation?.cancel();
       dead = true;
       cancel = true;
       if (errorTimer) clearTimeout(errorTimer);

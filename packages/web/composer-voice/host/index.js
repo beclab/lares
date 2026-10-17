@@ -28,6 +28,7 @@ import {
   speakFromConfig,
   transcribeFromHttp,
   voiceModelsPayload,
+  voiceCapabilitiesPayload,
   voiceStatusPayload,
 } from "@olares/lares-core/voice/service";
 import { bluetoothRequest, ensureBluetoothReady } from "@olares/lares-core/voice/link";
@@ -69,6 +70,10 @@ async function handleStatus(req, res) {
 
 async function handleModels(req, res) {
   sendJson(res, 200, await voiceModelsPayload({ refresh: wantsRefresh(req) }));
+}
+
+async function handleCapabilities(req, res) {
+  sendJson(res, 200, await voiceCapabilitiesPayload({ refresh: wantsRefresh(req) }));
 }
 
 async function handleGetConfig(_req, res) {
@@ -271,6 +276,7 @@ const ROUTES = {
   "/session/close": { POST: handleVoiceClose },
   "/status": { GET: handleStatus },
   "/models": { GET: handleModels },
+  "/capabilities": { GET: handleCapabilities },
   "/config": { GET: handleGetConfig, POST: handleSetConfig },
   "/install": { POST: handleInstall },
   "/gpu-mode": { GET: handleGetGpuMode, POST: handleSetGpuMode },

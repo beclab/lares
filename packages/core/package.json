@@ -195,6 +195,7 @@
     "./voice/dictation": "./voice/dictation.js",
     "./voice/shortcuts": "./voice/shortcuts.js",
     "./voice/panel": "./voice/panel.js",
+    "./voice/startup": "./voice/startup.js",
     "./voice/projection": "./voice/projection.js"
   },
   "dependencies": {

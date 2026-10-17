@@ -36,7 +36,7 @@ function ModelTitle({ title, phase = "absent", t }) {
     "span",
     { className: "lares-voice-model-title" },
     title,
-    h(Tag, { tone: PHASE_TONE[phase] ?? "outline" }, t(`settings.phase.${phase}`)),
+    phase ? h(Tag, { tone: PHASE_TONE[phase] ?? "outline" }, t(`settings.phase.${phase}`)) : null,
   );
 }
 
@@ -89,9 +89,14 @@ export function VoiceSettings() {
 
   useEffect(() => {
     let alive = true;
-    loadVoiceSettings()
+    loadVoiceSettings({ diagnostics: false })
       .then((next) => {
         if (alive) setView(next);
+        return loadVoiceSettings().then((detail) => {
+          if (!alive) return;
+          setView(detail);
+          if (detail.diagnosticsError) setNotice({ scope: "page", kind: "error", text: translate.current("settings.loadFailed") });
+        });
       })
       .catch(() => {
         if (alive && mounted.current) {
@@ -233,11 +238,12 @@ export function VoiceSettings() {
     const chart = view.charts?.[kind];
     const app = chart?.app ? gpu.mode?.apps?.find((entry) => entry.app === chart.app) : null;
     if (app) return app.pending ? "busy" : app.phase;
-    return chart?.phase ?? "absent";
+    return chart?.phase ?? null;
   }
 
   function modelControl(kind) {
     const phase = chartPhase(kind);
+    if (!phase) return h("span", { role: "status" }, t(view.diagnosticsError ? "settings.diagnosticsFailed" : "settings.diagnosticsLoading"));
     if (phase === "running" || phase === "stopped") {
       const probing = acting?.kind === kind && acting.op === "probe";
       const power = phase === "stopped" ? "resume" : "stop";

@@ -118,18 +118,12 @@ export async function voiceStatusPayload(options) {
   };
 }
 
-export async function voiceModelsPayload(options) {
+export async function voiceCapabilitiesPayload(options) {
   const models = await listModels(options);
   const config = readConfig();
   const ids = models.map((model) => model.id);
   const stt = sttModelIds(models);
   const tts = ttsModelIds(models);
-  let charts = null;
-  try {
-    charts = await voiceChartsStatus();
-  } catch {
-    charts = null;
-  }
   return {
     models: ids,
     stt,
@@ -139,8 +133,14 @@ export async function voiceModelsPayload(options) {
     realtimeReady: validatedRealtimeModels(models),
     selected: pickSttModelId(models, config.model),
     ttsSelected: pickTtsModelId(models, config.ttsModel),
-    charts,
   };
+}
+
+export async function voiceModelsPayload(options) {
+  const capabilities = await voiceCapabilitiesPayload(options);
+  let charts = null;
+  try { charts = await voiceChartsStatus(); } catch { /* Diagnostics do not revoke capabilities. */ }
+  return { ...capabilities, charts };
 }
 
 export async function saveVoiceConfig(body) {

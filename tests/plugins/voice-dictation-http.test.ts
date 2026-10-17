@@ -13,10 +13,17 @@ async function close(server: Server) {
   server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve()));
 }
 
-test("HTTP dictation cleanup uses authenticated user identity without an audio connection ID", async () => {
+test("HTTP capabilities use the catalog cache; cleanup uses authenticated identity without an audio connection ID", async () => {
   const calls: any[] = [], disposers: (() => void)[] = [];
+  let catalogReads = 0;
   const previous = process.env.LLM_GATEWAY_URL;
   const upstream = createServer(async (req, res) => {
+    if (req.method === "GET") {
+      catalogReads++;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ data: [{ id: "whisper-a", mode: "audio" }] }));
+      return;
+    }
     let text = ""; for await (const chunk of req) text += chunk;
     calls.push({ user: req.headers["x-bfl-user"], body: JSON.parse(text) });
     res.writeHead(200, { "content-type": "application/json" });
@@ -30,6 +37,12 @@ test("HTTP dictation cleanup uses authenticated user identity without an audio c
       webServer: { register({ handler: value }: any) { handler = value; return () => {}; }, registerUpgrade() { return () => {}; } },
     } as any);
     const base = await listen(host);
+    const capabilities = await fetch(`${base}/api/lares/voice/capabilities`);
+    assert.equal(capabilities.status, 200);
+    const available = await capabilities.json();
+    assert.deepEqual(available.stt, ["whisper-a"]); assert.equal(available.charts, undefined);
+    await fetch(`${base}/api/lares/voice/capabilities`);
+    assert.equal(catalogReads, 1);
     const post = (path: string, body: any) => fetch(`${base}/api/lares/voice${path}`, { method: "POST", headers: { "content-type": "application/json", "x-bfl-user": "alice" }, body: JSON.stringify(body) });
     const response = await post("/dictation/clean", { text: "周四下午三点开会，先不要删除文件", preset: "clean", config: { dictationProfiles: defaultDictationProfiles() } });
     assert.equal(response.status, 200); assert.deepEqual(await response.json(), { text: "周四下午三点开会，先不要删除文件。" });

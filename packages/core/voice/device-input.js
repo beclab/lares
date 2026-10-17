@@ -37,7 +37,7 @@ function createInputMeter(stream, onLevel) {
   return { stop() { clearInterval(timer); source.disconnect(); analyser.disconnect(); void context.close(); } };
 }
 
-export function createDeviceInput({ transcribe, onPhase = () => {}, endpoint = createEnergyEndpoint, endpointSilenceMs = 500, media } = {}) {
+export function createDeviceInput({ transcribe, onPhase = () => {}, endpoint = createEnergyEndpoint, endpointSilenceMs = 500, media, preparation } = {}) {
   let recorder = null;
   let settle = null;
   let timer = null;
@@ -51,9 +51,11 @@ export function createDeviceInput({ transcribe, onPhase = () => {}, endpoint = c
     capture({ signal, onTranscribing, onReady, onSpeech, onLevel = () => {}, continuous = false } = {}) {
       cancel();
       return new Promise((resolve, reject) => {
+        let ready = false;
         settle = resolve;
         const done = (text) => { clearTimeout(timer); signal?.removeEventListener("abort", cancel); settle = null; resolve(text); };
-        recorder = createVoiceCapture({ media, transcribe, submit: done, onStream: (stream) => {
+        const prepared = preparation; preparation = null;
+        recorder = createVoiceCapture({ media, preparation: prepared, transcribe, submit: done, onStream: (stream) => {
           for (const track of stream.getTracks()) track.addEventListener?.("ended", () => { settle = null; cancel(); reject(new Error("voice_device_lost")); }, { once: true });
           if (!continuous) return createInputMeter(stream, onLevel);
           return endpoint(stream, (heard = true) => { if (heard) recorder?.stop(); else {
@@ -62,7 +64,10 @@ export function createDeviceInput({ transcribe, onPhase = () => {}, endpoint = c
           } }, onSpeech, onLevel, { silenceMs: endpointSilenceMs });
         }, onPhase(phase, extra) {
           onPhase(phase, extra);
-          if (phase === "recording") onReady?.();
+          if (phase === "recording" && !ready) {
+            ready = true; onReady?.();
+            timer = setTimeout(() => { if (continuous) recorder?.stop(); else { settle = null; cancel(); reject(new Error("voice_capture_limit")); } }, 60_000);
+          }
           if (phase === "transcribing") onTranscribing?.();
           if (phase === "error") {
             if (continuous && ["voice_no_input", "voice_too_short"].includes(extra.error)) { done(""); return; }
@@ -70,7 +75,6 @@ export function createDeviceInput({ transcribe, onPhase = () => {}, endpoint = c
         } });
         signal?.addEventListener("abort", cancel, { once: true });
         if (signal?.aborted) { cancel(); return; }
-        timer = setTimeout(() => { if (continuous) recorder?.stop(); else { settle = null; cancel(); reject(new Error("voice_capture_limit")); } }, 60_000);
         void recorder.start();
       });
     },
