@@ -63,7 +63,7 @@ jobs:
 
       - run: npm ci
 
-      - name: Publish if needed, then make the packages public
+      - name: Publish if needed, then verify the public registry
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_OLARES_PUBLISH_TOKEN }}
         run: |
@@ -79,15 +79,17 @@ jobs:
             else
               npm publish -w "${pkg}" --access public
             fi
-            npm access set status=public "${pkg}" || echo "::warning::could not change access for ${pkg}"
           done
+          public_version() {
+            curl -sfS "$1" | node -e 'let data = ""; process.stdin.on("data", chunk => data += chunk); process.stdin.on("end", () => { const entry = JSON.parse(data).versions?.[process.argv[1]]; process.exit(entry?.dist?.tarball ? 0 : 1); });' "$version"
+          }
           for attempt in 1 2 3 4 5 6; do
-            if curl -sfS "https://registry.npmjs.org/@olares%2flares-core/${version}" >/dev/null \
-              && curl -sfS "https://registry.npmjs.org/@olares%2flares-mobile/${version}" >/dev/null; then
+            if public_version "https://registry.npmjs.org/@olares%2flares-core" \
+              && public_version "https://registry.npmjs.org/@olares%2flares-mobile"; then
               echo "public registry has ${version}"
               exit 0
             fi
             sleep 10
           done
-          echo "::error::packages published but public npm view still fails; check access"
+          echo "::error::packages published but anonymous registry metadata is not visible yet"
           exit 1
