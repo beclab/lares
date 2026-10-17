@@ -23,6 +23,6 @@ spec:
     2. Ensure Router is installed.
     3. Open the Lares entrance and start a chat.
   upgradeDescription: |
-    **Lares 0.26.48**
+    **Lares 0.26.49**
 
-    - Restore compact inline voice controls on web and mobile. Hold to speak, release to send, and slide up to cancel; only dictation editing opens a preview. Add raw, cleanup, outline and summary presets with configurable models. Preserve session messages, drafts and attachments. Native Realtime remains gated.
+    - Keep the PC text editor visible with compact model labels, a dedicated dictation microphone and a dynamic send/stop/conversation action. Dictation appends directly to the draft; conversation uses automatic turns with explicit pause/resume. Hide unavailable voice actions. Mobile hold-to-speak stays unchanged; native Realtime and acoustic barge-in remain gated.
