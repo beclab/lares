@@ -9,7 +9,7 @@ Design authority: [Voice service design](voice-service-design.md). Runtime evide
 - [x] Implement shared service/session interfaces, presets, independent defaults, dictation and draft preservation.
 - [x] Implement owner-scoped text records, versioned recovery summaries and record inspection/deletion.
 - [x] Implement conversational Router LLM delegation, task progress, explicit pause/resume and resource deadlines.
-- [x] Update web and mobile controls; separate single dictation from tap-to-start conversation.
+- [x] Update web and mobile controls; separate dictation from manual hold-to-talk conversation.
 - [x] Add Router composite voice upstream, authorized user grants, capabilities and layered usage.
 - [x] Validate mocked native/composite protocol subset, signed identity and external SDK controls.
 - [ ] Validate against real native/composite models and PostgreSQL composite settlement.
@@ -65,7 +65,7 @@ This section supersedes earlier two-entry/tab and automatic-listening UI instruc
 
 Native Realtime remains gated; the current UI rejects Realtime push-to-talk explicitly until its protocol supports and passes manual-turn acceptance. Generic SDK/native protocol behavior is retained. No version change, publication or deployment is included. Dictionaries, automatic style learning, native global hotkeys and input-method integration remain deferred.
 
-## Anchored voice panels and live cancellation delivery
+## Previous anchored-panel delivery (presentation superseded below)
 
 - [x] Shared live cancel selection with 60px/40px hysteresis; pointer capture, multi-touch cancellation, pointer loss and keyboard/assistive operation. Core exposes cancelArmed and shared presentation states.
 - [x] Desktop entry-anchored modal with flip/clamp/resize behavior; narrow web and Vue use bottom sheets. Preview is bounded by the visual viewport and keeps its footer reachable. No panel drag gesture.
@@ -75,3 +75,17 @@ Native Realtime remains gated; the current UI rejects Realtime push-to-talk expl
 - [ ] Physical keyboard/gesture and actual soft-keyboard acceptance on iOS/Android, real microphone/playback and host/Bluetooth tests after separately authorized deployment. Browser viewport simulation is not physical-device acceptance; visual cancel-state fixtures are not real microphone evidence.
 
 Deliver shared core, dual-platform presentation and documentation as separate commits. No push, PR, release, version bump or deployment is included.
+
+## Compact inline composer delivery
+
+- [x] Create and inspect a static four-state web/mobile preview against the original v0.26.44 Vue composer before implementation.
+- [x] Separate shared input activity from preview visibility; preserve draft/session ownership, preparation cancellation and deadlines. Reject duplicate Done while conversion is pending.
+- [x] Move conversation and dictation capture into the React/Vue composer. Keep one voice/keyboard entry; preserve drafts, attachments and native tools. Conversation has no dialog or resident End Voice control.
+- [x] Open a dialog only for editable dictation preview: desktop anchored above the entry, mobile/narrow web bottom sheet. Retain preset/original/retry menu and explicit insertion/discard.
+- [x] Keep stop-speaking on the owning reply, including deduplicated native task results; stopping output never cancels the task.
+- [x] Run 218 voice/mobile-layout tests, typecheck and client/mobile/server builds successfully. Full suite: 726/727 pass; the existing macOS file-preview symlink cleanup failure remains (ERR_FS_EISDIR).
+- [x] Inspect actual components using synthetic audio ports: web Escape cancels with zero submits; mobile Enter start/finish submits once; keyboard return retains text; preview edits survive close/reopen and take priority over conversation defaults; insertion appends without submitting; closing restores entry focus. Capture waiting, recording, cancel and preview states on both clients.
+- [x] Check 390px width and simulated 390×400 keyboard pressure: preview height 339px, footer bottom 384px, no horizontal overflow. Verify the native web zero-height overlay takes its inline content height rather than overlapping the tool row.
+- [ ] Verify actual installed dsh page, physical microphones, iOS/Android keyboards/safe areas/gestures and Bluetooth after separately authorized deployment. Synthetic component checks do not certify real audio/model behavior.
+
+Deliver shared state, dual-platform input presentation and documentation as separate local commits. No push, PR, version change, publication or deployment is included.
