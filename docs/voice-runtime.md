@@ -1,6 +1,16 @@
 # Voice runtime
 
-## Lares entry policy and always-visible preferences (local, 2026-10-17)
+## Single dictation selector (local, 2026-10-17)
+
+React and Vue now show a single Dictation style selector (raw, clean, outline, summary), followed directly by the selected profile's expanded configuration. The four-row list, Set default/Edit actions, Editing heading and independent editor state are removed. Raw shows only its no-LLM explanation; other profiles show their model and six-line instruction editor. Initial opening uses the saved choice without changing it.
+
+Selection and default are the same confirmed `dictationPreset`. The shared preference guard saves changes before replacing the editor, prevents competing switches, and leaves the original selection on a failed write. Dirty model/instruction edits require Save, Discard or Keep editing before switching or leaving. Failed profile saves keep the question open; Keep editing preserves the original style and draft. Reset changes only the draft, Save/Cancel appear only for dirty profiles, and each profile's saved configuration remains independent. No API, configuration migration, recording or task-path changes are included. Shortcut visibility and recording behavior are unchanged.
+
+Verification: 274 related tests pass; typecheck and complete web/Vue/Host builds pass. Full suite: 777/778, with only the existing `tests/plugins/file-preview.test.ts:1341` temporary-link cleanup failure (`ERR_FS_EISDIR`). Unit tests cover guarded continuation/discard/save failure/retry, selection failure, duplicate/pending switches, independent profiles and refresh. Actual Vue SFC rendering verifies one selector, expanded configuration and raw no-LLM controls.
+
+The complete official local dsh page connected to the real LAN Router passed automatic raw-to-clean switching, direct configuration expansion, unsaved-switch confirmation, Keep editing and Discard. The actual Vue AgentSettings component against the same Host passed raw-to-outline switching, draft protection and the same cancellation/discard behavior; mobile hides shortcuts and explicit desktop shows them. Temporary defaults/drafts were restored to the original raw selection without saving test instructions. The Vue desktop Enter-behavior RPC issue recorded below remains unrelated and unresolved. Exact 390px layout, full packaged LarePass and physical microphones/Bluetooth were not revalidated. No push, version change, release or deployment is included.
+
+## Earlier Lares entry policy and preset list (settings layout superseded above)
 
 Lares no longer selects product behavior from the global Voice Service preset/backend. Shared `voice/lares-policy` fixes dictation to `dictation/pipeline` and conversation to `direct/pipeline` for each connection, including reopen. Global API defaults are preserved. Direct speech submits to the current dsh session without creating an independent dialogue or running voice-chat/summary LLM calls; queue/steer, task tracking, approvals and read-aloud ownership remain in the existing path. Availability uses ASR/TTS plus the actual current Agent directory's routable state. The unrelated voice-chat model does not gate the Lares conversation button.
 

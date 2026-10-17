@@ -2,12 +2,24 @@
 
 Design authority: [Voice service design](voice-service-design.md). Runtime evidence: [Voice runtime](voice-runtime.md).
 
+## Single dictation selector revision — 2026-10-17
+
+- [x] Replace preset rows and separate default/edit actions with one Dictation style selector on React/Vue; the confirmed style selects the expanded configuration.
+- [x] Remove independent editor state and list styles. Keep raw no-LLM text, six-line processing instructions, independent saved profiles and draft-only Reset/Save/Cancel.
+- [x] Share guarded selection: Save/Discard/Keep editing before switching dirty profiles; failed writes keep the previous style and expose an inline error; pending selection prevents competing writes.
+- [x] Preserve existing configuration/API shapes, always-visible desktop shortcuts and all recording/task behavior.
+- [x] Run 274 related tests, typecheck and complete builds. Full suite: 777/778; only the known file-preview cleanup failure remains.
+- [x] Verify the complete official dsh page against the real LAN Router and the actual Vue settings component under mobile/desktop identities. Verify automatic switch, raw hiding, dirty continuation/discard, and restore temporary settings.
+- [ ] Exact narrow-screen and packaged LarePass hardware/navigation acceptance remain separate; a desktop component preview does not certify them.
+
+This revision replaces the four-row settings presentation described in the earlier delivery below. Local commits only; no push, version change, release or deployment.
+
 ## Lares entry policy and settings revision — 2026-10-17
 
 - [x] Share per-connection Lares policy across React/Vue: dictation returns a draft; conversation uses direct dsh execution with pipeline audio. Preserve generic API presets, native Realtime and saved defaults.
 - [x] Validate optional session backend override and preserve it on reopen. Direct mode creates no independent voice dialogue or summary-model call. Gate Lares conversation on ASR/TTS and the current routable Agent configuration.
 - [x] Remove API-level strategy/model/backend controls from both product settings surfaces; preserve ASR/TTS, language, device, read-aloud, dictation profiles and mobile default interaction.
-- [x] Keep all four preset rows visible with distinct default/edit actions, one editor, independent retained drafts, unsaved markers and shared leave/default-change protection.
+- [x] Earlier four-row preset presentation delivered; superseded by the single-selector revision above.
 - [x] Expand shortcut settings on web; show Vue shortcuts only for explicit desktop host identity. Reuse recorder, validation, clear/retry and focus behavior. Export Vue leave guard integration for LarePass navigation.
 - [x] Run 273 related tests, typecheck and all builds. Full suite: 776/777; only the known file-preview cleanup failure remains.
 - [x] Verify the complete official local dsh page against the real LAN Router. Verify the exported Vue settings component against the same Host for mobile/desktop identity, raw profile and shortcut cancellation. Preserve saved settings after checks.
