@@ -12,6 +12,12 @@ export function MicButton({ panel, sessionId, inputActions, useInput, mode, onAc
   const settings = React.useSyncExternalStore(panel.settings.subscribe, panel.settings.getSnapshot);
   const view = React.useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const trigger = React.useRef(null), opening = React.useRef(false), latest = React.useRef(null);
+  const wasDictating = React.useRef(false);
+  const dictating = view.visible && view.mode === "single";
+  React.useEffect(() => {
+    if (wasDictating.current && !dictating && panel.target?.sessionId === (sessionId || null)) inputActions?.focus();
+    wasDictating.current = dictating;
+  }, [dictating, inputActions, panel, sessionId]);
   panel.target = { sessionId: sessionId || null, inputActions, draft, mode };
   const open = async preset => {
     if (opening.current || panel.getSnapshot().busy) return;

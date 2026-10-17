@@ -244,7 +244,7 @@ async function handleVoiceClose(req, res) {
 const ROUTES = {
   "/realtime/ticket": { POST: async (req, res) => sendJson(res, 200, await realtime.ticket(scopeFor(req))) },
   "/bridge/capabilities": { GET: (_req, res) => sendJson(res, 200, composite.capabilities()) },
-  "/dictation/clean": { POST: async (req, res) => { const value = await readJsonObject(req); const abort = new AbortController(); res.once("close", () => abort.abort()); sendJson(res, 200, { text: await voiceHost.clean(scopeFor(req), value.text, { preset: value.preset, config: value.config, signal: abort.signal }) }); } },
+  "/dictation/clean": { POST: async (req, res) => { const value = await readJsonObject(req); const abort = new AbortController(); res.once("close", () => abort.abort()); sendJson(res, 200, { text: await voiceHost.clean({ owner: routerEndUser(process.env, req.headers) }, value.text, { preset: value.preset, config: value.config, signal: abort.signal }) }); } },
   "/history": { POST: async (req, res) => {
     const abort = new AbortController();
     const close = () => abort.abort();
