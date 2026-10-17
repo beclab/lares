@@ -86,4 +86,6 @@ export const LaresAgentSettings: DefineComponent<{
   env?: HostEnv;
   request?: (url: string, init?: HostRequestInit) => Promise<HostResponse>;
   missing?: boolean;
+  /** Register the settings close/navigation guard; exposed beforeLeave() is the imperative alternative. */
+  bindBeforeLeave?: (listener: () => Promise<boolean>) => (() => void);
 }>;

@@ -18,8 +18,8 @@ export function ShortcutSettings({ preferences, t }) {
   const config = preferences.getSnapshot().value.config;
   const mac = /Mac|iPhone|iPad/.test(globalThis.navigator?.platform || "");
   const key = (event, up) => { if ((up ? recorder.keyup(event) : recorder.keydown(event))) { event.preventDefault(); event.stopPropagation(); } };
-  return h("details", { className: "lares-settings-disclosure", onToggle: event => { if (event.target === event.currentTarget && !event.currentTarget.open) recorder.cancel(); } },
-    h("summary", null, t("preferences.shortcuts")),
+  return h("section", { className: "lares-voice-group" },
+    h("h3", { className: "lares-preset-heading" }, t("preferences.shortcuts")),
     h("p", { className: "lares-voice-hint" }, t("preferences.shortcutScope")),
     ...["default", ...DICTATION_PRESETS].map(id => {
       const title = t(id === "default" ? "dictation.shortcut" : `dictation.${id}`), active = view.action === id;

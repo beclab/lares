@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createVoicePreferences } from "@olares/lares-core/voice/preferences";
+import { createVoicePreferences, createPreferencesGuard } from "@olares/lares-core/voice/preferences";
 import { createVoiceShortcutRecorder, formatVoiceShortcut, validateVoiceShortcuts } from "@olares/lares-core/voice/shortcuts";
 import { defaultDictationProfiles, DICTATION_INSTRUCTIONS } from "@olares/lares-core/voice/dictation";
 
@@ -105,4 +105,16 @@ test("opening and refreshing preferences call only config and capabilities, neve
     assert.deepEqual(paths, ["/api/lares/voice/config", "/api/lares/voice/capabilities", "/api/lares/voice/config", "/api/lares/voice/capabilities?refresh=1"]);
     assert.equal(preferences.getSnapshot().value.config.streaming, true);
   } finally { globalThis.fetch = original; }
+});
+
+test("editing another preset preserves drafts and default; shared leave guard supports continue/discard/save failure/retry", async () => {
+  let config = { dictationPreset: "clean", dictationProfiles: defaultDictationProfiles() }; let fail = true;
+  const preferences = createVoicePreferences({ load: async () => ({ config }), save: async patch => { if (fail) throw new Error("failed"); config = { ...config, ...patch }; return { config }; } });
+  await preferences.load(); assert.equal(preferences.getSnapshot().editing, "clean");
+  preferences.edit("clean", { instructions: "unsaved" }); preferences.selectPreset("outline"); assert.equal(preferences.getSnapshot().value.config.dictationPreset, "clean");
+  preferences.selectPreset("clean"); assert.equal(preferences.profile("clean").instructions, "unsaved");
+  const guard = createPreferencesGuard(preferences); let answer = guard.request(); await guard.answer("continue"); assert.equal(await answer, false);
+  answer = guard.request(); await guard.answer("save"); assert.equal(guard.getSnapshot().error, true); assert.equal(guard.getSnapshot().open, true);
+  fail = false; await guard.answer("save"); assert.equal(await answer, true); assert.equal(config.dictationProfiles.clean.instructions, "unsaved");
+  preferences.edit("clean", { instructions: "discard me" }); answer = guard.request(); await guard.answer("discard"); assert.equal(await answer, true); assert.deepEqual(preferences.dirtyIds(), []); guard.dispose();
 });

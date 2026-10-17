@@ -89,18 +89,18 @@ export function createHostSettings(request) {
         ),
       );
     },
-    async voice(force = false) {
+    async voice(force = false, { diagnostics = true } = {}) {
       return voiceStore.load(async () => {
         const query = force ? "?refresh=1" : "";
         const [config, status, models] = await Promise.all([
           request("/api/lares/voice/config"),
-          request(`/api/lares/voice/status${query}`),
-          request(`/api/lares/voice/models${query}`),
+          diagnostics ? request(`/api/lares/voice/status${query}`) : Promise.resolve(null),
+          request(`/api/lares/voice/${diagnostics ? "models" : "capabilities"}${query}`),
         ]);
-        const listed = payload(models, "/api/lares/voice/models");
+        const listed = payload(models, "/api/lares/voice/capabilities");
         return {
           config: payload(config, "/api/lares/voice/config"),
-          status: payload(status, "/api/lares/voice/status"),
+          status: status ? payload(status, "/api/lares/voice/status") : { modelAvailable: Boolean(listed.selected), model: listed.selected || "" },
           sttModels: modelIds(listed, "stt"),
           ttsModels: modelIds(listed, "tts"),
           chatModels: modelIds(listed, "chat"),
@@ -109,12 +109,13 @@ export function createHostSettings(request) {
         };
       }, { force: Boolean(force) });
     },
-    async saveVoice(patch) {
-      payload(
+    async saveVoice(patch, { diagnostics = true } = {}) {
+      const config = payload(
         await request("/api/lares/voice/config", { method: "POST", body: patch }),
         "/api/lares/voice/config",
       );
-      const value = await this.voice(true);
+      const previous = voiceStore.peek();
+      const value = !diagnostics && previous ? voiceStore.remember({ ...previous, config }) : await this.voice(true, { diagnostics });
       for (const listener of voiceListeners) listener(value);
       return value;
     },

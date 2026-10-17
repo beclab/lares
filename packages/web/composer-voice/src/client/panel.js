@@ -1,5 +1,6 @@
 import { prepareBrowserCapture } from "@olares/lares-core/voice/browser-capture";
 import { createDeviceInput } from "@olares/lares-core/voice/device-input";
+import { laresVoiceConfig } from "@olares/lares-core/voice/lares-policy";
 import { createVoicePanel } from "@olares/lares-core/voice/panel";
 import { createVoiceConversation } from "@olares/lares-core/voice/conversation";
 import { createBrowserPlayer } from "@olares/lares-core/voice/browser-playback";
@@ -24,6 +25,7 @@ export function createWebVoicePanel(onSession) {
       if (!span || !target.inputActions.insertText(`${value && !/\s$/.test(value) ? " " : ""}${text}`, { ...span, start: value.length, end: value.length })) throw new Error("voice_draft_changed");
     },
     create: async ({ mode, onTranscript, onDevice, config, preparation }) => {
+      config = laresVoiceConfig(config, mode);
       const continuous = mode === "continuous"; const device = captureSource("pc", config.device); onDevice(device);
       if (config.backend === "realtime" && continuous) throw new Error("voice_manual_realtime_unavailable");
       const browser = createBrowserPlayer(); let conversation;
@@ -32,7 +34,7 @@ export function createWebVoicePanel(onSession) {
         fail: (error) => { void conversation.controller.disconnect(error.code || "voice_playback_failed"); }, onState: (playing) => conversation?.playbackState(playing) });
       const transcribe = async (blob, signal) => { const response = await fetch(`/api/lares/voice/transcribe?model=${encodeURIComponent(config.model || "")}&language=${encodeURIComponent(config.language || "")}`, { method: "POST", body: blob, headers: { "content-type": blob.type }, signal }); const value = await response.json(); if (!response.ok) throw new Error(value.error?.code || "voice_failed"); return value.text; };
       conversation = createVoiceConversation({ request, captureConfig: { model: config.model, language: config.language }, mode: () => panel.target?.mode?.() || "queue", device, readAloud: continuous && config.speak, presentationSession: true,
-        preset: continuous && config.preset === "dictation" ? "assistant" : config.preset,
+        preset: config.preset, backend: config.backend,
         endpointSilenceMs: config.endpointSilenceMs, idleTimeoutMs: config.idleTimeoutMs, recoveryTimeoutMs: config.recoveryTimeoutMs,
         onTranscript: continuous ? null : onTranscript,
         transcribe, input: preparation ? createDeviceInput({ transcribe, preparation, endpointSilenceMs: config.endpointSilenceMs }) : undefined,

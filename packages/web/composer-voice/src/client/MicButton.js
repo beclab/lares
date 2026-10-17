@@ -1,5 +1,6 @@
 import React from "react";
 import { matchVoiceShortcut } from "@olares/lares-core/voice/shortcuts";
+import { laresVoiceAvailability } from "@olares/lares-core/voice/lares-policy";
 import { voiceAvailability } from "@olares/lares-core/voice/presentation";
 import { useT } from "./locale.js";
 import micCss from "./styles/mic.css";
@@ -44,7 +45,7 @@ export function MicButton({ panel, sessionId, inputActions, useInput, mode, onAc
   React.useEffect(() => {
     const refresh = (event) => { void panel.settings.refresh({ force: event?.type === "lares-voice-catalog" }).then(value => {
       const state = panel.getSnapshot();
-      if (state.visible && state.mode === "continuous" && !voiceAvailability(value).conversation) return panel.close();
+      if (state.visible && state.mode === "continuous" && !laresVoiceAvailability(value, panel.agentAvailable).conversation) return panel.close();
     }).catch(() => {}); };
     const pause = () => { if (panel.getSnapshot().visible) void panel.pause().catch(() => {}); };
     const hidden = () => { if (document.hidden) pause(); };

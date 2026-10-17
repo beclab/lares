@@ -107,6 +107,7 @@
 </template>
 
 <script>
+import { matchVoiceShortcut } from "@olares/lares-core/voice/shortcuts";
 import { subscribeVoiceSettings } from "@olares/lares-core/larepass/settings";
 import { createVoicePanel } from "@olares/lares-core/voice/panel";
 import { mergeVoiceTranscript, subscribeVoiceHistory } from "@olares/lares-core/voice/projection";
@@ -116,6 +117,7 @@ import { connectChat } from "./runtime.js";
 import { createT } from "./i18n.js";
 import { failText, withPendingUser } from "./chat/format.js";
 import { captureSource } from "@olares/lares-core/voice/input";
+import { laresVoiceConfig, laresVoiceAvailability } from "@olares/lares-core/voice/lares-policy";
 import { createVoiceConversation } from "@olares/lares-core/voice/conversation";
 import { createAnswerPlayer } from "./chat/playback.js";
 import { createReplySpeaker, createSentencePlayer, speakable } from "@olares/lares-core/voice/speech";
@@ -234,6 +236,7 @@ export default {
       voiceLanguage: "",
       voiceSpeak: false,
       voiceDefaultMode: "continuous",
+      voiceSettings: null,
       voiceStreaming: false,
       speakBusy: false,
       speakNotice: "",
@@ -541,7 +544,7 @@ export default {
     this.player = createAnswerPlayer();
     this.voicePanel = createVoicePanel({
       create: (options) => this.createMobileVoiceConversation(options),
-      loadConfig: async () => (await this.runtime.settings.voice(true)).config,
+      loadConfig: async () => (await this.runtime.settings.voice(false, { diagnostics: false })).config,
       process: async ({ text, preset, config, signal }) => { const response = await this.runtime.voiceRequest("/api/lares/voice/dictation/clean", { method: "POST", body: { text, preset, config: { dictationProfiles: config.dictationProfiles } }, signal }); if (!response.ok) throw new Error(response.body?.error?.code || "voice_cleanup_failed"); return response.body.text; },
       complete: async ({ sessionId, text }) => {
         const previous = sessionId === (this.sessionId || null) ? this.draft : this.draftBySession[sessionId || "@pending"] || "";
@@ -554,7 +557,7 @@ export default {
         void Promise.resolve(this.runtime.openSession(sessionId)).catch((error) => { this.voiceError = error.message; this.voiceAdoptingSession = null; });
       },
     });
-    this.voiceSettingsUnsub = subscribeVoiceSettings((value) => { this.voiceDefaultMode = value.config.mobileMode; });
+    this.voiceSettingsUnsub = subscribeVoiceSettings((value) => { this.voiceDefaultMode = value.config.mobileMode; this.voiceSettings = value; });
     this.voicePanelState = this.voicePanel.getSnapshot();
     this.voicePanelUnsub = this.voicePanel.subscribe(() => {
       const view = this.voicePanel.getSnapshot(); this.voicePanelState = view;
@@ -596,6 +599,7 @@ export default {
       if (document.hidden) void this.voicePanel.pause().catch(() => {});
     };
     document.addEventListener("visibilitychange", this.voiceVisibilityHandler);
+    window.addEventListener("keydown", this.onVoiceShortcut, true);
     this.voiceClock = setInterval(() => {
       if (this.voicePhase === "recording") this.voiceElapsed += 1;
     }, 1000);
@@ -610,6 +614,7 @@ export default {
   },
   beforeUnmount() {
     document.removeEventListener("visibilitychange", this.voiceVisibilityHandler);
+    window.removeEventListener("keydown", this.onVoiceShortcut, true);
     clearInterval(this.voiceClock);
     this.captureLog();
     this.noteSeen(this.sessionId);
@@ -972,6 +977,7 @@ export default {
       try {
         await this.runtime.start({ workspaces: this.chatDevice === "desktop" });
         if (gen !== this.hostGen) return;
+        void this.runtime.settings.voice(false, { diagnostics: false }).then(value => { if (gen === this.hostGen) { this.voiceSettings = value; this.voiceDefaultMode = value.config.mobileMode; } }).catch(() => {});
         if (this.chatDevice !== "desktop") await this.runtime.refreshWorkspaces();
         await this.loadComposerMeta();
       } finally {
@@ -986,6 +992,7 @@ export default {
       this.unsub = this.runtime.subscribe((snap) => this.applySnap(snap));
     },
     switchHost() {
+      this.voiceSettings = null;
       void this.voicePanel?.end().catch(() => {});
       for (const controller of this.imageUploadControllers.values()) controller.abort();
       this.imageUploadControllers.clear();
@@ -1222,10 +1229,27 @@ export default {
       this.draftImages = [];
       this.imagesBySession = {};
     },
+    async onVoiceShortcut(event) {
+      if (this.chatDevice !== "desktop" || document.hidden || navigator.onLine === false || event.composedPath?.().some(node => node?.hasAttribute?.("data-voice-shortcut-recorder"))) return;
+      const action = matchVoiceShortcut(event, this.voiceSettings?.config?.dictationShortcuts);
+      if (!action || !laresVoiceAvailability(this.voiceSettings).dictation) return;
+      event.preventDefault();
+      const view = this.voicePanel.getSnapshot();
+      if (view.busy) return;
+      if (view.visible && view.mode === "single") { if (view.snapshot?.capture === "recording") await this.voicePanel.finish().catch(() => {}); return; }
+      await this.voicePanel.pause().catch(() => {});
+      await this.voicePanel.open({ mode: "single", sessionId: this.sessionId || null, preset: action === "default" ? undefined : action, configSnapshot: this.voiceSettings.config }).catch(() => {});
+    },
     async onHoldStart() {
-      const settings = await this.runtime.settings.voice(true);
+      if (this.voicePanelState?.mode === "single" && this.voicePanelState.raw) {
+        await this.voicePanel.open({ mode: "single", sessionId: this.sessionId || null });
+        return;
+      }
+      const settings = await this.runtime.settings.voice(false, { diagnostics: false });
       this.voiceDefaultMode = settings.config.mobileMode;
-      await this.voicePanel.open({ mode: this.voicePanelState?.mode === "single" && this.voicePanelState.raw ? "single" : this.voiceDefaultMode, sessionId: this.sessionId || null });
+      const available = laresVoiceAvailability(settings, this.models?.routable === true);
+      if (!(this.voiceDefaultMode === "single" ? available.dictation : available.conversation)) { this.voiceError = "voice_model_unavailable"; return; }
+      await this.voicePanel.open({ mode: this.voiceDefaultMode, sessionId: this.sessionId || null });
     },
     onVoiceAction({ action, value }) {
       if (action === "stopPlayback") { void this.voicePanel.conversation?.controller.stopPlayback().catch(() => {}); return; }
@@ -1234,6 +1258,7 @@ export default {
     },
     runVoicePanel(action) { void this.voicePanel[action]().catch(() => {}); },
     async createMobileVoiceConversation({ mode, onTranscript, onDevice, config }) {
+      config = laresVoiceConfig(config, mode);
       const settings = { config };
       const continuous = mode === "continuous";
       onDevice(captureSource("mobile", settings.config.device));
@@ -1253,7 +1278,7 @@ export default {
         transcribe: (blob, signal) => this.runtime.transcribe(blob, config.language, signal, config.model),
         device: captureSource("mobile", settings.config.device),
         readAloud: continuous && settings.config.speak,
-        preset: continuous && settings.config.preset === "dictation" ? "assistant" : settings.config.preset, endpointSilenceMs: settings.config.endpointSilenceMs, idleTimeoutMs: settings.config.idleTimeoutMs, recoveryTimeoutMs: settings.config.recoveryTimeoutMs,
+        preset: settings.config.preset, backend: settings.config.backend, endpointSilenceMs: settings.config.endpointSilenceMs, idleTimeoutMs: settings.config.idleTimeoutMs, recoveryTimeoutMs: settings.config.recoveryTimeoutMs,
         presentationSession: true,
         onTranscript: continuous ? null : onTranscript,
         mode: () => resolveSubmitMode(this.running, false, true, this.busyEnter),
