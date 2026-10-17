@@ -2,6 +2,20 @@
 
 Design authority: [Voice service design](voice-service-design.md). Runtime evidence: [Voice runtime](voice-runtime.md).
 
+## Lares entry policy and settings revision — 2026-10-17
+
+- [x] Share per-connection Lares policy across React/Vue: dictation returns a draft; conversation uses direct dsh execution with pipeline audio. Preserve generic API presets, native Realtime and saved defaults.
+- [x] Validate optional session backend override and preserve it on reopen. Direct mode creates no independent voice dialogue or summary-model call. Gate Lares conversation on ASR/TTS and the current routable Agent configuration.
+- [x] Remove API-level strategy/model/backend controls from both product settings surfaces; preserve ASR/TTS, language, device, read-aloud, dictation profiles and mobile default interaction.
+- [x] Keep all four preset rows visible with distinct default/edit actions, one editor, independent retained drafts, unsaved markers and shared leave/default-change protection.
+- [x] Expand shortcut settings on web; show Vue shortcuts only for explicit desktop host identity. Reuse recorder, validation, clear/retry and focus behavior. Export Vue leave guard integration for LarePass navigation.
+- [x] Run 273 related tests, typecheck and all builds. Full suite: 776/777; only the known file-preview cleanup failure remains.
+- [x] Verify the complete official local dsh page against the real LAN Router. Verify the exported Vue settings component against the same Host for mobile/desktop identity, raw profile and shortcut cancellation. Preserve saved settings after checks.
+- [ ] Fix the separately observed, existing Vue desktop Enter-behavior RPC descriptor mismatch; it is outside this voice settings change.
+- [ ] Verify exact 390px visuals, packaged LarePass navigation integration, physical mobile microphone/gestures, playback and Bluetooth. Component preview/SSR tests do not replace these checks.
+
+Deliver core policy, dual-platform settings and documentation as separate local commits. No push, PR, version bump, release or deployment. The sections below retain earlier delivery history; this revision supersedes their global product strategy controls and collapsed settings layout.
+
 ## PC composer revision — 2026-10-17
 
 - [x] Keep the official editor visible during conversation; dictation temporarily replaces the whole composer presentation with voice controls while preserving mounted drafts and attachments. Separate microphone dictation from the dynamic primary action. Compact model ID and preserve full title, accessibility text and reasoning effort.

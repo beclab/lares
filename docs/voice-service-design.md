@@ -22,6 +22,18 @@ Public voice model IDs must differ from dependency model IDs. Reject recursive s
 
 ## Interaction and presets
 
+### Lares product entries and generic API policy
+
+Lares entries select their policy per connection. Dictation uses `preset: dictation` and `backend: pipeline`, returns processed text to the original draft, and never creates an Agent task. Conversation uses `preset: direct` and `backend: pipeline`: each valid transcript enters the bound dsh session with its current Agent model, permissions, skills and tools. PC retains two entries and automatic rounds; mobile retains its default entry and hold-to-speak. Starting, resuming or recreating either connection does not change global API defaults.
+
+The generic Voice Service API still supports all four presets, independent dialogue models and validated native Realtime. `POST /api/lares/voice/session` accepts optional `preset` and validated `backend` overrides; omitted values retain configured defaults. An explicit Realtime override must pass the existing validated-model gate. Lares direct conversations do not construct the independent voice dialogue or run its reply/summary LLM. Their durable context remains in dsh.
+
+Lares dictation requires ASR. Lares conversation requires ASR, TTS and a routable current Agent configuration; it does not require an independent voice-chat model. Settings expose ASR/TTS, language, devices, read-aloud, dictation processing profiles and mobile interaction preference. API preset, independent chat model, backend and native Realtime selection are absent from both product settings surfaces.
+
+All four dictation presets remain visible in a list, with a default marker and separate Set default/Edit actions. Initially the default editor opens; editing another row does not change the default. One editor is visible at a time, with independent retained drafts and unsaved markers. Raw has no LLM controls; other profiles have a model and six-line instructions. Changing the default or leaving with unsaved drafts offers Save, Discard and Keep editing. Reset modifies only the draft.
+
+Shortcut bindings are always expanded on the official web settings page. Vue shows them only for explicit `device="desktop"`, regardless of viewport width. Both clients share the recorder and unsaved-draft guard. LarePass hosts bind the settings component's optional `bindBeforeLeave(listener)` or await its exposed `beforeLeave()` before navigation; an arbitrary external unmount cannot be intercepted by Vue. Mobile hosts receive no system/global shortcut integration.
+
 | Preset | Behavior |
 | --- | --- |
 | dictation | ASR and optional faithful cleanup; return text, never execute an Agent |
@@ -124,7 +136,7 @@ PC primary priority is dictation completion/loading, native send for a nonempty 
 
 Clicking PC conversation starts existing automatic ASR/VAD turns, without requiring native Realtime. A small orb above the input shows preparation, listening, recognition, execution, playback, paused and error states; full messages remain in the session. Pause/Esc, background, offline and session changes stop audio, preserve tasks and require explicit resume. Half-duplex playback pauses capture; shipped devices still have no validated automatic barge-in. Clicking dictation pauses conversation first and never resumes it implicitly.
 
-PC dictation immediately captures until Done and temporarily owns the entire composer: only waveform, timing, cancel and finish are visible. The editor, attachments, permissions and model controls stay mounted with their state preserved, but are hidden and absent from keyboard navigation during dictation. Preparation, recognition/conversion and recovery use the same voice-only surface. Success appends to the latest original-session draft without changing attachments or sending, then restores the ordinary composer; cancellation restores it unchanged. Failure preserves original text with retry/use-original; closing retains a take and discarding cancels recognition immediately. No PC preview dialog remains. Discovery gates the microphone on ASR and conversation on ASR, a dialogue model (or direct dsh mode) and TTS. Loading exposes no unverified controls; refresh errors preserve the last known capability and show recovery. Native Realtime stays independently gated and is not enabled for these automatic PC turns.
+PC dictation immediately captures until Done and temporarily owns the entire composer: only waveform, timing, cancel and finish are visible. The editor, attachments, permissions and model controls stay mounted with their state preserved, but are hidden and absent from keyboard navigation during dictation. Preparation, recognition/conversion and recovery use the same voice-only surface. Success appends to the latest original-session draft without changing attachments or sending, then restores the ordinary composer; cancellation restores it unchanged. Failure preserves original text with retry/use-original; closing retains a take and discarding cancels recognition immediately. No PC preview dialog remains. Discovery gates the microphone on ASR and conversation on ASR, TTS and the current routable Agent configuration. Loading exposes no unverified controls; refresh errors preserve the last known capability and show recovery. Native Realtime remains a separately gated API capability and is not used by Lares product entries.
 
 ### Mobile interaction (unchanged)
 
