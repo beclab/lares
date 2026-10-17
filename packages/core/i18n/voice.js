@@ -1,4 +1,12 @@
 export const ZH = {
+  "pc.conversation": "开始语音对话",
+  "pc.pause": "暂停语音对话",
+  "pc.resume": "继续语音对话",
+  "pc.finish": "完成听写",
+  "pc.retry": "重试",
+  "pc.paused": "语音已暂停",
+  "pc.speaking": "正在朗读",
+  "pc.finishFirst": "请先完成或取消听写",
   "input.keyboard": "键盘",
   "input.stopSpeaking": "停止朗读",
   "gesture.cancelRelease": "松开取消",
@@ -233,6 +241,14 @@ export const ZH = {
 };
 
 export const EN = {
+  "pc.conversation": "Start voice conversation",
+  "pc.pause": "Pause voice conversation",
+  "pc.resume": "Resume voice conversation",
+  "pc.finish": "Finish dictation",
+  "pc.retry": "Retry",
+  "pc.paused": "Voice paused",
+  "pc.speaking": "Speaking",
+  "pc.finishFirst": "Finish or discard dictation first",
   "input.keyboard": "Keyboard",
   "input.stopSpeaking": "Stop speaking",
   "gesture.cancelRelease": "Release to cancel",

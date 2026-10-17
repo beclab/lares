@@ -2,6 +2,18 @@
 
 Design authority: [Voice service design](voice-service-design.md). Runtime evidence: [Voice runtime](voice-runtime.md).
 
+## PC composer revision — 2026-10-17
+
+- [x] Keep the official editor visible; separate microphone dictation from the dynamic primary action. Compact model ID and preserve full title, accessibility text and reasoning effort.
+- [x] Add a minimal native primary chain and session-scoped pre-submit hook; preserve native send/stop and queue/steer. Await audio pause before text sends and reject stale/double sends.
+- [x] Reuse automatic VAD turns on PC with an orb and explicit pause/resume. Keep mobile hold/release and preview behavior unchanged.
+- [x] Inline PC recording/recognition and append converted text directly; retain raw recovery, draft ownership and configuration snapshots.
+- [x] Gate voice controls on discovered capabilities; retain known capabilities during temporary refresh failure. Remove the PC default-mode selector. Native Realtime and barge-in gates remain unchanged.
+- [x] Record 226 passing voice/mobile-layout tests, successful typecheck/builds, actual-component screenshots and local official dsh Host integration in the runtime document. Full suite: 734/735, with the existing file-preview cleanup failure.
+- [ ] Real microphone, echo, mobile hardware and deployed-page acceptance remain separate. This change does not push, release or deploy.
+
+The sections below describe earlier deliveries; the PC revision supersedes their single-entry/hold-to-speak/preview behavior on desktop only.
+
 ## Delivery order
 
 - [x] Document architecture, presets, lifecycle diagrams, memory and delegation contract.

@@ -31,7 +31,7 @@ Public voice model IDs must differ from dependency model IDs. Reject recursive s
 
 Continuous conversation uses either Router ASR + LLM + TTS or a validated native Realtime model. Server presets control models, instructions, voice, language, endpointing, interruptions, read-aloud and timeouts. Clients may override only allowlisted values. Business session/workspace/preset/tool permissions come from authenticated grants, never model arguments.
 
-Web defaults to dictation, mobile to continuous conversation. A single composer entry follows the platform default; settings update its label and behavior. Dictation returns editable text, preserving existing text and attachments, and sends only on user confirmation. Conversation opens on a tap and uses hold-to-speak/release-to-submit turns. Read-aloud is independent of mode.
+PC exposes separate dictation and conversation actions; the saved web mode no longer chooses one entry's meaning. Mobile keeps its saved mode (conversation by default), hold/release turns and editable dictation preview. PC conversation uses automatic endpoints and waits for another utterance after replies; PC dictation appends to the editable composer without a separate preview. Neither dictation path submits an Agent task. Read-aloud remains a separate preference.
 
 ## Three lifecycles
 
@@ -118,11 +118,19 @@ Test stale input, cancellation, session switching, multi-client shared tasks, qu
 
 ## Inline voice input and session message presentation
 
-Use the v0.26.44 Vue composer as the visual baseline on both platforms: one composer, one voice/keyboard entry, and a primary area that changes with input state. Web defaults to dictation and mobile to conversation; Settings persist each default separately. Model, device, output and preset defaults stay in Settings. Switching modes preserves text, attachments and native tools/permissions. There are no conversation tabs, history, mute, pause or End Voice buttons in the composer.
+Both platforms preserve one composer, drafts, attachments and native tools/permissions. PC keeps the editor visible and orders the trailing controls as model/effort, dictation microphone, dynamic primary action. Model display uses the ID segment after the last slash, ellipsis and full-name title/accessibility text; unsupported reasoning controls remain absent. Device, output and preset defaults stay in Settings. No conversation tabs, history or separate audio control panel is introduced.
+
+PC primary priority is dictation completion/loading, native send for a nonempty draft or attachments, pause/resume for an open voice interaction, native task stop while running, then conversation entry when available. During an open conversation, text send awaits audio pause through a session-scoped native pre-submit hook, including keyboard sends. It preserves queue/steer and rejects double submissions or a changed draft/attachment set while awaiting pause. Text send leaves voice paused. Task cancellation and stopping a spoken reply remain independent native chat actions.
+
+Clicking PC conversation starts existing automatic ASR/VAD turns, without requiring native Realtime. A small orb above the input shows preparation, listening, recognition, execution, playback, paused and error states; full messages remain in the session. Pause/Esc, background, offline and session changes stop audio, preserve tasks and require explicit resume. Half-duplex playback pauses capture; shipped devices still have no validated automatic barge-in. Clicking dictation pauses conversation first and never resumes it implicitly.
+
+PC dictation immediately captures until Done, showing meter, timer and cancellation inside the input below the editor. Recognition/conversion stays inline. Success appends to the latest original-session draft without changing attachments or sending. Failure preserves original text with retry/use-original; closing retains a take and discarding cancels recognition immediately. No PC preview dialog remains. Discovery gates the microphone on ASR and conversation on ASR, a dialogue model (or direct dsh mode) and TTS. Loading exposes no unverified controls; refresh errors preserve the last known capability and show recovery. Native Realtime stays independently gated and is not enabled for these automatic PC turns.
+
+### Mobile interaction (unchanged)
 
 Conversation stays inline. The entry replaces text editing with Hold to speak and becomes a keyboard icon. The primary area shows preparation, release-to-send plus elapsed time, cancellation or recognition without changing size. Replies, execution, approvals and task cancellation remain in the current session. Playback/execution have brief semantic status; a stop-speaking action appears on the corresponding assistant message only while this client owns playback. Holding during playback stops output before recording, without cancelling dsh work. Returning to the keyboard pauses audio and preserves the VoiceSession/context until existing idle/recovery deadlines expire; opening again waits for an explicit hold. No automatic endpoint or re-listen is enabled for these turns. Generic SDK clients retain their existing policies.
 
-Fresh dictation records immediately in the composer, showing available microphone levels, elapsed time and Done. Silence does not submit. Done ends capture, recognizes and applies the selected preset; repeated Done cannot repeat processing. Only the resulting editable preview opens a dialog: compact and entry-anchored on desktop, a bottom sheet on mobile/narrow web, bounded to 85% of the visual viewport. Text scrolls while the action footer remains reachable. Insert appends to the original session draft, preserving text and attachments; Discard removes only this take. Keyboard return stops capture and retains a draft without insertion or submission. Closing a preview retains edits, and reopening prioritizes that draft even if Settings now select conversation. Reopening never starts another microphone. Empty audio creates no task.
+Mobile dictation records immediately in the composer, showing available microphone levels, elapsed time and Done. Silence does not submit. Done recognizes and applies the selected preset once. The editable preview opens a bottom sheet bounded to 85% of the visual viewport. Insert appends to the original session draft and Discard removes only this take. Keyboard return and preview close retain the take; reopening never starts another microphone. Empty audio creates no task.
 
 ### Live gesture feedback and preview lifecycle
 
@@ -130,13 +138,13 @@ Pointer down captures the initiating pointer. Moving upward 60px arms cancellati
 
 Focused Space holds/releases; Enter and assistive activation toggle start/finish. Escape first cancels an active take while retaining voice input; a second Escape returns to text. Repeated keys and late pointer events cannot double-submit. Timer and meter updates stay outside polite live announcements. Focus returns to the voice entry when the preview closes. The preview has no drag-to-dismiss gesture that could conflict with cancellation.
 
-The shared input controller exposes independent `inputActive` and `previewVisible` snapshots, plus `cancelArmed`/`setCancelArmed`. `holdEnd()` defaults to the current cancellation selection. `voice/presentation` provides shared labels, elapsed time and semantic phase/status. Native projected replies retain `voicePlayback` ownership metadata without modifying persisted dsh events. React/Vue own focus, DOM, anchors and visual-viewport geometry. The official web overlay slot replaces the visible editor region through stable composer attributes while leaving the native editor/draft mounted, attachments and tool row intact; it does not create another Chat shell.
+The shared input controller exposes independent `inputActive`/`previewVisible` snapshots and `cancelArmed`/`setCancelArmed`. Its constructor accepts `manualTurns` (default true) and `inlineDictation` (default false); PC opts into automatic rounds and direct insertion, while mobile defaults remain unchanged. `voice/presentation` provides capability gating, primary priority, labels and semantic state. Native projected replies retain `voicePlayback` ownership without changing persisted dsh events. React/Vue own DOM and focus. The web uses the official overlay and a minimal `conversation.input.primary` chain with a native fallback; no editor is hidden and no parallel Chat shell is created.
 
 Preview offers editable text, Insert and secondary Discard, with one small preset menu containing preset selection, original text and recovery actions. Processing failure preserves text; retry/use-original remain reachable. No long-press text-field entry, backend endpoint, global shortcut or native Realtime capability is added.
 
 ### Dictation processing presets
 
-Interaction references: [Typeless Dictate](https://www.typeless.com/help/quickstart/dictate) and [shortcut settings](https://www.typeless.com/help/quickstart/settings). Lares retains explicit editable preview/insertion as requested; outline/summary are Lares processing presets, not claims about Typeless preset names.
+Interaction references: [Typeless Dictate](https://www.typeless.com/help/quickstart/dictate) and [shortcut settings](https://www.typeless.com/help/quickstart/settings). Mobile retains explicit preview/insertion; PC permits editing directly in the composer. Outline/summary are Lares presets, not claims about Typeless preset names.
 
 | Preset | Chain | Contract |
 | --- | --- | --- |
@@ -159,12 +167,18 @@ Delegations correlate voiceId / turnId / requestId / taskId. Native dsh input/re
 
 ```mermaid
 flowchart TD
-    Entry[Single voice entry] --> Mode{Platform default}
+    PC[PC microphone / dynamic primary] -->|Dictation| Capture
+    PC -->|Conversation| Auto[Automatic speech endpoints]
+    Auto --> Bind
+    Reply -->|PC: wait for next utterance| Auto
+    Entry[Mobile voice entry] --> Mode{Platform default}
     Mode -->|Dictation| Capture[Record until Done]
     Capture --> Preset{Processing preset}
-    Preset -->|raw| Preview[Editable preview]
+    Preset -->|raw| Placement{Platform}
     Preset -->|clean / outline / summary| LLM[Router LLM without tools]
-    LLM --> Preview
+    LLM --> Placement
+    Placement -->|PC| Draft
+    Placement -->|Mobile| Preview[Editable preview]
     Preview -->|Insert| Draft[Append to original composer draft]
     Preview -->|Discard| Clear[Clear take]
     Mode -->|Conversation| Hold[Hold to speak]

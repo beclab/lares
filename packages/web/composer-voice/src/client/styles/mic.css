@@ -1,48 +1,33 @@
 .lares-voice-entries { display: inline-flex; align-items: center; }
-.lares-voice-entries button { display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%; background: var(--color-background-tertiary, #f6f6f6); color: inherit; cursor: pointer; }
-[data-composer-card]:has(.lares-inline-voice) [data-input-scroll] { display: none; }
-[data-composer-card] > div:has(.lares-inline-voice) { position: relative; inset: auto; height: auto; z-index: auto; }
-.lares-inline-voice { position: relative; display: flex; align-items: center; min-height: 52px; width: 100%; color: inherit; }
-.lares-inline-main { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 52px; border: 0; background: transparent; color: inherit; padding: 8px; font: inherit; font-size: 16px; font-weight: 500; cursor: pointer; touch-action: none; user-select: none; -webkit-touch-callout: none; }
-.lares-inline-main:focus-visible, .lares-voice-entries button:focus-visible { outline: 2px solid var(--color-primary, #3377ff); outline-offset: 2px; border-radius: 8px; }
-.lares-inline-time { white-space: pre; font-variant-numeric: tabular-nums; }
-.lares-inline-level { width: 28px; height: 24px; margin-right: 8px; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
-.lares-inline-cancel { position: absolute; bottom: calc(100% + 12px); left: 50%; transform: translateX(-50%); padding: 7px 12px; border-radius: 10px; background: var(--color-background-primary, white); box-shadow: 0 2px 12px #0001; font-size: 13px; white-space: nowrap; pointer-events: none; }
-.lares-inline-voice[data-phase=recording] .lares-inline-main { color: var(--color-primary, #3377ff); }
-.lares-inline-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-.lares-inline-status[data-visible=true], .lares-inline-status[data-error=true] { width: auto; height: auto; clip-path: none; bottom: 100%; padding: 6px; background: var(--color-background-primary, white); color: var(--color-text-secondary, #777); font-size: 12px; }
-.lares-voice-panel { position: fixed; inset: auto; margin: 0; box-sizing: border-box; padding: 0; border: 1px solid #8883; border-radius: 20px; color: var(--color-text-primary, #202124); background: var(--color-background-primary, white); width: min(400px, calc(var(--voice-view-width, 100vw) - 24px)); max-width: none; max-height: calc(var(--voice-view-height, 100dvh) * .85); box-shadow: 0 12px 48px #0002; overflow: hidden; }
-.lares-voice-panel::backdrop { background: #10182826; }
-.lares-voice-panel-body { padding: 16px; display: flex; flex-direction: column; box-sizing: border-box; max-height: calc(var(--voice-view-height, 100dvh) * .85 - 2px); }
-.lares-voice-panel header { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 16px; }
-.lares-voice-panel h2 { font-size: 16px; line-height: 24px; margin: 0; font-weight: 600; }
-.lares-voice-panel button { font: inherit; color: inherit; cursor: pointer; border: 1px solid #8883; border-radius: 12px; padding: 10px 16px; min-height: 44px; box-sizing: border-box; background: transparent; }
-.lares-voice-panel button:focus-visible, .lares-voice-panel summary:focus-visible, .lares-voice-panel textarea:focus-visible, .lares-voice-panel select:focus-visible { outline: 2px solid #3478f6; outline-offset: 2px; }
-.lares-voice-panel button:disabled { opacity: .45; cursor: default; }
-.lares-voice-panel .lares-voice-close { border: 0; padding: 0; font-size: 24px; min-width: 44px; }
-.lares-voice-content { text-align: center; display: flex; flex-direction: column; min-height: 0; overflow: auto; }
-.lares-voice-status { margin: 12px 0; min-height: 24px; line-height: 24px; font-size: 14px; }
-.lares-voice-panel-actions { display: flex; flex: none; justify-content: center; align-items: center; gap: 10px; margin-top: 12px; }
-.lares-voice-panel textarea { display: block; flex: 1 1 180px; width: 100%; box-sizing: border-box; min-height: 80px; height: 180px; max-height: 32dvh; margin: 12px 0 0; padding: 12px; color: inherit; background: #88808; font: inherit; line-height: 1.6; border: 1px solid #8883; border-radius: 12px; resize: none; overflow: auto; }
-.lares-voice-panel select { font: inherit; padding: 8px 12px; border-radius: 10px; color: inherit; background: transparent; max-width: 100%; }
-.lares-voice-menu { flex: none; text-align: start; font-size: 13px; }
-.lares-voice-menu summary { display: inline-block; list-style: none; cursor: pointer; padding: 6px 10px; border-radius: 8px; background: #8881; }
-.lares-voice-menu summary::-webkit-details-marker { display: none; }
-.lares-voice-menu-body { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 0; }
-.lares-voice-menu-body button { font-size: 12px; }
-.lares-voice-original { text-align: start; white-space: pre-wrap; overflow: auto; max-height: 100px; padding: 12px; margin-top: 8px; background: #8881; border-radius: 8px; font-size: 13px; }
+.lares-voice-entries button, .lares-dictation-cancel { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }
+.lares-voice-entries button:hover { background: var(--dsw-alias-interactive-bg-hover, #8881); }
+.lares-voice-entries button:disabled { opacity: .4; cursor: default; }
+[data-composer-card] > div:has(> .lares-inline-voice) { position: relative; inset: auto; height: auto; z-index: auto; }
+.lares-inline-voice { position: relative; display: flex; align-items: center; gap: 12px; min-height: 40px; color: inherit; padding: 4px 0; font-size: 13px; }
+.lares-inline-time { white-space: nowrap; color: var(--dsw-alias-label-tertiary, #777); font-variant-numeric: tabular-nums; }
+.lares-dictation-meter { flex: 1; min-width: 0; height: 24px; stroke: var(--dsw-alias-label-tertiary, #aaa); stroke-width: 3; stroke-linecap: round; }
+.lares-inline-status { color: var(--dsw-alias-label-tertiary, #777); }
+.lares-inline-voice[data-mode=single][data-phase=recording] .lares-inline-status { position: absolute; width: 1px; height: 1px; clip-path: inset(50%); overflow: hidden; }
+.lares-dictation-cancel { flex: none; font-size: 22px; background: var(--dsw-alias-interactive-bg-hover, #8881); }
+.lares-inline-voice[data-mode=continuous] { position: absolute; bottom: calc(100% + 16px); left: 50%; transform: translateX(-50%); flex-direction: column; min-width: 140px; text-align: center; pointer-events: none; }
+.lares-voice-orb { width: 48px; height: 48px; border-radius: 50%; background: var(--dsw-alias-label-primary, #202124); }
+.lares-inline-voice[data-phase=recording] .lares-voice-orb { animation: lares-voice-pulse 1.8s ease-in-out infinite; }
+.lares-inline-voice[data-phase=speaking] .lares-voice-orb { animation: lares-voice-pulse .8s ease-in-out infinite; }
+.lares-inline-voice[data-phase=working] .lares-voice-orb, .lares-inline-voice[data-phase=transcribing] .lares-voice-orb, .lares-inline-voice[data-phase=preparing] .lares-voice-orb { background: transparent; border: 3px solid #8884; border-top-color: currentColor; box-sizing: border-box; animation: lares-voice-spin 1s linear infinite; }
+.lares-inline-voice[data-phase=paused] .lares-voice-orb { opacity: .3; }
+.lares-voice-primary { display: grid; place-items: center; flex: none; border: 0; border-radius: 50%; width: 36px; height: 36px; color: var(--dsw-alias-bg-base, white); background: var(--dsw-alias-label-primary, #202124); cursor: pointer; }
+.lares-voice-primary:disabled { opacity: .45; cursor: default; }
+.lares-voice-primary[data-action=conversation], .lares-voice-primary[data-action=resume] { background: var(--dsw-alias-state-business-primary, #3377ff); color: white; }
+.lares-voice-primary:focus-visible, .lares-voice-entries button:focus-visible, .lares-dictation-cancel:focus-visible { outline: 2px solid var(--dsw-focus-ring-color, #3377ff); outline-offset: 3px; }
+.lares-voice-spinner { transform-origin: center; animation: lares-voice-spin 1s linear infinite; }
+.lares-dictation-recovery { max-width: 100%; overflow-wrap: anywhere; pointer-events: auto; }
+.lares-dictation-recovery p { white-space: pre-wrap; max-height: 100px; overflow: auto; }
+.lares-inline-voice:has(.lares-dictation-recovery) { flex-wrap: wrap; }
+.lares-inline-voice[data-mode=continuous]:has(button) { pointer-events: auto; }
 .lares-voice-message { margin: 12px 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; line-height: 1.6; }
 .lares-voice-message[data-role=user] { margin-left: auto; max-width: 85%; width: fit-content; padding: 10px 16px; border-radius: 18px; background: #3478f61a; }
 .lares-voice-message[data-summary=true] { border-left: 2px solid #3478f6; padding-left: 12px; font-size: 13px; opacity: .8; }
-@media(max-width:599px) {
-  .lares-voice-panel { width: var(--voice-view-width, 100vw); border-radius: 24px 24px 0 0; border-bottom: 0; }
-  .lares-voice-panel-body { padding: 16px 20px max(16px, env(safe-area-inset-bottom)); }
-  .lares-voice-panel textarea { flex-basis: 220px; height: 220px; }
-}
-
 .lares-voice-message-stop { display: block; border: 0; background: transparent; color: inherit; opacity: .7; font: inherit; font-size: 12px; padding: 6px 0; cursor: pointer; }
-
-.lares-inline-voice[data-phase=cancel] .lares-inline-main, .lares-inline-cancel[data-armed=true] { color: var(--color-error, #c23d32); }
-.lares-voice-panel .lares-voice-primary { background: var(--q-ink-1, var(--color-text-primary, #202124)); color: var(--q-background-1, var(--color-background-primary, white)); border-color: transparent; }
-
-.lares-inline-status[data-error=true] { color: var(--color-error, #c23d32); }
+@keyframes lares-voice-pulse { 50% { transform: scale(.88); opacity: .65; } }
+@keyframes lares-voice-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .lares-voice-orb, .lares-voice-spinner { animation: none !important; } }
