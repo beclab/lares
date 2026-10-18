@@ -25,7 +25,7 @@ export function hostEndpoint(method) {
 
 /**
  * Wire body for one call. `session.history` is `session/page`. `session/list`
- * names its argument `_request`; every other claimed method uses `request`.
+ * names its argument `_request`; settings uses direct named parameters.
  * Prompt requires a `requestId` the call site does not carry.
  */
 export function hostCall(method, payload = {}) {
@@ -45,8 +45,9 @@ export function hostCall(method, payload = {}) {
     };
   }
   if (endpoint === "session/list") return { endpoint, args: { _request: body } };
-  // modelCatalog takes no parameter; a `request` object fails the strict codec.
-  if (endpoint === "session/modelCatalog") return { endpoint, args: {} };
+  // Parameterless endpoints reject even an empty `request` object.
+  if (endpoint === "session/modelCatalog" || endpoint === "settings/describe") return { endpoint, args: {} };
+  if (endpoint === "settings/update") return { endpoint, args: body };
   if (endpoint === "$events/result") return { endpoint, args: body };
   if (endpoint === "session/prompt") {
     return {

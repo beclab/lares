@@ -20,6 +20,7 @@ function mockRequest() {
   const request = async (path, init = {}) => {
     calls.push({ path, method: init.method ?? "GET", body: init.body });
     if (path === "/api/settings/describe") {
+      assert.deepEqual(init.body.payload.args, {});
       return ok({
         type: "server-response",
         rpcId: init.body.rpcId,
@@ -37,6 +38,8 @@ function mockRequest() {
       });
     }
     if (path === "/api/settings/update") {
+      assert.deepEqual(Object.keys(init.body.payload.args).sort(), ["expectedRevision", "ns", "patch"]);
+      assert.equal(init.body.payload.args.ns, "ui-conversation");
       return ok({
         type: "server-response",
         rpcId: init.body.rpcId,
@@ -44,7 +47,7 @@ function mockRequest() {
           ok: true,
           value: {
             ns: "ui-conversation",
-            value: init.body.payload.args.request.patch,
+            value: init.body.payload.args.patch,
             revision: 4,
           },
         },
@@ -112,7 +115,7 @@ test("createHostSettings maps model, voice, and search over the Host request", a
   assert.equal((await settings.conversation()).busyEnter, "queue");
   assert.equal((await settings.setBusyEnter("steer")).busyEnter, "steer");
   const update = calls.find((call) => call.path === "/api/settings/update");
-  assert.equal(update.body.payload.args.request.expectedRevision, 3);
+  assert.equal(update.body.payload.args.expectedRevision, 3);
 });
 
 test("createHostSettings reuses the last snapshot until force", async () => {
@@ -148,4 +151,27 @@ test("createHostSettings surfaces Host error payloads", async () => {
     body: { error: { message: "router down" } },
   }));
   await assert.rejects(settings.models(), /router down/);
+});
+
+
+test("conversation preference refuses read-only writes and preserves state on conflict", async () => {
+  for (const writable of [false, true]) {
+    resetHostSettingsCache();
+    let writes = 0;
+    const settings = createHostSettings(async (path, init) => {
+      if (path.endsWith("describe")) {
+        assert.deepEqual(init.body.payload.args, {});
+        return ok({ type: "server-response", rpcId: init.body.rpcId, result: { ok: true,
+          value: { writable, namespaces: [{ ns: "ui-conversation", value: { busyEnter: "queue" }, revision: 7 }] } } });
+      }
+      writes++;
+      assert.deepEqual(init.body.payload.args, { ns: "ui-conversation", patch: { busyEnter: "steer" }, expectedRevision: 7 });
+      return ok({ type: "server-response", rpcId: init.body.rpcId,
+        result: { ok: false, error: { code: "revision-conflict", message: "revision conflict" } } });
+    });
+    await assert.rejects(settings.setBusyEnter("steer"), writable ? /revision conflict/ : /read-only/);
+    assert.equal(writes, writable ? 1 : 0);
+    assert.equal(rememberedSettings().conversation.busyEnter, "queue");
+    assert.equal(rememberedSettings().conversation.revision, 7);
+  }
 });
