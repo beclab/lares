@@ -127,10 +127,10 @@ export function createVoiceCapture({
     recorder = null;
   };
 
-  const fail = (code) => {
+  const fail = (code, extra = {}) => {
     if (dead) return;
     if (errorTimer) clearTimeout(errorTimer);
-    emit("error", { error: code, elapsed: 0 });
+    emit("error", { error: code, elapsed: 0, ...extra });
     errorTimer = setTimeout(() => {
       errorTimer = 0;
       if (!dead && phase === "error") emit("idle", { error: "", elapsed: 0 });
@@ -166,7 +166,7 @@ export function createVoiceCapture({
       if (dead || cancel) return;
       if (!text) {
         trace("no-input", {});
-        fail("voice_no_input");
+        fail("voice_no_input", { recognizedEmpty: true });
         return;
       }
       trace("transcript", { chars: text.length });

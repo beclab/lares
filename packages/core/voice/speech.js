@@ -1,3 +1,14 @@
+let readout = null;
+const readoutListeners = new Set();
+export const readoutState = {
+  getSnapshot: () => readout,
+  subscribe(listener) { readoutListeners.add(listener); return () => readoutListeners.delete(listener); },
+  publish(value) {
+    readout = value ? { ...(readout?.key === value.key ? readout : {}), ...value } : null;
+    for (const listener of readoutListeners) listener();
+  },
+};
+
 /**
  * The utterance a turn may speak: the text of the step being written, read
  * while it streams. Only a step that ends without a tool call answers the
@@ -67,15 +78,22 @@ function withBlock(state, index, text) {
 export function reduceUtterance(state, event) {
   const type = event?.type;
   if (type === "turn/start") return null;
-  if (type === "turn/end") return state && !state.done ? { ...state, done: true } : state;
+  if (type === "turn/end") {
+    if (state && state.turn !== turnOf(event)) return state;
+    const failed = ["error", "cancelled"].includes(event.data?.reason?.kind);
+    return state ? { ...state, done: true, silent: state.silent || failed } : state;
+  }
   const turn = turnOf(event);
   if (turn === null) return state;
   const step = stepOf(event);
-  const same = state?.turn === turn && state.step === step;
+  if (state && (turn < state.turn || turn === state.turn && step < state.step)) return state;
+  const same = state?.turn === turn && state.step === step && (!event.data?.attemptId || state.attemptId === event.data.attemptId);
   if (isChunkEvent(event)) {
     if (same && state.done) return state;
     const chunk = event.data?.chunk;
-    const current = same ? state : stepUtterance(turn, step);
+    const current = same ? state : { ...stepUtterance(turn, step), attemptId: event.data?.attemptId };
+    if (Number.isInteger(event.data?.chunkIndex) && event.data.chunkIndex <= (current.chunkIndex ?? -1)) return current;
+    if (Number.isInteger(event.data?.chunkIndex)) current.chunkIndex = event.data.chunkIndex;
     if (opensToolCall(chunk)) return current.silent ? current : { ...current, silent: true };
     const index = Number.isInteger(chunk?.index) ? chunk.index : 0;
     if (chunk?.type === "text-delta" && typeof chunk.text === "string") {
@@ -91,6 +109,8 @@ export function reduceUtterance(state, event) {
     return {
       ...stepUtterance(turn, step),
       text: assistantText(event),
+      messageId: event.data?.message?.id ?? event.data?.messageId,
+      attemptId: same ? state.attemptId : undefined,
       done: true,
       silent: Boolean(event.data?.interrupted) || content.some((block) => block?.type === "tool-call"),
     };
@@ -165,21 +185,29 @@ const BOUNDARY = /[.!?;。！？；…\n]/;
  *   fail?: (err: unknown) => void,
  * }} io
  */
-export function createSentencePlayer({ send, play, halt, silence, fail = () => {}, onState = () => {}, stream }) {
+export function createSentencePlayer({ send, play, halt, silence, fail = () => {}, onState = () => {}, onOutput = readoutState.publish, stream }) {
   let gen = 0;
   let current = null;
   // An utterance is read once: finishing it, failing, or being stopped all end it for good.
   let lastKey = null;
   let silencedKey = null;
+  const consumed = new Set();
+  const mutedTurns = new Set();
+  let lastTurn = null;
+  const turnKey = (value) => Number.isFinite(value.turn) ? `${value.sessionId ?? ""}:${value.turn}` : null;
+  const mark = (set, key) => { if (key != null) set.add(key); };
 
+  const emitOutput = value => {
+    if (value || readoutState.getSnapshot()?.key === lastKey || onOutput !== readoutState.publish) onOutput(value);
+  };
   const failed = (run, err) => {
     if (run.gen !== gen) return;
     run.abort?.abort();
     gen += 1;
     run.wake?.();
     current = null;
-    onState(false);
-    if (err?.code !== "voice_cancelled") fail(err);
+    onState(false); emitOutput(null);
+    if (!["voice_cancelled", "voice_output_owned"].includes(err?.code || err?.message)) { emitOutput({ ...run.identity, status: "error", error: err?.code || err?.message || "voice_playback_failed", stop: () => emitOutput(null) }); fail(err); }
   };
 
   const handOver = (run) => {
@@ -209,8 +237,8 @@ export function createSentencePlayer({ send, play, halt, silence, fail = () => {
 
   const read = async (run) => {
     if (stream) {
-      await stream({ key: run.key, text: run.text, signal: run.abort.signal });
-      if (run.gen === gen) { current = null; onState(false); }
+      await stream({ key: run.key, text: run.text, source: run.source, signal: run.abort.signal, controls: (value) => { if (run.gen === gen) run.controls = value; }, onStatus: (status) => { if (run.gen === gen) { if (status === "playing") onState(true); emitOutput({ key: run.key, status }); } } });
+      if (run.gen === gen) { current = null; onState(false); emitOutput(null); }
       return;
     }
     let next = null;
@@ -226,7 +254,7 @@ export function createSentencePlayer({ send, play, halt, silence, fail = () => {
       await play(sentence);
       part += 1;
     }
-    if (run.gen === gen) { current = null; onState(false); }
+    if (run.gen === gen) { current = null; onState(false); emitOutput(null); }
   };
 
   const stop = () => {
@@ -235,7 +263,7 @@ export function createSentencePlayer({ send, play, halt, silence, fail = () => {
     current?.wake?.();
     if (current) halt();
     current = null;
-    onState(false);
+    onState(false); emitOutput(null);
   };
 
   return {
@@ -250,17 +278,20 @@ export function createSentencePlayer({ send, play, halt, silence, fail = () => {
         return;
       }
       if (!utterance.text) return;
+      const identity = turnKey(utterance);
+      if (identity && mutedTurns.has(identity)) return;
       // A later tool call can invalidate uncommitted assistant text.
-      if (stream && !utterance.done && !utterance.speechCommitted) return;
+      if (stream && !utterance.done && !utterance.source) return;
       if (current?.key !== utterance.key) {
-        if (utterance.key === lastKey) return;
-        if (current) stop();
+        if (consumed.has(utterance.key)) return;
+        if (current) { mark(mutedTurns, lastTurn); stop(); }
         gen += 1;
-        lastKey = utterance.key;
+        lastKey = utterance.key; lastTurn = identity; mark(consumed, lastKey);
         current = {
           gen,
           abort: new AbortController(),
           key: utterance.key,
+          source: utterance.source,
           text: utterance.text,
           done: utterance.done,
           sent: 0,
@@ -269,8 +300,9 @@ export function createSentencePlayer({ send, play, halt, silence, fail = () => {
           sending: null,
           wake: null,
         };
+        current.identity = utterance;
         const run = current;
-        onState(true);
+        onState(true); emitOutput({ ...utterance, status: "preparing", stop: () => { mark(mutedTurns, lastTurn); stop(); silence(); } });
         handOver(run);
         read(run).catch((err) => failed(run, err));
         return;
@@ -279,7 +311,12 @@ export function createSentencePlayer({ send, play, halt, silence, fail = () => {
       current.done = utterance.done;
       handOver(current);
     },
+    get key() { return current?.key; },
+    get canPause() { return current?.controls?.canPause === true; },
+    pause() { if (!current?.controls?.canPause) return false; current.controls.pause(); emitOutput({ key: current.key, status: "confirming" }); return true; },
+    resume() { if (!current?.controls?.canPause) return false; current.controls.resume(); emitOutput({ key: current.key, status: "playing" }); return true; },
     stop() {
+      mark(mutedTurns, lastTurn);
       stop();
       silence();
     },

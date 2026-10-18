@@ -4,16 +4,20 @@ class LaresPcmPlayer extends AudioWorkletProcessor {
   constructor(options) {
     super(); this.queue = []; this.offset = 0; this.frames = 0; this.reported = 0;
     this.rate = options.processorOptions.inputRate; this.step = this.rate / sampleRate;
-    this.queued = 0; this.finished = false; this.started = false; this.starved = false;
+    this.paused = false; this.queued = 0; this.finished = false; this.started = false; this.starved = false;
     this.port.onmessage = ({ data }) => {
       if (data.type === 'audio') {
         if (this.queued + data.samples.length > this.rate * 4) { this.port.postMessage({ type: 'error' }); return; }
         this.queue.push(data.samples); this.queued += data.samples.length;
       } else if (data.type === 'finish') this.finished = true;
+      else if (data.type === 'pause') this.paused = true;
+      else if (data.type === 'resume') this.paused = false;
     };
   }
   process(inputs, outputs) {
     const out = outputs[0][0];
+    out.fill(0);
+    if (this.paused) return true;
     for (let i = 0; i < out.length; i++) {
       while (this.queue.length && this.offset >= this.queue[0].length) {
         const head = this.queue.shift(); this.offset -= head.length; this.queued -= head.length;

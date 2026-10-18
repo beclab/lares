@@ -10,13 +10,14 @@ export function createEnergyEndpoint(stream, end, onSpeech = () => {}, onLevel =
   const gain = context.createGain();
   gain.gain.value = 0;
   const endpoint = createSpeechEndpoint(options);
-  let heard = false;
+  let heard = false, consecutiveMs = 0;
   const silenceTimer = setTimeout(() => { if (!heard) end(false); }, 10_000);
   processor.onaudioprocess = (event) => {
     const samples = event.inputBuffer.getChannelData(0);
     const rms = frameRms(samples);
     onLevel(rms);
-    if (rms >= 0.004 && !heard) { heard = true; onSpeech(); }
+    consecutiveMs = rms >= 0.004 ? consecutiveMs + samples.length * 1000 / context.sampleRate : 0;
+    if (consecutiveMs >= (options.interruptionMs || 0) && rms >= 0.004 && !heard) { heard = true; onSpeech(); }
     if (endpoint.push(1, rms, samples.length * 1000 / context.sampleRate)) end(true);
   };
   source.connect(processor); processor.connect(gain); gain.connect(context.destination);
@@ -37,7 +38,7 @@ function createInputMeter(stream, onLevel) {
   return { stop() { clearInterval(timer); source.disconnect(); analyser.disconnect(); void context.close(); } };
 }
 
-export function createDeviceInput({ transcribe, onPhase = () => {}, endpoint = createEnergyEndpoint, endpointSilenceMs = 500, media, preparation, streamInput } = {}) {
+export function createDeviceInput({ transcribe, onPhase = () => {}, endpoint = createEnergyEndpoint, endpointSilenceMs = 500, media, preparation, streamInput, echoTested = false } = {}) {
   let recorder = null;
   let settle = null;
   let timer = null;
@@ -47,7 +48,7 @@ export function createDeviceInput({ transcribe, onPhase = () => {}, endpoint = c
     settle?.(""); settle = null;
   };
   return {
-    capabilities: { duplex: true, bargeIn: false, listenWhileWorking: true, audio: "encoded" },
+    capabilities: { duplex: true, bargeIn: echoTested === true, echoTested: echoTested === true, listenWhileWorking: true, audio: "encoded" },
     capture({ signal, onTranscribing, onReady, onSpeech, onLevel = () => {}, continuous = false } = {}) {
       cancel();
       return new Promise((resolve, reject) => {
@@ -61,7 +62,7 @@ export function createDeviceInput({ transcribe, onPhase = () => {}, endpoint = c
           return endpoint(stream, (heard = true) => { if (heard) recorder?.stop(); else {
             if (continuous) { cancel(); done(""); }
             else { settle = null; cancel(); reject(new Error("voice_no_input")); }
-          } }, onSpeech, onLevel, { silenceMs: endpointSilenceMs });
+          } }, onSpeech, onLevel, { silenceMs: endpointSilenceMs, interruptionMs: echoTested ? 500 : 0 });
         }, onPhase(phase, extra) {
           onPhase(phase, extra);
           if (phase === "recording" && !ready) {
@@ -70,7 +71,7 @@ export function createDeviceInput({ transcribe, onPhase = () => {}, endpoint = c
           }
           if (phase === "transcribing") onTranscribing?.();
           if (phase === "error") {
-            if (continuous && ["voice_no_input", "voice_too_short"].includes(extra.error)) { done(""); return; }
+            if (continuous && (extra.recognizedEmpty || !echoTested && ["voice_no_input", "voice_too_short"].includes(extra.error))) { done(""); return; }
             clearTimeout(timer); signal?.removeEventListener("abort", cancel); settle = null; reject(new Error(extra.error)); }
         } });
         signal?.addEventListener("abort", cancel, { once: true });

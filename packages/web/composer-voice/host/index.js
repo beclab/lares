@@ -1,4 +1,5 @@
 import { listModels as voiceModels } from "@olares/lares-core/router/stt";
+import { createReplyStreamRegistry } from "@olares/lares-core/voice/reply-stream";
 import { createAudioStreamGateway } from "@olares/lares-core/voice/stream-gateway";
 import { createCompositeGateway } from "@olares/lares-core/voice/composite-gateway";
 import { createRouterAudio } from "@olares/lares-core/voice/router-audio";
@@ -327,7 +328,13 @@ async function voiceHandler(req, res) {
  */
 let streams;
 export function apply(ctx) {
-  streams = createAudioStreamGateway({ config: readConfig, models: () => voiceModels(), metric: (fields) => writeReport({ scope: "voice", event: "metric", ...fields }) });
+  const replies = createReplyStreamRegistry({ inspect: id => ctx.sessionController.inspect(id), owner: () => routerEndUser() });
+  ctx.on("agent/assistant-stream", ({ agent, frame }) => replies.frame(agent.id, frame));
+  ctx.on("session/event", (session, event) => replies.event(session.id, event));
+  ctx.on("api-session/removed", id => replies.remove(id));
+  ctx.on("agent/disposed", ({ agent }) => replies.remove(agent.id));
+  ctx.effect(() => () => replies.close());
+  streams = createAudioStreamGateway({ replies, config: readConfig, models: () => voiceModels(), metric: (fields) => writeReport({ scope: "voice", event: "metric", ...fields }) });
   ctx.effect(() => {
     const unregister = ctx.webServer.registerUpgrade({ path: "/api/lares/voice/stream", handler: (req, socket, head) => streams.upgrade(req, socket, head) });
     return () => { unregister(); streams.close(); };

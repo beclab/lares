@@ -31,7 +31,7 @@ test("Host delivers PCM before synthesis finishes and cancellation reaches infer
     const ws = await h.open(grant.ticket); const seen: any[] = [];
     ws.on("message", (data, binary) => seen.push(binary ? data : JSON.parse(String(data))));
     while (!seen.some(Buffer.isBuffer)) await tick();
-    assert.equal(completed, false); assert.equal(seen[0].sampleRate, 48000);
+    assert.equal(completed, false); assert.equal(seen.find(event => event.type === "format").sampleRate, 48000);
     ws.close(); await once(ws, "close"); await tick();
     assert.equal(cancelled, true);
   } finally { await h.close(); }

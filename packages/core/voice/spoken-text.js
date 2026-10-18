@@ -114,7 +114,6 @@ export function spokenLines(text, { done = true } = {}) {
     .replace(/(`{3,}|~{3,})[\s\S]*?\1/g, (match, _marks, offset, source) => skip(match, offset, source));
   const openFence = /`{3,}|~{3,}/.exec(source);
   if (openFence) { pending = true; source = source.slice(0, openFence.index); }
-  source = source.slice(0, 2000);
   if (!done) {
     const lines = source.split("\n");
     let candidate = lines.length - 1;

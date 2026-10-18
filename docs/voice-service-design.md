@@ -312,3 +312,51 @@ stop, selection change, settings disposal or capture/conversation activity.
 Reply audio binds one configuration snapshot per output; it never mixes voices
 when preferences change. New/unconfigured dictation uses raw transcription;
 existing explicit processing selections and their profile drafts are preserved.
+
+## Trusted reply streams and interruption recovery
+
+Lares assistant speech has one shared core pipeline. Text is addressed by session,
+turn, step and attempt; an authenticated client cannot mark its own text as
+committed. The minimal dsh Agent-loop patch attaches `speechEligible` only to the
+process-local start event, derived from the frozen admitted request's empty tool
+and tool-history lists. The Host registry observes these events directly. Other
+requests wait for a successful, text-only `assistant/message`; a turn-end alone
+cannot authorize unfinished text. Failed, abandoned, rewritten or tool-bearing
+output terminates speech. No additional LLM call or tool removal is used.
+
+The existing stream ticket accepts an optional `source` address instead of fixed
+`text`. The Host inspects the session and verifies the scope owner before binding
+it. Fixed-text callers remain supported. A reply source can be claimed once,
+including across PC and Vue tabs, so multiple observers cannot synthesize the
+same answer in parallel. Stop and failure do not relinquish that claim for an
+automatic replay. The registry is bounded and expired output fails explicitly.
+
+Stable Markdown-cleaned segments feed the existing single synthesis pipeline;
+text generation, synthesis and playback overlap only within this trusted boundary.
+The current full-text working buffer is capped at 8192 characters and fails with
+`voice_text_limit`; it never silently truncates at 2000 characters. Sentence
+boundaries are unchanged. Segment indices, source frames and generation checks
+reject repeats and late audio. This does not resolve a model's pronunciation of
+isolated words; text/request correctness and audible correctness are separate.
+
+PCM and file players expose pause/resume without resetting their unread position.
+A paused worklet renders silence without consuming frames. The socket accepts
+bounded `pause`/`resume` control and retains the existing audio backpressure caps.
+Cancellation invalidates local output immediately and propagates upstream.
+
+Automatic acoustic interruption requires continuous conversation, explicit
+`bargeIn` and `echoTested` input capabilities, and a pause-capable current output.
+No shipped device is newly certified by this implementation. The browser adapter
+accepts explicit verified capability injection; defaults remain half duplex.
+After 500 ms continuous voice activity, the shared controller pauses audio while
+recognition settles. Nonempty final text confirms interruption, including short
+acknowledgments. Successful empty recognition plus 2 seconds silence resumes only
+the same output. Errors never mean noise. Confirmation is limited to 10 seconds.
+Explicit stop, pause, background, disconnect and session changes invalidate
+recovery; none cancel the business task or truncate its history.
+
+Shared readout state distinguishes preparing, playing, confirming and error from
+Agent completion. The PC uses the official turn-tail extension, including its
+open-turn mount; Vue renders the same state at the matching assistant row. Stop
+is available during preparation and playback. Finished/stopped output leaves no
+resident status or spacer. Read-aloud defaults and saved preferences are unchanged.

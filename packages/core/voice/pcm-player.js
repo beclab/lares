@@ -2,9 +2,9 @@ import { PCM_PLAYER_WORKLET } from "./pcm-worklet.js";
 import { pcmSamples } from "./realtime-audio.js";
 
 export function createPcmStreamPlayer({ onProgress = () => {}, onMetric = () => {}, context: Context = globalThis.AudioContext || globalThis.webkitAudioContext } = {}) {
-  let context, node, resolve, reject, played = 0, generation = 0, pendingByte = null, failed = null;
+  let context, node, resolve, reject, played = 0, generation = 0, pendingByte = null, failed = null, paused = false;
   const stop = () => {
-    generation++; node?.disconnect(); if (node) node.port.onmessage = null; node = null;
+    generation++; paused = false; node?.disconnect(); if (node) node.port.onmessage = null; node = null;
     if (context && context.state !== "closed") void context.close().catch(() => {}); context = null; resolve?.(); resolve = reject = null; pendingByte = null;
   };
   return {
@@ -41,6 +41,10 @@ export function createPcmStreamPlayer({ onProgress = () => {}, onMetric = () => 
       if (pendingByte !== null) return Promise.reject(new Error("voice_audio_format"));
       return new Promise((done, fail) => { resolve = done; reject = fail; node.port.postMessage({ type: "finish" }); });
     },
+    canPause: true,
+    pause() { paused = true; node?.port.postMessage({ type: "pause" }); },
+    resume() { paused = false; node?.port.postMessage({ type: "resume" }); },
+    get paused() { return paused; },
     playedFrames: () => played,
     stop,
   };

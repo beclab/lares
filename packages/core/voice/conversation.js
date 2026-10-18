@@ -13,11 +13,13 @@ export function createVoiceConversation({ request, transcribe, playback, onReply
   let spokenKey = null;
   let lastReplyKey = null;
   let mutedKey = null;
+  const mutedTurns = new Set();
+  const mute = (reply, sessionId) => { if (Number.isFinite(reply?.turn)) mutedTurns.add(`${sessionId}:${reply.turn}`); };
   let submitted = false;
   let finalSeen = false;
   let continuous = false;
   let manualCapture = false;
-  let reading = false;
+  let reading = false, lastUtterance = null;
   const call = async (path, body, signal) => {
     const res = await request(`/api/lares/voice${path}`, { method: body === undefined ? "GET" : "POST", headers: { ...headers, "x-lares-voice-speaking": controller.getSnapshot().userSpeaking ? "true" : "false" }, ...(body === undefined ? {} : { body }), signal });
     if (!res?.ok) throw new Error(res?.body?.error?.code || "voice_failed");
@@ -30,7 +32,7 @@ export function createVoiceConversation({ request, transcribe, playback, onReply
   const controller = createVoiceController({ voiceId, input, idleTimeoutMs, recoveryTimeoutMs, onExpired: () => stop(), onTranscript: onTranscript ? async (value) => { await onTranscript(value); if (!continuous) await stop(); } : null, metric: (event) => {
     metric(event);
     void call("/session/metric", { stage: event.stage, durationMs: event.durationMs }).catch(() => {});
-  }, output: { async stop() { playback.stop(); await call("/playback/stop", {}); } }, agent: {
+  }, output: { get canPause() { return playback.canPause === true; }, key: () => playback.key, pause: () => playback.pause?.(), resume: () => playback.resume?.(), async stop() { mute(lastUtterance, lastSessionId); playback.stop(); await call("/playback/stop", {}); } }, agent: {
     lazy: true,
     create: async () => null,
     async submit({ text, requestId, signal }) {
@@ -53,15 +55,17 @@ export function createVoiceConversation({ request, transcribe, playback, onReply
       version = state.version;
       // Reserve playback before releasing the completed Agent turn.
       const reply = state.utterance;
+      lastUtterance = reply;
       if (reply?.text && !reply.silent) onText(reply.text);
       const key = reply ? `${state.sessionId}:${reply.key}` : null;
       lastReplyKey = key;
-      if (["recording", "transcribing"].includes(controller.getSnapshot().capture)) mutedKey = key;
-      const reserve = readAloud && key !== mutedKey && reply?.text && !reply.silent && key !== spokenKey;
+      if (!input.capabilities?.echoTested && ["recording", "transcribing"].includes(controller.getSnapshot().capture)) { mutedKey = key; mute(reply, state.sessionId); }
+      const turnMuted = reply && mutedTurns.has(`${state.sessionId}:${reply.turn}`);
+      const reserve = !turnMuted && readAloud && key !== mutedKey && reply?.text && !reply.silent && key !== spokenKey;
       if (reserve) spokenKey = key;
       controller.observeAgent(Boolean(state.running), Boolean(reserve));
       if (!readAloud || reply?.silent) controller.observePlayback(false);
-      if (readAloud && key !== mutedKey && reply) onReply({ ...reply, key: `${voiceId}:${state.sessionId}:${reply.key}` }, headers);
+      if (!turnMuted && readAloud && key !== mutedKey && reply) onReply({ ...reply, sessionId: state.sessionId, ...(device === "device" ? { source: { sessionId: state.sessionId, turn: reply.turn, step: reply.step, attemptId: reply.attemptId } } : {}), key: `${voiceId}:${state.sessionId}:${reply.key}` }, headers);
     }
     if (device === "headset" && !state.running && !reading) {
       const audio = await call("/playback/status");
@@ -110,6 +114,7 @@ export function createVoiceConversation({ request, transcribe, playback, onReply
       if (onTranscript) { disposed = false; await controller.resume(options); return; }
       const current = await call("/session");
       version = current.version;
+      mute(current.utterance, current.sessionId);
       mutedKey = current.utterance ? `${current.sessionId}:${current.utterance.key}` : null;
       spokenKey = mutedKey;
       if (!current.active) await call("/session", { sessionId: lastSessionId, readAloud, presentationSession, ...(preset ? { preset } : {}), ...(backend ? { backend } : {}) });
@@ -119,7 +124,7 @@ export function createVoiceConversation({ request, transcribe, playback, onReply
       void watch();
     },
     async setReadAloud(value) {
-      readAloud = value === true; mutedKey = lastReplyKey;
+      readAloud = value === true; mutedKey = lastReplyKey; mute(lastUtterance, lastSessionId);
       controller.setOutputMuted(!readAloud);
       if (!readAloud) await controller.stopPlayback();
       await call("/session/output", { readAloud });

@@ -209,7 +209,8 @@
     "./voice/lares-policy": "./voice/lares-policy.js",
     "./voice/panel": "./voice/panel.js",
     "./voice/startup": "./voice/startup.js",
-    "./voice/projection": "./voice/projection.js"
+    "./voice/projection": "./voice/projection.js",
+    "./voice/reply-stream": "./voice/reply-stream.js"
   },
   "dependencies": {
     "emoji-regex": "11.0.0",

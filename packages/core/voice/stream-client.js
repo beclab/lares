@@ -10,8 +10,8 @@ export function browserAudioSocket(ticket) {
   return new WebSocket(url, ["lares-voice", `lares-ticket.${ticket}`]);
 }
 
-export async function openAudioStream({ request, headers, operation, model, language, text, signal, socket = browserAudioSocket }) {
-  const response = await request("/api/lares/voice/stream/ticket", { method: "POST", headers, signal, body: { operation, model, language, text } });
+export async function openAudioStream({ request, headers, operation, model, language, text, source, signal, socket = browserAudioSocket }) {
+  const response = await request("/api/lares/voice/stream/ticket", { method: "POST", headers, signal, body: { operation, model, language, text, source } });
   if (!response?.ok) throw new Error(response?.body?.error?.code || "voice_stream_failed");
   if (!response.body.supported) return null;
   if (signal?.aborted) throw new Error("voice_cancelled");
@@ -38,19 +38,27 @@ export async function playAudioStream(options) {
     if (!response?.ok) throw new Error(response?.body?.error?.code || "voice_stream_failed");
     if (response.body.sentences === 0) return true;
     if (response.body.bluetooth === "played") return true;
+    if (options.source) throw new Error("voice_reply_unavailable");
     const fallback = createBrowserPlayer();
+    options.controls?.({ canPause: true, pause: () => fallback.pause(), resume: () => fallback.resume() });
+    options.onStatus?.("playing");
     const cancel = () => fallback.stop(); options.signal?.addEventListener("abort", cancel, { once: true });
     try { if (!options.signal?.aborted) await fallback.play(wavBlob(response.body.audio)); } finally { options.signal?.removeEventListener("abort", cancel); fallback.stop(); }
     return true;
   }
   const file = createBrowserPlayer();
   const player = createPcmStreamPlayer({ onProgress: (frames) => { if (connection.readyState === 1) connection.send(JSON.stringify({ type: "progress", frames })); },
-    onMetric: (event) => streamMetric(options, { ...event, durationMs: Date.now() - started }) });
-  let chain = Promise.resolve(), complete = false, firstReceived = false;
+    onMetric: (event) => { if (event.stage === "playback_started") options.onStatus?.("playing"); streamMetric(options, { ...event, durationMs: Date.now() - started }); } });
+  let chain = Promise.resolve(), complete = false, firstReceived = false, ready = false, paused = false, segmentIndex = -1;
+  options.controls?.({
+    get canPause() { return ready; },
+    pause() { if (!ready || paused) return; paused = true; player.pause(); file.pause(); if (connection.readyState === 1) connection.send(JSON.stringify({ type: "pause" })); },
+    resume() { if (!ready || !paused) return; paused = false; player.resume(); void file.resume()?.catch(() => connection.close()); if (connection.readyState === 1) connection.send(JSON.stringify({ type: "resume" })); },
+  });
   try {
     await new Promise((resolve, reject) => {
       const fail = (error) => { reject(error); connection.close(); };
-      const cancelled = () => fail(new Error("voice_cancelled"));
+      const cancelled = () => { player.stop(); file.stop(); fail(new Error("voice_cancelled")); };
       options.signal?.addEventListener("abort", cancelled, { once: true });
       connection.addEventListener("message", ({ data }) => {
         if (typeof data !== "string" && !firstReceived) { firstReceived = true; streamMetric(options, { stage: "playback_first_received", durationMs: Date.now() - started }); }
@@ -58,8 +66,13 @@ export async function playAudioStream(options) {
           if (options.signal?.aborted) throw new Error("voice_cancelled");
           if (typeof data !== "string") { player.write(new Uint8Array(data)); return; }
           const event = JSON.parse(data);
-          if (event.type === "format") await player.start(event);
-          else if (event.type === "file") { await file.play(wavBlob(event.audio)); if (connection.readyState === 1) connection.send(JSON.stringify({ type: "file.done" })); }
+          if (event.type === "segment") {
+            if (event.index !== segmentIndex + 1) throw new Error("voice_reply_sequence");
+            segmentIndex = event.index;
+          }
+          else if (event.type === "segment.end") options.onSegment?.(event);
+          else if (event.type === "format") { await player.start(event); ready = true; if (paused) player.pause(); }
+          else if (event.type === "file") { ready = true; options.onStatus?.("playing"); await file.play(wavBlob(event.audio)); if (connection.readyState === 1) connection.send(JSON.stringify({ type: "file.done" })); }
           else if (event.type === "error") throw new Error(event.code || "voice_stream_failed");
           else if (event.type === "done") { await player.finish(); complete = true; resolve(); }
         }).catch(fail);
