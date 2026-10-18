@@ -54,6 +54,7 @@ const patches = [
     patch: "patches/openai-array-error.patch",
   },
   { markerFile: "node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js", marker: "routerRows = routerReasoningSnapshot()", patch: "patches/dsh-router-native-efforts.patch" },
+  { markerFile: "node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js", marker: 'renderSlot("conversation.chat.assistant-status"', patch: "patches/dsh-assistant-status-extension.patch" },
 ];
 
 for (const item of patches) {

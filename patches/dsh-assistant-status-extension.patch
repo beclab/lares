@@ -1,0 +1,23 @@
+--- a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
+@@ -5982 +5982 @@
+-		const AssistantNodeView = (0, react.memo)(function AssistantNodeView({ node, groupPart, useDisclosure, useTurnData, turnProcess, openFile, renderMessageImages, fileMentions, usePresentation, t }) {
++		const AssistantNodeView = (0, react.memo)(function AssistantNodeView({ renderSlot, node, groupPart, useDisclosure, useTurnData, turnProcess, openFile, renderMessageImages, fileMentions, usePresentation, t }) {
+@@ -6005 +6005 @@
+-			return (0, react_jsx_runtime.jsx)(AssistantMarkdown, {
++			return (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [(0, react_jsx_runtime.jsx)(AssistantMarkdown, {
+@@ -6017 +6017 @@
+-			});
++			}), groupPart === void 0 || groupPart === "response" ? renderSlot("conversation.chat.assistant-status", { turn: data.turn, step: data.step }) : null] });
+@@ -6812 +6812,2 @@
+-				inject: () => ({ hooks: { presentation } })
++				inject: () => ({ hooks: { presentation } }),
++				children: { "conversation.chat.assistant-status": { kind: "list", scope: "session" } }
+--- a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/types/client/contract/slots.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/types/client/contract/slots.d.ts
+@@ -281,0 +282,5 @@
++        'conversation.chat.assistant-status': {
++            kind: 'list';
++            scope: 'session';
++            owner: { turn: number; step: number };
++        };

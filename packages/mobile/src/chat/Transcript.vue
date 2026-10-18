@@ -34,7 +34,7 @@
       :data-type="row.type"
       :data-pending="row.pending ? 'true' : 'false'"
     >
-      <div v-if="readout && readout.sessionId === sessionId && row.type === 'assistant' && row.turn === readout.turn" role="status" class="lares-message-readout">
+      <div v-if="hasReadout(row)" role="status" class="lares-message-readout">
         <span>{{ speechLabel }}</span>
         <button type="button" class="lares-message-stop" @click="readout.stop()">{{ t(readout.status === 'error' ? 'readout.dismiss' : 'readout.stop') }}</button>
       </div>
@@ -193,6 +193,11 @@ export default {
     clearInterval(this.clock);
   },
   methods: {
+    hasReadout(row) {
+      if (!this.readout || this.readout.sessionId !== this.sessionId || row.type !== "assistant" || row.turn !== this.readout.turn) return false;
+      const latest = this.items.findLast(item => item.type === "assistant" && item.turn === this.readout.turn);
+      return latest && (row.id || row.key) === (latest.id || latest.key);
+    },
     isSpeaking(row) {
       const snapshot = this.voiceView?.snapshot;
       if (snapshot?.playback !== "playing") return false;

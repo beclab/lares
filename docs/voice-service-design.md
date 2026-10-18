@@ -356,7 +356,8 @@ Explicit stop, pause, background, disconnect and session changes invalidate
 recovery; none cancel the business task or truncate its history.
 
 Shared readout state distinguishes preparing, playing, confirming and error from
-Agent completion. The PC uses the official turn-tail extension, including its
-open-turn mount; Vue renders the same state at the matching assistant row. Stop
+Agent completion. The PC uses a minimal public assistant-status extension in the official
+streaming/settled assistant renderer (the existing turn-tail only mounts after
+completion); Vue renders the same state at the matching assistant row. Stop
 is available during preparation and playback. Finished/stopped output leaves no
 resident status or spacer. Read-aloud defaults and saved preferences are unchanged.

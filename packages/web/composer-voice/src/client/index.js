@@ -62,7 +62,7 @@ export function apply(ctx) {
     const panel = createWebVoicePanel((sessionId) => scope.uiWorkspace.openSession(sessionId));
     scope.effect(() => () => { void panel.dispose().catch(() => {}); }, "lares-voice-panel-lifetime");
     scope.slots.inject("conversation.input.primary", () => scope.slots.register({ name: "conversation.input.primary", id: "lares-voice-primary", select: () => ({}), inject: sessionId => { const directory = scope.modelDirectories.directoryFor(sessionId); return { agentDirectory: directory.store, loadAgent: () => directory.load() }; } }, props => h(VoicePrimary, { ...props, panel })));
-    scope.slots.inject("conversation.chat.turnTail", () => scope.slots.register({ name: "conversation.chat.turnTail", id: "lares-readout", select: () => ({}) }, props => h(SpeechStatus, props)));
+    scope.slots.inject("conversation.chat.assistant-status", () => scope.slots.register({ name: "conversation.chat.assistant-status", id: "lares-readout", select: () => ({}) }, props => h(SpeechStatus, props)));
     scope.slots.inject("conversation.chat.timeline", () => scope.slots.register({ name: "conversation.chat.timeline", id: "lares-voice-records", select: () => ({}) }, (props) => h(VoiceTimeline, { ...props, panel })));
 
     scope.slots.inject("conversation.input.overlay", () => scope.slots.register({ name: "conversation.input.overlay", id: "lares-voice-inline" }, () => h(InlineVoice, { panel })));

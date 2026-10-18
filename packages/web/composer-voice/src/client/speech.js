@@ -119,10 +119,10 @@ export function SpeechPlayer({ sessionId, conversation, suspended = false }) {
   return h("span", { hidden: true });
 }
 
-export function SpeechStatus({ sessionId, turn }) {
+export function SpeechStatus({ sessionId, turn, step }) {
   const t = useT();
   const value = useSyncExternalStore(readoutState.subscribe, readoutState.getSnapshot);
-  if (!value || value.sessionId !== sessionId || value.turn !== (turn?.turn ?? turn)) return null;
+  if (!value || value.sessionId !== sessionId || value.turn !== turn || value.step !== step) return null;
   return h("div", { role: "status", className: "lares-readout" },
     h("span", null, t(`readout.${value.status}`)),
     h("button", { type: "button", onClick: value.stop }, t(value.status === "error" ? "readout.dismiss" : "readout.stop")));
