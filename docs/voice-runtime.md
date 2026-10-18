@@ -616,3 +616,61 @@ focused tests, typecheck and all builds passed; full suite remains 848/849
 with the existing macOS file-preview symlink cleanup failure. Native IME,
 physical phone/keyboard and real microphone acceptance are not claimed.
 Ignored evidence: `__debug__/local-router/composer-layout-acceptance.json`.
+
+
+### PCM playback quality investigation (2026-10-18)
+
+Both official PC and Vue sentence readers use the shared browser PCM player;
+the saved `streaming` preference does not select a file-only playback path.
+Transport chunks must not affect resampling. The worklet now interpolates the
+last sample of a block against the next block, retaining fractional position
+while that neighbor is pending. Only final EOF permits an edge clamp. Waiting
+reports one underrun per starvation episode; pause does not consume samples.
+
+Fixed-model/voice diagnosis used Qwen3-TTS-12Hz-0.6B-CustomVoice, aiden,
+Chinese, mono PCM16 at 24 kHz, without changing saved preferences. Five fixed
+corpora (natural Chinese, long sentence, numbers/time, zodiac, mixed language)
+were run three times through whole WAV, collected native PCM, independent
+sentence synthesis and the real Host stream. Fifteen timed replays per path
+showed no underruns; no startup buffer or segmentation change was justified.
+The thirteen-segment zodiac path took 7.1–11.1 seconds to synthesize, versus
+3.3–4.3 seconds whole-file generation. These are completion times, not first
+sound latency, and do not prove an audible quality defect.
+
+Native browser capture at 48 kHz compared the exact same collected PCM before
+and after the patch: equal duration, 45 changed int16 samples (maximum 1440)
+in the old output, and zero sample error against continuous linear interpolation
+in the patched output. The user heard the source and patched capture as similar.
+The user found whole/segmented files normal but a newly synthesized real-time
+capture less natural. Naturalness is therefore NOT accepted as fixed, and the
+boundary defect is not claimed as its root cause. The user reports speakers or
+wired headphones; Bluetooth call-mode switching is not supported by this case.
+
+Isolated probes leave the microphone closed. They do not establish acceptance
+for concurrent capture, hardware output, full Agent scheduling or physical
+phones. Keep those observations separate from deterministic sample tests.
+Ordinary logs contain only generation/segment identity, counts and timings;
+fixed diagnostic text/audio remain in ignored local artifacts. Compare the same
+PCM through each path before attributing audible differences to transport,
+since separate model invocations can produce different prosody and durations.
+
+
+Native real-Host playback was repeated three times for each worklet. Old
+first-sound times were 476/301/557 ms; patched times were 396/478/281 ms.
+All six captures reported zero underruns and closed their AudioContexts.
+Different synthesis outputs had different durations, so these runs cannot
+establish improved prosody. The shared playback tests passed 12/12, including
+odd-byte packet assembly, six rate pairs and pause/late-neighbor behavior.
+Typecheck and all builds passed. Full suite before the final extra packet test
+was 850/851; the existing macOS file-preview symlink cleanup still fails with
+`ERR_FS_EISDIR`.
+
+Official PC 1280×720 and Vue mobile/desktop chat and settings loaded the rebuilt
+resources. Mobile layout was checked at an actual 390×844 viewport. PC/mobile
+preview entered and stopped, without changing automatic read-aloud. Vue desktop
+audition failed on retry and retains its existing `settings/describe` unexpected
+`request` error; this is not a successful audio acceptance. Full Agent speech,
+concurrent real microphone, pause/resume on hardware and physical devices remain
+unverified. Ignored evidence and repeatable probes are under
+`__debug__/local-router/tts-quality/` (report, replay, acceptance, WAVs), with
+`tts-quality.mjs`, `tts-quality-replay.mjs` and `tts-quality-native.mjs` beside it.

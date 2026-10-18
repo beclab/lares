@@ -29,10 +29,17 @@ class LaresPcmPlayer extends AudioWorkletProcessor {
         if (this.started && !this.starved) this.port.postMessage({ type: 'underrun' });
         this.starved = true; continue;
       }
+      const at = Math.floor(this.offset), fraction = this.offset - at;
+      // Interpolate across transport blocks; never clamp an unfinished block's edge.
+      let next = head[at + 1];
+      if (next === undefined) next = this.queue[1]?.[0];
+      if (fraction > 0 && next === undefined && !this.finished) {
+        if (this.started && !this.starved) this.port.postMessage({ type: 'underrun' });
+        this.starved = true; break;
+      }
       if (!this.started) { this.started = true; this.port.postMessage({ type: 'started' }); }
       this.starved = false;
-      const at = Math.floor(this.offset), fraction = this.offset - at;
-      out[i] = head[at] * (1 - fraction) + head[Math.min(at + 1, head.length - 1)] * fraction;
+      out[i] = head[at] * (1 - fraction) + (next ?? head[at]) * fraction;
       this.offset += this.step;
     }
     const played = this.frames + Math.min(this.queue[0]?.length || 0, Math.floor(this.offset));
