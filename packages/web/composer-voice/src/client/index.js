@@ -9,13 +9,13 @@ import { VoiceTimeline } from "./timeline.js";
 import { spinCss } from "./icons.js";
 import { ZH, EN, attachLocale, bindTranslate, getTranslate } from "./locale.js";
 import { VoiceSettings, settingsCss } from "./settings.js";
-import { SpeechPlayer } from "./speech.js";
+import { SpeechPlayer, SpeechStatus, speechCss } from "./speech.js";
 import { speechDefinition, speechView } from "./speech-view.js";
 import { installPluginStyle } from "../../../shared/client/plugin-style.js";
 
 const h = React.createElement;
 
-const PLUGIN_CSS = [spinCss, micCss, settingsCss].join("");
+const PLUGIN_CSS = [spinCss, micCss, settingsCss, speechCss].join("");
 
 export const inject = [];
 
@@ -62,6 +62,7 @@ export function apply(ctx) {
     const panel = createWebVoicePanel((sessionId) => scope.uiWorkspace.openSession(sessionId));
     scope.effect(() => () => { void panel.dispose().catch(() => {}); }, "lares-voice-panel-lifetime");
     scope.slots.inject("conversation.input.primary", () => scope.slots.register({ name: "conversation.input.primary", id: "lares-voice-primary", select: () => ({}), inject: sessionId => { const directory = scope.modelDirectories.directoryFor(sessionId); return { agentDirectory: directory.store, loadAgent: () => directory.load() }; } }, props => h(VoicePrimary, { ...props, panel })));
+    scope.slots.inject("conversation.chat.turnTail", () => scope.slots.register({ name: "conversation.chat.turnTail", id: "lares-readout", select: () => ({}) }, props => h(SpeechStatus, props)));
     scope.slots.inject("conversation.chat.timeline", () => scope.slots.register({ name: "conversation.chat.timeline", id: "lares-voice-records", select: () => ({}) }, (props) => h(VoiceTimeline, { ...props, panel })));
 
     scope.slots.inject("conversation.input.overlay", () => scope.slots.register({ name: "conversation.input.overlay", id: "lares-voice-inline" }, () => h(InlineVoice, { panel })));

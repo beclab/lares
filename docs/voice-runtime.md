@@ -508,3 +508,63 @@ PC/Vue/Host build pass. audio-engines: 279 tests pass. Router v1 tests, audio
 race, vet and build pass. Model Console proxy race, lint and build pass; its
 unrelated ready-lifecycle timing test remains intermittent. No stable P95 is
 claimed from this sample count. No push, release or deployment was performed.
+
+### Reply correctness and interruption recovery (2026-10-18)
+
+Use the same build for Host, official PC and standalone Vue preview. An earlier
+local Host could remain on older loaded core modules even after files were built;
+rebuild, restart, refresh and record the preview build ID together.
+
+The regression fixture is the twelve zodiac animals with ordered-list Markdown
+and emoji. Check the original, cleaned segments, synthesis requests and rendered
+order separately. A confirmed additional duplication source was simultaneous PC
+and Vue views of one session: both requested synthesis for the same reply. The
+Host now grants a source once; another observer ends silently with
+`voice_output_owned`, rather than replaying it or displaying a spurious error.
+Historical and explicitly stopped turns cannot reopen through a later step.
+
+Source-bound speech uses only Host-observed Agent output. No-tools requests may
+stream stable text before settlement; normal tool-enabled requests retain the
+safe settlement boundary. Fixed text, file-only synthesis and raw TTS APIs retain
+their existing contracts. `segment`/`segment.end` metadata identifies ordered
+parts; only renderer progress acknowledges PCM consumption. Socket pause is
+bounded and does not remove backpressure. Empty, failed and cancelled ASR remain
+distinct during interruption recovery. No device's automatic barge-in is enabled
+without separate echo acceptance.
+
+Initial verification: 295 voice tests passed. Full suite: 841/842 passed, with the
+existing macOS `file-preview.test.ts:1341` symlink-cleanup `ERR_FS_EISDIR` failure.
+Typecheck and official PC/Vue/Host builds passed. New HTTP/WebSocket tests verify
+source authentication, forged-text exclusion, pre-final audio, one-time claims,
+ordered zodiac segments, tool-capable deferral, cancellation and PCM pause position.
+Fake-clock tests cover successful empty ASR, valid short speech, explicit stop,
+new output identity, timeout and failure without automatic resume.
+
+A real LAN Router fixed-text run produced 12 unique ordered segments, 576000 PCM
+bytes at 24 kHz (12 seconds). First audio arrived at 275 ms, synthesis completed in
+4477 ms; this warm sample acknowledges received frames immediately and is not a
+client-playout or end-of-user-speech benchmark. ASR of that synthetic audio returned
+“鼠、牛、鹤、兔、龙、蛇、马、羊、猴、鸡、狗、猪。” The “虎/鹤” discrepancy is unresolved
+between model pronunciation and recognition; it is not an audible-correctness pass.
+Fixed corpus audio and diagnostic details remain in ignored local debug evidence.
+
+Human listening, microphone noise interruption, echo tests, physical phones and
+Bluetooth must be recorded separately and are not passed by automated tests.
+No release, deployment, model switch or GPU configuration change is included.
+
+Browser acceptance used an isolated local Host and the real LAN Router. Official
+PC (1280×720), Vue desktop (1280×720), and Vue mobile (390×844) each completed a
+new chat turn, rendered the shared Reading/Stop controls, and removed the state
+immediately after Stop without removing the answer. History did not autoplay.
+All three settings views loaded voice configuration; Vue desktop showed shortcuts
+and mobile hid them. The pre-existing Vue desktop `settings/describe` unexpected
+`request` RPC remains a failed settings item. Default raw dictation and model/voice
+choices were retained. The isolated read-aloud preference was restored to false;
+the normal local Host's settings and sessions were not overwritten. Active noise
+recovery was tested with injected ports and clocks, not certified microphone input.
+
+Evidence includes ignored `__debug__/local-router/readout-acceptance/probe.json`
+and its fixed-corpus WAV, plus `lares-readout-{pc,vue-desktop,vue-mobile}-playing.png`
+and corresponding settings screenshots in the local Codex visualization output.
+The measured first-audio sample is synthesis-only; real no-tools Agent latency,
+P50/P95 and physical listening acceptance remain open, not inferred from mocks.

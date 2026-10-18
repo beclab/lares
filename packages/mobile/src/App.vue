@@ -566,7 +566,7 @@ export default {
         void Promise.resolve(this.runtime.openSession(sessionId)).catch((error) => { this.voiceError = error.message; this.voiceAdoptingSession = null; });
       },
     });
-    this.voiceSettingsUnsub = subscribeVoiceSettings((value) => { this.voiceDefaultMode = value.config.mobileMode; this.voiceSettings = value; });
+    this.voiceSettingsUnsub = subscribeVoiceSettings((value) => { this.voiceDefaultMode = value.config.mobileMode; this.voiceSettings = value; if (value.config.speak !== true) this.reader?.stop(); });
     this.voicePanelState = this.voicePanel.getSnapshot();
     this.voicePanelUnsub = this.voicePanel.subscribe(() => {
       const view = this.voicePanel.getSnapshot(); this.voicePanelState = view;
@@ -606,8 +606,10 @@ export default {
       this.busyEnter = section.busyEnter;
     });
     this.voiceVisibilityHandler = () => {
-      if (document.hidden) void this.voicePanel.pause().catch(() => {});
+      if (document.hidden) { this.reader.stop(); void this.voicePanel.pause().catch(() => {}); }
     };
+    this.voiceOfflineHandler = () => { this.reader.stop(); void this.voicePanel.pause().catch(() => {}); };
+    window.addEventListener("offline", this.voiceOfflineHandler);
     document.addEventListener("visibilitychange", this.voiceVisibilityHandler);
     window.addEventListener("keydown", this.onVoiceShortcut, true);
     this.voiceClock = setInterval(() => {
@@ -619,10 +621,12 @@ export default {
     this.restoreLog();
   },
   deactivated() {
+    this.reader.stop();
     void this.voicePanel?.pause().catch(() => {});
     this.captureLog();
   },
   beforeUnmount() {
+    window.removeEventListener("offline", this.voiceOfflineHandler);
     document.removeEventListener("visibilitychange", this.voiceVisibilityHandler);
     window.removeEventListener("keydown", this.onVoiceShortcut, true);
     clearInterval(this.voiceClock);
@@ -706,8 +710,8 @@ export default {
       this.items = snap.items;
       this.running = snap.running;
       this.runningSince = snap.runningSince || 0;
-      const target = this.voiceSpeak && !this.voiceCall ? speakable(utterance, false) : null;
-      if (target) this.reader.follow({ ...target, key: `${snap.sessionId}:${target.key}` });
+      const target = this.voiceSpeak && !this.voiceCall && !document.hidden ? speakable(utterance, true) : null;
+      if (target) this.reader.follow({ ...target, sessionId: snap.sessionId, source: { sessionId: snap.sessionId, turn: target.turn, step: target.step, attemptId: target.attemptId }, key: `${snap.sessionId}:${target.key}` });
       this.failed = snap.failed;
       this.error = snap.error;
       this.sessions = snap.sessions ?? this.sessions;
@@ -1247,6 +1251,7 @@ export default {
     },
     async onVoiceShortcut(event) {
       if (this.chatDevice !== "desktop" || document.hidden || navigator.onLine === false || event.composedPath?.().some(node => node?.hasAttribute?.("data-voice-shortcut-recorder"))) return;
+      if (event.key === "Escape" && !event.defaultPrevented) { this.reader.stop(); void this.voicePanel.pause().catch(() => {}); return; }
       const action = matchVoiceShortcut(event, this.voiceSettings?.config?.dictationShortcuts);
       if (!action || !laresVoiceAvailability(this.voiceSettings).dictation) return;
       event.preventDefault();
@@ -1300,8 +1305,8 @@ export default {
         presentationSession: true,
         onTranscript: continuous ? null : onTranscript,
         mode: () => resolveSubmitMode(this.running, false, true, this.busyEnter),
-        playback: { stop: () => { reader.stop(); this.player.stop(); } },
-        onReply: (reply) => { const value = speakable(reply, false); if (value) reader.follow(value); },
+        playback: { get canPause() { return reader.canPause; }, get key() { return reader.key; }, pause: () => reader.pause(), resume: () => reader.resume(), stop: () => { reader.stop(); this.player.stop(); } },
+        onReply: (reply) => { const value = speakable(reply, captureSource("mobile", config.device) === "device"); if (value) reader.follow(value); },
       });
       return conversation;
     },
@@ -1492,6 +1497,8 @@ export default {
     async send(mode = "queue") {
       const text = this.draft.trim();
       if (!this.canSend) return;
+      this.reader.stop();
+      if (this.voiceCall?.connection === "open") await this.voicePanel.pause();
       this.player?.unlock();
       const sessionId = this.sessionId;
       const images = this.draftImages.filter((row) => draftImageStatus(row) === "ready");

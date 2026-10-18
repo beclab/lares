@@ -34,6 +34,10 @@
       :data-type="row.type"
       :data-pending="row.pending ? 'true' : 'false'"
     >
+      <div v-if="readout && readout.sessionId === sessionId && row.type === 'assistant' && row.turn === readout.turn" role="status" class="lares-message-readout">
+        <span>{{ speechLabel }}</span>
+        <button type="button" class="lares-message-stop" @click="readout.stop()">{{ t(readout.status === 'error' ? 'readout.dismiss' : 'readout.stop') }}</button>
+      </div>
       <div v-if="row.type === 'user'" class="lares-msg" data-role="user">{{ row.text }}</div>
       <LaresStageRow
         v-else-if="row.type === 'context'"
@@ -79,7 +83,7 @@
       <template v-else-if="row.type === 'assistant'">
         <div class="lares-md" v-html="renderMarkdown(row.text)" />
         <p v-if="row.voiceSummary" class="lares-voice-summary">{{ row.voiceSummary }}</p>
-        <button v-if="isSpeaking(row)" type="button" class="lares-message-stop" @click="$emit('stop-speaking')">{{ t('input.stopSpeaking') }}</button>
+        <button v-if="!readout && isSpeaking(row)" type="button" class="lares-message-stop" @click="$emit('stop-speaking')">{{ t('input.stopSpeaking') }}</button>
         <LaresMessageActions
           :text="row.text"
           :reaction="reactions[actionKey(index)] || ''"
@@ -107,6 +111,7 @@
 </template>
 
 <script>
+import { readoutState } from "@olares/lares-core/voice/speech";
 import { partitionPreviews } from "@olares/lares-core/files/preview-groups";
 import { parseAskUserQuestions } from "@olares/lares-core/larepass/questions";
 import { hidesRunningClock, processFoldLabel, transcriptBlocks } from "@olares/lares-core/larepass/process-fold";
@@ -142,6 +147,7 @@ export default {
   emits: ["open", "media", "answer", "stop-speaking"],
   data() {
     return {
+      readout: null, readoutUnsub: null,
       applyingScroll: false,
       logRo: null,
       logPin: 0,
@@ -153,6 +159,7 @@ export default {
     };
   },
   computed: {
+    speechLabel() { return this.t(`readout.${this.readout?.status}`); },
     runningText() {
       return runningLabel(this.runningSince, this.t, this.now);
     },
@@ -172,11 +179,14 @@ export default {
     runningSince: "syncClock",
   },
   mounted() {
+    this.readout = readoutState.getSnapshot();
+    this.readoutUnsub = readoutState.subscribe(() => { this.readout = readoutState.getSnapshot(); });
     this.bindLog();
     this.restoreLog();
     this.syncClock();
   },
   beforeUnmount() {
+    this.readoutUnsub?.();
     this.captureLog();
     this.unbindLog();
     if (this.logPin) cancelAnimationFrame(this.logPin);
@@ -569,5 +579,7 @@ export default {
 </style>
 
 <style scoped>
-.lares-message-stop { border: 0; background: transparent; color: var(--q-ink-2, #777); font: inherit; font-size: 12px; padding: 6px 0; cursor: pointer; }
+.lares-message-readout { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-block: 8px; color: var(--q-ink-2, #777); font-size: 13px; }
+.lares-message-stop { appearance: none; border: 1px solid var(--q-stroke-2, #8885); border-radius: 8px; background: transparent; color: inherit; font: inherit; padding: 5px 10px; cursor: pointer; }
+.lares-message-stop:focus-visible { outline: 2px solid var(--q-blue-default, #467cff); outline-offset: 2px; }
 </style>

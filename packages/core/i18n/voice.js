@@ -1,4 +1,5 @@
 export const ZH = {
+  "readout.error": "朗读失败，请检查语音设置", "readout.dismiss": "关闭提示", "readout.preparing": "准备朗读…", "readout.playing": "正在朗读", "readout.confirming": "确认插话…", "readout.stop": "停止朗读",
   "tts.voice": "音色",
   "tts.default": "模型默认",
   "tts.loading": "正在加载音色…",
@@ -278,6 +279,7 @@ export const ZH = {
 };
 
 export const EN = {
+  "readout.error": "Reading failed. Check voice settings.", "readout.dismiss": "Dismiss", "readout.preparing": "Preparing speech…", "readout.playing": "Reading aloud", "readout.confirming": "Checking interruption…", "readout.stop": "Stop reading",
   "tts.voice": "Voice",
   "tts.default": "Model default",
   "tts.loading": "Loading voices…",
