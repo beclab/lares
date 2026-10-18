@@ -1,4 +1,8 @@
 import { segment } from "sentencex";
+import { createNaturalSegmenter } from "./speech-segmenter.js";
+
+// Keep the accepted policy until same-voice listening acceptance approves a change.
+export const SPEECH_SEGMENTATION_POLICY = "legacy";
 import { spokenLines } from "./spoken-text.js";
 
 /**
@@ -59,7 +63,8 @@ export function gapAfter(segment) {
  * mid-word, so only the sentences before its last one count.
  * @returns {string[]}
  */
-export function speechSegments(text, { done = true } = {}) {
+export function speechSegments(text, { done = true, policy = SPEECH_SEGMENTATION_POLICY } = {}) {
+  if (policy === "natural") return createNaturalSegmenter().update(text, { done });
   const lines = spokenLines(text, { done });
   const open = done ? "" : lines.pop();
   const sentences = lines.flatMap(sentencesOf);
@@ -69,4 +74,23 @@ export function speechSegments(text, { done = true } = {}) {
 
 export function speechScript(text) {
   return speechSegments(text).join("\n");
+}
+
+
+export function createSpeechSegmenter({ policy = SPEECH_SEGMENTATION_POLICY, now = Date.now } = {}) {
+  if (policy === "natural") return createNaturalSegmenter({ now });
+  let source = "", emitted = [];
+  return {
+    update(text, options) {
+      source = text;
+      const ready = speechSegments(text, { ...options, policy: "legacy" });
+      if (emitted.some((part, index) => part !== ready[index])) throw new Error("voice_reply_rewritten");
+      const result = ready.slice(emitted.length); emitted = ready; return result;
+    },
+    push(chunk, options = { done: false }) { return this.update(source + chunk, options); },
+    finish() { return this.update(source, { done: true }); },
+    flush() { return []; },
+    get deadline() { return null; },
+    reset() { source = ""; emitted = []; },
+  };
 }

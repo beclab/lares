@@ -674,3 +674,62 @@ concurrent real microphone, pause/resume on hardware and physical devices remain
 unverified. Ignored evidence and repeatable probes are under
 `__debug__/local-router/tts-quality/` (report, replay, acceptance, WAVs), with
 `tts-quality.mjs`, `tts-quality-replay.mjs` and `tts-quality-native.mjs` beside it.
+
+### Chinese speech segmentation candidate (2026-10-18)
+
+Shared structural cleaning now feeds an attempt-owned segmenter in trusted Host
+reply streams and the buffered fallback. It preserves paragraph/list/heading/code
+boundaries, Chinese sentence punctuation, balanced quotes and parentheses.
+The candidate targets 40–80 Chinese-equivalent characters for long prose and
+three adjacent short items per list batch, including separator weight. Completed
+pending items have a 250 ms Host deadline, independent of new tokens or browser
+timers. Stop, retry and session exit discard state; already released text cannot
+be regrouped. A reply is parsed only after an authorized speech consumer claims
+it, so automatic read-aloud off adds no per-token segmentation work.
+
+The internal `SPEECH_SEGMENTATION_POLICY` remains `legacy` pending same-voice
+listening acceptance. Candidate code can be exercised through internal factory
+injection; there is no Host route, saved preference or user-visible policy switch.
+Existing models, voices, read-aloud settings, raw TTS input and displayed messages
+are unchanged. Bracket-to-pause normalization is diagnostic only.
+
+The local comparison used the screenshot's full zodiac response, natural prose,
+numbers/time, mixed language and a longer list. All five variants ran three times
+per corpus (75 runs, no HTTP/format failures): current Aiden/legacy, Uncle_Fu with
+legacy text, Aiden/candidate, same candidate groups without added semicolons,
+and candidate groups with brackets changed to pauses. All configuration values
+were checked unchanged afterward. The actual request bodies, arrival times,
+sample counts and WAVs are retained in ignored local diagnostic artifacts.
+These sequential fixed-text runs do not measure live Agent token waiting, cold
+start or concurrent microphone capture. Each comparison has only three repeats;
+no meaningful production P95 or naturalness conclusion is claimed.
+
+For the zodiac response, requests decreased from 18 to 8 (12 animal entries to
+four batches). Median first actual PCM was 245 ms legacy versus 235 ms candidate;
+median total synthesis was 13932 versus 12905 ms. Natural prose used 4 versus 2
+requests; the longer list used 9 versus 4. These are measurements, not listening
+acceptance or permission to change a saved voice. The paired A/B samples use
+Aiden in both cases; no choice has been accepted at the time of this record.
+
+Acceptance artifacts: ignored `__debug__/local-router/tts-naturalness/` contains
+75 WAVs plus per-request PCM, timing and request-text records, summary and
+acceptance JSON; the repeatable driver is `tts-naturalness.mjs` alongside it.
+The same-voice blind samples have not received a listening decision, so the
+candidate remains disabled as the default. No audible improvement, zero missed
+words or production automatic-playback acceptance is claimed from request counts.
+
+Thirteen candidate tests cover arbitrary chunking, code/nesting boundaries,
+references/tables, late emoji, unclosed quotes, real Host deadline wake-up,
+interruption/retry cleanup and the actual WebSocket-to-HTTP request body.
+Full suite: 864/865 passed; only the pre-existing macOS file-preview symlink
+cleanup `ERR_FS_EISDIR` failed. Typecheck and PC/Vue/Host builds passed.
+Official PC and Vue desktop chat/settings loaded at 1280×720; Vue mobile at
+390×844. All three preview start/cancel paths completed; desktop preview also
+returned normally this run, but its earlier audition failures are unexplained
+and the existing `settings/describe` unexpected `request` error remains. Preview
+checks do not establish candidate automatic-voice, concurrent microphone or
+hardware playback quality. Those and physical-phone/Bluetooth checks remain open.
+
+Frontend asset IDs can remain identical for Host-only segmentation changes.
+The local acceptance record therefore also captures Host core source hashes,
+file times and restart time; no new public diagnostic API is introduced.

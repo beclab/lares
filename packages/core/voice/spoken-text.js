@@ -101,11 +101,11 @@ function withoutEmoji(text) {
 }
 
 /** The assistant's spoken copy; never apply this to stored messages or raw TTS API input. */
-export function spokenLines(text, { done = true } = {}) {
+function prepareSource(text, done, structural = false) {
   let pending = false;
   const skip = (match, offset, source) => {
     if (offset + match.length >= source.trimEnd().length) pending = true;
-    return " ";
+    return structural ? "\n\n---\n\n" : " ";
   };
   let source = String(text ?? "")
     .replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, skip)
@@ -125,6 +125,11 @@ export function spokenLines(text, { done = true } = {}) {
       pending = true;
     }
   }
+  return { source, pending };
+}
+
+export function spokenLines(text, { done = true } = {}) {
+  let { source, pending } = prepareSource(text, done);
   const blocks = blockText(source, done);
   const inline = inlineText(blocks.text, !done, blocks.references);
   // An opaque unfinished tail keeps earlier completed sentences eligible. It
@@ -141,4 +146,46 @@ export function spokenLines(text, { done = true } = {}) {
     if (pending || inline.pending) plain += "\uFFFC";
   }
   return withoutEmoji(plain).split("\n").map((line) => line.replace(/\s+/g, " ").trim());
+}
+
+
+/** Structural units for speech aggregation; rendered/stored Markdown is untouched. */
+export function spokenBlocks(text, { done = true } = {}) {
+  const { source, pending } = prepareSource(text, done, true);
+  const env = {}, tokens = markdown.parse(source, env);
+  const references = blockText(source, done).references;
+  const last = tokens.findLastIndex(token => ["inline", "code_block"].includes(token.type));
+  const lists = [], items = [], result = [];
+  let heading = false, barrier = 0, rowLine = 0, cell = 0;
+  const paragraphs = new Set();
+  for (const [index, token] of tokens.entries()) {
+    if (token.type === "tr_open") { rowLine = token.map[0]; cell = 0; }
+    if (token.type === "hr" || token.type === "fence") barrier++;
+    if (token.type.endsWith("list_open")) lists.push(`${token.map[0]}:${token.level}`);
+    else if (token.type.endsWith("list_close")) lists.pop();
+    else if (token.type === "list_item_open") items.push(token.map[0]);
+    else if (token.type === "list_item_close") items.pop();
+    else if (token.type === "heading_open") heading = true;
+    else if (token.type === "heading_close") heading = false;
+    else if (["inline", "code_block"].includes(token.type)) {
+      const map = token.map || [rowLine, rowLine + 1];
+      const id = token.map ? `${map[0]}:${token.type}` : `${map[0]}:cell:${cell++}`;
+      const nextBlock = tokens.slice(index + 1).some(next => next.map && next.map[0] >= map[1]);
+      const closed = done || index < last || nextBlock || map[1] < source.split("\n").length - 1;
+      const inline = inlineText(token.content, !done, references);
+      let plain = inline.text;
+      if (!done && !closed) {
+        const tail = [...graphemes.segment(plain.trimEnd())].at(-1);
+        if (tail && (emojiRegex().test(tail.segment) || /[\uD800-\uDBFF]$/.test(tail.segment))) plain = plain.slice(0, tail.index);
+      }
+      if (!done && (inline.pending || index === last && pending)) plain += "\uFFFC";
+      plain = withoutEmoji(plain).replace(/\s+/g, " ").trim();
+      const continuation = lists.length && paragraphs.has(items.at(-1));
+      if (lists.length) paragraphs.add(items.at(-1));
+      if (plain) result.push({ id, text: plain, closed,
+        kind: lists.length && !continuation ? "list" : heading ? "heading" : "paragraph",
+        group: `${lists.at(-1)}:${barrier}`, item: items.at(-1), depth: lists.length });
+    }
+  }
+  return result;
 }

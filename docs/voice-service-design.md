@@ -26,8 +26,10 @@ input remain unchanged. No additional LLM or client-side cleanup is involved.
 Use pinned `emoji-regex` matching and Markdown-it syntax parsing, rather than
 broad Unicode ranges or global deletion of punctuation. Mathematical operators,
 decimals and identifiers such as `5 * 3`, `a > b` and `snake_case` are content.
-Formatting and emoji cleanup precede the existing line/sentence/clause policy;
-short list items are not merged and pause durations are unchanged.
+Formatting and emoji cleanup precede segmentation. The accepted legacy policy
+remains the default until same-voice listening accepts the natural policy.
+The internal policy is shared by fixed text, trusted streamed replies and the
+buffered fallback; no client/Host setting is added for this acceptance gate.
 
 For cumulative streaming input, defer unfinished links, code spans, emphasis,
 entities, emoji graphemes and ambiguous table headers. Hidden trailing material
@@ -36,6 +38,32 @@ cross-request mutable state; existing readout keys, generation cancellation and
 session leases discard late output. Final input flushes remaining literal text.
 Pronunciation dictionaries, language-specific number normalization and SSML belong
 in explicit engine adapters, not Router or Model Console text rewriting.
+
+
+The candidate natural policy preserves Markdown paragraph, heading, list depth
+and code boundaries in spoken structural units. Chinese `。！？` completes a
+sentence; commas, colons and line breaks alone do not. Balanced quotes and
+parentheses stay atomic. Incomplete structures wait until final flush. English
+sentence detection is retained for ASCII abbreviations, decimals and URLs.
+Complete prose is released promptly; prose over 80 Chinese-equivalent characters
+splits only at safe outer clause boundaries, targeting 40–80 characters. A unit
+without a safe boundary remains intact under the existing request-size limit.
+
+Adjacent short items from one list aggregate in batches targeting three items,
+with an 80-character budget including separators; no batch crosses nesting,
+paragraphs, headings or hidden code. Missing item separators become `；` only
+in the spoken copy; explanations, numbers and parentheses remain unchanged.
+The first completed pending item starts a 250 ms deadline. The Host wakes at
+that deadline even without new tokens, and buffered fallback requests use the
+same deadline with cancellation. Scheduling delay from a blocked event loop is
+not a guaranteed end-to-end latency bound. State belongs to one output attempt;
+released prefixes cannot be regrouped, and stop/retry/session exit discard state.
+No parser is advanced while automatic speech has not claimed the reply.
+
+Speech punctuation, phonetics and synthesis randomness are separate variables.
+Model-specific number normalization, pronunciation dictionaries or SSML must not
+be implemented as global client text substitutions. Diagnostic bracket-to-pause
+and Chinese-voice comparisons never silently become saved user preferences.
 
 References: [LiveKit text transforms](https://docs.livekit.io/agents/multimodality/text/),
 [Pipecat Markdown filter](https://github.com/pipecat-ai/pipecat/blob/main/src/pipecat/utils/text/markdown_text_filter.py),
