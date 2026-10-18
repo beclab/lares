@@ -1,5 +1,5 @@
+import { playAudioStream, createStreamingCapture } from "@olares/lares-core/voice/stream-client";
 import { prepareBrowserCapture } from "@olares/lares-core/voice/browser-capture";
-import { createDeviceInput } from "@olares/lares-core/voice/device-input";
 import { laresVoiceConfig } from "@olares/lares-core/voice/lares-policy";
 import { createVoicePanel } from "@olares/lares-core/voice/panel";
 import { createVoiceConversation } from "@olares/lares-core/voice/conversation";
@@ -29,7 +29,7 @@ export function createWebVoicePanel(onSession) {
       const continuous = mode === "continuous"; const device = captureSource("pc", config.device); onDevice(device);
       if (config.backend === "realtime" && continuous) throw new Error("voice_manual_realtime_unavailable");
       const browser = createBrowserPlayer(); let conversation;
-      const reader = createSentencePlayer({ send: (value) => conversation.speak(value).then((result) => ({ ...result, blob: result.audio ? wavBlob(result.audio) : null })),
+      const reader = createSentencePlayer({ stream: device === "device" ? (value) => playAudioStream({ ...value, request, headers: conversation.headers }) : undefined, send: (value) => conversation.speak(value).then((result) => ({ ...result, blob: result.audio ? wavBlob(result.audio) : null })),
         play: (sentence) => sentence.bluetooth === "played" ? Promise.resolve() : browser.play(sentence.blob), halt: browser.stop, silence: () => {},
         fail: (error) => { void conversation.controller.disconnect(error.code || "voice_playback_failed"); }, onState: (playing) => conversation?.playbackState(playing) });
       const transcribe = async (blob, signal) => { const response = await fetch(`/api/lares/voice/transcribe?model=${encodeURIComponent(config.model || "")}&language=${encodeURIComponent(config.language || "")}`, { method: "POST", body: blob, headers: { "content-type": blob.type }, signal }); const value = await response.json(); if (!response.ok) throw new Error(value.error?.code || "voice_failed"); return value.text; };
@@ -37,8 +37,8 @@ export function createWebVoicePanel(onSession) {
         preset: config.preset, backend: config.backend,
         endpointSilenceMs: config.endpointSilenceMs, idleTimeoutMs: config.idleTimeoutMs, recoveryTimeoutMs: config.recoveryTimeoutMs,
         onTranscript: continuous ? null : onTranscript,
-        transcribe, input: preparation ? createDeviceInput({ transcribe, preparation, endpointSilenceMs: config.endpointSilenceMs }) : undefined,
-        playback: { stop() { reader.stop(); browser.stop(); } }, onReply: (reply) => { const value = speakable(reply, config.streaming); if (value) reader.follow(value); },
+        transcribe, preparation, streamInput: (stream, callbacks) => createStreamingCapture(stream, { ...callbacks, request, headers: conversation.headers, model: config.model, language: config.language }),
+        playback: { stop() { reader.stop(); browser.stop(); } }, onReply: (reply) => { const value = speakable(reply, false); if (value) reader.follow(value); },
       });
       return conversation;
     },

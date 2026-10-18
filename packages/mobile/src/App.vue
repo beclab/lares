@@ -121,7 +121,8 @@ import { laresVoiceConfig, laresVoiceAvailability } from "@olares/lares-core/voi
 import { createVoiceConversation } from "@olares/lares-core/voice/conversation";
 import { createAnswerPlayer } from "./chat/playback.js";
 import { createReplySpeaker, createSentencePlayer, speakable } from "@olares/lares-core/voice/speech";
-import { wavBlob } from "@olares/lares-core/voice/client";
+import { playAudioStream, createStreamingCapture } from "@olares/lares-core/voice/stream-client";
+import { voiceHeaders, wavBlob } from "@olares/lares-core/voice/client";
 import { browserPlays } from "@olares/lares-core/voice/playback";
 import { speakProblemText, speakToggleNotice } from "@olares/lares-core/voice/problem";
 import { appendDraftMentions } from "@olares/lares-core/files/mention";
@@ -566,6 +567,7 @@ export default {
     });
     this.replySpeaker = createReplySpeaker();
     this.reader = createSentencePlayer({
+      stream: (value) => playAudioStream({ ...value, request: (path, options) => this.runtime.voiceRequest(path, options), headers: voiceHeaders(captureSource("mobile", this.voiceSettings?.config?.device)), socket: (ticket) => this.runtime.voiceSocket(ticket, "/api/lares/voice/stream") }),
       send: async (request) => {
         const result = await this.runtime.speak?.(request);
         if (!result) throw Object.assign(new Error("voice_speak_failed"), { code: "voice_speak_failed" });
@@ -696,7 +698,7 @@ export default {
       this.items = snap.items;
       this.running = snap.running;
       this.runningSince = snap.runningSince || 0;
-      const target = this.voiceSpeak && !this.voiceCall ? speakable(utterance, this.voiceStreaming) : null;
+      const target = this.voiceSpeak && !this.voiceCall ? speakable(utterance, false) : null;
       if (target) this.reader.follow({ ...target, key: `${snap.sessionId}:${target.key}` });
       this.failed = snap.failed;
       this.error = snap.error;
@@ -1266,6 +1268,7 @@ export default {
       this.reader.stop(); this.player?.stop(); this.player?.unlock();
       let conversation;
       const reader = createSentencePlayer({
+        stream: captureSource("mobile", config.device) === "device" ? (value) => playAudioStream({ ...value, request: (path, options) => this.runtime.voiceRequest(path, options), headers: conversation.headers, socket: (ticket) => this.runtime.voiceSocket(ticket, "/api/lares/voice/stream") }) : undefined,
         send: (value) => conversation.speak(value),
         play: (sentence) => sentence.bluetooth === "played" ? Promise.resolve() : this.player.play(wavBlob(sentence.audio)),
         halt: () => this.player.stop(), silence: () => {},
@@ -1273,6 +1276,7 @@ export default {
         fail: (error) => { this.showSpeakProblem(error); void conversation.controller.disconnect("voice_playback_failed"); },
       });
       conversation = createVoiceConversation({
+        streamInput: (stream, callbacks) => createStreamingCapture(stream, { ...callbacks, request: (path, options) => this.runtime.voiceRequest(path, options), headers: conversation.headers, model: config.model, language: config.language, socket: (ticket) => this.runtime.voiceSocket(ticket, "/api/lares/voice/stream") }),
         captureConfig: { model: config.model, language: config.language },
         request: (path, options) => this.runtime.voiceRequest(path, options),
         transcribe: (blob, signal) => this.runtime.transcribe(blob, config.language, signal, config.model),
@@ -1283,7 +1287,7 @@ export default {
         onTranscript: continuous ? null : onTranscript,
         mode: () => resolveSubmitMode(this.running, false, true, this.busyEnter),
         playback: { stop: () => { reader.stop(); this.player.stop(); } },
-        onReply: (reply) => { const value = speakable(reply, settings.config.streaming); if (value) reader.follow(value); },
+        onReply: (reply) => { const value = speakable(reply, false); if (value) reader.follow(value); },
       });
       return conversation;
     },

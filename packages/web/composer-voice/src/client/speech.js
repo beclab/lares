@@ -1,3 +1,5 @@
+import { playAudioStream } from "@olares/lares-core/voice/stream-client";
+import { voiceHeaders } from "@olares/lares-core/voice/client";
 import { createBrowserPlayer } from "@olares/lares-core/voice/browser-playback";
 import React from "react";
 import { loadVoiceSettings, postPlaybackStop, postSpeak } from "./api.js";
@@ -30,6 +32,10 @@ function speechSourceOf(binding) {
 function createReader() {
   const browser = createBrowserPlayer();
   return createSentencePlayer({
+    stream: (value) => playAudioStream({ ...value, headers: voiceHeaders(), request: async (path, options) => {
+      const res = await fetch(path, { ...options, headers: { "content-type": "application/json", ...options.headers }, body: JSON.stringify(options.body) });
+      return { ok: res.ok, body: await res.json() };
+    } }),
     send: (request) => postSpeak(request),
     play: (sentence) => (browserPlays("pc", sentence.bluetooth) ? browser.play(sentence.blob) : Promise.resolve()),
     halt: browser.stop,
@@ -60,7 +66,7 @@ export function SpeechPlayer({ sessionId, conversation, suspended = false }) {
   // Playback is checked once per utterance; the answer keeps streaming meanwhile.
   const allowed = useRef({ key: null, speak: null, streaming: false, latest: null });
   const follow = (gate) => {
-    const target = gate.speak ? speakable(gate.latest, gate.streaming) : null;
+    const target = gate.speak ? speakable(gate.latest, false) : null;
     if (target) reader.current.follow(target);
   };
 
@@ -86,7 +92,7 @@ export function SpeechPlayer({ sessionId, conversation, suspended = false }) {
       return;
     }
     allowed.current = { key: utterance.key, speak: null, streaming: false, latest: utterance };
-    void loadVoiceSettings()
+    void loadVoiceSettings({ diagnostics: false })
       .then((settings) => {
         const current = allowed.current;
         if (current.key !== utterance.key) return;

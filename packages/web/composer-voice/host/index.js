@@ -1,3 +1,5 @@
+import { listModels as voiceModels } from "@olares/lares-core/router/stt";
+import { createAudioStreamGateway } from "@olares/lares-core/voice/stream-gateway";
 import { createCompositeGateway } from "@olares/lares-core/voice/composite-gateway";
 import { createRouterAudio } from "@olares/lares-core/voice/router-audio";
 import { createVoiceHostService } from "@olares/lares-core/voice/host-service";
@@ -247,6 +249,7 @@ async function handleVoiceClose(req, res) {
 }
 
 const ROUTES = {
+  "/stream/ticket": { POST: async (req, res) => sendJson(res, 200, await streams.ticket(scopeFor(req), await readJsonObject(req))) },
   "/realtime/ticket": { POST: async (req, res) => sendJson(res, 200, await realtime.ticket(scopeFor(req))) },
   "/bridge/capabilities": { GET: (_req, res) => sendJson(res, 200, composite.capabilities()) },
   "/dictation/clean": { POST: async (req, res) => { const value = await readJsonObject(req); const abort = new AbortController(); res.once("close", () => abort.abort()); sendJson(res, 200, { text: await voiceHost.clean({ owner: routerEndUser(process.env, req.headers) }, value.text, { preset: value.preset, config: value.config, signal: abort.signal }) }); } },
@@ -322,7 +325,13 @@ async function voiceHandler(req, res) {
 /**
  * @param {import('@deepseek-ai/cordis').Context} ctx
  */
+let streams;
 export function apply(ctx) {
+  streams = createAudioStreamGateway({ config: readConfig, models: () => voiceModels(), metric: (fields) => writeReport({ scope: "voice", event: "metric", ...fields }) });
+  ctx.effect(() => {
+    const unregister = ctx.webServer.registerUpgrade({ path: "/api/lares/voice/stream", handler: (req, socket, head) => streams.upgrade(req, socket, head) });
+    return () => { unregister(); streams.close(); };
+  });
   voiceHost = createVoiceHostService(ctx.sessionController, { metric: (fields) => writeReport({ scope: "voice", event: "metric", ...fields }) });
   ctx.effect(() => {
     let grants;
