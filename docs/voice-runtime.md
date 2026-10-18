@@ -733,3 +733,31 @@ hardware playback quality. Those and physical-phone/Bluetooth checks remain open
 Frontend asset IDs can remain identical for Host-only segmentation changes.
 The local acceptance record therefore also captures Host core source hashes,
 file times and restart time; no new public diagnostic API is introduced.
+
+
+### Natural segmentation enabled (2026-10-19)
+
+The user preferred blind sample A (natural) over B (legacy), both synthesized
+with the same Qwen model and Aiden voice. Natural segmentation is now the shared
+default for PC and Vue, including trusted live replies, fixed text and buffered
+fallback. The preceding pending-acceptance notes describe the earlier candidate
+stage. No model, voice or read-aloud preference was changed. This preference
+confirms comparative naturalness, not an exhaustive pronunciation or hardware
+acceptance. Legacy remains available internally for repeatable diagnostic A/Bs.
+
+Default-policy regression also protects task-checkbox cleanup, mathematical
+comparison signs, code/escaped pipes inside table rows, and unfinished table or
+entity tails. Paragraph newlines alone no longer force independent synthesis;
+the tests preserve content while checking the accepted structural grouping.
+
+Enabled-default verification: 312/312 voice tests passed; full suite remains
+864/865 with the existing file-preview cleanup failure. Typecheck and all builds
+passed. A real local Host/LAN Router stream of the accepted zodiac text emitted
+8 ordered segments matching the accepted spoken text. Closing a second stream
+after first PCM cancelled playback delivery, and a subsequent synthesis succeeded.
+Saved model, Aiden voice, streaming and read-aloud preferences were unchanged.
+PC and Vue desktop chat/settings loaded at 1280×720, Vue mobile at 390×844;
+the existing desktop settings RPC error remains. Automatic speech was not enabled
+in each full UI, and real microphone/hardware pause/resume/phone/Bluetooth checks
+remain unexecuted. See ignored `tts-naturalness/default-enabled.json` for the
+actual scope, build/source hashes and the blind preference decision.

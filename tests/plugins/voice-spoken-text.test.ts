@@ -3,6 +3,7 @@ import test from "node:test";
 import { once } from "node:events";
 import { createServer } from "node:http";
 import { WebSocket } from "ws";
+import { spokenLines } from "../../packages/core/voice/spoken-text.js";
 import { speechSegments, speechScript } from "@olares/lares-core/voice/script";
 import { speakFromConfig } from "@olares/lares-core/voice/service";
 import { createAudioStreamGateway } from "@olares/lares-core/voice/stream-gateway";
@@ -14,7 +15,7 @@ const animals = ["鼠 🐭", "牛 🐮", "虎 🐯", "兔 🐰", "龙 🐉", "�
 const zodiac = "中国的十二生肖是：\n" + animals.map((animal, index) => `${index + 1}. **${animal}**`).join("\n");
 
 test("zodiac speech removes emoji and formatting without rewriting the answer", () => {
-  assert.deepEqual(speechSegments(zodiac), ["中国的十二生肖是：", ...animals.map(animal => animal.split(" ")[0])]);
+  assert.deepEqual(speechSegments(zodiac), ["中国的十二生肖是：", "鼠；牛；虎；", "兔；龙；蛇；", "马；羊；猴；", "鸡；狗；猪；"]);
   assert.ok(zodiac.includes("**鼠 🐭**"));
 });
 
@@ -25,7 +26,10 @@ test("complete emoji sequences are removed while keycap digits and textual symbo
 
 test("Markdown syntax is removed without erasing meaningful symbols", () => {
   const source = "## 标题 ##\n> **上午**：开会\n- [x] *下午*写代码\n1. ~~原文~~\n3.14; 5 * 3; a > b; snake_case; a_b_c; C#\n>= 3\n\\*literal\\*";
-  assert.deepEqual(speechSegments(source), ["标题", "上午：开会", "下午写代码", "原文", "3.14; 5 * 3; a > b; snake_case; a_b_c; C#", ">= 3", "*literal*"]);
+  assert.deepEqual(spokenLines(source).filter(Boolean), ["标题", "上午：开会", "下午写代码", "原文", "3.14; 5 * 3; a > b; snake_case; a_b_c; C#", ">= 3", "*literal*"]);
+  const natural = speechSegments(source).join(" ");
+  for (const content of ["下午写代码", "3.14", "5 * 3", "a > b", "snake_case", ">= 3", "*literal*"]) assert.ok(natural.includes(content), content);
+  assert.ok(!natural.includes("[x]"));
   assert.equal(speechScript("[说明](https://example.com/a_(b)) 与 ![示意图](image.png)"), "说明 与 示意图");
   assert.equal(speechScript("[说明][doc] 与 ![示意图][image]\n\n[doc]: https://example.com\n[image]: image.png"), "说明 与 示意图");
   assert.equal(speechScript("`a_b > 3` &amp; © https://example.com/path_name"), "a_b > 3 & © https://example.com/path_name");

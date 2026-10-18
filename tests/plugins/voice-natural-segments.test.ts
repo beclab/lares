@@ -12,7 +12,8 @@ test("natural Chinese list batches retain every item and parenthetical explanati
   assert.equal(parts.length, 4);
   assert.equal(body(parts), items.join(""));
   assert.ok(parts.every(p => p.split("；").filter(Boolean).length === 3));
-  assert.equal(speechSegments(list).length, 12, "unaccepted policy must not replace the default");
+  assert.deepEqual(speechSegments(list), parts, "the accepted policy is shared by default");
+  assert.equal(speechSegments(list, { policy: "legacy" }).length, 12);
 });
 
 test("Chinese complete sentences release immediately; commas and open parentheses do not", () => {

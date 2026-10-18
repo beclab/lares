@@ -101,7 +101,7 @@ test("speech playback keeps only the text that survives the last tool call", () 
   for (const event of steps) state = reduceUtterance(state, event);
   assert.equal(state?.text, "The answer is ready.");
   assert.equal(state?.silent, false);
-  assert.equal(speechScript("See `docs` and ```\ncode\n``` please."), "See docs and please.");
+  assert.equal(speechScript("See `docs` and ```\ncode\n``` please.").replace(/\s+/g, " "), "See docs and please.");
 });
 
 test("speech script keeps abbreviations and decimals inside the sentence", () => {

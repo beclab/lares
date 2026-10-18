@@ -1,8 +1,8 @@
 import { segment } from "sentencex";
 import { createNaturalSegmenter } from "./speech-segmenter.js";
 
-// Keep the accepted policy until same-voice listening acceptance approves a change.
-export const SPEECH_SEGMENTATION_POLICY = "legacy";
+// Same-voice listening accepted natural segmentation; legacy remains a diagnostic baseline.
+export const SPEECH_SEGMENTATION_POLICY = "natural";
 import { spokenLines } from "./spoken-text.js";
 
 /**

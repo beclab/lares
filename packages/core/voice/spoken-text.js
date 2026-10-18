@@ -156,10 +156,10 @@ export function spokenBlocks(text, { done = true } = {}) {
   const references = blockText(source, done).references;
   const last = tokens.findLastIndex(token => ["inline", "code_block"].includes(token.type));
   const lists = [], items = [], result = [];
-  let heading = false, barrier = 0, rowLine = 0, cell = 0;
-  const paragraphs = new Set();
+  let heading = false, barrier = 0, rowLine = 0;
+  const paragraphs = new Set(), tableRows = new Set();
   for (const [index, token] of tokens.entries()) {
-    if (token.type === "tr_open") { rowLine = token.map[0]; cell = 0; }
+    if (token.type === "tr_open") { rowLine = token.map[0]; }
     if (token.type === "hr" || token.type === "fence") barrier++;
     if (token.type.endsWith("list_open")) lists.push(`${token.map[0]}:${token.level}`);
     else if (token.type.endsWith("list_close")) lists.pop();
@@ -168,17 +168,22 @@ export function spokenBlocks(text, { done = true } = {}) {
     else if (token.type === "heading_open") heading = true;
     else if (token.type === "heading_close") heading = false;
     else if (["inline", "code_block"].includes(token.type)) {
+      if (!token.map && tableRows.has(rowLine)) continue;
+      if (!token.map) tableRows.add(rowLine);
       const map = token.map || [rowLine, rowLine + 1];
-      const id = token.map ? `${map[0]}:${token.type}` : `${map[0]}:cell:${cell++}`;
+      const id = token.map ? `${map[0]}:${token.type}` : `${map[0]}:table`;
       const nextBlock = tokens.slice(index + 1).some(next => next.map && next.map[0] >= map[1]);
-      const closed = done || index < last || nextBlock || map[1] < source.split("\n").length - 1;
-      const inline = inlineText(token.content, !done, references);
-      let plain = inline.text;
+      const closed = done || nextBlock || (token.map ? index < last || map[1] < source.split("\n").length - 1 : map[1] <= source.split("\n").length - 1);
+      const content = token.type === "inline" && token.map
+        ? source.split("\n").slice(map[0], map[1]).map(line => blockLine(line)).join("\n")
+        : token.map ? token.content : blockLine(source.split("\n")[rowLine], true);
+      const inline = inlineText(content, !done, references);
+      let plain = inline.text, opaque = inline.pending || index === last && pending && map[1] >= source.split("\n").length;
       if (!done && !closed) {
         const tail = [...graphemes.segment(plain.trimEnd())].at(-1);
-        if (tail && (emojiRegex().test(tail.segment) || /[\uD800-\uDBFF]$/.test(tail.segment))) plain = plain.slice(0, tail.index);
+        if (tail && (emojiRegex().test(tail.segment) || /[\uD800-\uDBFF]$/.test(tail.segment))) { plain = plain.slice(0, tail.index); opaque = true; }
       }
-      if (!done && (inline.pending || index === last && pending)) plain += "\uFFFC";
+      if (!done && opaque) plain += "\uFFFC";
       plain = withoutEmoji(plain).replace(/\s+/g, " ").trim();
       const continuation = lists.length && paragraphs.has(items.at(-1));
       if (lists.length) paragraphs.add(items.at(-1));

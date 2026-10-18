@@ -247,7 +247,7 @@ test("a sentence still being written is not read yet", () => {
   assert.deepEqual(speechSegments("Look. ```js\nconst a = 1;\n``` Then go. Next", { done: false }), ["Look.", "Then go."]);
 });
 
-test("every markdown line is a sentence of its own", () => {
+test("speech respects structural boundaries and groups short same-level list items", () => {
   const answer = [
     "## 今日安排",
     "",
@@ -263,24 +263,22 @@ test("every markdown line is a sentence of its own", () => {
     "祝你顺利。明天见",
   ].join("\n");
   assert.deepEqual(speechSegments(answer), [
-    "今日安排", "上午：开会", "下午写代码", "先吃饭", "项目 时间", "跑步 30分钟", "记得喝水", "祝你顺利。", "明天见",
+    "今日安排", "上午：开会；下午写代码；", "先吃饭；", "项目 时间", "跑步 30分钟", "记得喝水 祝你顺利。", "明天见",
   ]);
-  assert.deepEqual(speechSegments("## 标题\n- 第一项\n- 第二", { done: false }), ["标题", "第一项"]);
-  assert.deepEqual(speechSegments("## 标题\n- 第一项\n", { done: false }), ["标题", "第一项"]);
+  assert.deepEqual(speechSegments("## 标题\n- 第一项\n- 第二", { done: false }), ["标题"]);
+  assert.deepEqual(speechSegments("## 标题\n- 第一项\n", { done: false }), ["标题"]);
 });
 
-test("a long sentence is read clause by clause so the first sound comes early", () => {
-  const long = "城市的秋天是繁华与静谧交织的画卷，银杏大道在行人的足下铺就一条金色的地毯，早晚渐起的凉风卷起了落叶。";
-  assert.deepEqual(speechSegments(long), [
-    "城市的秋天是繁华与静谧交织的画卷，",
-    "银杏大道在行人的足下铺就一条金色的地毯，",
-    "早晚渐起的凉风卷起了落叶。",
-  ]);
+test("natural speech keeps medium sentences intact and splits long prose at safe clauses", () => {
+  const medium = "城市的秋天是繁华与静谧交织的画卷，银杏大道在行人的足下铺就一条金色的地毯，早晚渐起的凉风卷起了落叶。";
+  assert.deepEqual(speechSegments(medium), [medium]);
+  const long = medium.repeat(3);
+  const parts = speechSegments(long);
+  assert.equal(parts.join(""), long);
+  assert.ok(parts.length >= 3);
   assert.deepEqual(speechSegments("天气凉了，记得加衣。"), ["天气凉了，记得加衣。"]);
-  assert.deepEqual(
-    speechSegments("We sold 1,000 copies by 10:30 this morning across all of the stores in town, and more came later."),
-    ["We sold 1,000 copies by 10:30 this morning across all of the stores in town,", "and more came later."],
-  );
+  const english = "We sold 1,000 copies by 10:30 this morning across all of the stores in town, and more came later.";
+  assert.deepEqual(speechSegments(english), [english]);
   assert.equal(gapAfter("城市的秋天，"), 150);
   assert.equal(gapAfter("早晚渐起的凉风卷起了落叶。"), 300);
 });

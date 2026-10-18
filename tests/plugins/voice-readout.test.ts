@@ -92,13 +92,13 @@ test("trusted Host source emits stable zodiac segments before finalization, once
     const done = new Promise<void>((resolve, reject) => { socket.on("error", reject); socket.on("message", (data, binary) => { if (binary) return; const event = JSON.parse(String(data)); if (event.type === "segment") segments.push(event.index); if (event.type === "error") reject(new Error(event.code)); if (event.type === "done") { socket.close(); resolve(); } }); });
     await once(socket, "open"); push("中国的十二生肖是：\n1. **鼠 🐭**\n2. ");
     for (let tries = 0; requests.length < 2 && tries < 100; tries++) await new Promise(r => setTimeout(r, 5));
-    assert.deepEqual(requests, ["中国的十二生肖是：", "鼠"]);
+    assert.deepEqual(requests, ["中国的十二生肖是：", "鼠；"]);
     const animals = ["牛 🐮", "虎 🐯", "兔 🐰", "龙 🐉", "蛇 🐍", "马 🐴", "羊 🐑", "猴 🐵", "鸡 🐔", "狗 🐕", "猪 🐖"];
     push(animals.map((value, index) => `${index ? `${index + 2}. ` : ""}**${value}**`).join("\n"));
     const text = "中国的十二生肖是：\n1. **鼠 🐭**\n" + animals.map((value, index) => `${index + 2}. **${value}**`).join("\n");
     registry.event("s", { type: "assistant/message", data: { turn: 1, step: 0, message: { content: [{ type: "text", text }] } } });
     await done;
-    assert.deepEqual(requests, ["中国的十二生肖是：", ...["鼠", "牛", "虎", "兔", "龙", "蛇", "马", "羊", "猴", "鸡", "狗", "猪"]]);
+    assert.deepEqual(requests, ["中国的十二生肖是：", "鼠；", "牛；虎；兔；", "龙；蛇；马；", "羊；猴；鸡；", "狗；猪；"]);
     assert.deepEqual(segments, requests.map((_, index) => index));
   } finally { registry.close(); gateway.close(); await new Promise<void>(r => server.close(() => r())); }
 });

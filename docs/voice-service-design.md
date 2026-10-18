@@ -26,8 +26,8 @@ input remain unchanged. No additional LLM or client-side cleanup is involved.
 Use pinned `emoji-regex` matching and Markdown-it syntax parsing, rather than
 broad Unicode ranges or global deletion of punctuation. Mathematical operators,
 decimals and identifiers such as `5 * 3`, `a > b` and `snake_case` are content.
-Formatting and emoji cleanup precede segmentation. The accepted legacy policy
-remains the default until same-voice listening accepts the natural policy.
+Formatting and emoji cleanup precede segmentation. The natural policy is the default after same-voice blind listening selected
+sample A over the legacy baseline on 2026-10-19.
 The internal policy is shared by fixed text, trusted streamed replies and the
 buffered fallback; no client/Host setting is added for this acceptance gate.
 
@@ -40,7 +40,7 @@ Pronunciation dictionaries, language-specific number normalization and SSML belo
 in explicit engine adapters, not Router or Model Console text rewriting.
 
 
-The candidate natural policy preserves Markdown paragraph, heading, list depth
+The natural policy preserves Markdown paragraph, heading, list depth
 and code boundaries in spoken structural units. Chinese `。！？` completes a
 sentence; commas, colons and line breaks alone do not. Balanced quotes and
 parentheses stay atomic. Incomplete structures wait until final flush. English
