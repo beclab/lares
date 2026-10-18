@@ -6,6 +6,7 @@
       :data-hero="hero ? 'true' : 'false'"
       :data-mode="voiceView?.inputActive ? 'voice' : 'text'"
       :data-expanded="expanded ? 'true' : 'false'"
+      :data-attachments="draftImages.length > 0"
       :data-holding="voiceView?.holding ? 'true' : 'false'"
       :data-cancel-armed="Boolean(voiceView?.cancelArmed)"
     >
@@ -137,7 +138,7 @@
             <svg v-else viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3" /><path d="M7 9h1m3 0h1m3 0h1M7 12h1m3 0h1m3 0h1M8 15h8" /></svg>
           </button>
           <button
-            v-if="expanded && !voiceView?.inputActive"
+            v-if="hasContent && !voiceView?.inputActive"
             type="submit"
             class="lares-composer__icon"
             data-kind="send"
@@ -202,6 +203,9 @@ export default {
   ],
   data() {
     return {
+      inputMultiline: false,
+      inputWidth: 0,
+      inputResizeObserver: null,
       commandsOpen: false,
       commandTyped: false,
       commandIndex: 0,
@@ -219,8 +223,11 @@ export default {
       if (this.hero) return this.t("chat.placeholderNewSession");
       return this.t("chat.placeholder");
     },
+    hasContent() {
+      return this.draft.trim().length > 0 || this.draftImages.length > 0;
+    },
     expanded() {
-      return !this.voiceView?.inputActive && (this.draft.trim().length > 0 || this.draftImages.length > 0);
+      return !this.voiceView?.inputActive && this.inputMultiline;
     },
     referenceMenuRows() {
       return referenceRows(this.references, this.t);
@@ -236,6 +243,9 @@ export default {
     draft(value) {
       this.autosize();
     },
+    "voiceView.inputActive"() {
+      this.autosize();
+    },
     overlayPointerActive(active) {
       if (active) window.addEventListener("pointerdown", this.onTokenPointer, true);
       else window.removeEventListener("pointerdown", this.onTokenPointer, true);
@@ -243,8 +253,16 @@ export default {
   },
   mounted() {
     this.autosize();
+    this.inputResizeObserver = new ResizeObserver(([entry]) => {
+      const width = entry.contentRect.width;
+      if (width <= 0 || width === this.inputWidth) return;
+      this.inputWidth = width;
+      this.autosize();
+    });
+    this.inputResizeObserver.observe(this.$refs.input);
   },
   beforeUnmount() {
+    this.inputResizeObserver?.disconnect();
     window.clearTimeout(this.referenceTimer);
     window.removeEventListener("pointerdown", this.onTokenPointer, true);
   },
@@ -398,9 +416,13 @@ export default {
     autosize() {
       this.$nextTick(() => {
         const el = this.$refs.input;
-        if (!el) return;
-        el.style.height = "auto";
-        el.style.height = `${Math.min(el.scrollHeight, 176)}px`;
+        if (!el || !el.getClientRects().length) return;
+        el.style.height = "36px";
+        el.style.overflowY = "hidden";
+        const height = Math.max(36, el.scrollHeight);
+        this.inputMultiline = height > 36;
+        el.style.height = `${Math.min(height, 176)}px`;
+        el.style.overflowY = height > 176 ? "auto" : "hidden";
       });
     },
     focus() {
@@ -542,9 +564,9 @@ export default {
   white-space: nowrap;
 }
 
-.lares-composer__card[data-expanded="true"] {
+.lares-composer__card[data-expanded="true"],
+.lares-composer__card[data-attachments="true"] {
   border-radius: 24px;
-  padding: 16px 14px 12px;
 }
 
 .lares-composer__card[data-holding="true"] {
@@ -636,15 +658,7 @@ export default {
 }
 
 .lares-composer__line[data-expanded="true"] {
-  flex-wrap: wrap;
-  row-gap: 14px;
-}
-
-.lares-composer__line[data-expanded="true"] .lares-composer__input {
-  order: -1;
-  flex: 1 0 100%;
-  min-height: 26px;
-  padding: 0;
+  align-items: flex-end;
 }
 
 .lares-composer__input,
@@ -659,6 +673,8 @@ export default {
 }
 
 .lares-composer__input {
+  box-sizing: border-box;
+  height: 36px;
   max-height: 176px;
   resize: none;
   overflow-y: auto;
@@ -717,10 +733,6 @@ export default {
   align-items: center;
   flex-shrink: 0;
   gap: 12px;
-}
-
-.lares-composer__line[data-expanded="true"] .lares-composer__tools {
-  margin-left: auto;
 }
 
 .lares-composer__picker {

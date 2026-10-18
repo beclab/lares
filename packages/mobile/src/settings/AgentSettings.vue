@@ -45,7 +45,7 @@
       <h2>{{ tVoice("settings.title") }}</h2>
       <div class="lares-agent__list">
         <LaresSettingRow
-          :label="tVoice('settings.model.title')"
+          :label="tVoice('settings.stt.model')"
           :value="voiceModelLabel"
           chevron
           boxed
@@ -61,55 +61,13 @@
           @click="openSheet('voiceLang')"
         />
       </div>
-      <template v-if="voice?.config?.dictationProfiles">
-        <label class="lares-agent__hint">{{ tVoice('dictation.preset') }}
-          <select :value="voice.config.dictationPreset" :disabled="busy" @change="patchVoice('dictationPreset', $event.target.value)"><option v-for="id in dictationPresets" :key="id" :value="id">{{ tVoice(`dictation.${id}`) }}</option></select>
-        </label>
-        <label class="lares-agent__hint">{{ tVoice('dictation.configure') }}
-          <select v-model="dictationEditor"><option v-for="id in dictationPresets" :key="id" :value="id">{{ tVoice(`dictation.${id}`) }}</option></select>
-        </label>
-        <template v-if="dictationEditor !== 'raw'">
-          <label class="lares-agent__hint">{{ tVoice('dictation.model') }}
-            <select :value="voice.config.dictationProfiles[dictationEditor].model" :disabled="busy" @change="patchDictation('model', $event.target.value)"><option value="">—</option><option v-for="id in voice.chatModels || []" :key="id" :value="id">{{ id }}</option></select>
-          </label>
-          <label class="lares-agent__hint">{{ tVoice('dictation.instructions') }}
-            <textarea :key="dictationEditor + voice.config.dictationProfiles[dictationEditor].instructions" :value="voice.config.dictationProfiles[dictationEditor].instructions" :disabled="busy" maxlength="8000" @change="patchDictation('instructions', $event.target.value)" />
-          </label>
-          <button type="button" :disabled="busy" @click="resetDictation">{{ tVoice('dictation.reset') }}</button>
-        </template>
-        <p v-else class="lares-agent__hint">{{ tVoice('dictation.noLlm') }}</p>
-      </template>
-      <label class="lares-agent__hint">{{ tVoice('settings.preset') }}
-        <select :value="voice?.config?.preset || 'assistant'" @change="patchVoice('preset', $event.target.value)">
-          <option v-for="preset in ['dictation', 'chat', 'assistant', 'direct']" :key="preset" :value="preset">{{ tVoice(`settings.preset.${preset}`) }}</option>
-        </select>
-      </label>
-      <label class="lares-agent__hint">{{ tVoice('settings.chatModel') }}
-        <select :value="voice?.config?.chatModel || 'default-chat'" @change="patchVoice('chatModel', $event.target.value)">
-          <option value="default-chat">default-chat</option>
-          <option v-for="model in voice?.chatModels || []" :key="model" :value="model">{{ model }}</option>
-        </select>
-      </label>
-      <label class="lares-agent__hint">{{ tVoice('settings.backend') }}
-        <select :value="voice?.config?.backend || 'pipeline'" @change="patchVoice('backend', $event.target.value)">
-          <option value="pipeline">{{ tVoice('settings.backend.pipeline') }}</option>
-          <option v-if="voice?.realtimeReady?.includes(voice?.config?.realtimeModel)" value="realtime">Realtime</option>
-        </select>
-      </label>
-      <label v-if="voice?.realtimeModels?.length" class="lares-agent__hint">{{ tVoice('settings.realtime.model') }}
-        <select :value="voice?.config?.realtimeModel || ''" @change="patchVoice('realtimeModel', $event.target.value)">
-          <option value="" disabled>—</option>
-          <option v-for="model in voice.realtimeModels" :key="model" :value="model">{{ model }}</option>
-        </select>
-      </label>
-      <p class="lares-agent__hint">{{ tVoice('settings.realtime.hint') }}</p>
+      <VoicePreferences :key="hostKey" ref="voicePreferences" :settings="settings" :tts-fetch="ttsFetch" :snapshot="voice" :device="device" :t="tVoice" :bind-before-leave="bindBeforeLeave" @change="voice = $event" />
       <label class="lares-agent__hint">{{ tVoice('settings.mobileMode') }}
         <select :value="voice?.config?.mobileMode || 'continuous'" @change="patchVoice('mobileMode', $event.target.value)">
           <option value="single">{{ tVoice('settings.mode.single') }}</option>
           <option value="continuous">{{ tVoice('settings.mode.continuous') }}</option>
         </select>
       </label>
-      <label class="lares-agent__hint"><input type="checkbox" :checked="voice?.config?.speak === true" :disabled="busy" @change="patchVoice('speak', $event.target.checked)" /> {{ tVoice('settings.speak.title') }}</label>
       <label class="lares-agent__hint">{{ tVoice('settings.device') }}
         <select :value="voice?.config?.device || 'auto'" @change="patchVoice('device', $event.target.value)">
           <option v-for="device in ['auto', 'device', 'headset']" :key="device" :value="device">{{ tVoice(`settings.device.${device}`) }}</option>
@@ -159,7 +117,6 @@
 <script>
 import { t as translate } from "@olares/lares-core/i18n/t";
 import { EN as MODEL_EN, ZH as MODEL_ZH } from "@olares/lares-core/i18n/chat-model";
-import { DICTATION_PRESETS, DICTATION_INSTRUCTIONS } from "@olares/lares-core/voice/dictation";
 import { EN as VOICE_EN, ZH as VOICE_ZH } from "@olares/lares-core/i18n/voice";
 import { EN as SEARCH_EN, ZH as SEARCH_ZH } from "@olares/lares-core/i18n/search";
 import { groupModelsByProvider, selectionKey } from "@olares/lares-core/router/session-model";
@@ -180,6 +137,7 @@ import { createHostClient } from "../host.js";
 import { adoptHost } from "../runtime.js";
 import { createT } from "../i18n.js";
 import { chatDevice, DEVICE_DESKTOP } from "../layout.js";
+import VoicePreferences from "./VoicePreferences.vue";
 import LaresSettingRow from "./SettingRow.vue";
 import LaresSheet from "./Sheet.vue";
 import LaresSelect from "./Select.vue";
@@ -196,8 +154,8 @@ function itemLabel(items, id) {
 
 export default {
   name: "LaresAgentSettings",
-  components: { LaresSettingRow, LaresSheet, LaresSelect },
-  expose: ["reload"],
+  components: { VoicePreferences, LaresSettingRow, LaresSheet, LaresSelect },
+  expose: ["reload", "beforeLeave"],
   props: {
     locale: { type: String, default: "en" },
     device: { type: String, default: "mobile" },
@@ -206,6 +164,7 @@ export default {
     request: { type: Function, default: undefined },
     env: { type: Object, default: undefined },
     missing: { type: Boolean, default: false },
+    bindBeforeLeave: { type: Function, default: undefined },
   },
   data() {
     const remembered = rememberedSettings();
@@ -218,8 +177,6 @@ export default {
       search: remembered.search,
       conversation: remembered.conversation,
       modelError: "",
-      dictationEditor: "clean",
-      dictationPresets: DICTATION_PRESETS,
       voiceError: "",
       searchError: "",
       conversationError: "",
@@ -247,6 +204,7 @@ export default {
     hostKey() {
       return hostSessionKey(this.ports);
     },
+    ttsFetch() { return createHostClient(this.ports).ttsFetch; },
     settings() {
       return createHostClient(this.ports).settings;
     },
@@ -324,7 +282,7 @@ export default {
     },
     sheetTitle() {
       if (this.panel === "model") return this.tModel("settings.title");
-      if (this.panel === "voiceModel") return this.tVoice("settings.model.title");
+      if (this.panel === "voiceModel") return this.tVoice("settings.stt.model");
       if (this.panel === "voiceLang") return this.tVoice("settings.language.title");
       if (this.panel === "search") return this.tSearch("settings.default");
       return "";
@@ -417,7 +375,9 @@ export default {
       if (panel === "search") return searchMenuValue(this.search);
       return "";
     },
+    beforeLeave() { return this.$refs.voicePreferences?.beforeLeave() ?? Promise.resolve(true); },
     reload() {
+      void this.$refs.voicePreferences?.reload().catch(() => {});
       return this.load(true);
     },
     async load(force) {
@@ -437,7 +397,7 @@ export default {
       this.conversationError = "";
       const [models, voice, search, conversation] = await Promise.allSettled([
         this.settings.models({ force }),
-        this.settings.voice(force),
+        this.settings.voice(force, { diagnostics: false }),
         this.settings.search({ force }),
         this.settings.conversation({ force }),
       ]);
@@ -465,18 +425,13 @@ export default {
         this.pending = "";
       }
     },
-    patchDictation(key, value) { return this.patchVoice("dictationProfiles", { ...this.voice.config.dictationProfiles, [this.dictationEditor]: { ...this.voice.config.dictationProfiles[this.dictationEditor], [key]: value } }); },
-    resetDictation() { return this.patchDictation("instructions", DICTATION_INSTRUCTIONS[this.dictationEditor]); },
     async patchVoice(key, value) {
       if (!this.voice || this.busy) return;
-      const previous = this.voice;
-      this.voice = { ...this.voice, config: { ...this.voice.config, [key]: value } };
       this.pending = `voice:${key}`;
       this.voiceError = "";
       try {
-        this.voice = await this.settings.saveVoice({ [key]: value });
+        this.voice = await this.$refs.voicePreferences.patch({ [key]: value });
       } catch {
-        this.voice = previous;
         this.voiceError = this.tVoice("settings.saveFailed");
       } finally {
         this.pending = "";

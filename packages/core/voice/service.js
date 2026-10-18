@@ -1,3 +1,4 @@
+import { ttsVoiceForModel } from "./tts-voice.js";
 import { writeReport } from "../log/report.js";
 import { createPcmResampler, pcmSamples } from "./realtime-audio.js";
 import { realtimeModelIds, validatedRealtimeModels } from "./realtime.js";
@@ -23,11 +24,10 @@ import { createCaptureSession } from "./capture.js";
 import { createDuplexCoordinator } from "./duplex.js";
 import { createDeviceLease } from "./lease.js";
 import { normalizeSttPcm } from "./pcm.js";
-import { gapAfter, speechSegments } from "./script.js";
+import { gapAfter, createSpeechSegmenter } from "./script.js";
 import {
   listTtsVoices,
   pcmToWav,
-  pickTtsVoice,
   silencePcm,
   synthesize,
   synthesizeStream,
@@ -118,18 +118,12 @@ export async function voiceStatusPayload(options) {
   };
 }
 
-export async function voiceModelsPayload(options) {
+export async function voiceCapabilitiesPayload(options) {
   const models = await listModels(options);
   const config = readConfig();
   const ids = models.map((model) => model.id);
   const stt = sttModelIds(models);
   const tts = ttsModelIds(models);
-  let charts = null;
-  try {
-    charts = await voiceChartsStatus();
-  } catch {
-    charts = null;
-  }
   return {
     models: ids,
     stt,
@@ -139,8 +133,15 @@ export async function voiceModelsPayload(options) {
     realtimeReady: validatedRealtimeModels(models),
     selected: pickSttModelId(models, config.model),
     ttsSelected: pickTtsModelId(models, config.ttsModel),
-    charts,
+    ttsDefault: pickTtsModelId(models, ""),
   };
+}
+
+export async function voiceModelsPayload(options) {
+  const capabilities = await voiceCapabilitiesPayload(options);
+  let charts = null;
+  try { charts = await voiceChartsStatus(); } catch { /* Diagnostics do not revoke capabilities. */ }
+  return { ...capabilities, charts };
 }
 
 export async function saveVoiceConfig(body) {
@@ -154,6 +155,17 @@ export async function saveVoiceConfig(body) {
     }
     if (patch.ttsModel && !ttsModelIds(models).includes(patch.ttsModel)) {
       throw new VoiceError("voice_model_unavailable", 400, "selected speech model is not available");
+    }
+  }
+  if (patch.ttsVoiceByModel) {
+    const current = readConfig().ttsVoiceByModel;
+    const changed = Object.entries(patch.ttsVoiceByModel).filter(([model, voice]) => voice && current[model] !== voice);
+    if (changed.length) {
+      const models = ttsModelIds(await listModels());
+      for (const [model, voice] of changed) {
+        if (!models.includes(model)) throw new VoiceError("voice_model_unavailable", 400, "selected speech model is not available");
+        if (!(await listTtsVoices(model)).includes(voice)) throw new VoiceError("voice_config_invalid", 400, "selected voice is not available");
+      }
     }
   }
   return writeConfig(patch);
@@ -222,21 +234,6 @@ function cancelledSpeech() {
 
 const readouts = new WeakMap();
 
-/** model id → pinned voice. A failed lookup is not cached, so the next readout asks again. */
-const pinnedVoices = new Map();
-
-async function pinnedVoice(model, listVoices = listTtsVoices) {
-  if (pinnedVoices.has(model)) return pinnedVoices.get(model);
-  let voice = null;
-  try {
-    voice = pickTtsVoice(await listVoices(model));
-  } catch {
-    return null;
-  }
-  if (voice) pinnedVoices.set(model, voice);
-  return voice;
-}
-
 function deferred() {
   let resolve;
   let reject;
@@ -286,21 +283,36 @@ export async function speakFromConfig(text, options = {}) {
   if (!config.speak) throw new VoiceError("voice_speak_disabled", 409, "speech playback is off");
   const key = typeof options.key === "string" && options.key ? options.key : null;
   const done = key ? options.done === true : true;
-  const segments = speechSegments(text, { done });
   const part = partIndex(options.part);
   const coordinator = options.coordinator ?? options.scope?.duplex ?? duplex;
   const id = key ?? text;
   let readout = joinable(readouts.get(coordinator), id, key, part);
+  const segmenter = readout?.segmenter ?? (options.segmenterFactory?.() ?? createSpeechSegmenter());
+  let segments = segmenter.update(text, { done });
   if (!readout) {
-    if (!segments.length) {
-      if (key && part === null) return { sentences: 0 };
+    if (!segments.length && segmenter.deadline === null) {
+      if (part === null) return { sentences: 0 };
       throw new VoiceError("voice_config_invalid", 400, "nothing to speak");
     }
-    const model = options.model ?? await pickTtsModelId(await listModels(), config.ttsModel);
+    const catalog = options.model == null ? await listModels() : null;
+    if (catalog && config.ttsModel && !ttsModelIds(catalog).includes(config.ttsModel)) throw new VoiceError("voice_tts_unavailable", 503, "selected speech model is not available");
+    const model = options.model ?? pickTtsModelId(catalog, config.ttsModel);
     if (!model) throw new VoiceError("voice_tts_unavailable", 503, "no speech model available");
-    readout = joinable(readouts.get(coordinator), id, key, part) ?? startReadout(coordinator, id, model, options);
+    readout = joinable(readouts.get(coordinator), id, key, part) ?? startReadout(coordinator, id, model, { ...options, segmenter, config: structuredClone(config) });
   }
-  readout.extend(segments, done);
+  if (readout.segmenter !== segmenter) segments = readout.segmenter.update(text, { done });
+  readout.extend([...readout.segments, ...segments], done);
+  const deadline = readout.segmenter.deadline;
+  if (deadline !== null) {
+    await new Promise((resolve, reject) => {
+      const cleanup = () => { clearTimeout(timer); readout.signal.removeEventListener("abort", cancel); };
+      const cancel = () => { cleanup(); reject(cancelledSpeech()); };
+      const timer = setTimeout(() => { cleanup(); resolve(); }, Math.max(0, deadline - Date.now()));
+      readout.signal.addEventListener("abort", cancel, { once: true });
+      if (readout.signal.aborted) cancel();
+    });
+    readout.extend([...readout.segments, ...readout.segmenter.flush()], done);
+  }
   if (part === null) return key ? { sentences: readout.segments.length } : readout.result;
   if (part >= readout.segments.length) {
     throw new VoiceError("voice_config_invalid", 400, `answer has ${readout.segments.length} sentence(s)`);
@@ -319,6 +331,7 @@ function startReadout(coordinator, id, model, options) {
     firstAudio: false,
     active: lease.active,
     signal: lease.signal,
+    segmenter: options.segmenter,
     segments: [],
     parts: [],
     final: false,
@@ -348,9 +361,9 @@ function startReadout(coordinator, id, model, options) {
       });
     },
   };
-  readout.result = Promise.resolve(options.config?.voice || pinnedVoice(model, options.listVoices))
+  readout.result = Promise.resolve(options.voice ?? ttsVoiceForModel(options.config, model))
     .then((voice) => readAloud(readout, model, voice, lease, options));
-  readout.result.catch(() => {});
+  readout.result.finally(() => readout.segmenter.reset()).catch(() => {});
   readouts.set(coordinator, readout);
   return readout;
 }

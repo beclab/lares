@@ -32,17 +32,58 @@ async function openDeviceMic(mediaDevices) {
   }
 }
 
+/** Request permission in the user gesture; transfer ownership to exactly one recorder. */
+export function prepareBrowserCapture({ media, onTrace = () => {}, now = Date.now } = {}) {
+  let stream = null, cancelled = false, consumed = false;
+  const started = now();
+  const devices = media?.mediaDevices ?? globalThis.navigator?.mediaDevices;
+  const ready = (async () => {
+    if (!devices?.getUserMedia) throw new Error("voice_unsupported");
+    const pending = openDeviceMic(devices);
+    try { onTrace("permission-request", { durationMs: now() - started }); } catch { /* Telemetry is optional. */ }
+    const next = await pending;
+    try { onTrace("permission", { durationMs: now() - started }); } catch { /* Telemetry is optional. */ }
+    if (cancelled) { next.getTracks().forEach(track => track.stop()); return null; }
+    stream = next;
+    return next;
+  })();
+  // Permission may fail while other initialization is still pending.
+  void ready.catch(() => {});
+  return {
+    recording() {
+      try { onTrace("ready", { durationMs: now() - started }); } catch { /* Telemetry is optional. */ }
+    },
+    async consume() {
+      if (consumed || cancelled) throw new Error("voice_cancelled");
+      consumed = true;
+      const next = await ready;
+      if (cancelled || !next) throw new Error("voice_cancelled");
+      stream = null;
+      return next;
+    },
+    cancel() {
+      cancelled = true;
+      stream?.getTracks().forEach(track => track.stop());
+      stream = null;
+    },
+  };
+}
+
 export function createVoiceCapture({
   transcribe,
+  streamInput,
   submit,
   onStream,
   onPhase,
   onTrace,
   now = Date.now,
   media,
+  preparation,
 }) {
   const mediaDevices = media?.mediaDevices ?? globalThis.navigator?.mediaDevices;
   const Recorder = media?.MediaRecorder ?? globalThis.MediaRecorder;
+  let inputAbort = null;
+  let streaming = null;
   let recorder = null;
   let detector = null;
   let stream = null;
@@ -86,10 +127,10 @@ export function createVoiceCapture({
     recorder = null;
   };
 
-  const fail = (code) => {
+  const fail = (code, extra = {}) => {
     if (dead) return;
     if (errorTimer) clearTimeout(errorTimer);
-    emit("error", { error: code, elapsed: 0 });
+    emit("error", { error: code, elapsed: 0, ...extra });
     errorTimer = setTimeout(() => {
       errorTimer = 0;
       if (!dead && phase === "error") emit("idle", { error: "", elapsed: 0 });
@@ -106,6 +147,7 @@ export function createVoiceCapture({
     chunks = [];
     release();
     if (cancel) {
+      streaming?.cancel(); streaming = null;
       emit("idle", { error: "", elapsed: 0 });
       return;
     }
@@ -119,11 +161,12 @@ export function createVoiceCapture({
     emit("transcribing", { elapsed: took, error: "" });
     abort = new AbortController();
     try {
-      const text = String(await transcribe(blob, abort.signal) ?? "").trim();
+      const text = String(await (streaming ? streaming.finish() : transcribe(blob, abort.signal)) ?? "").trim();
+      streaming = null;
       if (dead || cancel) return;
       if (!text) {
         trace("no-input", {});
-        fail("voice_no_input");
+        fail("voice_no_input", { recognizedEmpty: true });
         return;
       }
       trace("transcript", { chars: text.length });
@@ -171,9 +214,11 @@ export function createVoiceCapture({
     async start() {
       if (dead || phase === "preparing" || phase === "recording" || phase === "transcribing") return;
       if (typeof Recorder === "undefined" || !mediaDevices?.getUserMedia) {
+        preparation?.cancel();
         fail("voice_unsupported");
         return;
       }
+      inputAbort = new AbortController();
       cancel = false;
       released = false;
       finished = false;
@@ -181,8 +226,9 @@ export function createVoiceCapture({
       emit("preparing", { elapsed: 0, error: "" });
       let next;
       try {
-        next = await openDeviceMic(mediaDevices);
+        next = await (preparation ? preparation.consume() : openDeviceMic(mediaDevices));
       } catch (err) {
+        preparation?.cancel();
         const code = micFailure(err);
         trace("mic-fail", { code, name: err?.name || "" });
         if (!dead) fail(code);
@@ -208,7 +254,13 @@ export function createVoiceCapture({
         if (recorder?.state === "inactive") scheduleFinish();
       };
       recorder.onstop = () => scheduleFinish();
-      try { detector = await onStream?.(stream); } catch { release(); fail("voice_unsupported"); return; }
+      try {
+        const nextDetector = await onStream?.(stream);
+        if (dead || cancel) { nextDetector?.stop?.(); release(); return; }
+        detector = nextDetector;
+        streaming = await streamInput?.(stream, { signal: inputAbort.signal, onPartial: (text) => emit(phase, { partial: text }) });
+        if (dead || cancel) { streaming?.cancel(); streaming = null; release(); return; }
+      } catch (error) { streaming?.cancel(); streaming = null; release(); if (!dead && !cancel) fail(error.message || "voice_unsupported"); return; }
       started = now();
       try {
         recorder.start(CHUNK_MS);
@@ -224,6 +276,7 @@ export function createVoiceCapture({
         return;
       }
       emit("recording", { elapsed: 0, error: "" });
+      preparation?.recording();
       timer = setInterval(() => emit("recording", { elapsed: now() - started, error: "" }), 200);
     },
     /**
@@ -235,6 +288,7 @@ export function createVoiceCapture({
         if (aborting) {
           cancel = true;
           abort?.abort();
+          streaming?.cancel(); streaming = null;
         }
         return;
       }
@@ -248,6 +302,7 @@ export function createVoiceCapture({
         recorder: recorder?.state || "none",
       });
       if (aborting) {
+        inputAbort?.abort();
         cancel = true;
         released = false;
         if (recorder && recorder.state !== "inactive") recorder.stop();
@@ -261,12 +316,15 @@ export function createVoiceCapture({
       }
     },
     dispose() {
+      preparation?.cancel();
+      inputAbort?.abort();
       dead = true;
       cancel = true;
       if (errorTimer) clearTimeout(errorTimer);
       if (finishTimer) clearTimeout(finishTimer);
       stopTimer();
       abort?.abort();
+      streaming?.cancel(); streaming = null;
       if (recorder && recorder.state !== "inactive") recorder.stop();
       release();
     },

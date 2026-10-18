@@ -34,6 +34,7 @@ test("model / search / voice settings skip a second load", async () => {
     }
     if (url.includes("/api/lares/voice/config")) return json({ model: "", language: "" });
     if (url.includes("/api/lares/voice/status")) return json({ modelAvailable: true, model: "whisper" });
+    if (url.includes("/api/lares/voice/capabilities")) return json({ stt: ["whisper"], selected: "whisper" });
     if (url.includes("/api/lares/voice/models")) return json({ stt: ["whisper"] });
     throw new Error(url);
   };
@@ -53,6 +54,7 @@ test("model / search / voice settings skip a second load", async () => {
       "GET /api/lares/models",
       "GET /api/lares/web-search/config",
       "GET /api/lares/voice/config",
+      "GET /api/lares/voice/capabilities",
       "GET /api/lares/voice/status",
       "GET /api/lares/voice/models",
     ]);

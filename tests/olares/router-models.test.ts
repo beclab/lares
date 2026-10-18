@@ -29,7 +29,7 @@ test("modelsFromRouterCatalog and isChatModelId", () => {
         name: "Qwen/chat",
         mode: "chat",
         supportsVision: true,
-        supportsStt: false,
+        supportsStt: false, supportsSttStream: false,
         supportsTts: false,
         reasoningEfforts: null,
         contextWindow: 104448,
@@ -40,7 +40,7 @@ test("modelsFromRouterCatalog and isChatModelId", () => {
         name: "EmbeddingGemma/embed",
         mode: "embedding",
         supportsVision: false,
-        supportsStt: false,
+        supportsStt: false, supportsSttStream: false,
         supportsTts: false,
         reasoningEfforts: null,
         contextWindow: null,
@@ -107,20 +107,20 @@ test("effort levels travel with the model, and only the ones Router will take", 
       ],
     }).map(({ id, reasoningEfforts }) => ({ id, reasoningEfforts })),
     [
-      { id: "thinks", reasoningEfforts: { low: "low", medium: "medium", xhigh: "xhigh" } },
+      { id: "thinks", reasoningEfforts: { low: "low", medium: "medium", xhigh: "xhigh", turbo: "turbo" } },
       { id: "options-without-support", reasoningEfforts: null },
-      { id: "off-only", reasoningEfforts: null },
+      { id: "off-only", reasoningEfforts: { off: "off" } },
     ],
   );
 });
 
-test("pickChatModelId prefers the MTP sibling over the plain build", () => {
+test("pickChatModelId respects catalog order without an MTP preference", () => {
   const catalog = [
     { id: "EmbeddingGemma/embeddinggemma-300m", name: "x", mode: "embedding" },
     { id: "Qwen3.6-27B (llama.cpp)/unsloth/Qwen3.6-27B-GGUF:Q4_K_M", name: "y", mode: "chat" },
     { id: "Qwen3.6-27B MTP (llama.cpp)/unsloth/Qwen3.6-27B-MTP-GGUF:UD-Q4_K_XL", name: "z", mode: "chat" },
   ];
-  assert.equal(pickChatModelId(catalog), "Qwen3.6-27B MTP (llama.cpp)/unsloth/Qwen3.6-27B-MTP-GGUF:UD-Q4_K_XL");
+  assert.equal(pickChatModelId(catalog), "Qwen3.6-27B (llama.cpp)/unsloth/Qwen3.6-27B-GGUF:Q4_K_M");
   assert.equal(pickChatModelId(catalog.slice(0, 2)), "Qwen3.6-27B (llama.cpp)/unsloth/Qwen3.6-27B-GGUF:Q4_K_M");
 });
 

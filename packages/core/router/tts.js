@@ -1,3 +1,4 @@
+import { fetchTtsVoices } from "../voice/tts-voice.js";
 import { VoiceError } from "./stt.js";
 import { routerShimBaseUrl } from "./gateway.js";
 
@@ -5,26 +6,10 @@ const REQUEST_TIMEOUT_MS = 180_000;
 
 const PCM_RATE = 24000;
 
-/**
- * Engines pick a speaker per request when none is named, so the readout voice
- * changed between answers. First listed voice the model offers wins.
- */
-const PREFERRED_VOICES = ["serena", "vivian", "uncle_fu"];
-
-export function pickTtsVoice(voices) {
-  const ids = voices.filter((id) => typeof id === "string" && id);
-  return PREFERRED_VOICES.find((id) => ids.includes(id)) ?? [...ids].sort()[0] ?? null;
-}
-
-/** @returns {Promise<string[]>} voice ids the model serves; empty when it lists none. */
+/** @returns {Promise<string[]>} Exact preset IDs; failures remain distinguishable from no presets. */
 export async function listTtsVoices(model) {
-  const res = await fetch(`${routerShimBaseUrl()}/audio/voices?model=${encodeURIComponent(model)}`, {
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!res.ok) return [];
-  const body = await res.json().catch(() => null);
-  const voices = Array.isArray(body?.voices) ? body.voices : [];
-  return voices.map((voice) => (typeof voice === "string" ? voice : voice?.id));
+  const voices = await fetchTtsVoices(model, { fetcher: (path, options) => fetch(`${routerShimBaseUrl()}${path.replace("/llm/v1", "")}`, options) });
+  return voices.map(row => row.id);
 }
 
 /** Kokoro concatenates chunks with no gap. This is the silence we insert between sentences. */
@@ -132,11 +117,19 @@ export async function synthesizeStream(request, onChunk) {
   if (!type.includes("audio/l16")) {
     return { streamed: false, audio: Buffer.from(await res.arrayBuffer()) };
   }
+  const sampleRate = Number(res.headers.get("x-audio-sample-rate"));
+  if (!Number.isInteger(sampleRate) || sampleRate < 8000 || sampleRate > 192000) throw new VoiceError("voice_audio_format", 502, "missing or invalid PCM sample rate");
+  await request.onFormat?.({ sampleRate, channels: 1, encoding: "pcm_s16le" });
   const reader = res.body.getReader();
+  try {
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
     if (value?.byteLength) await onChunk(Buffer.from(value));
   }
-  return { streamed: true };
+  } finally {
+    await reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+  return { streamed: true, sampleRate };
 }

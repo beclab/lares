@@ -56,10 +56,14 @@ export function createCompositeGateway({ service, config, transcribe, synthesize
           send({ type: "response.output_audio_transcript.delta", response_id: id, delta: text });
           if (!audioOutput) { done(id); return; }
           scope.outputAbort = new AbortController();
-          const audio = await synthesize(text, scope);
+          const output = async (audio) => {
+            if (closed || epoch !== generation) return;
+            awaitingPlayback = true;
+            for (let offset = 0; offset < audio.length; offset += 24000) send({ type: "response.output_audio.delta", response_id: id, item_id: id, delta: audio.subarray(offset, offset + 24000).toString("base64") });
+          };
+          const audio = await synthesize(text, scope, output);
           if (closed || epoch !== generation) return;
-          awaitingPlayback = true;
-          for (let offset = 0; offset < audio.length; offset += 24000) send({ type: "response.output_audio.delta", response_id: id, item_id: id, delta: audio.subarray(offset, offset + 24000).toString("base64") });
+          if (audio) await output(audio);
           send({ type: "response.output_audio.done", response_id: id });
           done(id);
         };

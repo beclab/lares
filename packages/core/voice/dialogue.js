@@ -90,7 +90,7 @@ export function createVoiceDialogue({ config, owner, context = [], summary = "",
   };
 }
 
-export async function cleanDictation(text, { config, owner, signal, chat = voiceChat, preset = config.dictationPreset || "clean" }) {
+export async function cleanDictation(text, { config, owner, signal, chat = voiceChat, preset = config.dictationPreset || "raw" }) {
   if (!DICTATION_PRESETS.includes(preset)) throw Object.assign(new Error("voice_config_invalid"), { status: 400 });
   if (preset === "raw") return text;
   const profile = (config.dictationProfiles || defaultDictationProfiles())[preset];

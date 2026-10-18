@@ -1,19 +1,25 @@
 import React from "react";
-import { voiceAvailability, voicePrimaryAction } from "@olares/lares-core/voice/presentation";
+import { requireComposerModel, modelState } from "@olares/lares-core/router/model-state";
+import { laresVoiceAvailability } from "@olares/lares-core/voice/lares-policy";
+import { voicePrimaryAction } from "@olares/lares-core/voice/presentation";
 import { useT } from "./locale.js";
 const h = React.createElement;
 
-export function VoicePrimary({ panel, nativePrimary, empty, running, disabled, nativeDisabled, inputActions, sessionId }) {
+export function VoicePrimary({ panel, nativePrimary, empty, running, disabled, nativeDisabled, inputActions, sessionId, agentDirectory, loadAgent }) {
   const t = useT();
   const view = React.useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const settings = React.useSyncExternalStore(panel.settings.subscribe, panel.settings.getSnapshot);
   const opening = React.useRef(false);
+  const agent = React.useSyncExternalStore(agentDirectory.subscribe, agentDirectory.getSnapshot);
+  panel.agentAvailable = modelState(agent).valid;
+  React.useEffect(() => { void loadAgent().catch(() => {}); }, [loadAgent]);
   React.useEffect(() => inputActions?.bindBeforeSubmit?.(async () => {
+    requireComposerModel(agentDirectory.getSnapshot(), document.documentElement.lang);
     const current = panel.getSnapshot();
     if (current.visible && current.mode === "single") throw new Error(t("pc.finishFirst"));
     if (current.visible && current.mode === "continuous") await panel.pause();
-  }), [panel, inputActions, t]);
-  const choice = voicePrimaryAction({ view, available: voiceAvailability(settings.value).conversation, empty, running, disabled, nativeDisabled });
+  }), [panel, inputActions, t, agentDirectory]);
+  const choice = voicePrimaryAction({ view, available: laresVoiceAvailability(settings.value, panel.agentAvailable).conversation, empty, running, disabled, nativeDisabled });
   if (choice.action === "native") return nativePrimary;
   const act = async () => {
     if (choice.action === "pause") return panel.pause();
@@ -23,13 +29,13 @@ export function VoicePrimary({ panel, nativePrimary, empty, running, disabled, n
       if (choice.action === "finish") await panel.finish();
       else if (choice.action === "resume") {
         const current = await panel.settings.refresh();
-        if (!document.hidden && navigator.onLine !== false && panel.target?.sessionId === (sessionId || null) && voiceAvailability(current).conversation) await panel.start();
+        if (!document.hidden && navigator.onLine !== false && panel.target?.sessionId === (sessionId || null) && laresVoiceAvailability(current, modelState(agentDirectory.getSnapshot()).valid).conversation) await panel.start();
       } else if (choice.action === "retry") {
         if (view.raw) { await panel.selectPreset(view.preset, true); if (!panel.getSnapshot().error) await panel.complete(); }
         else await panel.start();
       } else {
         const current = await panel.settings.refresh();
-        if (document.hidden || navigator.onLine === false || panel.target?.sessionId !== (sessionId || null) || !voiceAvailability(current).conversation) return;
+        if (document.hidden || navigator.onLine === false || panel.target?.sessionId !== (sessionId || null) || !laresVoiceAvailability(current, modelState(agentDirectory.getSnapshot()).valid).conversation) return;
         await panel.open({ mode: "continuous", sessionId: sessionId || null }); await panel.start();
       }
     } finally { opening.current = false; }

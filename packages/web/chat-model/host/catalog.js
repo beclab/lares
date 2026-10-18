@@ -19,6 +19,7 @@ export {
 /** @param {import('@deepseek-ai/cordis').Context} ctx */
 function catalogPorts(ctx) {
   return {
+    defaultModel: ctx.agentDefaultModel,
     mutateSettings: (ns, ops) => ctx.settings.mutate(ns, ops),
     currentSelection: () => ctx.agentDefaultModel.currentSelection(),
     saveSelection: (next) => ctx.agentDefaultModel.saveSelection(next),
@@ -54,8 +55,8 @@ export function currentDefault(ctx) {
  * Save what future sessions start from — the same `agent-default-model` section
  * the composer chip writes when it switches a session.
  *
- * No reasoning effort travels with the selection: the Router route declares its
- * models by hand, and a hand-declared model rejects every explicit level.
+ * This control selects the default model only. Session effort choices are
+ * validated separately against the same Router capability snapshot.
  * @param {import('@deepseek-ai/cordis').Context} ctx
  * @param {{ provider?: unknown, model?: unknown }} request
  * @returns {Promise<{ provider: string, model: string }>}

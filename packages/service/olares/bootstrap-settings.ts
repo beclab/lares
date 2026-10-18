@@ -1,10 +1,10 @@
+import { resolveDefaultSelection } from "@olares/lares-core/router/default-selection";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type Document, isSeq, parseDocument } from "yaml";
 import {
   ROUTER_RETRY_POLICY,
   isChatModel,
-  isPlaceholderModelId,
   type RouterModelEntry,
 } from "./router-models.js";
 
@@ -45,12 +45,11 @@ const ROUTE_COMPAT = {
 const CREDENTIAL_REF = "LARES_ROUTER_SHIM_KEY";
 
 export interface LaresSettingsSeed {
-  /** Router catalog, empty when the catalog could not be read this boot. */
+  /** Last authorized catalog returned at boot. */
   catalog: RouterModelEntry[];
+  catalogLoaded?: boolean;
   /** The local shim endpoint pi-ai calls (chat completions and /models). */
   baseURL: string;
-  /** Catalog chat pick used when nothing is saved or the saved id is stale. */
-  chatFallback: string | null;
 }
 
 export interface LaresSettingsResult {
@@ -66,7 +65,7 @@ export interface LaresSettingsResult {
 
 /**
  * Reconcile $DSH_HOME/settings.yaml with the Router: seed the provider route
- * once, then keep the default model pointing at something the Router serves.
+ * once, then mirror availability and initialize a usable default for new sessions.
  *
  * The composition patch cannot do this job: a user-layer settings document
  * overrides it, and the Models page writes only that document.
@@ -113,8 +112,7 @@ function seedRouterRoute(doc: Document, seed: LaresSettingsSeed): boolean {
   if (doc.getIn(path) !== undefined) return false;
 
   const chat = declarableModels(seed);
-  const fallbackId = desiredModel(seed) ?? "default";
-  const models = chat.length > 0 ? chat : [{ id: fallbackId, name: fallbackId }];
+  const models = chat;
 
   doc.setIn(path, {
     displayName: DISPLAY_NAME,
@@ -133,15 +131,14 @@ function seedRouterRoute(doc: Document, seed: LaresSettingsSeed): boolean {
  * are derived state, not user preferences: Router alone decides which models
  * exist and which of them take an effort level, and a list written once at seed
  * time strands the picker on whatever that boot saw — a lone `default`
- * placeholder when the catalog was still unreachable. An empty catalog means
- * this boot could not read Router, so the list stands.
+ * placeholder when the catalog was still unreachable. Only a failed read preserves the previous list; a successful empty list clears it.
  */
 function refreshRouterRoute(doc: Document, seed: LaresSettingsSeed): void {
   const path = [SETTINGS_NS, "providers", PROVIDER];
   doc.setIn([...path, "compat"], ROUTE_COMPAT);
   doc.setIn([...path, "retryPolicy"], structuredClone(ROUTER_RETRY_POLICY));
   const chat = declarableModels(seed);
-  if (chat.length === 0) return;
+  if (seed.catalogLoaded === false) return;
   doc.setIn([...path, "models"], chat);
 }
 
@@ -181,33 +178,19 @@ function declaredModelCount(doc: Document): number {
   return Array.isArray(models) ? models.length : 0;
 }
 
-/**
- * Point agent-default-model at this provider and a model the Router still
- * offers. A saved model the catalog still lists is the user's choice; the
- * provider route is ours, so a stale one is corrected under whichever model
- * stands.
- * @returns the model the document names now.
- */
+/** Existing session selections are stored separately from this new-session default. */
 function pinDefaultModel(doc: Document, seed: LaresSettingsSeed): string | null {
-  const current = readString(doc, ["agent-default-model", "model"]);
-  const desired = desiredModel(seed);
-  const catalogIds = new Set(seed.catalog.filter(isChatModel).map((entry) => entry.id));
-  const stale = isPlaceholderModelId(current)
-    || (catalogIds.size > 0 && current !== null && !catalogIds.has(current));
-  const model = current && !stale ? current : desired;
-  if (model === null) return current;
-
-  doc.setIn(["agent-default-model", "provider"], PROVIDER);
-  doc.setIn(["agent-default-model", "model"], model);
-  // Effort is the composer's per-session choice, and the levels differ per
-  // model: a level named here outlives the model it was picked for and fails
-  // the next request with UNSUPPORTED_REASONING_EFFORT.
-  doc.deleteIn(["agent-default-model", "reasoningEffort"]);
-  return model;
-}
-
-function desiredModel(seed: LaresSettingsSeed): string | null {
-  return seed.chatFallback;
+  const current = {
+    provider: readString(doc, ["agent-default-model", "provider"]) ?? PROVIDER,
+    model: readString(doc, ["agent-default-model", "model"]) ?? "",
+  };
+  const next = seed.catalogLoaded === false ? current : resolveDefaultSelection(current, declarableModels(seed));
+  if (next !== current) doc.setIn(["agent-default-model"], next);
+  else if (!current.model) {
+    doc.setIn(["agent-default-model", "provider"], current.provider);
+    doc.setIn(["agent-default-model", "model"], "");
+  }
+  return next.model || null;
 }
 
 function readString(doc: Document, path: string[]): string | null {

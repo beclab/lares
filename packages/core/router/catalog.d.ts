@@ -8,8 +8,10 @@ export interface RouterCatalogRow {
   supportsStt: boolean;
   /** Speech playback, from `tts`. */
   supportsTts: boolean;
-  /** pi-ai level → Router wire spelling, or null when the model takes no effort. */
+  supportsSttStream: boolean;
+  /** Router identifier → identical wire value, in declared order; null without effort capability. */
   reasoningEfforts: Record<string, string> | null;
+  reasoningDefault?: string;
   /** Tokens one request may span, or null when Router states none. */
   contextWindow: number | null;
   /** Output tokens a turn may reserve: Router's limit capped at a quarter of the window. */

@@ -8,6 +8,7 @@ import {
   rmSync,
   symlinkSync,
   truncateSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { Writable } from "node:stream";
@@ -1319,7 +1320,8 @@ test("fileFromPreviewRequest unwraps a files path the chat opener joined onto th
 
 test("fileFromPreviewRequest unwraps a files path when cwd realpath differs", async () => {
   const real = realpathSync(mkdtempSync(join(tmpdir(), "lares-file-preview-real-")));
-  const lexical = join(tmpdir(), `lares-file-preview-link-${Date.now()}`);
+  const links = mkdtempSync(join(tmpdir(), "lares-file-preview-links-"));
+  const lexical = join(links, "workspace");
   symlinkSync(real, lexical);
   try {
     const query = `path=${encodeURIComponent(join(lexical, "drive/Home/Downloads/clip.webm"))}`;
@@ -1338,7 +1340,8 @@ test("fileFromPreviewRequest unwraps a files path when cwd realpath differs", as
     assert.equal(file.origin, "files");
     assert.equal(file.path, "drive/Home/Downloads/clip.webm");
   } finally {
-    rmSync(lexical, { force: true });
+    unlinkSync(lexical);
+    rmSync(links, { recursive: true, force: true });
     rmSync(real, { recursive: true, force: true });
   }
 });

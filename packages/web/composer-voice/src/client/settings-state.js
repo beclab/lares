@@ -1,4 +1,5 @@
 import { loadVoiceSettings } from "@olares/lares-core/voice/client";
+import { recordVoiceStartup } from "@olares/lares-core/voice/startup";
 
 export function createVoiceSettingsState() {
   let snapshot = { value: null, error: null }, pending;
@@ -6,9 +7,11 @@ export function createVoiceSettingsState() {
   return {
     getSnapshot: () => snapshot,
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
-    refresh() {
+    refresh({ force = false } = {}) {
       if (pending) return pending;
-      pending = loadVoiceSettings({ force: true }).then(value => {
+      const started = performance.now();
+      pending = loadVoiceSettings({ force, diagnostics: false }).then(value => {
+        recordVoiceStartup("capabilities", performance.now() - started);
         snapshot = { value, error: null };
         return value;
       }, error => {

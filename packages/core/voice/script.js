@@ -1,4 +1,9 @@
 import { segment } from "sentencex";
+import { createNaturalSegmenter } from "./speech-segmenter.js";
+
+// Same-voice listening accepted natural segmentation; legacy remains a diagnostic baseline.
+export const SPEECH_SEGMENTATION_POLICY = "natural";
+import { spokenLines } from "./spoken-text.js";
 
 /**
  * Kokoro's pipeline splits on newlines and stitches the audio with no gap, and
@@ -7,40 +12,6 @@ import { segment } from "sentencex";
  * matches Kokoro-FastAPI's sentence padding: 150ms, doubled for . ! ?
  */
 export const SENTENCE_GAP_MS = 300;
-
-/** Text still streaming may hold a code fence that has not closed yet. */
-function closedPart(text) {
-  const fences = text.match(/```/g)?.length ?? 0;
-  return fences % 2 === 0 ? text : text.slice(0, text.lastIndexOf("```"));
-}
-
-/** Table rules and horizontal rules carry nothing to read. */
-const RULE_LINE = /^\s*(?:\|?\s*:?-{3,}:?\s*)+\|?\s*$|^\s*([-*_])(?:\s*\1){2,}\s*$/;
-const BLOCK_MARK = /^\s*(?:>\s*)*(?:#{1,6}\s+|[-*+]\s+(?:\[[ xX]]\s+)?|\d+[.)]\s+)?/;
-
-function plainLine(line) {
-  if (RULE_LINE.test(line)) return "";
-  return line
-    .replace(BLOCK_MARK, "")
-    .replace(/`([^`]+)`/g, "$1")
-    .replace(/!\[[^\]]*]\([^)]*\)/g, " ")
-    .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
-    .replace(/[|#>*_]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-/**
- * Model answers are Markdown, and a heading, list item or table row often ends
- * without punctuation, so every line is a sentence boundary of its own.
- */
-function plainLines(text) {
-  return String(text ?? "")
-    .replace(/```[\s\S]*?```/g, " ")
-    .slice(0, 2000)
-    .split("\n")
-    .map(plainLine);
-}
 
 function sentencesOf(line) {
   return line ? segment("en", line).map((part) => part.trim()).filter(Boolean) : [];
@@ -92,8 +63,9 @@ export function gapAfter(segment) {
  * mid-word, so only the sentences before its last one count.
  * @returns {string[]}
  */
-export function speechSegments(text, { done = true } = {}) {
-  const lines = plainLines(done ? text : closedPart(String(text ?? "")));
+export function speechSegments(text, { done = true, policy = SPEECH_SEGMENTATION_POLICY } = {}) {
+  if (policy === "natural") return createNaturalSegmenter().update(text, { done });
+  const lines = spokenLines(text, { done });
   const open = done ? "" : lines.pop();
   const sentences = lines.flatMap(sentencesOf);
   sentences.push(...sentencesOf(open).slice(0, -1));
@@ -102,4 +74,23 @@ export function speechSegments(text, { done = true } = {}) {
 
 export function speechScript(text) {
   return speechSegments(text).join("\n");
+}
+
+
+export function createSpeechSegmenter({ policy = SPEECH_SEGMENTATION_POLICY, now = Date.now } = {}) {
+  if (policy === "natural") return createNaturalSegmenter({ now });
+  let source = "", emitted = [];
+  return {
+    update(text, options) {
+      source = text;
+      const ready = speechSegments(text, { ...options, policy: "legacy" });
+      if (emitted.some((part, index) => part !== ready[index])) throw new Error("voice_reply_rewritten");
+      const result = ready.slice(emitted.length); emitted = ready; return result;
+    },
+    push(chunk, options = { done: false }) { return this.update(source + chunk, options); },
+    finish() { return this.update(source, { done: true }); },
+    flush() { return []; },
+    get deadline() { return null; },
+    reset() { source = ""; emitted = []; },
+  };
 }

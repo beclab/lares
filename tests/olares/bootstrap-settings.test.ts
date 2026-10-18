@@ -21,7 +21,6 @@ function seed(overrides: Partial<LaresSettingsSeed> = {}): LaresSettingsSeed {
   return {
     catalog: CATALOG,
     baseURL: "http://127.0.0.1:8080/llm/v1",
-    chatFallback: "Qwen/chat",
     ...overrides,
   };
 }
@@ -39,7 +38,7 @@ function withHome(body: (dir: string) => void): void {
   }
 }
 
-test("seeds the Router route and the default model, then leaves the document alone", () => {
+test("seeds the first authorized chat model, then leaves the document alone", () => {
   withHome((dir) => {
     const first = bootstrapLaresSettings(dir, seed());
     assert.equal(first.routeSeeded, true);
@@ -105,20 +104,20 @@ test("an existing route keeps the user's endpoint but follows the Router catalog
 test("an unreachable catalog leaves the declared models standing", () => {
   withHome((dir) => {
     writeRoute(dir, ["Qwen/chat"]);
-    bootstrapLaresSettings(dir, seed({ catalog: [], chatFallback: null }));
+    bootstrapLaresSettings(dir, seed({ catalog: [], catalogLoaded: false }));
     assert.deepEqual(readSettings(dir)["llm-pi-ai"].providers["olares-router"].models, [
       { id: "Qwen/chat" },
     ]);
   });
 });
 
-test("repoints a stale provider, keeps the saved model, drops the reasoning effort", () => {
+test("keeps saved provider, model and reasoning effort", () => {
   withHome((dir) => {
     writeFileSync(
       join(dir, "settings.yaml"),
       [
         "agent-default-model:",
-        "  provider: deepseek-official",
+        "  provider: olares-router",
         '  model: "Qwen/chat"',
         "  reasoningEffort: max",
         "dsh-better-sidebar:",
@@ -127,7 +126,7 @@ test("repoints a stale provider, keeps the saved model, drops the reasoning effo
         "",
       ].join("\n"),
     );
-    const result = bootstrapLaresSettings(dir, seed({ chatFallback: "Qwen/other" }));
+    const result = bootstrapLaresSettings(dir, seed());
     assert.equal(result.model, "Qwen/chat");
 
     const raw = readFileSync(join(dir, "settings.yaml"), "utf8");
@@ -135,22 +134,22 @@ test("repoints a stale provider, keeps the saved model, drops the reasoning effo
     const doc = parse(raw) as Record<string, any>;
     assert.equal(doc["agent-default-model"].provider, "olares-router");
     assert.equal(doc["agent-default-model"].model, "Qwen/chat");
-    assert.equal("reasoningEffort" in doc["agent-default-model"], false);
+    assert.equal(doc["agent-default-model"].reasoningEffort, "max");
   });
 });
 
-test("a model the Router no longer offers is replaced by the catalog pick", () => {
+test("a missing global default falls back without rewriting session history", () => {
   withHome((dir) => {
     writeFileSync(
       join(dir, "settings.yaml"),
       'agent-default-model:\n  provider: olares-router\n  model: "gone/model"\n',
     );
-    const result = bootstrapLaresSettings(dir, seed({ chatFallback: "Qwen/other" }));
-    assert.equal(result.model, "Qwen/other");
+    const result = bootstrapLaresSettings(dir, seed());
+    assert.equal(result.model, "Qwen/chat");
   });
 });
 
-test("a saved non-chat Router model is replaced even while the catalog still lists it", () => {
+test("a non-chat global default falls back to the first chat model", () => {
   withHome((dir) => {
     writeFileSync(
       join(dir, "settings.yaml"),
@@ -161,12 +160,12 @@ test("a saved non-chat Router model is replaced even while the catalog still lis
   });
 });
 
-test("an unreachable catalog still seeds a route naming the resolved model", () => {
+test("an unreachable catalog never manufactures a model declaration", () => {
   withHome((dir) => {
-    const result = bootstrapLaresSettings(dir, seed({ catalog: [], chatFallback: "Qwen/chat" }));
+    const result = bootstrapLaresSettings(dir, seed({ catalog: [], catalogLoaded: false }));
     assert.equal(result.routeSeeded, true);
     const profile = readSettings(dir)["llm-pi-ai"].providers["olares-router"];
-    assert.deepEqual(profile.models, [{ id: "Qwen/chat", name: "Qwen/chat" }]);
+    assert.deepEqual(profile.models, []);
   });
 });
 

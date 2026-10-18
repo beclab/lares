@@ -1,0 +1,212 @@
+--- a/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js
+@@ -1,4 +1,4 @@
+-import { routerReasoningInfo, routerReasoningPayload } from "@olares/lares-core/router/model-authorization";
++import { routerReasoningInfo, routerReasoningPayload, routerReasoningSnapshot } from "@olares/lares-core/router/model-authorization";
+ import { launchEnvironmentOf } from "@deepseek-ai/dsh-launch-environment";
+ import { CONTEXT_WINDOW_EXCEEDED_CODE, EMPTY_RESPONSE_CODE, IMAGE_OFFLOAD_REQUIRED_CODE, INVALID_CREDENTIAL_CODE, LlmAdapter, LlmError, QUOTA_EXCEEDED_CODE, ReasoningEffortId, RetryPolicySchema, assertUsableApiKey, attributionHeaders, contentHasImage, isContextWindowExceededError, isQuotaExceededError, normalizeApiKey, offloadedImageText, projectOffloadedImages, requestImageHandleText, requiredImageOffload, resolveImageAttachmentAccess, resolveRetryPolicy } from "@deepseek-ai/dsh-llm";
+ import { deepEqualJson } from "@deepseek-ai/dsh-util-values";
+@@ -567,6 +567,11 @@
+ */
+ function resolveModelReasoning(provider, entry, base) {
+ 	const efforts = entry.reasoningEfforts;
++	if (provider === "olares-router") {
++		if (efforts && Object.entries(efforts).some(([id, wire]) => !id || wire !== id)) invalid(provider, `model "${entry.id}" must preserve Router reasoning identifiers`);
++		return { reasoning: false };
++	}
++	if (efforts && Object.keys(efforts).some((id) => !THINKING_LEVELS.includes(id))) invalid(provider, `model "${entry.id}" declares an unsupported thinking level`);
+ 	if (efforts === void 0) return { reasoning: base?.reasoning ?? false };
+ 	if (efforts === false) return { reasoning: false };
+ 	if (efforts === null || Object.keys(efforts).length === 0) invalid(provider, `model "${entry.id}" has an empty reasoningEfforts; declare the offered levels, set false for a non-reasoning model, or omit the field to keep the installed catalog's capability`);
+@@ -1000,7 +1005,7 @@
+ * schemastery's `Dict`, which types every literal key as required; dict
+ * validation checks only present keys, so the runtime value is a partial record.
+ */
+-const reasoningEfforts = z.dict(z.union([z.string(), z.const(null)]), z.union(THINKING_LEVELS));
++const reasoningEfforts = z.dict(z.union([z.string(), z.const(null)]));
+ /** The fields a `models` entry and a `modelOverrides` value share; only the id's home differs. */
+ const modelFields = {
+ 	name: z.string(),
+@@ -1815,7 +1820,7 @@
+ 			return this.modelInfo(snapshot, provider, model);
+ 		});
+ 	}
+-	modelInfo(snapshot, provider, model) {
++	modelInfo(snapshot, provider, model, routerRows = routerReasoningSnapshot()) {
+ 		const profile = this.profileOf(snapshot, provider);
+ 		const resolvedModel = this.modelOf(snapshot, provider, model);
+ 		const defaultLevel = describableReasoningLevel(resolvedModel, profile.reasoning);
+@@ -1828,20 +1833,21 @@
+ 			context: { contextWindow: resolvedModel.contextWindow },
+ 			...configuredMaxTokens === void 0 ? {} : { defaultMaxTokens: configuredMaxTokens },
+ 			...reasoningInfo(resolvedModel, defaultLevel),
+-			...routerReasoningInfo(provider, model)
++			...routerReasoningInfo(provider, model, routerRows)
+ 		};
+ 	}
+ 	prepareCall(provider, model, _signal) {
+ 		const snapshot = this.current();
++		const routerRows = routerReasoningSnapshot();
+ 		return Promise.resolve({
+-			model: this.modelInfo(snapshot, provider, model),
+-			stream: (options) => this.streamWithSnapshot(options, snapshot)
++			model: this.modelInfo(snapshot, provider, model, routerRows),
++			stream: (options) => this.streamWithSnapshot(options, snapshot, routerRows)
+ 		});
+ 	}
+ 	stream(options) {
+ 		return this.streamWithSnapshot(options, this.current());
+ 	}
+-	async *streamWithSnapshot(options, snapshot) {
++	async *streamWithSnapshot(options, snapshot, routerRows = routerReasoningSnapshot()) {
+ 		const env_1 = {
+ 			stack: [],
+ 			error: void 0,
+@@ -1851,7 +1857,8 @@
+ 			if (options.stop !== void 0) throw new LlmError("llm-pi-ai does not support GenerateOptions.stop", "UNSUPPORTED_OPTION");
+ 			const profile = this.profileOf(snapshot, options.provider);
+ 			const model = this.modelOf(snapshot, options.provider, options.model);
+-			const reasoning = resolveReasoningLevel(model, options.reasoningEffort ?? (options.provider === "olares-router" ? void 0 : profile.reasoning));
++			const reasoning = options.provider === "olares-router" ? void 0 : resolveReasoningLevel(model, options.reasoningEffort ?? profile.reasoning);
++			if (options.provider === "olares-router") routerReasoningPayload({}, model.id, options.reasoningEffort, routerRows);
+ 			const apiKey = await this.config.resolveApiKey(options.provider, profile);
+ 			const consumer = new AbortController();
+ 			const upstream = options.signal === void 0 ? consumer.signal : AbortSignal.any([options.signal, consumer.signal]);
+@@ -1883,7 +1890,7 @@
+ 				}, onReplayDegrade);
+ 				const iterator = toStreamChunks(snapshot.models.streamSimple(model, context, {
+ 					...profileOptions(profile, reasoning, apiKey),
+-					...options.provider === "olares-router" ? { onPayload: (payload) => routerReasoningPayload(payload, model.id, options.reasoningEffort) } : {},
++					...options.provider === "olares-router" ? { onPayload: (payload) => routerReasoningPayload(payload, model.id, options.reasoningEffort, routerRows) } : {},
+ 					...options.temperature === void 0 ? {} : { temperature: options.temperature },
+ 					...options.maxTokens === void 0 ? {} : { maxTokens: options.maxTokens },
+ 					...options.sessionId === void 0 ? {} : { sessionId: String(options.sessionId) },
+--- a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js
+@@ -1,5 +1,5 @@
+ import { synchronizeHostCatalog } from "@olares/lares-core/router/catalog-coordinator";
+-import { authorizedChatModel } from "@olares/lares-core/router/model-authorization";
++import { authorizedChatModel, normalizeRouterSelection, restoreRouterSelection } from "@olares/lares-core/router/model-authorization";
+ import { hostname } from "node:os";
+ import { isAbsolute, resolve } from "node:path";
+ import z from "@deepseek-ai/schemastery";
+@@ -359,14 +359,12 @@
+ 	*/
+ 	async composeAgent(presetId) {
+ 		const presets = this.ctx.get("agentPresets");
+-		if (presets === void 0) return { setup: (_agentCtx, agent) => {
+-			this.installSelection(agent);
+-		} };
++		if (presets === void 0) return { setup: (_agentCtx, agent) => this.installSelection(agent) };
+ 		const resolvedId = (await presets.resolve(presetId)).id;
+ 		return {
+ 			agentPreset: resolvedId,
+ 			setup: async (agentCtx, agent) => {
+-				this.installSelection(agent);
++				await this.installSelection(agent);
+ 				await presets.mount(agentCtx, resolvedId);
+ 			}
+ 		};
+@@ -466,8 +464,14 @@
+ 			model
+ 		};
+ 	}
+-	installSelection(agent) {
+-		this.selectionFor(agent);
++	async installSelection(agent) {
++		const current = this.selectionFor(agent).current;
++		if (current.provider !== "olares-router" || current.reasoningEffort !== "off") return;
++		try { await synchronizeHostCatalog(this.ctx); }
++		catch { this.ctx.logger.warn("Router reasoning restoration awaits an available model catalog"); return; }
++		const selected = this.selectionFor(agent).current;
++		const restored = normalizeRouterSelection(selected);
++		if (restored !== selected) this.selectForNextRequest(agent, restored);
+ 	}
+ 	/**
+ 	* Read the current Agent preset from an all-projections observation.
+@@ -862,7 +866,7 @@
+ 		if (request.clientTimeZone !== void 0 && clientTimeZone === void 0) throw new RemoteError("session/invalid-time-zone", "clientTimeZone must be UTC or a valid IANA Area/Location name", { value: request.clientTimeZone });
+ 		const agent = await this.resolveAgent(request.sessionId);
+ 		if (hasPromptRequest(agent, request.requestId)) return { accepted: true };
+-		await this.requireModel(this.agents.selectionFor(agent).current);
++		await this.requireAgentModel(agent);
+ 		const source = {
+ 			kind: "user",
+ 			rpcId: request.requestId,
+@@ -907,11 +911,17 @@
+ 		};
+ 		return hasImage ? this.agents.serializeImageAdmission(agent, admit) : admit();
+ 	}
++	async requireAgentModel(agent) {
++		await synchronizeHostCatalog(this.ctx);
++		const selected = await restoreRouterSelection(this.agents.selectionFor(agent).current, (next) => this.agents.selectForNextRequest(agent, next));
++		await this.requireModel(selected);
++	}
+ 	async requireModel(selection) {
+ 		if (!await modelAvailable(this.ctx, selection)) throw new RemoteError("session/model-unavailable", "Select an available model before sending a message.", {
+ 			provider: selection.provider,
+ 			model: selection.model
+ 		});
++		await this.ctx.llm.resolveCallConfig(selection);
+ 	}
+ 	/**
+ 	* Read one durable image after proving the Session log references it.
+@@ -962,7 +972,7 @@
+ 			const identity = this.ctx.sessionProjections.snapshot(agent.session, ["subagent"]).values.subagent;
+ 			if (identity?.mode !== "continuable" || !agent.session.isOwnSeq(identity.seq)) throw apiSessionSubagentOwnershipError(request.sessionId);
+ 		}
+-		if (request.action.kind === "steer") await this.requireModel(this.agents.selectionFor(agent).current);
++		if (request.action.kind === "steer") await this.requireAgentModel(agent);
+ 		const nextTurn = agent.inbox.nextTurn.find((message) => message.id === request.itemId);
+ 		const nextStep = agent.inbox.nextStep.find((message) => message.id === request.itemId);
+ 		const located = nextTurn === void 0 ? nextStep === void 0 ? void 0 : {
+@@ -2825,6 +2835,7 @@
+ 			});
+ 		}
+ 		static inject = [
++			"settings",
+ 			"agentDefaultModel",
+ 			"agents",
+ 			"attachments",
+--- a/node_modules/@deepseek-ai/dsh-client-ui-model-selection/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-model-selection/lib/client.js
+@@ -572,7 +572,9 @@
+ 			const currentChoice = choices[state.current === null ? -1 : choices.findIndex((c) => c.selection.provider === state.current?.provider && c.selection.model === state.current.model)];
+ 			const reasoning = currentChoice?.model.reasoning;
+ 			const effectiveEffort = state.current?.reasoningEffort;
+-			const effortLabel = reasoning === void 0 ? void 0 : effectiveEffort === void 0 ? t("effort.providerDefault") : reasoning.efforts.find((level) => level.id === effectiveEffort)?.name ?? effectiveEffort;
++			const routerEffortName = (effort) => state.current?.provider === "olares-router" && effort?.id === "none" ? t("effort.none") : effort?.name;
++			const effortUnsupported = state.current?.provider === "olares-router" && effectiveEffort !== void 0 && !reasoning?.efforts.some((level) => level.id === effectiveEffort);
++			const effortLabel = effortUnsupported ? `${effectiveEffort} · ${t("trigger.unavailable")}` : reasoning === void 0 ? void 0 : effectiveEffort === void 0 ? t("effort.providerDefault") : routerEffortName(reasoning.efforts.find((level) => level.id === effectiveEffort)) ?? effectiveEffort;
+ 			const effortChoices = (0, react.useMemo)(() => reasoning === void 0 ? [] : [...[{
+ 				key: "provider-default",
+ 				effort: void 0,
+@@ -580,7 +582,7 @@
+ 			}], ...reasoning.efforts.map((effort) => ({
+ 				key: `effort:${effort.id}`,
+ 				effort: effort.id,
+-				label: effort.name
++				label: routerEffortName(effort)
+ 			}))], [reasoning, t]);
+ 			const { pending } = state;
+ 			const busy = pending !== null;
+@@ -1120,7 +1122,8 @@
+ 			"menu.aria": "模型与推理等级",
+ 			"menu.model": "模型",
+ 			"menu.effort": "推理等级",
+-			"effort.providerDefault": "Default",
++			"effort.providerDefault": "使用模型默认",
++			"effort.none": "关闭思考",
+ 			"status.loading": "正在刷新模型列表…",
+ 			"error.action": "模型操作失败：{message}",
+ 			"error.sessionInUse": "当前会话已被占用，可能是其他正在运行的 DSH 导致的（如其他 dsh web、桌面端），请退出其他正在运行的 DSH 后重试。",
+@@ -1148,7 +1151,8 @@
+ 			"menu.aria": "Model and reasoning effort",
+ 			"menu.model": "Model",
+ 			"menu.effort": "Effort",
+-			"effort.providerDefault": "Default",
++			"effort.providerDefault": "Model default",
++			"effort.none": "No thinking",
+ 			"status.loading": "Refreshing model list…",
+ 			"error.action": "Model operation failed: {message}",
+ 			"error.sessionInUse": "This session is already in use, possibly by another running DSH instance (such as dsh web or the desktop app). Quit other running DSH instances and try again.",

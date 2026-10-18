@@ -60,6 +60,8 @@
           </button>
         </template>
         <div class="desktop-composer__menu">
+          <p v-if="state.modelCatalogError" class="desktop-composer__menu-status" role="status">{{ state.modelCatalogError }}</p>
+          <button type="button" class="desktop-composer__option" @click="state.refreshModels()">{{ t('agent.refresh') }}</button>
           <p v-if="state.modelError" class="desktop-composer__menu-status">{{ state.modelError }}</p>
           <p v-else-if="!state.models" class="desktop-composer__menu-status">{{ t("agent.loading") }}</p>
           <template v-for="group in state.modelGroups" :key="group.provider">
@@ -585,6 +587,7 @@ export default {
     },
   },
   watch: {
+    modelOpen(open) { if (open && this.state.modelCatalogError) void this.state.refreshModels(); },
     "state.draft"() {
       this.autosize();
     },

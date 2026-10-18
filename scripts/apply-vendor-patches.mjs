@@ -2,11 +2,22 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 
 const patches = [
+  { markerFile: "node_modules/@deepseek-ai/dsh-agent-loop/lib/index.js", marker: "speechEligible:", patch: "patches/dsh-trusted-speech-stream.patch" },
+  { markerFile: "node_modules/@earendil-works/pi-ai/dist/api/simple-options.js", marker: "const routerContextHeadroom =", patch: "patches/pi-ai-router-context-headroom.patch" },
+  { markerFile: "node_modules/@deepseek-ai/dsh-llm/lib/index.js", marker: 'config.provider === "olares-router" ? void 0 : reasoning.defaultEffort', patch: "patches/dsh-router-default-effort.patch" },
+  { markerFile: "node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js", marker: "if (!await authorizedChatModel(selection)) return false;", patch: "patches/dsh-model-admission.patch" },
+  { markerFile: "node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js", marker: "...routerReasoningInfo(provider, model", patch: "patches/dsh-router-reasoning.patch" },
+  {
+    markerFile: "node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js",
+    marker: "const bindBeforeLeave =",
+    patch: "patches/dsh-settings-leave-guard.patch",
+  },
   {
     markerFile: "node_modules/@deepseek-ai/dsh-client-ui-model-selection/lib/client.js",
     marker: "const compactModelLabel =",
     patch: "patches/dsh-model-compact-label.patch",
   },
+  { markerFile: "node_modules/@deepseek-ai/dsh-client-ui-model-selection/lib/client.js", marker: "const missingModelLabel =", patch: "patches/dsh-model-missing-state.patch" },
   {
     markerFile: "node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js",
     marker: 'renderSlotChain("conversation.input.primary"',
@@ -42,6 +53,9 @@ const patches = [
     marker: "function googleArrayError",
     patch: "patches/openai-array-error.patch",
   },
+  { markerFile: "node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js", marker: "routerRows = routerReasoningSnapshot()", patch: "patches/dsh-router-native-efforts.patch" },
+  { markerFile: "node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js", marker: 'renderSlot("conversation.chat.assistant-status"', patch: "patches/dsh-assistant-status-extension.patch" },
+  { markerFile: "node_modules/@deepseek-ai/dsh-agent-default-model/lib/index.js", marker: "options.expected", patch: "patches/dsh-new-session-default.patch" },
 ];
 
 for (const item of patches) {

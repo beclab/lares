@@ -2,6 +2,32 @@
 
 Design authority: [Voice service design](voice-service-design.md). Runtime evidence: [Voice runtime](voice-runtime.md).
 
+## Single dictation selector revision — 2026-10-17
+
+- [x] Replace preset rows and separate default/edit actions with one Dictation style selector on React/Vue; the confirmed style selects the expanded configuration.
+- [x] Remove independent editor state and list styles. Keep raw no-LLM text, six-line processing instructions, independent saved profiles and draft-only Reset/Save/Cancel.
+- [x] Share guarded selection: Save/Discard/Keep editing before switching dirty profiles; failed writes keep the previous style and expose an inline error; pending selection prevents competing writes.
+- [x] Preserve existing configuration/API shapes, always-visible desktop shortcuts and all recording/task behavior.
+- [x] Run 274 related tests, typecheck and complete builds. Full suite: 777/778; only the known file-preview cleanup failure remains.
+- [x] Verify the complete official dsh page against the real LAN Router and the actual Vue settings component under mobile/desktop identities. Verify automatic switch, raw hiding, dirty continuation/discard, and restore temporary settings.
+- [ ] Exact narrow-screen and packaged LarePass hardware/navigation acceptance remain separate; a desktop component preview does not certify them.
+
+This revision replaces the four-row settings presentation described in the earlier delivery below. Local commits only; no push, version change, release or deployment.
+
+## Lares entry policy and settings revision — 2026-10-17
+
+- [x] Share per-connection Lares policy across React/Vue: dictation returns a draft; conversation uses direct dsh execution with pipeline audio. Preserve generic API presets, native Realtime and saved defaults.
+- [x] Validate optional session backend override and preserve it on reopen. Direct mode creates no independent voice dialogue or summary-model call. Gate Lares conversation on ASR/TTS and the current routable Agent configuration.
+- [x] Remove API-level strategy/model/backend controls from both product settings surfaces; preserve ASR/TTS, language, device, read-aloud, dictation profiles and mobile default interaction.
+- [x] Earlier four-row preset presentation delivered; superseded by the single-selector revision above.
+- [x] Expand shortcut settings on web; show Vue shortcuts only for explicit desktop host identity. Reuse recorder, validation, clear/retry and focus behavior. Export Vue leave guard integration for LarePass navigation.
+- [x] Run 273 related tests, typecheck and all builds. Full suite: 776/777; only the known file-preview cleanup failure remains.
+- [x] Verify the complete official local dsh page against the real LAN Router. Verify the exported Vue settings component against the same Host for mobile/desktop identity, raw profile and shortcut cancellation. Preserve saved settings after checks.
+- [ ] Fix the separately observed, existing Vue desktop Enter-behavior RPC descriptor mismatch; it is outside this voice settings change.
+- [ ] Verify exact 390px visuals, packaged LarePass navigation integration, physical mobile microphone/gestures, playback and Bluetooth. Component preview/SSR tests do not replace these checks.
+
+Deliver core policy, dual-platform settings and documentation as separate local commits. No push, PR, version bump, release or deployment. The sections below retain earlier delivery history; this revision supersedes their global product strategy controls and collapsed settings layout.
+
 ## PC composer revision — 2026-10-17
 
 - [x] Keep the official editor visible during conversation; dictation temporarily replaces the whole composer presentation with voice controls while preserving mounted drafts and attachments. Separate microphone dictation from the dynamic primary action. Compact model ID and preserve full title, accessibility text and reasoning effort.
@@ -103,3 +129,40 @@ Deliver shared core, dual-platform presentation and documentation as separate co
 - [ ] Verify actual installed dsh page, physical microphones, iOS/Android keyboards/safe areas/gestures and Bluetooth after separately authorized deployment. Synthetic component checks do not certify real audio/model behavior.
 
 Deliver shared state, dual-platform input presentation and documentation as separate local commits. No push, PR, version change, publication or deployment is included.
+
+
+## Streaming pipeline
+
+See [Streaming voice runtime](voice-streaming.md) for the shared ASR/TTS transport,
+AudioWorklet lifecycle, bounded playout credit and safe dsh speech boundary.
+Streaming capture does not submit partial transcripts; speculative tools remain
+out of scope. Streaming is independent of the legacy GPU reading-mode setting.
+
+
+## Router effort identifiers (local implementation, 2026-10-18)
+
+- Preserve native effort IDs, order and defaults across catalog, dsh, PC and Vue;
+  distinguish omitted defaults from explicit `none` and retain unknown IDs.
+- Bind capability validation and final request construction to one prepared
+  snapshot. Normalize only unambiguous legacy session `off` selections, persist
+  before admission, and reject invalid efforts before queue/steer/voice prompts.
+- Verify actual dsh HTTP payloads, non-Router behavior, removal of an option,
+  persistence failures, upstream error bodies/codes and empty-body 400s.
+- Real Qwen direct HTTP/SSE default/none/high controls succeeded. Full Agent
+  response completeness and the historical 400 remain separate acceptance items;
+  do not classify them as solved from a successful short model request.
+- No Router/Model Console deployment, GPU policy, global preference or engine
+  parameter change is included. See the dated runtime evidence below.
+
+
+## Completed locally: TTS preferences and original transcript default
+
+- Shared per-model voice map, exact IDs, explicit default, save failure recovery
+  and directory/error states; no preferred-voice substitution.
+- Official PC and Vue mobile/desktop model/voice controls with cancellable
+  fixed-text preview, independent of read-aloud and task submission.
+- Raw dictation defaults and reset paths; explicit saved presets remain intact.
+- 278 voice tests, typecheck and all builds pass; full suite 824/825 with the
+  existing file-preview cleanup failure. Real LAN TTS/ASR checks and browser
+  matrix are recorded in voice-runtime.md; manual audio/device acceptance and
+  the existing Vue Enter settings RPC failure remain separate.

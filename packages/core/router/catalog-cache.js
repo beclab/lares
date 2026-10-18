@@ -119,7 +119,7 @@ export class CatalogCache {
   async load() {
     if (!this.primed) {
       this.primed = true;
-      const seeded = readCatalogSeed(this.dataDir);
+      const seeded = process.env.LARES_ROUTER_CATALOG_BOOT_FAILED === "1" ? null : readCatalogSeed(this.dataDir);
       if (seeded) {
         this.accept(seeded);
         return this.snapshot();

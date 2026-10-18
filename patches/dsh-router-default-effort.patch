@@ -1,0 +1,11 @@
+--- a/node_modules/@deepseek-ai/dsh-llm/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-llm/lib/index.js
+@@ -2177,7 +2177,7 @@
+ 			if (reasoning === void 0) {
+ 				if (requested !== void 0) throw new LlmError(`provider "${config.provider}" model "${config.model}" does not support reasoning effort "${requested}"`, "UNSUPPORTED_REASONING_EFFORT");
+ 			} else {
+-				const effective = requested ?? reasoning.defaultEffort;
++				const effective = requested ?? (config.provider === "olares-router" ? void 0 : reasoning.defaultEffort);
+ 				if (effective !== void 0) {
+ 					if (!reasoning.efforts.some((effort) => effort.id === effective)) throw new LlmError(`provider "${config.provider}" model "${config.model}" does not support reasoning effort "${effective}"`, "UNSUPPORTED_REASONING_EFFORT");
+ 					if (requested !== effective) resolvedConfig = {

@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { catalogCache } from "../../packages/core/router/catalog-cache.js";
 
+test.beforeEach(() => catalogCache.seed({ data: [{ id: "Qwen/chat", mode: "chat" }, { id: "Qwen/other", mode: "chat" }] }));
+
 type Ctx = {
   llm: {
     listProviders: () => { id: string; name: string }[];
@@ -38,7 +40,7 @@ test("boot catalog requests only Router's callable models", async () => {
         name: "Qwen/ready",
         mode: "chat",
         supportsVision: false,
-        supportsStt: false,
+        supportsStt: false, supportsSttStream: false,
         supportsTts: false,
         reasoningEfforts: null,
         contextWindow: null,
@@ -51,6 +53,7 @@ test("boot catalog requests only Router's callable models", async () => {
 });
 
 function stubCtx(overrides: Partial<Ctx["llm"]> = {}, saved: unknown[] = [], mutations: unknown[] = []): Ctx {
+  let selection = { provider: "olares-router", model: "Qwen/chat", reasoningEffort: "off" };
   return {
     llm: {
       listProviders: () => [{ id: "olares-router", name: "Olares Router" }],
@@ -59,9 +62,10 @@ function stubCtx(overrides: Partial<Ctx["llm"]> = {}, saved: unknown[] = [], mut
       ...overrides,
     },
     agentDefaultModel: {
-      currentSelection: () => ({ provider: "olares-router", model: "Qwen/chat", reasoningEffort: "off" }),
+      currentSelection: () => selection,
       saveSelection: async (next) => {
         saved.push(next);
+        selection = next as typeof selection;
       },
     },
     settings: {
@@ -128,7 +132,7 @@ test("Router refresh declares the sizes Router states and omits the ones it does
   );
 });
 
-test("Router refresh replaces the routable catalog and repairs a stale default", async () => {
+test("Router refresh repairs a missing global default for future sessions", async () => {
   const { refreshCatalog, catalogRevision, onCatalogRevision } = await catalogModule();
   const previousFetch = globalThis.fetch;
   const saved: unknown[] = [];
@@ -189,7 +193,7 @@ test("a reconcile that finds the same catalog does not wake every client", async
   }
 });
 
-test("Router refresh repairs a stale default with the preferred MTP build", async () => {
+test("Router refresh uses catalog order without preferring MTP", async () => {
   const { refreshCatalog } = await catalogModule();
   const previousFetch = globalThis.fetch;
   const saved: unknown[] = [];
@@ -206,7 +210,7 @@ test("Router refresh repairs a stale default with the preferred MTP build", asyn
     );
   try {
     await refreshCatalog(stubCtx({}, saved));
-    assert.deepEqual(saved, [{ provider: "olares-router", model: "Qwen/MTP-fast" }]);
+    assert.deepEqual(saved, [{ provider: "olares-router", model: "Qwen/plain" }]);
   } finally {
     globalThis.fetch = previousFetch;
     catalogCache.reset();

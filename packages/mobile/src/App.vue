@@ -100,6 +100,10 @@
       @pick-command="pickCommand"
       @toggle-speak="toggleSpeak"
     />
+    <div v-if="voicePanelState?.readAloudError" class="lares-speak-notice" role="alert">
+      {{ voiceReadAloudError }}
+      <button type="button" @click="voicePanel.retryReadAloud()">{{ t('dictation.retry') }}</button>
+    </div>
     <LaresVoicePanel v-if="voicePanelState" :view="voicePanelState" :t="t"
       @close="runVoicePanel('close')" @edit="voicePanel.edit($event)" @preset="voicePanel.selectPreset($event, true).catch(() => {})"
       @complete="runVoicePanel('complete')" @discard="runVoicePanel('discard')" />
@@ -107,6 +111,8 @@
 </template>
 
 <script>
+import { modelState, modelStateLabel } from "@olares/lares-core/router/model-state";
+import { matchVoiceShortcut } from "@olares/lares-core/voice/shortcuts";
 import { subscribeVoiceSettings } from "@olares/lares-core/larepass/settings";
 import { createVoicePanel } from "@olares/lares-core/voice/panel";
 import { mergeVoiceTranscript, subscribeVoiceHistory } from "@olares/lares-core/voice/projection";
@@ -116,10 +122,12 @@ import { connectChat } from "./runtime.js";
 import { createT } from "./i18n.js";
 import { failText, withPendingUser } from "./chat/format.js";
 import { captureSource } from "@olares/lares-core/voice/input";
+import { laresVoiceConfig, laresVoiceAvailability } from "@olares/lares-core/voice/lares-policy";
 import { createVoiceConversation } from "@olares/lares-core/voice/conversation";
 import { createAnswerPlayer } from "./chat/playback.js";
 import { createReplySpeaker, createSentencePlayer, speakable } from "@olares/lares-core/voice/speech";
-import { wavBlob } from "@olares/lares-core/voice/client";
+import { playAudioStream, createStreamingCapture } from "@olares/lares-core/voice/stream-client";
+import { voiceHeaders, wavBlob } from "@olares/lares-core/voice/client";
 import { browserPlays } from "@olares/lares-core/voice/playback";
 import { speakProblemText, speakToggleNotice } from "@olares/lares-core/voice/problem";
 import { appendDraftMentions } from "@olares/lares-core/files/mention";
@@ -220,6 +228,8 @@ export default {
       historyLoading: false,
       modelCatalog: null,
       modelError: "",
+      modelCatalogError: "",
+      modelCatalogLoading: false,
       modelPending: "",
       modelSheet: false,
       effortSheet: false,
@@ -234,6 +244,7 @@ export default {
       voiceLanguage: "",
       voiceSpeak: false,
       voiceDefaultMode: "continuous",
+      voiceSettings: null,
       voiceStreaming: false,
       speakBusy: false,
       speakNotice: "",
@@ -326,7 +337,9 @@ export default {
         sessions: this.sessions,
         sessionsReady: this.sessionsReady,
         models: this.models,
+        refreshModels: () => this.loadModelCatalog(true),
         modelError: this.modelError,
+        modelCatalogError: this.modelCatalogError,
         modelGroups: this.modelGroups,
         modelCurrent: this.modelCurrent,
         modelLabel: this.modelLabel,
@@ -427,8 +440,11 @@ export default {
       }
       return null;
     },
+    modelStatus() {
+      return { models: this.models?.models ?? [], current: this.models?.default, status: this.modelCatalogLoading || !this.modelCatalog ? "loading" : "ready", failures: this.models?.failures, error: this.modelCatalogError };
+    },
     modelLabel() {
-      return this.currentListedModel?.name || this.models?.default?.model || this.t("model.select");
+      return modelStateLabel(this.modelStatus, this.locale || "en");
     },
     liveModelSelection() {
       const row = this.sessions.find((item) => item.sessionId === this.sessionId);
@@ -507,11 +523,12 @@ export default {
       return this.models?.default ? selectionKey(this.models.default) : "";
     },
     modelBusy() {
-      return Boolean(this.modelPending) || (this.modelSheet && !this.modelCatalog);
+      return this.modelCatalogLoading || Boolean(this.modelPending) || (this.modelSheet && !this.modelCatalog);
     },
     modelBlocked() {
-      return this.chatDevice === "desktop" && this.models?.routable === false;
+      return !modelState(this.modelStatus).valid;
     },
+    voiceReadAloudError() { return this.t("settings.readAloudSyncFailed"); },
     voiceErrorText() {
       return this.voiceError ? messageFromCode(this.t, this.voiceError, "error.voice_failed") : "";
     },
@@ -541,7 +558,7 @@ export default {
     this.player = createAnswerPlayer();
     this.voicePanel = createVoicePanel({
       create: (options) => this.createMobileVoiceConversation(options),
-      loadConfig: async () => (await this.runtime.settings.voice(true)).config,
+      loadConfig: async () => (await this.runtime.settings.voice(false, { diagnostics: false })).config,
       process: async ({ text, preset, config, signal }) => { const response = await this.runtime.voiceRequest("/api/lares/voice/dictation/clean", { method: "POST", body: { text, preset, config: { dictationProfiles: config.dictationProfiles } }, signal }); if (!response.ok) throw new Error(response.body?.error?.code || "voice_cleanup_failed"); return response.body.text; },
       complete: async ({ sessionId, text }) => {
         const previous = sessionId === (this.sessionId || null) ? this.draft : this.draftBySession[sessionId || "@pending"] || "";
@@ -554,7 +571,13 @@ export default {
         void Promise.resolve(this.runtime.openSession(sessionId)).catch((error) => { this.voiceError = error.message; this.voiceAdoptingSession = null; });
       },
     });
-    this.voiceSettingsUnsub = subscribeVoiceSettings((value) => { this.voiceDefaultMode = value.config.mobileMode; });
+    this.voiceSettingsUnsub = subscribeVoiceSettings((value) => {
+      this.voiceDefaultMode = value.config.mobileMode; this.voiceSettings = value;
+      const next = value.config.speak === true;
+      if (this.voiceSpeak && !next) this.reader?.stop();
+      this.voiceSpeak = next;
+      void this.voicePanel.setReadAloud(next);
+    });
     this.voicePanelState = this.voicePanel.getSnapshot();
     this.voicePanelUnsub = this.voicePanel.subscribe(() => {
       const view = this.voicePanel.getSnapshot(); this.voicePanelState = view;
@@ -563,6 +586,7 @@ export default {
     });
     this.replySpeaker = createReplySpeaker();
     this.reader = createSentencePlayer({
+      stream: (value) => playAudioStream({ ...value, request: (path, options) => this.runtime.voiceRequest(path, options), headers: voiceHeaders(captureSource("mobile", this.voiceSettings?.config?.device)), socket: (ticket) => this.runtime.voiceSocket(ticket, "/api/lares/voice/stream") }),
       send: async (request) => {
         const result = await this.runtime.speak?.(request);
         if (!result) throw Object.assign(new Error("voice_speak_failed"), { code: "voice_speak_failed" });
@@ -593,9 +617,12 @@ export default {
       this.busyEnter = section.busyEnter;
     });
     this.voiceVisibilityHandler = () => {
-      if (document.hidden) void this.voicePanel.pause().catch(() => {});
+      if (document.hidden) { this.reader.stop(); void this.voicePanel.pause().catch(() => {}); }
     };
+    this.voiceOfflineHandler = () => { this.reader.stop(); void this.voicePanel.pause().catch(() => {}); };
+    window.addEventListener("offline", this.voiceOfflineHandler);
     document.addEventListener("visibilitychange", this.voiceVisibilityHandler);
+    window.addEventListener("keydown", this.onVoiceShortcut, true);
     this.voiceClock = setInterval(() => {
       if (this.voicePhase === "recording") this.voiceElapsed += 1;
     }, 1000);
@@ -605,11 +632,14 @@ export default {
     this.restoreLog();
   },
   deactivated() {
+    this.reader.stop();
     void this.voicePanel?.pause().catch(() => {});
     this.captureLog();
   },
   beforeUnmount() {
+    window.removeEventListener("offline", this.voiceOfflineHandler);
     document.removeEventListener("visibilitychange", this.voiceVisibilityHandler);
+    window.removeEventListener("keydown", this.onVoiceShortcut, true);
     clearInterval(this.voiceClock);
     this.captureLog();
     this.noteSeen(this.sessionId);
@@ -691,8 +721,8 @@ export default {
       this.items = snap.items;
       this.running = snap.running;
       this.runningSince = snap.runningSince || 0;
-      const target = this.voiceSpeak && !this.voiceCall ? speakable(utterance, this.voiceStreaming) : null;
-      if (target) this.reader.follow({ ...target, key: `${snap.sessionId}:${target.key}` });
+      const target = this.voiceSpeak && !this.voiceCall && !document.hidden ? speakable(utterance, true) : null;
+      if (target) this.reader.follow({ ...target, sessionId: snap.sessionId, source: { sessionId: snap.sessionId, turn: target.turn, step: target.step, attemptId: target.attemptId }, key: `${snap.sessionId}:${target.key}` });
       this.failed = snap.failed;
       this.error = snap.error;
       this.sessions = snap.sessions ?? this.sessions;
@@ -972,6 +1002,7 @@ export default {
       try {
         await this.runtime.start({ workspaces: this.chatDevice === "desktop" });
         if (gen !== this.hostGen) return;
+        void this.runtime.settings.voice(false, { diagnostics: false }).then(value => { if (gen === this.hostGen) { this.voiceSettings = value; this.voiceDefaultMode = value.config.mobileMode; } }).catch(() => {});
         if (this.chatDevice !== "desktop") await this.runtime.refreshWorkspaces();
         await this.loadComposerMeta();
       } finally {
@@ -986,6 +1017,7 @@ export default {
       this.unsub = this.runtime.subscribe((snap) => this.applySnap(snap));
     },
     switchHost() {
+      this.voiceSettings = null;
       void this.voicePanel?.end().catch(() => {});
       for (const controller of this.imageUploadControllers.values()) controller.abort();
       this.imageUploadControllers.clear();
@@ -1002,6 +1034,8 @@ export default {
       this.failed = "";
       this.error = "";
       this.modelCatalog = null;
+      this.modelCatalogError = "";
+      this.modelCatalogLoading = false;
       this.modelError = "";
       this.modelPending = "";
       this.modelSheet = false;
@@ -1076,17 +1110,21 @@ export default {
       }
       await Promise.all(jobs);
     },
-    async loadModelCatalog() {
+    async loadModelCatalog(refresh = false) {
       const gen = ++this.modelCatalogGen;
-      const loaded = await this.runtime.modelCatalog();
-      if (gen !== this.modelCatalogGen) return;
-      if (!loaded.ok) {
-        this.modelCatalog = null;
-        this.modelError = loaded.error?.message || loaded.error?.code || "models";
-        return;
+      this.modelCatalogLoading = true;
+      try {
+        if (refresh) await this.runtime.refreshModelCatalog();
+        const loaded = await this.runtime.modelCatalog();
+        if (gen !== this.modelCatalogGen) return;
+        if (!loaded.ok) throw new Error(loaded.error?.message || loaded.error?.code || "models");
+        this.modelCatalog = loaded.value ?? null;
+        this.modelCatalogError = "";
+      } catch (error) {
+        if (gen === this.modelCatalogGen) this.modelCatalogError = error.message;
+      } finally {
+        if (gen === this.modelCatalogGen) this.modelCatalogLoading = false;
       }
-      this.modelCatalog = loaded.value ?? null;
-      this.modelError = "";
     },
     openEffortSheet() {
       if (this.effortDisabled) return;
@@ -1114,7 +1152,7 @@ export default {
     },
     openModelSheet() {
       this.modelSheet = true;
-      if (!this.modelCatalog) void this.loadModelCatalog();
+      if (!this.modelCatalog || this.modelCatalogError || this.models?.failures?.length) void this.loadModelCatalog(true);
     },
     async chooseModel(model) {
       const key = this.modelKey(model);
@@ -1222,10 +1260,28 @@ export default {
       this.draftImages = [];
       this.imagesBySession = {};
     },
+    async onVoiceShortcut(event) {
+      if (this.chatDevice !== "desktop" || document.hidden || navigator.onLine === false || event.composedPath?.().some(node => node?.hasAttribute?.("data-voice-shortcut-recorder"))) return;
+      if (event.key === "Escape" && !event.defaultPrevented) { this.reader.stop(); void this.voicePanel.pause().catch(() => {}); return; }
+      const action = matchVoiceShortcut(event, this.voiceSettings?.config?.dictationShortcuts);
+      if (!action || !laresVoiceAvailability(this.voiceSettings).dictation) return;
+      event.preventDefault();
+      const view = this.voicePanel.getSnapshot();
+      if (view.busy) return;
+      if (view.visible && view.mode === "single") { if (view.snapshot?.capture === "recording") await this.voicePanel.finish().catch(() => {}); return; }
+      await this.voicePanel.pause().catch(() => {});
+      await this.voicePanel.open({ mode: "single", sessionId: this.sessionId || null, preset: action === "default" ? undefined : action, configSnapshot: this.voiceSettings.config }).catch(() => {});
+    },
     async onHoldStart() {
-      const settings = await this.runtime.settings.voice(true);
+      if (this.voicePanelState?.mode === "single" && this.voicePanelState.raw) {
+        await this.voicePanel.open({ mode: "single", sessionId: this.sessionId || null });
+        return;
+      }
+      const settings = await this.runtime.settings.voice(false, { diagnostics: false });
       this.voiceDefaultMode = settings.config.mobileMode;
-      await this.voicePanel.open({ mode: this.voicePanelState?.mode === "single" && this.voicePanelState.raw ? "single" : this.voiceDefaultMode, sessionId: this.sessionId || null });
+      const available = laresVoiceAvailability(settings, !this.modelBlocked);
+      if (!(this.voiceDefaultMode === "single" ? available.dictation : available.conversation)) { this.voiceError = "voice_model_unavailable"; return; }
+      await this.voicePanel.open({ mode: this.voiceDefaultMode, sessionId: this.sessionId || null });
     },
     onVoiceAction({ action, value }) {
       if (action === "stopPlayback") { void this.voicePanel.conversation?.controller.stopPlayback().catch(() => {}); return; }
@@ -1234,6 +1290,7 @@ export default {
     },
     runVoicePanel(action) { void this.voicePanel[action]().catch(() => {}); },
     async createMobileVoiceConversation({ mode, onTranscript, onDevice, config }) {
+      config = laresVoiceConfig(config, mode);
       const settings = { config };
       const continuous = mode === "continuous";
       onDevice(captureSource("mobile", settings.config.device));
@@ -1241,6 +1298,7 @@ export default {
       this.reader.stop(); this.player?.stop(); this.player?.unlock();
       let conversation;
       const reader = createSentencePlayer({
+        stream: captureSource("mobile", config.device) === "device" ? (value) => playAudioStream({ ...value, request: (path, options) => this.runtime.voiceRequest(path, options), headers: conversation.headers, socket: (ticket) => this.runtime.voiceSocket(ticket, "/api/lares/voice/stream") }) : undefined,
         send: (value) => conversation.speak(value),
         play: (sentence) => sentence.bluetooth === "played" ? Promise.resolve() : this.player.play(wavBlob(sentence.audio)),
         halt: () => this.player.stop(), silence: () => {},
@@ -1248,17 +1306,18 @@ export default {
         fail: (error) => { this.showSpeakProblem(error); void conversation.controller.disconnect("voice_playback_failed"); },
       });
       conversation = createVoiceConversation({
+        streamInput: (stream, callbacks) => createStreamingCapture(stream, { ...callbacks, request: (path, options) => this.runtime.voiceRequest(path, options), headers: conversation.headers, model: config.model, language: config.language, socket: (ticket) => this.runtime.voiceSocket(ticket, "/api/lares/voice/stream") }),
         captureConfig: { model: config.model, language: config.language },
         request: (path, options) => this.runtime.voiceRequest(path, options),
         transcribe: (blob, signal) => this.runtime.transcribe(blob, config.language, signal, config.model),
         device: captureSource("mobile", settings.config.device),
         readAloud: continuous && settings.config.speak,
-        preset: continuous && settings.config.preset === "dictation" ? "assistant" : settings.config.preset, endpointSilenceMs: settings.config.endpointSilenceMs, idleTimeoutMs: settings.config.idleTimeoutMs, recoveryTimeoutMs: settings.config.recoveryTimeoutMs,
+        preset: settings.config.preset, backend: settings.config.backend, endpointSilenceMs: settings.config.endpointSilenceMs, idleTimeoutMs: settings.config.idleTimeoutMs, recoveryTimeoutMs: settings.config.recoveryTimeoutMs,
         presentationSession: true,
         onTranscript: continuous ? null : onTranscript,
         mode: () => resolveSubmitMode(this.running, false, true, this.busyEnter),
-        playback: { stop: () => { reader.stop(); this.player.stop(); } },
-        onReply: (reply) => { const value = speakable(reply, settings.config.streaming); if (value) reader.follow(value); },
+        playback: { get canPause() { return reader.canPause; }, get key() { return reader.key; }, pause: () => reader.pause(), resume: () => reader.resume(), stop: () => { reader.stop(); this.player.stop(); } },
+        onReply: (reply) => { const value = speakable(reply, captureSource("mobile", config.device) === "device"); if (value) reader.follow(value); },
       });
       return conversation;
     },
@@ -1449,6 +1508,8 @@ export default {
     async send(mode = "queue") {
       const text = this.draft.trim();
       if (!this.canSend) return;
+      this.reader.stop();
+      if (this.voiceCall?.connection === "open") await this.voicePanel.pause();
       this.player?.unlock();
       const sessionId = this.sessionId;
       const images = this.draftImages.filter((row) => draftImageStatus(row) === "ready");

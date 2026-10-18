@@ -12,8 +12,14 @@ import { createVoiceController } from "@olares/lares-core/voice/controller";
 import { validateVoiceShortcuts, matchVoiceShortcut } from "@olares/lares-core/voice/shortcuts";
 import { createHoldGesture } from "@olares/lares-core/voice/hold";
 const flush = () => new Promise((resolve) => setImmediate(resolve));
-const config = () => structuredClone(VOICE_DEFAULTS);
+const config = () => ({ ...structuredClone(VOICE_DEFAULTS), dictationPreset: "clean" });
 
+test("default dictation is raw, never invokes an LLM, and leaves explicit choices intact", async () => {
+  const text = "先不要删除文件。";
+  assert.equal(VOICE_DEFAULTS.dictationPreset, "raw");
+  assert.equal(await cleanDictation(text, { config: structuredClone(VOICE_DEFAULTS), chat: async () => assert.fail("LLM called") }), text);
+  assert.equal(await cleanDictation(text, { config: {}, chat: async () => assert.fail("LLM called") }), text);
+});
 test("raw preserves every character without consulting a model", async () => {
   const text = "嗯，周三，不，周四；可能不可以删除 Lares 的 004 文件。";
   assert.equal(await cleanDictation(text, { config: { ...config(), dictationPreset: "raw" }, chat: async () => assert.fail("LLM called") }), text);
@@ -39,7 +45,7 @@ test("missing model, tool-shaped output and empty output are rejected", async ()
 test("legacy explicit cleanup choice migrates once and explicit preset wins", () => {
   const previous = process.env.DSH_HOME; const home = mkdtempSync(join(tmpdir(), "dictation-config-")); process.env.DSH_HOME = home;
   try {
-    assert.equal(readConfig().dictationPreset, "clean"); writeConfig({ dictationPreset: "raw" });
+    assert.equal(readConfig().dictationPreset, "raw"); writeConfig({ dictationPreset: "raw" });
     const path = join(home, "voice-input", "config.json");
     writeFileSync(path, JSON.stringify({ dictationCleanup: false })); assert.equal(readConfig().dictationPreset, "raw");
     writeFileSync(path, JSON.stringify({ dictationCleanup: true })); assert.equal(readConfig().dictationPreset, "clean");
@@ -69,6 +75,30 @@ test("failed cleanup retains original and can recover without recording again", 
   const h = harness({ process: async () => { throw new Error("offline"); } }); await h.panel.open(); await h.panel.finish();
   assert.equal(h.panel.getSnapshot().raw, "raw words"); assert.equal(h.panel.getSnapshot().draft, "raw words"); assert.equal(h.panel.getSnapshot().error, "offline");
   await h.panel.selectPreset("raw", true); assert.equal(h.panel.getSnapshot().error, null); await h.panel.dispose();
+});
+test("using raw interrupts stalled cleanup and inserts once without waiting for its result", async () => {
+  let resolve: any; let signal: AbortSignal;
+  const h = harness({ inlineDictation: true, process: (request: any) => { signal = request.signal; return new Promise(done => { resolve = done; }); } });
+  await h.panel.open({ sessionId: "s" }); const finishing = h.panel.finish(); await flush();
+  assert.equal(h.panel.getSnapshot().stage, "processing");
+  assert.equal(h.panel.getSnapshot().raw, "raw words");
+  const original = h.panel.selectPreset("raw", true); await flush();
+  assert.equal(signal!.aborted, true);
+  await Promise.all([finishing, original]); await h.panel.complete();
+  assert.deepEqual(h.inserted, [{ sessionId: "s", text: "raw words" }]);
+  resolve("late cleanup"); await flush(); assert.equal(h.inserted.length, 1);
+  assert.equal(h.panel.getSnapshot().busy, false); await h.panel.dispose();
+});
+test("cleanup deadline exits loading with original intact even when the request ignores abort", async (t) => {
+  const deadline = new AbortController();
+  const h = harness({ inlineDictation: true, process: () => new Promise(() => {}) });
+  await h.panel.open();
+  t.mock.method(AbortSignal, "timeout", () => deadline.signal);
+  const finishing = h.panel.finish(); await flush();
+  deadline.abort(new DOMException("Timed out", "TimeoutError")); await finishing;
+  assert.equal(h.panel.getSnapshot().stage, "preview"); assert.equal(h.panel.getSnapshot().busy, false);
+  assert.equal(h.panel.getSnapshot().raw, "raw words"); assert.equal(h.panel.getSnapshot().draft, "raw words");
+  assert.ok(h.panel.getSnapshot().error); assert.equal(h.inserted.length, 0); await h.panel.dispose();
 });
 test("late processing cannot overwrite manual edits or a newly selected session", async () => {
   let resolve: any; const h = harness({ process: () => new Promise((done) => { resolve = done; }) });

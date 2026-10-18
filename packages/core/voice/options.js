@@ -2,12 +2,13 @@ import { defaultDictationProfiles } from "./dictation.js";
 
 export const VOICE_DEFAULTS = {
   preset: "assistant",
-  dictationPreset: "clean",
+  dictationPreset: "raw",
   dictationProfiles: defaultDictationProfiles(),
   dictationShortcuts: { default: "", raw: "", clean: "", outline: "", summary: "" },
   chatModel: "default-chat",
   instructions: "",
   voice: "",
+  ttsVoiceByModel: {},
   mode: "single",
   mobileMode: "continuous",
   endpointSilenceMs: 500,

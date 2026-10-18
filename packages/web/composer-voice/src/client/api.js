@@ -1,18 +1,8 @@
 export {
-  API,
-  getJson,
-  installVoiceChart,
-  loadGpuMode,
   loadVoiceSettings,
-  switchGpuMode,
-  voiceChartAction,
-  postGpuApp,
   postPlaybackStop,
   postSpeak,
-  rememberedVoiceSettings,
-  saveSlicePlan,
   saveVoiceSettings,
   scanBluetoothDevices,
   connectBluetoothDevice,
-  postTranscribe,
 } from "@olares/lares-core/voice/client";

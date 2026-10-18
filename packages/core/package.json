@@ -32,6 +32,9 @@
     "skills"
   ],
   "exports": {
+    "./router/catalog-coordinator": "./router/catalog-coordinator.js",
+    "./router/model-state": "./router/model-state.js",
+    "./router/model-authorization": "./router/model-authorization.js",
     "./tools/http": "./tools/http.js",
     "./tools/json-file": "./tools/json-file.js",
     "./tools/async": "./tools/async.js",
@@ -106,6 +109,10 @@
     "./drive/url-download": "./drive/url-download.js",
     "./drive/execute": "./drive/execute.js",
     "./drive/tools": "./drive/tools.js",
+    "./voice/stream-gateway": "./voice/stream-gateway.js",
+    "./voice/stream-client": "./voice/stream-client.js",
+    "./voice/pcm-player": "./voice/pcm-player.js",
+    "./voice/pcm-worklet": "./voice/pcm-worklet.js",
     "./voice/config": "./voice/config.js",
     "./voice/languages": "./voice/languages.js",
     "./voice/service": "./voice/service.js",
@@ -194,10 +201,24 @@
     "./voice/hold": "./voice/hold.js",
     "./voice/dictation": "./voice/dictation.js",
     "./voice/shortcuts": "./voice/shortcuts.js",
+    "./voice/tts-settings": "./voice/tts-settings.js",
+    "./voice/tts-preview": "./voice/tts-preview.js",
+    "./voice/tts-voice": "./voice/tts-voice.js",
+    "./voice/activity": "./voice/activity.js",
+    "./voice/preferences": "./voice/preferences.js",
+    "./voice/lares-policy": "./voice/lares-policy.js",
     "./voice/panel": "./voice/panel.js",
-    "./voice/projection": "./voice/projection.js"
+    "./voice/startup": "./voice/startup.js",
+    "./voice/projection": "./voice/projection.js",
+    "./voice/reply-stream": "./voice/reply-stream.js",
+    "./router/default-selection": {
+      "types": "./router/default-selection.d.ts",
+      "default": "./router/default-selection.js"
+    }
   },
   "dependencies": {
+    "emoji-regex": "11.0.0",
+    "markdown-it": "14.3.0",
     "ws": "^8.22.0"
   }
 }

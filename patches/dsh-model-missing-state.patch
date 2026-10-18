@@ -1,0 +1,104 @@
+--- a/node_modules/@deepseek-ai/dsh-client-ui-model-selection/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-model-selection/lib/client.js
+@@ -219,8 +219,19 @@
+ 			* Ensure the Host generation's shared available catalog is loaded.
+ 			* @returns the fresh directory value.
+ 			*/
+-			async load() {
++			async load(refresh = false) {
+ 				this.assertAvailable();
++				if (refresh) {
++					this.store.update((state) => { state.status = "loading"; state.error = null; });
++					try {
++						const response = await fetch("/api/lares/models/refresh", { method: "POST" });
++						if (!response.ok) throw new Error("Model refresh failed");
++						this.catalog.invalidate();
++					} catch (error) {
++						this.store.update((state) => { state.status = "error"; state.error = error.message; });
++						throw error;
++					}
++				}
+ 				await this.catalog.load();
+ 				this.syncInputs();
+ 				return this.store.getSnapshot();
+@@ -540,7 +551,7 @@
+ 				selection: {
+ 					provider: group.id,
+ 					model: model.id,
+-					...model.reasoning?.defaultEffort === void 0 ? {} : { reasoningEffort: model.reasoning.defaultEffort }
++					
+ 				}
+ 			}))), [groups]);
+ 			const showSearch = choices.length > 4;
+@@ -560,13 +571,13 @@
+ 			const activeModelIndex = Math.min(highlightedIndex ?? Math.max(0, currentVisibleIndex), visibleModels.length - 1);
+ 			const currentChoice = choices[state.current === null ? -1 : choices.findIndex((c) => c.selection.provider === state.current?.provider && c.selection.model === state.current.model)];
+ 			const reasoning = currentChoice?.model.reasoning;
+-			const effectiveEffort = state.current?.reasoningEffort ?? reasoning?.defaultEffort;
+-			const effortLabel = reasoning === void 0 ? state.retainedEffort : effectiveEffort === void 0 ? t("effort.providerDefault") : reasoning.efforts.find((level) => level.id === effectiveEffort)?.name ?? effectiveEffort;
+-			const effortChoices = (0, react.useMemo)(() => reasoning === void 0 ? [] : [...reasoning.defaultEffort === void 0 ? [{
++			const effectiveEffort = state.current?.reasoningEffort;
++			const effortLabel = reasoning === void 0 ? void 0 : effectiveEffort === void 0 ? t("effort.providerDefault") : reasoning.efforts.find((level) => level.id === effectiveEffort)?.name ?? effectiveEffort;
++			const effortChoices = (0, react.useMemo)(() => reasoning === void 0 ? [] : [...[{
+ 				key: "provider-default",
+ 				effort: void 0,
+ 				label: t("effort.providerDefault")
+-			}] : [], ...reasoning.efforts.map((effort) => ({
++			}], ...reasoning.efforts.map((effort) => ({
+ 				key: `effort:${effort.id}`,
+ 				effort: effort.id,
+ 				label: effort.name
+@@ -810,10 +821,15 @@
+ 			};
+ 			const waiting = state.current === null && state.status === "loading";
+ 			const modelLabel = waiting ? t("trigger.loading") : currentChoice?.model.name ?? (state.current === null ? t("trigger.fallback") : `${state.current.provider}/${state.current.model}`);
+-			const compactModelLabel = state.current?.model.split("/").at(-1) || modelLabel;
++			const missingModelLabel = state.current?.model.split("/").at(-1);
++			const compactModelLabel = state.status === "loading" || state.status === "idle" ? t("trigger.loading")
++				: state.error || state.failures.length ? t("trigger.failed")
++				: state.current?.model && state.routable === false ? `${missingModelLabel} · ${t("trigger.unavailable")}`
++				: choices.length === 0 ? t("empty.models")
++				: !state.current?.model ? t("trigger.fallback") : missingModelLabel;
+ 			const fullModelLabel = state.current === null ? modelLabel : `${state.current.provider}/${state.current.model}`;
+ 			const triggerLabel = effortLabel === void 0 ? fullModelLabel : `${fullModelLabel} · ${effortLabel}`;
+-			const triggerAria = waiting ? t("trigger.loading") : state.current === null ? t("trigger.selectAria") : effortLabel === void 0 ? t("trigger.aria", { model: fullModelLabel }) : t("trigger.ariaEffort", {
++			const triggerAria = state.routable !== true || state.error || state.failures.length ? compactModelLabel : waiting ? t("trigger.loading") : state.current === null ? t("trigger.selectAria") : effortLabel === void 0 ? t("trigger.aria", { model: fullModelLabel }) : t("trigger.ariaEffort", {
+ 				model: fullModelLabel,
+ 				effort: effortLabel
+ 			});
+@@ -1096,6 +1112,8 @@
+ 			"option.loadError": "目录加载失败：{message}",
+ 			"trigger.fallback": "请选择模型",
+ 			"trigger.loading": "正在加载模型…",
++			"trigger.failed": "模型目录加载失败，请刷新",
++			"trigger.unavailable": "不可用",
+ 			"trigger.selectAria": "请选择模型",
+ 			"trigger.aria": "选择模型，当前 {model}",
+ 			"trigger.ariaEffort": "选择模型，当前 {model}，推理等级 {effort}",
+@@ -1122,6 +1140,8 @@
+ 			"option.loadError": "Catalog failed to load: {message}",
+ 			"trigger.fallback": "Select model",
+ 			"trigger.loading": "Loading models…",
++			"trigger.failed": "Model refresh failed",
++			"trigger.unavailable": "unavailable",
+ 			"trigger.selectAria": "Select model",
+ 			"trigger.aria": "Select model, current {model}",
+ 			"trigger.ariaEffort": "Select model, current {model}, reasoning effort {effort}",
+@@ -1178,7 +1198,7 @@
+ 		function selectionOf(state, id) {
+ 			for (const group of state.groups) for (const model of group.models) {
+ 				if (rowId(group.id, model.id) !== id) continue;
+-				const reasoningEffort = state.current?.provider === group.id && state.current.model === model.id ? state.current?.reasoningEffort ?? model.reasoning?.defaultEffort : model.reasoning?.defaultEffort;
++				const reasoningEffort = state.current?.provider === group.id && state.current.model === model.id ? state.current?.reasoningEffort : void 0;
+ 				return {
+ 					provider: group.id,
+ 					model: model.id,
+@@ -1259,7 +1279,7 @@
+ 							available,
+ 							directory: directory.store,
+ 							load: () => {
+-								if (available) directory.load().catch(() => {});
++								if (available) directory.load(true).catch(() => {});
+ 							},
+ 							select: (selection) => available ? directory.select(selection) : Promise.resolve(void 0)
+ 						};

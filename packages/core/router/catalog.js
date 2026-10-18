@@ -1,6 +1,4 @@
 const SAFE_MODEL_ID = /^[^\u0000-\u001f\u007f]{1,512}$/;
-/** pi-ai's thinking vocabulary; a Router level outside it has no wire spelling to declare. */
-const THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
 /**
  * The capability flags one catalog row declares, named without Router's
@@ -23,20 +21,12 @@ function capabilities(item) {
   return flags;
 }
 
-/**
- * The effort levels Router advertises for one model, keyed by pi-ai level with
- * Router's own spelling as the wire value. A dict offering nothing beyond `off`
- * is no capability at all, and pi-ai rejects it.
- */
+/** Keep Router identifiers and their declared order independent of adapter vocabulary. */
 function reasoningEfforts(item, flags) {
   if (!flags.has("reasoning_effort")) return null;
   const options = Array.isArray(item.reasoning_effort?.options) ? item.reasoning_effort.options : [];
-  const efforts = {};
-  for (const option of options) {
-    const level = String(option ?? "").trim().toLowerCase();
-    if (THINKING_LEVELS.has(level)) efforts[level] = level;
-  }
-  return Object.keys(efforts).some((level) => level !== "off") ? efforts : null;
+  const entries = options.filter((value) => typeof value === "string" && value.length > 0);
+  return entries.length ? Object.fromEntries(entries.map((value) => [value, value])) : null;
 }
 
 /**
@@ -80,7 +70,10 @@ export function routerCatalogRows(payload) {
       supportsVision: flags.has("vision"),
       supportsStt: flags.has("stt") || flags.has("stt_stream"),
       supportsTts: flags.has("tts"),
+      supportsSttStream: flags.has("stt_stream"),
       reasoningEfforts: reasoningEfforts(item, flags),
+      ...(item.reasoning_effort?.default && (item.reasoning_effort.options ?? []).includes(item.reasoning_effort.default)
+        ? { reasoningDefault: item.reasoning_effort.default } : {}),
       contextWindow,
       maxTokens: outputTokenBudget(tokenCount(item.max_output_tokens), contextWindow),
     });

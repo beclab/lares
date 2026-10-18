@@ -6,6 +6,102 @@ Status: target design; capabilities become available only after implementation a
 
 The service initially runs in the Lares process. Shared logic lives in `packages/core/voice`; Host adapters mount authenticated routes. No LiveKit Agent runtime is introduced. Lares/dsh owns durable tasks, skills, tools, approvals and business history. Router owns model discovery, authentication, routing, quotas and usage. SDKs own device capture, transport and playout reporting. Existing voice_input is not a mandatory dependency; its ordered transcript events, optional cleanup and capability negotiation are reference contracts.
 
+### Shared assistant speech text
+
+PC, Vue mobile and Vue desktop use the same Host-side `speechSegments` entry for
+buffered and streamed assistant speech. `spoken-text.js` prepares only the spoken
+copy; stored messages, displayed Markdown, copy actions, dictation and raw TTS API
+input remain unchanged. No additional LLM or client-side cleanup is involved.
+
+| Input | Spoken copy |
+| --- | --- |
+| Emoji, including skin tones, flags and ZWJ sequences | Replace the complete sequence with whitespace; preserve numeric keycaps as digits and textual ©, ® and ™ |
+| Headings, emphasis, quotes and list markers | Remove syntax, keep text and item order |
+| Markdown links and images | Keep link labels and image alternative text; omit destination URLs |
+| Bare URLs and inline code | Preserve content; remove inline-code backticks |
+| Fenced code and model thinking | Skip without summarizing |
+| Tables | Omit separator rows; preserve cell order and code/escaped pipes |
+| Empty or decorative output | Finish without synthesis or an error |
+
+Use pinned `emoji-regex` matching and Markdown-it syntax parsing, rather than
+broad Unicode ranges or global deletion of punctuation. Mathematical operators,
+decimals and identifiers such as `5 * 3`, `a > b` and `snake_case` are content.
+Formatting and emoji cleanup precede segmentation. The natural policy is the default after same-voice blind listening selected
+sample A over the legacy baseline on 2026-10-19.
+The internal policy is shared by fixed text, trusted streamed replies and the
+buffered fallback; no client/Host setting is added for this acceptance gate.
+
+For cumulative streaming input, defer unfinished links, code spans, emphasis,
+entities, emoji graphemes and ambiguous table headers. Hidden trailing material
+must not retract the count of already available sentences. The cleaner has no
+cross-request mutable state; existing readout keys, generation cancellation and
+session leases discard late output. Final input flushes remaining literal text.
+Pronunciation dictionaries, language-specific number normalization and SSML belong
+in explicit engine adapters, not Router or Model Console text rewriting.
+
+
+The natural policy preserves Markdown paragraph, heading, list depth
+and code boundaries in spoken structural units. Chinese `。！？` completes a
+sentence; commas, colons and line breaks alone do not. Balanced quotes and
+parentheses stay atomic. Incomplete structures wait until final flush. English
+sentence detection is retained for ASCII abbreviations, decimals and URLs.
+Complete prose is released promptly; prose over 80 Chinese-equivalent characters
+splits only at safe outer clause boundaries, targeting 40–80 characters. A unit
+without a safe boundary remains intact under the existing request-size limit.
+
+Adjacent short items from one list aggregate in batches targeting three items,
+with an 80-character budget including separators; no batch crosses nesting,
+paragraphs, headings or hidden code. Missing item separators become `；` only
+in the spoken copy; explanations, numbers and parentheses remain unchanged.
+The first completed pending item starts a 250 ms deadline. The Host wakes at
+that deadline even without new tokens, and buffered fallback requests use the
+same deadline with cancellation. Scheduling delay from a blocked event loop is
+not a guaranteed end-to-end latency bound. State belongs to one output attempt;
+released prefixes cannot be regrouped, and stop/retry/session exit discard state.
+No parser is advanced while automatic speech has not claimed the reply.
+
+Speech punctuation, phonetics and synthesis randomness are separate variables.
+Model-specific number normalization, pronunciation dictionaries or SSML must not
+be implemented as global client text substitutions. Diagnostic bracket-to-pause
+and Chinese-voice comparisons never silently become saved user preferences.
+
+References: [LiveKit text transforms](https://docs.livekit.io/agents/multimodality/text/),
+[Pipecat Markdown filter](https://github.com/pipecat-ai/pipecat/blob/main/src/pipecat/utils/text/markdown_text_filter.py),
+and [stream2sentence](https://github.com/KoljaB/stream2sentence/blob/master/stream2sentence/stream2sentence.py).
+These inform the separation of cleanup, streaming boundaries and synthesis;
+Lares does not import their runtimes or assume their defaults are identical.
+
+### LLM text streaming and TTS scheduling
+
+Opening automatic read-aloud is not itself a streaming-text guarantee. In the
+current PC and Vue paths, `speakable(reply, false)` waits for a settled dsh reply;
+the WebSocket grant then carries that text and the gateway streams synthesized
+PCM for its cleaned segments. Audio streaming is present, but LLM delta-to-TTS
+streaming is not. A `speechCommitted` guard exists in the shared reader, but no
+current dsh adapter emits an authoritative commitment event. Do not turn on
+speculative narration by merely changing the `false` argument.
+
+The reference LiveKit pipeline feeds an async LLM text channel through ordered
+text transforms into TTS. Its non-native-streaming adapter runs text collection
+and sentence synthesis as separate tasks, flushes the final fragment on end of
+input, and cancels both tasks on exit. Optional sentence pacing sends the first
+sentence immediately and batches later text using remaining audio duration.
+Inference remains serial while the next synthesis can overlap previous playout.
+See upstream [generation](https://github.com/livekit/agents/blob/main/livekit-agents/livekit/agents/voice/generation.py),
+[stream adapter](https://github.com/livekit/agents/blob/main/livekit-agents/livekit/agents/tts/stream_adapter.py)
+and [pacer](https://github.com/livekit/agents/blob/main/livekit-agents/livekit/agents/tts/stream_pacer.py).
+
+Any Lares incremental-text follow-up must use an authoritative, user-facing
+reply boundary that cannot later become a tool call. Feed only stable cleaned
+segments, preserve existing single-generation engine limits, bound queued text
+and audio, and propagate cancellation through generation and playback. Never
+read reasoning, tool arguments, pending approval text or unconfirmed results.
+Native text-streaming TTS may reuse one upstream session; sentence-adapted TTS
+may use separate bounded requests. Neither should submit one request per token.
+Measure LLM first text, speech commitment, first clean segment, synthesis first
+audio, client receipt and actual rendering separately. Cleanup success or a PCM
+stream alone must not be reported as reduced end-to-end response latency.
+
 ```mermaid
 flowchart LR
     UI["Lares web / mobile"] --> V["Voice service"]
@@ -21,6 +117,18 @@ flowchart LR
 Public voice model IDs must differ from dependency model IDs. Reject recursive service routing. Provider-native Realtime and cascaded speech are separate backends, not separate user interaction modes.
 
 ## Interaction and presets
+
+### Lares product entries and generic API policy
+
+Lares entries select their policy per connection. Dictation uses `preset: dictation` and `backend: pipeline`, returns processed text to the original draft, and never creates an Agent task. Conversation uses `preset: direct` and `backend: pipeline`: each valid transcript enters the bound dsh session with its current Agent model, permissions, skills and tools. PC retains two entries and automatic rounds; mobile retains its default entry and hold-to-speak. Starting, resuming or recreating either connection does not change global API defaults.
+
+The generic Voice Service API still supports all four presets, independent dialogue models and validated native Realtime. `POST /api/lares/voice/session` accepts optional `preset` and validated `backend` overrides; omitted values retain configured defaults. An explicit Realtime override must pass the existing validated-model gate. Lares direct conversations do not construct the independent voice dialogue or run its reply/summary LLM. Their durable context remains in dsh.
+
+Lares dictation requires ASR. Lares conversation requires ASR, TTS and a routable current Agent configuration; it does not require an independent voice-chat model. Settings expose ASR/TTS, language, devices, read-aloud, dictation processing profiles and mobile interaction preference. API preset, independent chat model, backend and native Realtime selection are absent from both product settings surfaces.
+
+A single Dictation style selector offers raw, clean, outline and summary. The selected value is both the saved default and the configuration shown immediately below; there is no independent editor selection, preset list, Tab or disclosure. Raw shows only its no-LLM explanation; other profiles show model and six-line instructions. Switching automatically saves the selected style before replacing the editor, disables competing switches, and retains the previous selection on failure. Dirty profile changes require Save/Discard/Keep editing before switching or leaving; failed saves do not switch. Profile configurations remain independent, Reset only edits the draft, and Save/Cancel appear only for dirty model/instructions. Opening settings never changes the saved style.
+
+Shortcut bindings are always expanded on the official web settings page. Vue shows them only for explicit `device="desktop"`, regardless of viewport width. Both clients share the recorder and unsaved-draft guard. LarePass hosts bind the settings component's optional `bindBeforeLeave(listener)` or await its exposed `beforeLeave()` before navigation; an arbitrary external unmount cannot be intercepted by Vue. Mobile hosts receive no system/global shortcut integration.
 
 | Preset | Behavior |
 | --- | --- |
@@ -124,7 +232,7 @@ PC primary priority is dictation completion/loading, native send for a nonempty 
 
 Clicking PC conversation starts existing automatic ASR/VAD turns, without requiring native Realtime. A small orb above the input shows preparation, listening, recognition, execution, playback, paused and error states; full messages remain in the session. Pause/Esc, background, offline and session changes stop audio, preserve tasks and require explicit resume. Half-duplex playback pauses capture; shipped devices still have no validated automatic barge-in. Clicking dictation pauses conversation first and never resumes it implicitly.
 
-PC dictation immediately captures until Done and temporarily owns the entire composer: only waveform, timing, cancel and finish are visible. The editor, attachments, permissions and model controls stay mounted with their state preserved, but are hidden and absent from keyboard navigation during dictation. Preparation, recognition/conversion and recovery use the same voice-only surface. Success appends to the latest original-session draft without changing attachments or sending, then restores the ordinary composer; cancellation restores it unchanged. Failure preserves original text with retry/use-original; closing retains a take and discarding cancels recognition immediately. No PC preview dialog remains. Discovery gates the microphone on ASR and conversation on ASR, a dialogue model (or direct dsh mode) and TTS. Loading exposes no unverified controls; refresh errors preserve the last known capability and show recovery. Native Realtime stays independently gated and is not enabled for these automatic PC turns.
+PC dictation immediately captures until Done and temporarily owns the entire composer: only waveform, timing, cancel and finish are visible. The editor, attachments, permissions and model controls stay mounted with their state preserved, but are hidden and absent from keyboard navigation during dictation. Preparation, recognition/conversion and recovery use the same voice-only surface. Success appends to the latest original-session draft without changing attachments or sending, then restores the ordinary composer; cancellation restores it unchanged. Failure preserves original text with retry/use-original; closing retains a take and discarding cancels recognition immediately. No PC preview dialog remains. Discovery gates the microphone on ASR and conversation on ASR, TTS and the current routable Agent configuration. Loading exposes no unverified controls; refresh errors preserve the last known capability and show recovery. Native Realtime remains a separately gated API capability and is not used by Lares product entries.
 
 ### Mobile interaction (unchanged)
 
@@ -191,3 +299,93 @@ flowchart TD
 ```
 
 The initial implementation uses bounded long polling for session history, stable record sequences for pagination, and a persisted `anchorSeq` for native dsh ordering. A read-only external activity marker expands the official Chat on voice-only sessions. Presentation markers and projected rows never become execution events. Client subscriptions share one web history feed per mounted session and stop when the last subscriber leaves.
+
+
+## Streaming pipeline
+
+See [Streaming voice runtime](voice-streaming.md) for the shared ASR/TTS transport,
+AudioWorklet lifecycle, bounded playout credit and safe dsh speech boundary.
+Streaming capture does not submit partial transcripts; speculative tools remain
+out of scope. Streaming is independent of the legacy GPU reading-mode setting.
+
+
+## Router-owned reasoning choices
+
+Router effort option IDs, ordering and defaults are authoritative. Lares stores
+and dispatches their original values, including `none`, without translating them
+to pi-ai ThinkingLevel names. UI-only translations may display `none` as “关闭思考”
+or “No thinking”. An absent selection means model default and omits the override;
+it is not equivalent to explicit `none`. Unknown declared IDs remain selectable.
+
+The Router adapter bypasses pi-ai effort clamping and validates the prepared
+request against the same bound capability snapshot used to describe it. Other
+providers retain their existing fixed-level validation. Legacy Lares Router
+`off` selections normalize only when `off` is absent and `none` is explicitly
+advertised; normalization persists a session selection before new task admission
+and never rewrites the global default. Unsupported selections remain unavailable.
+
+
+## Speech preferences and audition
+
+The shared settings store owns TTS model selection and `ttsVoiceByModel`, with
+model-default omission distinguished from an explicit voice ID. Preset voices
+are discovered through the existing authenticated Router audio shim, not a new
+capability catalog. Settings render loading, retry, no-presets and unavailable
+saved-voice states separately. Legacy voice settings remain model-bound; reads
+do not persist migration data. Generic API voice overrides remain explicit.
+
+An explicit fixed-text audition is independent of automatic read-aloud and
+business sessions. Its controller cancels both inference and local playback on
+stop, selection change, settings disposal or capture/conversation activity.
+Reply audio binds one configuration snapshot per output; it never mixes voices
+when preferences change. New/unconfigured dictation uses raw transcription;
+existing explicit processing selections and their profile drafts are preserved.
+
+## Trusted reply streams and interruption recovery
+
+Lares assistant speech has one shared core pipeline. Text is addressed by session,
+turn, step and attempt; an authenticated client cannot mark its own text as
+committed. The minimal dsh Agent-loop patch attaches `speechEligible` only to the
+process-local start event, derived from the frozen admitted request's empty tool
+and tool-history lists. The Host registry observes these events directly. Other
+requests wait for a successful, text-only `assistant/message`; a turn-end alone
+cannot authorize unfinished text. Failed, abandoned, rewritten or tool-bearing
+output terminates speech. No additional LLM call or tool removal is used.
+
+The existing stream ticket accepts an optional `source` address instead of fixed
+`text`. The Host inspects the session and verifies the scope owner before binding
+it. Fixed-text callers remain supported. A reply source can be claimed once,
+including across PC and Vue tabs, so multiple observers cannot synthesize the
+same answer in parallel. Stop and failure do not relinquish that claim for an
+automatic replay. The registry is bounded and expired output fails explicitly.
+
+Stable Markdown-cleaned segments feed the existing single synthesis pipeline;
+text generation, synthesis and playback overlap only within this trusted boundary.
+The current full-text working buffer is capped at 8192 characters and fails with
+`voice_text_limit`; it never silently truncates at 2000 characters. Sentence
+boundaries are unchanged. Segment indices, source frames and generation checks
+reject repeats and late audio. This does not resolve a model's pronunciation of
+isolated words; text/request correctness and audible correctness are separate.
+
+PCM and file players expose pause/resume without resetting their unread position.
+A paused worklet renders silence without consuming frames. The socket accepts
+bounded `pause`/`resume` control and retains the existing audio backpressure caps.
+Cancellation invalidates local output immediately and propagates upstream.
+
+Automatic acoustic interruption requires continuous conversation, explicit
+`bargeIn` and `echoTested` input capabilities, and a pause-capable current output.
+No shipped device is newly certified by this implementation. The browser adapter
+accepts explicit verified capability injection; defaults remain half duplex.
+After 500 ms continuous voice activity, the shared controller pauses audio while
+recognition settles. Nonempty final text confirms interruption, including short
+acknowledgments. Successful empty recognition plus 2 seconds silence resumes only
+the same output. Errors never mean noise. Confirmation is limited to 10 seconds.
+Explicit stop, pause, background, disconnect and session changes invalidate
+recovery; none cancel the business task or truncate its history.
+
+Shared readout state distinguishes preparing, playing, confirming and error from
+Agent completion. The PC uses a minimal public assistant-status extension in the official
+streaming/settled assistant renderer (the existing turn-tail only mounts after
+completion); Vue renders the same state at the matching assistant row. Stop
+is available during preparation and playback. Finished/stopped output leaves no
+resident status or spacer. Read-aloud defaults and saved preferences are unchanged.

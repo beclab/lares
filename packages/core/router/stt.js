@@ -92,11 +92,12 @@ const RESOLVED_TTL_MS = 120_000;
 export async function listModels(options) {
   try {
     const { rows } = await catalogCache.get({ refresh: options?.refresh });
-    return rows.map(({ id, mode, supportsStt, supportsTts }) => ({
+    return rows.map(({ id, mode, supportsStt, supportsTts, supportsSttStream }) => ({
       id,
       mode,
       supportsStt: Boolean(supportsStt),
       supportsTts: Boolean(supportsTts),
+      supportsSttStream: Boolean(supportsSttStream),
     }));
   } catch (err) {
     const status = err && typeof err === "object" && "status" in err ? Number(err.status) : 503;

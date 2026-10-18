@@ -24,9 +24,8 @@ import {
 test("Router catalog effort dict becomes the switcher menu shape", () => {
   assert.deepEqual(reasoningFromEfforts({ low: "low", high: "high" }), {
     efforts: [{ id: "low", name: "low" }, { id: "high", name: "high" }],
-    defaultEffort: "low",
   });
-  assert.equal(reasoningOfModel({ reasoningEfforts: { off: "off" } }).defaultEffort, "off");
+  assert.equal(reasoningOfModel({ reasoningEfforts: { off: "off" } }).defaultEffort, undefined);
   assert.equal(reasoningFromEfforts(undefined), undefined);
 });
 
@@ -57,13 +56,12 @@ test("bindComposerModelDirectory load/select only when the session owns the mode
   assert.deepEqual(calls, ["load", { model: "x" }]);
 });
 
-test("session switch payload carries the model's default effort", () => {
+test("session switch payload preserves provider default without an explicit effort", () => {
   const group = { id: "olares-router" };
   const model = { id: "qwen", reasoning: { defaultEffort: "low", efforts: [{ id: "low" }] } };
   assert.deepEqual(modelSwitchSelection(group, model), {
     provider: "olares-router",
     model: "qwen",
-    reasoningEffort: "low",
   });
   assert.deepEqual(modelSwitchSelection(group, { id: "plain" }), {
     provider: "olares-router",
@@ -98,7 +96,7 @@ test("findListedModel and current effort follow the directory snapshot", () => {
   assert.equal(model?.name, "Qwen");
   assert.equal(isSameSessionModel(current, groups[0], model), true);
   assert.equal(currentEffortId(current, model.reasoning), "high");
-  assert.equal(currentEffortId({ provider: "olares-router", model: "qwen" }, model.reasoning), "low");
+  assert.equal(currentEffortId({ provider: "olares-router", model: "qwen" }, model.reasoning), undefined);
 });
 
 test("effort and model labels follow the directory snapshot", () => {
@@ -118,7 +116,7 @@ test("effort menu includes a provider-default row only when Router did not name 
   assert.deepEqual(effortMenuItems(undefined), []);
   assert.deepEqual(
     effortMenuItems({ defaultEffort: "low", efforts: [{ id: "low", name: "Low" }] }),
-    [{ id: "low", providerDefault: false, name: "Low", description: undefined }],
+    [{ id: undefined, providerDefault: true }, { id: "low", providerDefault: false, name: "Low", description: undefined }],
   );
   assert.equal(effortMenuItems({ efforts: [{ id: "low", name: "Low" }] })[0].providerDefault, true);
 });

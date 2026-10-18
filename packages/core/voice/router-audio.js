@@ -1,5 +1,6 @@
+import { ttsVoiceForModel } from "./tts-voice.js";
 import { transcribe } from "../router/stt.js";
-import { pcmToWav, synthesize } from "../router/tts.js";
+import { pcmToWav, synthesizeStream } from "../router/tts.js";
 import { normalizeSttPcm } from "./pcm.js";
 import { createPcmResampler, pcmSamples } from "./realtime-audio.js";
 
@@ -16,11 +17,27 @@ export function wavData(wav) {
 export function createRouterAudio(config) {
   return {
     transcribe: (pcm, scope) => transcribe({ bytes: pcmToWav(pcm, 24000), filename: "voice.wav", contentType: "audio/wav", model: config().model || "default-stt", language: config().language || undefined, signal: scope.voiceAbort?.signal, once: true }),
-    async synthesize(text, scope) {
-      const settings = config();
-      const wav = await synthesize({ text, model: settings.ttsModel || "default-tts", voice: settings.voice || undefined, signal: scope.outputAbort?.signal });
-      const normalized = await normalizeSttPcm(wav, "audio/wav");
-      return Buffer.from(createPcmResampler(16000)(pcmSamples(wavData(normalized))));
+    async synthesize(text, scope, onChunk) {
+      const settings = structuredClone(config());
+      const model = settings.ttsModel || "default-tts";
+      const chunks = [];
+      let convert = null;
+      const write = async (pcm) => { if (onChunk) await onChunk(pcm); else chunks.push(pcm); };
+      let pending = Buffer.alloc(0);
+      const result = await synthesizeStream({ text, model, voice: settings.voice || ttsVoiceForModel(settings, model), signal: scope.outputAbort?.signal,
+        onFormat: (format) => { convert = createPcmResampler(format.sampleRate, 24000); },
+      }, async (chunk) => {
+        const joined = Buffer.concat([pending, chunk]);
+        const end = joined.length - joined.length % 2;
+        pending = joined.subarray(end);
+        if (end) await write(Buffer.from(convert(pcmSamples(joined.subarray(0, end)))));
+      });
+      if (pending.length) throw new Error("voice_audio_format");
+      if (!result.streamed) {
+        const normalized = await normalizeSttPcm(result.audio, "audio/wav");
+        await write(Buffer.from(createPcmResampler(16000, 24000)(pcmSamples(wavData(normalized)))));
+      }
+      return onChunk ? null : Buffer.concat(chunks);
     },
   };
 }

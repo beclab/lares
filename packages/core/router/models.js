@@ -35,13 +35,9 @@ export function modelsFromRouterCatalog(payload) {
   return routerCatalogRows(payload);
 }
 
-function isMtpModelId(id) {
-  return /\bmtp\b/i.test(id);
-}
-
 export function pickChatModelId(catalog) {
   const chat = catalog.filter(isChatModel);
-  return chat.find((model) => isMtpModelId(model.id))?.id ?? chat[0]?.id ?? null;
+  return chat[0]?.id ?? null;
 }
 
 export function isPlaceholderModelId(id) {
@@ -64,7 +60,7 @@ export function chatModelsFromRouterCatalog(payload) {
 }
 
 export function pickDefaultModel(models) {
-  return models.find((model) => isMtpModelId(model.id)) ?? models[0] ?? null;
+  return models[0] ?? null;
 }
 
 export function catalogFailure(code, status, message) {

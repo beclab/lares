@@ -195,6 +195,7 @@ export function createSessionFollow() {
         }
         attempt.nextIndex += 1;
         const event = fromChunk(attempt.turn, attempt.step, live.chunk);
+        if (event) Object.assign(event.data, { attemptId: attempt.attemptId, chunkIndex: live.index });
         return { events: event ? [event] : [] };
       }
       if (live.type === "end") {

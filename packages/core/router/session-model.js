@@ -35,10 +35,8 @@ export function isSameSessionModel(current, group, model) {
 }
 
 export function currentEffortId(current, reasoning) {
-  return current?.reasoningEffort ?? reasoning?.defaultEffort;
+  return current?.reasoningEffort;
 }
-
-const EFFORT_ORDER = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 /** Router catalog dict `{ low: "low" }` → the effort menu shape the switcher already uses. */
 export function reasoningFromEfforts(raw) {
@@ -46,19 +44,11 @@ export function reasoningFromEfforts(raw) {
   if (Array.isArray(raw.efforts)) {
     return raw.efforts.length ? raw : undefined;
   }
-  const efforts = [];
-  for (const id of EFFORT_ORDER) {
-    if (raw[id] != null) efforts.push({ id, name: id });
-  }
-  if (!efforts.length) {
-    for (const id of Object.keys(raw)) {
-      if (typeof id === "string" && id) efforts.push({ id, name: id });
-    }
-  }
+  const efforts = Object.keys(raw).filter((id) => id && typeof raw[id] === "string")
+    .map((id) => ({ id, name: id }));
   if (!efforts.length) return undefined;
   return {
     efforts,
-    defaultEffort: efforts.find((row) => row.id !== "off")?.id ?? efforts[0].id,
   };
 }
 
@@ -70,7 +60,6 @@ export function modelSwitchSelection(group, model) {
   return {
     provider: group.id,
     model: model.id,
-    ...(model.reasoning?.defaultEffort === undefined ? {} : { reasoningEffort: model.reasoning.defaultEffort }),
   };
 }
 
@@ -103,9 +92,7 @@ export function effortMenuRows(reasoning, defaultLabel) {
 export function effortMenuItems(reasoning) {
   if (reasoning === undefined) return [];
   const items = [];
-  if (reasoning.defaultEffort === undefined) {
-    items.push({ id: undefined, providerDefault: true });
-  }
+  items.push({ id: undefined, providerDefault: true });
   for (const effort of reasoning.efforts) {
     items.push({
       id: effort.id,
@@ -142,7 +129,7 @@ export function composerModelsFromCatalog(catalog, selection) {
     const provider = typeof group?.id === "string" ? group.id : "";
     if (!provider) continue;
     for (const model of group.models ?? []) {
-      if (!model?.id) continue;
+      if (!model?.id || model.id === "default") continue;
       models.push({
         provider,
         providerName: group.name || provider,

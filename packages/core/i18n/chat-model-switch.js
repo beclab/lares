@@ -1,7 +1,8 @@
 export const ZH = {
-  "reasoning.default": "默认",
+  "reasoning.default": "使用模型默认",
   "reasoning.title": "推理强度",
   "reasoning.switchAria": "切换推理强度，当前 {label}",
+  "effort.none": "关闭思考",
   "effort.off": "关闭",
   "effort.minimal": "最低",
   "effort.low": "低",
@@ -20,9 +21,10 @@ export const ZH = {
 };
 
 export const EN = {
-  "reasoning.default": "Default",
+  "reasoning.default": "Model default",
   "reasoning.title": "Reasoning effort",
   "reasoning.switchAria": "Switch reasoning effort, current {label}",
+  "effort.none": "No thinking",
   "effort.off": "Off",
   "effort.minimal": "Minimal",
   "effort.low": "Low",

@@ -12,33 +12,26 @@ import {
 import { gapAfter, speechSegments } from "@olares/lares-core/voice/script";
 import { foldTranscript } from "@olares/lares-core/larepass/transcript";
 import { createDuplexCoordinator } from "@olares/lares-core/voice/duplex";
-import { pickTtsVoice, synthesizeStream } from "@olares/lares-core/router/tts";
+import { synthesizeStream } from "@olares/lares-core/router/tts";
 
 const config = { speak: true, ttsModel: "kokoro", model: "", language: "" };
 const noVoices = async () => [];
-
-test("the readout voice is pinned, never left to the engine", () => {
-  assert.equal(pickTtsVoice(["aiden", "vivian", "serena", "ryan"]), "serena");
-  assert.equal(pickTtsVoice(["ryan", "vivian"]), "vivian");
-  assert.equal(pickTtsVoice(["zm_b", "af_a"]), "af_a");
-  assert.equal(pickTtsVoice([]), null);
-});
 
 test("synthesis names the voice it was given", async (t) => {
   const bodies: Record<string, unknown>[] = [];
   t.mock.method(globalThis, "fetch", async (_url: string, init: { body: string }) => {
     bodies.push(JSON.parse(init.body));
-    return new Response(new Uint8Array([0, 0]), { headers: { "content-type": "audio/L16" } });
+    return new Response(new Uint8Array([0, 0]), { headers: { "content-type": "audio/L16", "x-audio-sample-rate": "24000" } });
   });
   await synthesizeStream({ text: "你好", model: "qwen3-tts", voice: "serena" }, () => {});
   assert.equal(bodies[0].voice, "serena");
 });
 
-test("every sentence of one answer is read in the model's pinned voice", async () => {
+test("every sentence uses the saved model voice without hidden selection", async () => {
   const voices: unknown[] = [];
   let listed = 0;
   const options = {
-    config,
+    config: { ...config, ttsVoiceByModel: { "qwen3-tts-pin": "vivian" } },
     model: "qwen3-tts-pin",
     listVoices: async () => {
       listed += 1;
@@ -54,20 +47,20 @@ test("every sentence of one answer is read in the model's pinned voice", async (
   };
   await speakFromConfig("First one. Second one.", options);
   await speakFromConfig("Third one.", options);
-  assert.deepEqual(voices, ["serena", "serena", "serena"]);
-  assert.equal(listed, 1);
+  assert.deepEqual(voices, ["vivian", "vivian", "vivian"]);
+  assert.equal(listed, 0);
 });
 
 test("a stream labelled audio/L16 is read as PCM chunks, whatever the case", async (t) => {
   const pcm = new Uint8Array([1, 0, 2, 0]);
   t.mock.method(globalThis, "fetch", async () => new Response(pcm, {
-    headers: { "content-type": "audio/L16" },
+    headers: { "content-type": "audio/L16", "x-audio-sample-rate": "24000" },
   }));
   const chunks: Buffer[] = [];
   const outcome = await synthesizeStream({ text: "你好", model: "qwen3-tts" }, (chunk) => {
     chunks.push(chunk);
   });
-  assert.deepEqual(outcome, { streamed: true });
+  assert.deepEqual(outcome, { streamed: true, sampleRate: 24000 });
   assert.deepEqual([...Buffer.concat(chunks)], [...pcm]);
 });
 
@@ -250,11 +243,11 @@ test("the phone transcript carries the utterance being written", () => {
 test("a sentence still being written is not read yet", () => {
   assert.deepEqual(speechSegments("First one. Sec", { done: false }), ["First one."]);
   assert.deepEqual(speechSegments("First one. Sec"), ["First one.", "Sec"]);
-  assert.deepEqual(speechSegments("Look. ```js\nconst a = 1;", { done: false }), []);
+  assert.deepEqual(speechSegments("Look. ```js\nconst a = 1;", { done: false }), ["Look."]);
   assert.deepEqual(speechSegments("Look. ```js\nconst a = 1;\n``` Then go. Next", { done: false }), ["Look.", "Then go."]);
 });
 
-test("every markdown line is a sentence of its own", () => {
+test("speech respects structural boundaries and groups short same-level list items", () => {
   const answer = [
     "## 今日安排",
     "",
@@ -270,24 +263,22 @@ test("every markdown line is a sentence of its own", () => {
     "祝你顺利。明天见",
   ].join("\n");
   assert.deepEqual(speechSegments(answer), [
-    "今日安排", "上午 ：开会", "下午写代码", "先吃饭", "项目 时间", "跑步 30分钟", "记得喝水", "祝你顺利。", "明天见",
+    "今日安排", "上午：开会；下午写代码；", "先吃饭；", "项目 时间", "跑步 30分钟", "记得喝水 祝你顺利。", "明天见",
   ]);
-  assert.deepEqual(speechSegments("## 标题\n- 第一项\n- 第二", { done: false }), ["标题", "第一项"]);
-  assert.deepEqual(speechSegments("## 标题\n- 第一项\n", { done: false }), ["标题", "第一项"]);
+  assert.deepEqual(speechSegments("## 标题\n- 第一项\n- 第二", { done: false }), ["标题"]);
+  assert.deepEqual(speechSegments("## 标题\n- 第一项\n", { done: false }), ["标题"]);
 });
 
-test("a long sentence is read clause by clause so the first sound comes early", () => {
-  const long = "城市的秋天是繁华与静谧交织的画卷，银杏大道在行人的足下铺就一条金色的地毯，早晚渐起的凉风卷起了落叶。";
-  assert.deepEqual(speechSegments(long), [
-    "城市的秋天是繁华与静谧交织的画卷，",
-    "银杏大道在行人的足下铺就一条金色的地毯，",
-    "早晚渐起的凉风卷起了落叶。",
-  ]);
+test("natural speech keeps medium sentences intact and splits long prose at safe clauses", () => {
+  const medium = "城市的秋天是繁华与静谧交织的画卷，银杏大道在行人的足下铺就一条金色的地毯，早晚渐起的凉风卷起了落叶。";
+  assert.deepEqual(speechSegments(medium), [medium]);
+  const long = medium.repeat(3);
+  const parts = speechSegments(long);
+  assert.equal(parts.join(""), long);
+  assert.ok(parts.length >= 3);
   assert.deepEqual(speechSegments("天气凉了，记得加衣。"), ["天气凉了，记得加衣。"]);
-  assert.deepEqual(
-    speechSegments("We sold 1,000 copies by 10:30 this morning across all of the stores in town, and more came later."),
-    ["We sold 1,000 copies by 10:30 this morning across all of the stores in town,", "and more came later."],
-  );
+  const english = "We sold 1,000 copies by 10:30 this morning across all of the stores in town, and more came later.";
+  assert.deepEqual(speechSegments(english), [english]);
   assert.equal(gapAfter("城市的秋天，"), 150);
   assert.equal(gapAfter("早晚渐起的凉风卷起了落叶。"), 300);
 });
@@ -530,7 +521,7 @@ test("a newer readout supersedes one still synthesizing, which returns no audio"
     synthesize: (request: { signal: AbortSignal }, onChunk: (chunk: Buffer) => unknown) => new Promise((resolve, reject) => {
       void onChunk(Buffer.from("a"));
       request.signal.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })));
-      release = () => resolve({ streamed: true });
+      release = () => resolve({ streamed: true, sampleRate: 24000 });
     }),
     pcmToWav: (pcm: Buffer) => pcm,
   });
@@ -786,4 +777,20 @@ test("the desktop page projects the answer being written from live chunks", asyn
   state = speechDefinition.update({ state }, { event: live(4, 0, { type: "tool-call-delta", index: 1, id: "c", argumentsDelta: "{" }) });
   const silenced = view.apply({ upserts: [speechDefinition.buildViewNode({ key: "k", kind: "lares-voice-speech", id: "3", state })] });
   assert.equal(silenced.latest.silent, true);
+});
+
+test("model default omits the voice and each new readout binds an independent config snapshot", async () => {
+  const selected: any = { speak: true, ttsModel: "tts-snapshot", voice: "legacy", ttsVoiceByModel: { "tts-snapshot": "" } };
+  const voices: any[] = [];
+  let resume: () => void = () => {};
+  const pending = new Promise<void>(resolve => { resume = resolve; });
+  let calls = 0;
+  const options = { config: selected, model: selected.ttsModel, openPlayback: async () => ({ skipped: true }), pcmToWav: (pcm: Buffer) => pcm,
+    synthesize: async (request: any, output: any) => { voices.push(request.voice); if (++calls === 1) await pending; await output(Buffer.from("pcm")); return { streamed: true }; } };
+  const first = speakFromConfig("First sentence. Second sentence.", options);
+  await new Promise(resolve => setImmediate(resolve));
+  selected.ttsVoiceByModel["tts-snapshot"] = "next";
+  resume(); await first;
+  assert.deepEqual(voices, [undefined, undefined]);
+  await speakFromConfig("New reply.", options); assert.equal(voices.at(-1), "next");
 });

@@ -1,0 +1,6 @@
+--- a/node_modules/@deepseek-ai/dsh-agent-loop/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-agent-loop/lib/index.js
+@@ -1068 +1068,2 @@
+-				this.dispatch.emit("agent/assistant-stream", { frame });
++				this.dispatch.emit("agent/assistant-stream", { frame: frame.type === "start"
++                  ? { ...frame, speechEligible: (request.tools?.length ?? 0) === 0 && (request.toolHistory?.tools?.length ?? 0) === 0 } : frame });

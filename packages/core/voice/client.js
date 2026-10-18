@@ -4,6 +4,9 @@ import { createSnapshotStore } from "../tools/async.js";
 export const API = "/api/lares/voice";
 
 const settings = createSnapshotStore();
+const diagnostics = createSnapshotStore();
+let configRevision = 0;
+let confirmedConfig = null;
 export const voiceClientId = mintRpcId();
 export function voiceHeaders(device) {
   const selected = device ?? settings.peek()?.config?.device;
@@ -16,26 +19,33 @@ export function rememberedVoiceSettings() {
 
 export async function loadVoiceSettings(options = {}) {
   const query = options.force ? "?refresh=1" : "";
-  return settings.load(async () => {
-    const [config, status, models] = await Promise.all([
-      getJson("/config"),
-      getJson(`/status${query}`),
-      getJson(`/models${query}`),
-    ]);
+  const value = await settings.load(async () => {
+    const revision = configRevision;
+    const [config, models] = await Promise.all([getJson("/config"), getJson(`/capabilities${query}`)]);
+    if (revision === configRevision) confirmedConfig = config;
+    const selected = models.selected || "";
     return {
-      config,
-      status,
+      config: confirmedConfig || config,
+      status: { ok: Boolean(selected), modelAvailable: Boolean(selected), model: selected, language: config.language },
       sttModels: Array.isArray(models.stt) ? models.stt : [],
       ttsModels: Array.isArray(models.tts) ? models.tts : [],
+      ttsSelected: models.ttsSelected || "",
+      ttsDefault: models.ttsDefault || "",
       chatModels: Array.isArray(models.chat) ? models.chat : [],
       realtimeModels: Array.isArray(models.realtime) ? models.realtime : [],
       realtimeReady: Array.isArray(models.realtimeReady) ? models.realtimeReady : [],
-      charts: {
-        stt: chartView(models.charts?.stt),
-        tts: chartView(models.charts?.tts),
-      },
     };
   }, options);
+  if (options.diagnostics === false) return value;
+  try {
+    const detail = await diagnostics.load(async () => {
+      const [status, models] = await Promise.all([getJson(`/status${query}`), getJson(`/models${query}`)]);
+      return { status, charts: models.charts ? { stt: chartView(models.charts.stt), tts: chartView(models.charts.tts) } : null, diagnosticsError: models.charts ? null : "voice_failed" };
+    }, options);
+    return { ...settings.peek(), ...detail };
+  } catch (error) {
+    return { ...settings.peek(), ...diagnostics.peek(), diagnosticsError: error.message };
+  }
 }
 
 function chartView(row) {
@@ -109,9 +119,13 @@ export async function saveVoiceSettings(patch) {
     body: JSON.stringify(patch),
   });
   if (!res.ok) throw new Error(String(res.status));
-  const next = await loadVoiceSettings({ force: true });
+  const config = await res.json();
+  configRevision++;
+  confirmedConfig = config;
+  const previous = settings.peek();
+  const next = previous ? settings.remember({ ...previous, config }) : await loadVoiceSettings({ diagnostics: false });
   globalThis.window?.dispatchEvent?.(new Event("lares-voice-settings"));
-  return next;
+  return { ...next, ...diagnostics.peek() };
 }
 
 /** Reading mode and the GPU slicing it needs; see core/voice/gpu-mode.js. */

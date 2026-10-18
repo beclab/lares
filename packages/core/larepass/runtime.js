@@ -731,6 +731,9 @@ export function createChatRuntime(client) {
       emit();
       return archived;
     },
+    async refreshModelCatalog() {
+      await client.settings.refreshModels();
+    },
     modelCatalog() {
       return client.rpc("session.modelCatalog");
     },
@@ -862,7 +865,7 @@ export function createChatRuntime(client) {
       }
       return client.upload(id, file, options);
     },
-    voiceSocket(ticket) { return client.voiceSocket(ticket); },
+    voiceSocket(ticket, path) { return client.voiceSocket(ticket, path); },
     voiceRequest(path, options) { return client.voiceRequest(path, options); },
     transcribe(blob, language, signal, model) {
       if (typeof client.transcribe !== "function") {
