@@ -597,3 +597,22 @@ suite: 848/849 passed; existing macOS file-preview symlink cleanup fails with
 `ERR_FS_EISDIR`. Typecheck, all builds and isolated vendor reverse/reapply
 passed. Evidence is in ignored `__debug__/local-router/default-model-acceptance.json`.
 No real microphone, Bluetooth or physical-phone acceptance is claimed.
+
+### Mobile composer single-line layout (2026-10-18)
+
+The mobile text composer starts at 36px (border-box, 22px line height plus
+14px vertical padding), centered with its 36px controls. Short content shows
+the send control without switching to a second row. Actual wrapping/newlines
+grow the input up to 176px, then scroll internally. Attachments remain above
+the input row. Resizing and return from voice input trigger a fresh measurement;
+teardown disconnects the observer. New-session and existing-session layouts
+share this component; PC and Vue desktop keep their existing composers.
+
+Real mobile acceptance at 390×844 measured 36px empty/short, 58px for two
+explicit lines, and a 176px cap for long content. Eight type/clear cycles,
+a successful test send, attachment removal and voice-to-keyboard return all
+restored one line. PC and Vue desktop chat smoke passed at 1280×720. The 19
+focused tests, typecheck and all builds passed; full suite remains 848/849
+with the existing macOS file-preview symlink cleanup failure. Native IME,
+physical phone/keyboard and real microphone acceptance are not claimed.
+Ignored evidence: `__debug__/local-router/composer-layout-acceptance.json`.
