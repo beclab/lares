@@ -8,7 +8,7 @@ export async function voiceChat({ messages, model = "default-chat", owner, signa
   const response = await request(`${routerGatewayUrl(env)}/chat/completions`, {
     method: "POST", signal: AbortSignal.any([AbortSignal.timeout(45_000), ...(signal ? [signal] : [])]),
     headers: { "content-type": "application/json", ...routerAuthHeaders(env.LARES_ROUTER_API_KEY, env.OLARES_APP_ID, owner) },
-    body: JSON.stringify({ model, messages, ...(tools ? { tools, tool_choice: "auto" } : {}), stream: Boolean(onDelta), max_tokens: maxTokens }),
+    body: JSON.stringify({ model, messages, ...(tools ? { tools, tool_choice: "auto" } : {}), stream: Boolean(onDelta), ...(maxTokens === null ? {} : { max_tokens: maxTokens }) }),
   });
   if (!response.ok) throw Object.assign(new Error("voice_chat_failed"), { code: "voice_chat_failed", status: 502 });
   if (onDelta) {
@@ -95,7 +95,8 @@ export async function cleanDictation(text, { config, owner, signal, chat = voice
   if (preset === "raw") return text;
   const profile = (config.dictationProfiles || defaultDictationProfiles())[preset];
   if (!profile?.model) throw new Error("voice_dictation_model_missing");
-  const result = await chat({ owner, model: profile.model, signal, maxTokens: 8192, messages: [
+  // Router groups may select backends with different output limits.
+  const result = await chat({ owner, model: profile.model, signal, maxTokens: null, messages: [
     { role: "system", content: `${DICTATION_BOUNDARY}\n${profile.instructions}` },
     { role: "user", content: text },
   ] });
