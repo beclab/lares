@@ -139,7 +139,7 @@ async function handleSpeak(req, res) {
   } finally {
     res.off("close", abort);
   }
-  if (key && part === undefined) {
+  if (key && part === undefined || spoken.sentences === 0) {
     sendJson(res, 200, { sentences: spoken.sentences });
     return;
   }

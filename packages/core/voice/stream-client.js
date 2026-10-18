@@ -36,6 +36,7 @@ export async function playAudioStream(options) {
   if (!connection) {
     const response = await options.request("/api/lares/voice/speak", { method: "POST", headers: options.headers, signal: options.signal, body: { text: options.text } });
     if (!response?.ok) throw new Error(response?.body?.error?.code || "voice_stream_failed");
+    if (response.body.sentences === 0) return true;
     if (response.body.bluetooth === "played") return true;
     const fallback = createBrowserPlayer();
     const cancel = () => fallback.stop(); options.signal?.addEventListener("abort", cancel, { once: true });

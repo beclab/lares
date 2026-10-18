@@ -6,6 +6,74 @@ Status: target design; capabilities become available only after implementation a
 
 The service initially runs in the Lares process. Shared logic lives in `packages/core/voice`; Host adapters mount authenticated routes. No LiveKit Agent runtime is introduced. Lares/dsh owns durable tasks, skills, tools, approvals and business history. Router owns model discovery, authentication, routing, quotas and usage. SDKs own device capture, transport and playout reporting. Existing voice_input is not a mandatory dependency; its ordered transcript events, optional cleanup and capability negotiation are reference contracts.
 
+### Shared assistant speech text
+
+PC, Vue mobile and Vue desktop use the same Host-side `speechSegments` entry for
+buffered and streamed assistant speech. `spoken-text.js` prepares only the spoken
+copy; stored messages, displayed Markdown, copy actions, dictation and raw TTS API
+input remain unchanged. No additional LLM or client-side cleanup is involved.
+
+| Input | Spoken copy |
+| --- | --- |
+| Emoji, including skin tones, flags and ZWJ sequences | Replace the complete sequence with whitespace; preserve numeric keycaps as digits and textual ©, ® and ™ |
+| Headings, emphasis, quotes and list markers | Remove syntax, keep text and item order |
+| Markdown links and images | Keep link labels and image alternative text; omit destination URLs |
+| Bare URLs and inline code | Preserve content; remove inline-code backticks |
+| Fenced code and model thinking | Skip without summarizing |
+| Tables | Omit separator rows; preserve cell order and code/escaped pipes |
+| Empty or decorative output | Finish without synthesis or an error |
+
+Use pinned `emoji-regex` matching and Markdown-it syntax parsing, rather than
+broad Unicode ranges or global deletion of punctuation. Mathematical operators,
+decimals and identifiers such as `5 * 3`, `a > b` and `snake_case` are content.
+Formatting and emoji cleanup precede the existing line/sentence/clause policy;
+short list items are not merged and pause durations are unchanged.
+
+For cumulative streaming input, defer unfinished links, code spans, emphasis,
+entities, emoji graphemes and ambiguous table headers. Hidden trailing material
+must not retract the count of already available sentences. The cleaner has no
+cross-request mutable state; existing readout keys, generation cancellation and
+session leases discard late output. Final input flushes remaining literal text.
+Pronunciation dictionaries, language-specific number normalization and SSML belong
+in explicit engine adapters, not Router or Model Console text rewriting.
+
+References: [LiveKit text transforms](https://docs.livekit.io/agents/multimodality/text/),
+[Pipecat Markdown filter](https://github.com/pipecat-ai/pipecat/blob/main/src/pipecat/utils/text/markdown_text_filter.py),
+and [stream2sentence](https://github.com/KoljaB/stream2sentence/blob/master/stream2sentence/stream2sentence.py).
+These inform the separation of cleanup, streaming boundaries and synthesis;
+Lares does not import their runtimes or assume their defaults are identical.
+
+### LLM text streaming and TTS scheduling
+
+Opening automatic read-aloud is not itself a streaming-text guarantee. In the
+current PC and Vue paths, `speakable(reply, false)` waits for a settled dsh reply;
+the WebSocket grant then carries that text and the gateway streams synthesized
+PCM for its cleaned segments. Audio streaming is present, but LLM delta-to-TTS
+streaming is not. A `speechCommitted` guard exists in the shared reader, but no
+current dsh adapter emits an authoritative commitment event. Do not turn on
+speculative narration by merely changing the `false` argument.
+
+The reference LiveKit pipeline feeds an async LLM text channel through ordered
+text transforms into TTS. Its non-native-streaming adapter runs text collection
+and sentence synthesis as separate tasks, flushes the final fragment on end of
+input, and cancels both tasks on exit. Optional sentence pacing sends the first
+sentence immediately and batches later text using remaining audio duration.
+Inference remains serial while the next synthesis can overlap previous playout.
+See upstream [generation](https://github.com/livekit/agents/blob/main/livekit-agents/livekit/agents/voice/generation.py),
+[stream adapter](https://github.com/livekit/agents/blob/main/livekit-agents/livekit/agents/tts/stream_adapter.py)
+and [pacer](https://github.com/livekit/agents/blob/main/livekit-agents/livekit/agents/tts/stream_pacer.py).
+
+Any Lares incremental-text follow-up must use an authoritative, user-facing
+reply boundary that cannot later become a tool call. Feed only stable cleaned
+segments, preserve existing single-generation engine limits, bound queued text
+and audio, and propagate cancellation through generation and playback. Never
+read reasoning, tool arguments, pending approval text or unconfirmed results.
+Native text-streaming TTS may reuse one upstream session; sentence-adapted TTS
+may use separate bounded requests. Neither should submit one request per token.
+Measure LLM first text, speech commitment, first clean segment, synthesis first
+audio, client receipt and actual rendering separately. Cleanup success or a PCM
+stream alone must not be reported as reduced end-to-end response latency.
+
 ```mermaid
 flowchart LR
     UI["Lares web / mobile"] --> V["Voice service"]

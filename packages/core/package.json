@@ -212,6 +212,8 @@
     "./voice/projection": "./voice/projection.js"
   },
   "dependencies": {
+    "emoji-regex": "11.0.0",
+    "markdown-it": "14.3.0",
     "ws": "^8.22.0"
   }
 }

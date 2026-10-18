@@ -1,5 +1,63 @@
 # Voice runtime
 
+## Shared assistant speech cleanup (local, 2026-10-18)
+
+Both buffered `speakFromConfig` and the PCM WebSocket gateway call the same core
+`speechSegments` cleaner. PC and both Vue device modes inherit it without UI
+copies. The [design rules](voice-service-design.md#shared-assistant-speech-text)
+define Markdown, emoji and table treatment. The zodiac regression preserves all
+twelve animal names and their order, removes emoji, and retains the existing
+one-line-per-item segmentation. Emoji-only output completes without TTS calls.
+Raw `/llm/v1/audio/speech` input remains unchanged, including explicit audition.
+
+`voice-spoken-text.test.ts` checks every UTF-16 prefix of representative streamed
+answers, including split emoji sequences and incomplete Markdown, for stable
+segment prefixes. It also intercepts final HTTP synthesis bodies through the
+actual buffered service and WebSocket gateway; testing only a cleanup helper is
+insufficient. Existing player cancellation/session tests remain required.
+
+Acceptance must record PC, Vue mobile at 390px and Vue desktop chat/read-aloud and
+settings smoke separately, with build identity. Request-body checks and receipt of
+audio are not subjective listening acceptance. Physical phones, Bluetooth and
+human pronunciation confirmation must be recorded separately. No changes to
+read-aloud defaults, models, voices or remote engine/GPU settings are required.
+
+Local acceptance used the full dsh page and real Vue source components against
+an isolated Host and the existing authorized LAN Router. The shared resource
+build was `2633d3a-ba4876fbc232-13c19eb84387-4b0f5a04c43b` (working tree changes;
+the private acceptance record also hashes the exact Host cleaner source).
+
+| Surface | Viewport | Result |
+| --- | --- | --- |
+| Official dsh PC | 1280×720 | Real Qwen reply retains emoji in chat; automatic audio reaches browser rendering; voice settings load |
+| Vue desktop | 1280×720 | Real reply and audio rendering pass; speech settings/voices and desktop shortcuts load |
+| Vue mobile | 390×844 | Real reply and audio rendering pass; no horizontal overflow; settings/voices load and shortcuts stay hidden |
+
+Desktop Vue still exposes the existing `settings/describe` unexpected `request`
+error for Enter behavior. That settings item is not passed. Human listening,
+live microphone, physical phone and Bluetooth were not accepted this round.
+The shared browser fallback also handles an empty buffered result without
+creating an audio player; Host returns `{ sentences: 0 }` rather than encoding
+missing audio. Real empty WebSocket output ends without format or PCM frames.
+
+Final short-text LAN checks returned 138284 buffered WAV bytes and 69120
+streamed PCM bytes. The latter delivered first audio at 233ms and completed at
+468ms, one warm sample rather than a percentile or an LLM end-to-end improvement.
+Browser rendering was observed separately for all three surfaces. The isolated
+test's saved config was unchanged by HTTP checks; its temporary read-aloud toggle
+was restored to off. Normal local service preferences were not overwritten.
+
+Validation: 285 voice tests pass; typecheck and PC/Vue/server/preview builds pass.
+Full suite: 831/832, with the existing macOS file-preview temporary-directory
+cleanup failure (`ERR_FS_EISDIR`, `file-preview.test.ts:1341`). Evidence includes
+`lares-spoken-{tests,voice-tests,full-tests,typecheck,build,preview-build,http}.log`
+in the temporary directory, ignored `spoken-acceptance.json`, and screenshots
+`lares-spoken-{pc,vue-mobile,vue-desktop}.png` plus Vue settings screenshots.
+The additional investigation of LLM-to-TTS streaming is documented in the
+[design](voice-service-design.md#llm-text-streaming-and-tts-scheduling): audio
+streaming currently starts after a settled dsh reply; an authoritative incremental
+reply commitment is still required before enabling earlier narration.
+
 ## TTS voice settings and raw dictation default (local, 2026-10-18)
 
 PC and both Vue device modes share a Speech playback section: model, model-bound

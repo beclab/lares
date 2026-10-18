@@ -290,7 +290,7 @@ export async function speakFromConfig(text, options = {}) {
   let readout = joinable(readouts.get(coordinator), id, key, part);
   if (!readout) {
     if (!segments.length) {
-      if (key && part === null) return { sentences: 0 };
+      if (part === null) return { sentences: 0 };
       throw new VoiceError("voice_config_invalid", 400, "nothing to speak");
     }
     const catalog = options.model == null ? await listModels() : null;
