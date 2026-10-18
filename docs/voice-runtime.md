@@ -532,7 +532,7 @@ bounded and does not remove backpressure. Empty, failed and cancelled ASR remain
 distinct during interruption recovery. No device's automatic barge-in is enabled
 without separate echo acceptance.
 
-Initial verification: 295 voice tests passed. Full suite: 841/842 passed, with the
+Initial verification: 296 voice tests passed. Full suite: 842/843 passed, with the
 existing macOS `file-preview.test.ts:1341` symlink-cleanup `ERR_FS_EISDIR` failure.
 Typecheck and official PC/Vue/Host builds passed. New HTTP/WebSocket tests verify
 source authentication, forged-text exclusion, pre-final audio, one-time claims,

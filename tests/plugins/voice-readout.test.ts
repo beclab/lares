@@ -145,3 +145,16 @@ test("file playback retains its position through pause and releases the object U
   assert.equal(audio.currentTime, 1.25); assert.equal(audio.plays, 2); assert.equal(audio.pauses, 1);
   player.stop(); await ended; player.stop();
 });
+
+test("already queued recovery callbacks cannot cancel a newer suspected interruption", async () => {
+  const { createInterruptionGuard } = await import("../../packages/core/voice/interruption.js");
+  let key = "old", resumes = 0, stops = 0;
+  const callbacks: Array<() => void> = [];
+  const guard = createInterruptionGuard({ output: { canPause: true, key: () => key, pause() {}, resume() { resumes++; }, stop() { stops++; } },
+    schedule: (fn: () => void) => { callbacks.push(fn); return callbacks.length; }, unschedule() {} });
+  guard.suspect(); guard.speechEnded(); guard.final(""); guard.cancel();
+  key = "new"; guard.suspect();
+  callbacks[1](); callbacks[0]();
+  assert.equal(guard.pending, true); assert.equal(resumes, 0); assert.equal(stops, 0);
+  guard.cancel();
+});
