@@ -137,3 +137,19 @@ See [Streaming voice runtime](voice-streaming.md) for the shared ASR/TTS transpo
 AudioWorklet lifecycle, bounded playout credit and safe dsh speech boundary.
 Streaming capture does not submit partial transcripts; speculative tools remain
 out of scope. Streaming is independent of the legacy GPU reading-mode setting.
+
+
+## Router effort identifiers (local implementation, 2026-10-18)
+
+- Preserve native effort IDs, order and defaults across catalog, dsh, PC and Vue;
+  distinguish omitted defaults from explicit `none` and retain unknown IDs.
+- Bind capability validation and final request construction to one prepared
+  snapshot. Normalize only unambiguous legacy session `off` selections, persist
+  before admission, and reject invalid efforts before queue/steer/voice prompts.
+- Verify actual dsh HTTP payloads, non-Router behavior, removal of an option,
+  persistence failures, upstream error bodies/codes and empty-body 400s.
+- Real Qwen direct HTTP/SSE default/none/high controls succeeded. Full Agent
+  response completeness and the historical 400 remain separate acceptance items;
+  do not classify them as solved from a successful short model request.
+- No Router/Model Console deployment, GPU policy, global preference or engine
+  parameter change is included. See the dated runtime evidence below.

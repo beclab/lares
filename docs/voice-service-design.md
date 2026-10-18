@@ -211,3 +211,19 @@ See [Streaming voice runtime](voice-streaming.md) for the shared ASR/TTS transpo
 AudioWorklet lifecycle, bounded playout credit and safe dsh speech boundary.
 Streaming capture does not submit partial transcripts; speculative tools remain
 out of scope. Streaming is independent of the legacy GPU reading-mode setting.
+
+
+## Router-owned reasoning choices
+
+Router effort option IDs, ordering and defaults are authoritative. Lares stores
+and dispatches their original values, including `none`, without translating them
+to pi-ai ThinkingLevel names. UI-only translations may display `none` as “关闭思考”
+or “No thinking”. An absent selection means model default and omits the override;
+it is not equivalent to explicit `none`. Unknown declared IDs remain selectable.
+
+The Router adapter bypasses pi-ai effort clamping and validates the prepared
+request against the same bound capability snapshot used to describe it. Other
+providers retain their existing fixed-level validation. Legacy Lares Router
+`off` selections normalize only when `off` is absent and `none` is explicitly
+advertised; normalization persists a session selection before new task admission
+and never rewrites the global default. Unsupported selections remain unavailable.

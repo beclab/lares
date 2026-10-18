@@ -1,5 +1,81 @@
 # Voice runtime
 
+## Native Router reasoning identifiers (local, 2026-10-18)
+
+Lares now preserves Router's option IDs, order and default metadata. `none` stays
+`none` in the catalog, session choice and final request; PC/Vue may translate its
+label to “关闭思考” / “No thinking”. Model default is a separate omitted override.
+The Router route bypasses pi-ai's fixed effort vocabulary and binds metadata and
+payload validation to the prepared capability snapshot; non-Router validation
+remains unchanged. No new Host endpoint or parallel model directory was added.
+
+Old Router session `off` choices normalize only when `off` is not declared and
+`none` is declared. The existing durable session selection is written before new
+input admission; failures retain the old selection and reject new work. Global
+model defaults and read-aloud preferences are not migrated or overwritten.
+Removed/unsupported options display unavailable and fail admission rather than
+silently defaulting. Background refresh cannot replace a prepared request's
+capability snapshot.
+
+Fresh isolated-page acceptance exposed a missing SessionController `settings`
+injection in the existing catalog-coordination work. The dependency is now
+explicit; the clean Host can open its model directory and select a real model.
+The vendor patches were replayed in order on clean, package-lock-pinned npm
+entrypoints, compared to installed code, and checked for idempotence.
+
+Final local code revision: `10f0749`; build ID:
+`10f0749-f106f672762d-c5003f3f2d15-143f2e7f021d`.
+The real pre-existing failed session was reopened after restart: its historical
+`lastUsed.reasoningEffort` remains `off`, while durable `next.reasoningEffort`
+is `none`. The composer displays “关闭思考”. No failed task was resubmitted;
+global model/read-aloud preferences matched the pre-restart snapshot exactly.
+Temporary acceptance Host/Vue processes were stopped afterwards.
+
+Verification: 56 related surface/model tests passed, followed by the added
+restore/installer regressions. Final complete suite: 810/811 passed; the only
+failure is the existing macOS file-preview temporary-directory cleanup
+(`ERR_FS_EISDIR`). Typecheck and complete PC/Vue/Host builds passed. Clean npm
+patch replay passed; installer markers were corrected so later patches do not
+make earlier ones reapply. Two consecutive installer runs preserve vendor code.
+
+### Real model and historical 400
+
+Through the existing local Host and same authorized LAN Router identity, the
+concrete Qwen3.5-9B model returned 200 for default, `none` and `high`, both HTTP
+JSON and SSE. Non-stream reasoning character counts were 634 / 0 / 808; SSE
+counts were 154 / 0 / 393. Responses contained actual answer text. This confirms
+current short model calls accept `none` and disable generated reasoning, rather
+than merely hiding it in the UI. No model-name-based template override was added.
+
+The 17:47:18 failure was correlated with Router usage (`upstream_error`, HTTP
+400, 42 ms) and SGLang's 400 access log. Neither retained the rejection reason;
+the request log records session `off` and maxTokens 4096, with contextWindow
+16384. These fields alone do not establish the cause. The historical 400 is
+**not closed** and was not automatically resubmitted. Current controls do not
+justify guessing a template or context-budget fix. Model Console code was not
+changed because a missing `none` engine translation was not demonstrated.
+
+### Three-surface acceptance
+
+Selection-changing checks used temporary full Host/Vue instances on 18119/18120,
+with independent data and preferences; the normal 18117/18118 instance and its
+saved global model/read-aloud choices were preserved. These were the real dsh
+and Vue components against the real LAN Router, not a simulated chat shell.
+
+| Surface | Actual viewport | Result |
+| --- | --- | --- |
+| Official dsh PC | 1280×720 | Fresh directory load, concrete model/none selection, model settings and cross-client high refresh passed. Real Agent accepted a request and persisted `none`, but its reply ended at the output limit after “测试”; full reply acceptance failed. |
+| Vue mobile chat/settings | 1280×720; chat also 390×844 | Native choices, none/high/default saving and reload, history and actual settings loaded; mobile shortcuts hidden. Same partial Agent result is not a separate successful response. |
+| Vue desktop chat/settings | 1280×720 | Native choices, high save/reload, history and settings loaded; desktop shortcuts visible. Existing Enter settings RPC descriptor mismatch remains. |
+
+The actual dsh adapter test intercepts HTTP requests after request construction:
+absent override, `none`, `high` and an unknown declared ID survive unchanged;
+a catalog change cannot replace a prepared operation's snapshot. Structured 400
+body/code and empty-body errors remain visible, with no parameter removal or
+adapter retry. Full Agent reply completeness, historical 400 diagnosis and
+physical microphone/device testing are not claimed as passed. No push, release,
+remote deployment, GPU policy change or global preference change was performed.
+
 ## Streaming audio (local implementation, 2026-10-18)
 
 See [Streaming runtime](voice-streaming.md) for protocol and lifecycle details.
