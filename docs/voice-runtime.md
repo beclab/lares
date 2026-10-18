@@ -1,5 +1,49 @@
 # Voice runtime
 
+## Streaming audio (local implementation, 2026-10-18)
+
+See [Streaming runtime](voice-streaming.md) for protocol and lifecycle details.
+Qwen ASR partials now run during browser recording; confirmed replies reach the
+browser as PCM through a bounded AudioWorklet queue. Tool-bearing dsh steps still
+wait for confirmation before speech. Headset playback retains its existing path.
+
+Three real-model transport samples compared the same synthetic text: complete
+WAV first bytes 3609/2889/2627 ms; streamed PCM first samples 241/235/238 ms.
+Medians are 2889 ms versus 238 ms; total generation remained 2.7–3.7 s. These are
+arrival timings, not audible output or a proven cold/warm benchmark. A separate
+new Host path check returned first PCM at 976 ms and completed at 2609 ms; real
+streaming ASR emitted partials before completion and finalized 141 ms after the
+synthetic recording finished. No audio or credentials were stored.
+
+A real browser AudioWorklet check with synthetic speech preserved the 17-character
+transcript and its negation; capture finalization took 2017 ms in that run. The
+playback worklet actually rendered audio, but first render took 5782 ms and Host
+first-output timing was also approximately 5.8 s. This is not an end-to-end speed
+acceptance. A subsequent matched warm comparison found direct PCM first samples
+238–291 ms and the new Host path 249–291 ms (one earlier direct short request was
+648 ms). Upstream load and Agent generation must be measured per turn before
+claiming faster perceived replies. The latest diagnostic logs also contained an
+Agent first-text delay of 9821 ms; it was not correlated to the same turn as those
+TTS measurements, so the durations must not be added together.
+
+Two correlated synthetic dsh-to-TTS turns measured Agent reply readiness at
+2122/1265 ms, followed by TTS first audio after another 6006/5822 ms (total
+8128/7087 ms). Read-only engine logs explain the latter turn: LLM acquired the
+GPU lock at 16:32:33.294, released it for inactivity at 16:32:38.566, and TTS
+acquired it at 16:32:39.293, after accepting the HTTP request at 16:32:33.727.
+This is a GPU scheduling handoff delay, not whole-file browser buffering.
+The local HAMi client checks inactivity on a timed interval before announcing
+release; changing that shared scheduling contract is outside this rollout.
+No GPU policy, remote engine, model or deployed proxy was changed. Streaming
+reduces synthesis buffering but does not remove this observed handoff wait.
+
+An initial manual PC attempt failed: the capture worklet continued sending after
+ASR finish. The fix flushes/disconnects capture first and makes cleanup idempotent;
+a dedicated browser-lifecycle regression and the real synthetic browser check pass. The real-microphone retry,
+audible first-sample timing, Bluetooth and physical mobile acceptance remain
+pending; the earlier transport success must not be counted as their acceptance.
+
+
 ## Single dictation selector (local, 2026-10-17)
 
 React and Vue now show a single Dictation style selector (raw, clean, outline, summary), followed directly by the selected profile's expanded configuration. The four-row list, Set default/Edit actions, Editing heading and independent editor state are removed. Raw shows only its no-LLM explanation; other profiles show their model and six-line instruction editor. Initial opening uses the saved choice without changing it.
@@ -211,3 +255,20 @@ The SDK adds separate `inputActive`/`previewVisible` flags; gestures retain `can
 PC dictation now shows the recognized original while text processing is pending. **Use original** interrupts processing immediately, appends the original to the bound conversation draft, and does not send an Agent task. A late cleanup result cannot replace that draft. Vue previews also allow switching to the original during processing; insertion remains a separate confirmation there. Existing processing deadlines retain the original and exit loading on failure; they do not guarantee cancellation of work already queued in the upstream model.
 
 Validation: 255 voice tests passed, including stalled requests ignoring abort, original recovery, late responses, and processing deadlines. Typecheck and client/mobile/server builds passed. Full local dsh PC chat/settings and Vue mobile/desktop chat/settings loaded against the real Host and LAN Router; Vue viewport was 1280×720. Vue desktop's existing `settings/describe` unexpected `request` error remains. The restricted model directory still omits the callable `default-chat` alias; no model or Key configuration was changed. Real microphone recovery, pending-state visual layout, physical phones and Bluetooth remain unverified. No release or remote deployment was performed.
+
+
+## Streaming regression evidence (2026-10-18)
+
+| Surface | Actual checks | Result / limits |
+| --- | --- | --- |
+| Official dsh PC, 1280×720 | Concrete model selection in an existing independent test session, real text reply, new stream transport | Text reply passed; the initial physical-mic attempt failed and its capture cleanup was fixed. Physical-mic retry and audible latency remain unconfirmed. |
+| Vue mobile, 1280×720 and 390×844 | Actual chat/history, real model response, raw settings, hidden desktop shortcuts, narrow input layout | Rendering and text transport passed; one model response leaked a closing thinking tag. Speech now filters thinking text, but engine/display normalization is not part of this fix. |
+| Vue desktop, 1280×720 | Actual chat/history and settings, visible desktop shortcuts | Basic rendering passed; existing Enter settings RPC descriptor mismatch remains. Full voice acceptance is incomplete. |
+| Shared browser audio | Synthetic audio through actual capture and playback worklets, real LAN models | Final transcript/negation and real rendering passed; not physical microphone, phone, echo or Bluetooth acceptance. |
+
+Focused stream/Agent tests pass (13); complete local suite is 801/802, with the
+existing macOS file-preview cleanup failure (`ERR_FS_EISDIR`). Typecheck and
+PC/Vue/Host build pass. audio-engines: 279 tests pass. Router v1 tests, audio
+race, vet and build pass. Model Console proxy race, lint and build pass; its
+unrelated ready-lifecycle timing test remains intermittent. No stable P95 is
+claimed from this sample count. No push, release or deployment was performed.

@@ -129,3 +129,11 @@ Deliver shared core, dual-platform presentation and documentation as separate co
 - [ ] Verify actual installed dsh page, physical microphones, iOS/Android keyboards/safe areas/gestures and Bluetooth after separately authorized deployment. Synthetic component checks do not certify real audio/model behavior.
 
 Deliver shared state, dual-platform input presentation and documentation as separate local commits. No push, PR, version change, publication or deployment is included.
+
+
+## Streaming pipeline
+
+See [Streaming voice runtime](voice-streaming.md) for the shared ASR/TTS transport,
+AudioWorklet lifecycle, bounded playout credit and safe dsh speech boundary.
+Streaming capture does not submit partial transcripts; speculative tools remain
+out of scope. Streaming is independent of the legacy GPU reading-mode setting.

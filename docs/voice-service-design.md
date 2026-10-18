@@ -203,3 +203,11 @@ flowchart TD
 ```
 
 The initial implementation uses bounded long polling for session history, stable record sequences for pagination, and a persisted `anchorSeq` for native dsh ordering. A read-only external activity marker expands the official Chat on voice-only sessions. Presentation markers and projected rows never become execution events. Client subscriptions share one web history feed per mounted session and stop when the last subscriber leaves.
+
+
+## Streaming pipeline
+
+See [Streaming voice runtime](voice-streaming.md) for the shared ASR/TTS transport,
+AudioWorklet lifecycle, bounded playout credit and safe dsh speech boundary.
+Streaming capture does not submit partial transcripts; speculative tools remain
+out of scope. Streaming is independent of the legacy GPU reading-mode setting.
