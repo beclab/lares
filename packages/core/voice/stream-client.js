@@ -25,7 +25,7 @@ export async function openAudioStream({ request, headers, operation, model, lang
 /** Plays one confirmed reply. Receiving audio and rendering it run independently. */
 function streamMetric(options, event) {
   if (options.metric) { options.metric(event); return; }
-  void postReport({ scope: "voice", event: "metric", voiceId: options.headers?.["x-lares-voice-id"], ...event }, {
+  void postReport({ scope: "voice", event: "metric", voiceId: options.headers?.["x-lares-voice-id"], utteranceKey: options.key, at: Date.now(), ...event }, {
     request: (path, init) => options.request(path, { ...init, headers: { ...init.headers, ...options.headers } }),
   });
 }
@@ -45,13 +45,14 @@ export async function playAudioStream(options) {
   const file = createBrowserPlayer();
   const player = createPcmStreamPlayer({ onProgress: (frames) => { if (connection.readyState === 1) connection.send(JSON.stringify({ type: "progress", frames })); },
     onMetric: (event) => streamMetric(options, { ...event, durationMs: Date.now() - started }) });
-  let chain = Promise.resolve(), complete = false;
+  let chain = Promise.resolve(), complete = false, firstReceived = false;
   try {
     await new Promise((resolve, reject) => {
       const fail = (error) => { reject(error); connection.close(); };
       const cancelled = () => fail(new Error("voice_cancelled"));
       options.signal?.addEventListener("abort", cancelled, { once: true });
       connection.addEventListener("message", ({ data }) => {
+        if (typeof data !== "string" && !firstReceived) { firstReceived = true; streamMetric(options, { stage: "playback_first_received", durationMs: Date.now() - started }); }
         chain = chain.then(async () => {
           if (options.signal?.aborted) throw new Error("voice_cancelled");
           if (typeof data !== "string") { player.write(new Uint8Array(data)); return; }

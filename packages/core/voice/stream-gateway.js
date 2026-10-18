@@ -106,7 +106,7 @@ export function createAudioStreamGateway({ config, models, synthesize = synthesi
               const part = chunk.subarray(offset, offset + 16384);
               sentFrames += part.length / 2;
               client.send(part);
-              if (!outputStarted) { outputStarted = true; metric({ stage: "synthesis_first_audio", voiceId: grant.scope.id, durationMs: Date.now() - started }); }
+              if (!outputStarted) { outputStarted = true; metric({ stage: "synthesis_first_audio", voiceId: grant.scope.id, at: Date.now(), durationMs: Date.now() - started }); }
             }
           });
           if (carry !== null) throw fault("voice_audio_format");
