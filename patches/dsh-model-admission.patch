@@ -1,0 +1,51 @@
+--- a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js
+@@ -1,3 +1,5 @@
++import { synchronizeHostCatalog } from "@olares/lares-core/router/catalog-coordinator";
++import { authorizedChatModel } from "@olares/lares-core/router/model-authorization";
+ import { hostname } from "node:os";
+ import { isAbsolute, resolve } from "node:path";
+ import z from "@deepseek-ai/schemastery";
+@@ -498,10 +500,15 @@
+ * @returns successful non-empty provider groups and isolated provider failures.
+ */
+ async function buildModelCatalog(ctx, defaultSelection = ctx.agentDefaultModel.currentSelection()) {
+-	const providers = ctx.llm.listProviders();
++	let authorized;
++	try { authorized = await synchronizeHostCatalog(ctx); }
++	catch (error) {
++		throw new RemoteError("session/model-unavailable", error instanceof Error ? error.message : String(error), { provider: "olares-router", model: defaultSelection.model });
++	}
++	const providers = ctx.llm.listProviders().filter((provider) => provider.id === "olares-router");
+ 	const catalog = await Promise.all(providers.map(async (provider) => {
+ 		try {
+-			const models = await ctx.llm.listModels(provider.id);
++			const models = (await ctx.llm.listModels(provider.id)).filter((model) => authorized.rows.some((row) => row.id === model.id));
+ 			const entries = await Promise.all(models.map(async (model) => {
+ 				const resolved = await ctx.llm.resolveModelInfo(provider.id, model.id);
+ 				const reasoning = resolved.reasoning === void 0 ? void 0 : {
+@@ -556,6 +563,8 @@
+ 	if (!ctx.llm.listProviders().some((provider) => provider.id === selection.provider)) return false;
+ 	let models;
+ 	try {
++		await synchronizeHostCatalog(ctx);
++		if (!await authorizedChatModel(selection)) return false;
+ 		models = await ctx.llm.listModels(selection.provider);
+ 	} catch (error) {
+ 		throw new RemoteError("session/model-unavailable", error instanceof Error ? error.message : String(error), {
+@@ -853,6 +862,7 @@
+ 		if (request.clientTimeZone !== void 0 && clientTimeZone === void 0) throw new RemoteError("session/invalid-time-zone", "clientTimeZone must be UTC or a valid IANA Area/Location name", { value: request.clientTimeZone });
+ 		const agent = await this.resolveAgent(request.sessionId);
+ 		if (hasPromptRequest(agent, request.requestId)) return { accepted: true };
++		await this.requireModel(this.agents.selectionFor(agent).current);
+ 		const source = {
+ 			kind: "user",
+ 			rpcId: request.requestId,
+@@ -952,6 +962,7 @@
+ 			const identity = this.ctx.sessionProjections.snapshot(agent.session, ["subagent"]).values.subagent;
+ 			if (identity?.mode !== "continuable" || !agent.session.isOwnSeq(identity.seq)) throw apiSessionSubagentOwnershipError(request.sessionId);
+ 		}
++		if (request.action.kind === "steer") await this.requireModel(this.agents.selectionFor(agent).current);
+ 		const nextTurn = agent.inbox.nextTurn.find((message) => message.id === request.itemId);
+ 		const nextStep = agent.inbox.nextStep.find((message) => message.id === request.itemId);
+ 		const located = nextTurn === void 0 ? nextStep === void 0 ? void 0 : {

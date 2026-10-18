@@ -731,6 +731,9 @@ export function createChatRuntime(client) {
       emit();
       return archived;
     },
+    async refreshModelCatalog() {
+      await client.settings.refreshModels();
+    },
     modelCatalog() {
       return client.rpc("session.modelCatalog");
     },

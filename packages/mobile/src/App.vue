@@ -107,6 +107,7 @@
 </template>
 
 <script>
+import { modelState, modelStateLabel } from "@olares/lares-core/router/model-state";
 import { matchVoiceShortcut } from "@olares/lares-core/voice/shortcuts";
 import { subscribeVoiceSettings } from "@olares/lares-core/larepass/settings";
 import { createVoicePanel } from "@olares/lares-core/voice/panel";
@@ -223,6 +224,8 @@ export default {
       historyLoading: false,
       modelCatalog: null,
       modelError: "",
+      modelCatalogError: "",
+      modelCatalogLoading: false,
       modelPending: "",
       modelSheet: false,
       effortSheet: false,
@@ -330,7 +333,9 @@ export default {
         sessions: this.sessions,
         sessionsReady: this.sessionsReady,
         models: this.models,
+        refreshModels: () => this.loadModelCatalog(true),
         modelError: this.modelError,
+        modelCatalogError: this.modelCatalogError,
         modelGroups: this.modelGroups,
         modelCurrent: this.modelCurrent,
         modelLabel: this.modelLabel,
@@ -431,8 +436,11 @@ export default {
       }
       return null;
     },
+    modelStatus() {
+      return { models: this.models?.models ?? [], current: this.models?.default, status: this.modelCatalogLoading || !this.modelCatalog ? "loading" : "ready", failures: this.models?.failures, error: this.modelCatalogError };
+    },
     modelLabel() {
-      return this.currentListedModel?.name || this.models?.default?.model || this.t("model.select");
+      return modelStateLabel(this.modelStatus, this.locale || "en");
     },
     liveModelSelection() {
       const row = this.sessions.find((item) => item.sessionId === this.sessionId);
@@ -511,10 +519,10 @@ export default {
       return this.models?.default ? selectionKey(this.models.default) : "";
     },
     modelBusy() {
-      return Boolean(this.modelPending) || (this.modelSheet && !this.modelCatalog);
+      return this.modelCatalogLoading || Boolean(this.modelPending) || (this.modelSheet && !this.modelCatalog);
     },
     modelBlocked() {
-      return this.chatDevice === "desktop" && this.models?.routable === false;
+      return !modelState(this.modelStatus).valid;
     },
     voiceErrorText() {
       return this.voiceError ? messageFromCode(this.t, this.voiceError, "error.voice_failed") : "";
@@ -1011,6 +1019,8 @@ export default {
       this.failed = "";
       this.error = "";
       this.modelCatalog = null;
+      this.modelCatalogError = "";
+      this.modelCatalogLoading = false;
       this.modelError = "";
       this.modelPending = "";
       this.modelSheet = false;
@@ -1085,17 +1095,21 @@ export default {
       }
       await Promise.all(jobs);
     },
-    async loadModelCatalog() {
+    async loadModelCatalog(refresh = false) {
       const gen = ++this.modelCatalogGen;
-      const loaded = await this.runtime.modelCatalog();
-      if (gen !== this.modelCatalogGen) return;
-      if (!loaded.ok) {
-        this.modelCatalog = null;
-        this.modelError = loaded.error?.message || loaded.error?.code || "models";
-        return;
+      this.modelCatalogLoading = true;
+      try {
+        if (refresh) await this.runtime.refreshModelCatalog();
+        const loaded = await this.runtime.modelCatalog();
+        if (gen !== this.modelCatalogGen) return;
+        if (!loaded.ok) throw new Error(loaded.error?.message || loaded.error?.code || "models");
+        this.modelCatalog = loaded.value ?? null;
+        this.modelCatalogError = "";
+      } catch (error) {
+        if (gen === this.modelCatalogGen) this.modelCatalogError = error.message;
+      } finally {
+        if (gen === this.modelCatalogGen) this.modelCatalogLoading = false;
       }
-      this.modelCatalog = loaded.value ?? null;
-      this.modelError = "";
     },
     openEffortSheet() {
       if (this.effortDisabled) return;
@@ -1123,7 +1137,7 @@ export default {
     },
     openModelSheet() {
       this.modelSheet = true;
-      if (!this.modelCatalog) void this.loadModelCatalog();
+      if (!this.modelCatalog || this.modelCatalogError || this.models?.failures?.length) void this.loadModelCatalog(true);
     },
     async chooseModel(model) {
       const key = this.modelKey(model);
@@ -1249,7 +1263,7 @@ export default {
       }
       const settings = await this.runtime.settings.voice(false, { diagnostics: false });
       this.voiceDefaultMode = settings.config.mobileMode;
-      const available = laresVoiceAvailability(settings, this.models?.routable === true);
+      const available = laresVoiceAvailability(settings, !this.modelBlocked);
       if (!(this.voiceDefaultMode === "single" ? available.dictation : available.conversation)) { this.voiceError = "voice_model_unavailable"; return; }
       await this.voicePanel.open({ mode: this.voiceDefaultMode, sessionId: this.sessionId || null });
     },

@@ -1,14 +1,9 @@
-import { createInFlightCoalescer } from "../tools/async.js";
-import { catalogCache } from "./catalog-cache.js";
+import { catalogCoordinator } from "./catalog-coordinator.js";
+import { authorizedChatModel } from "./model-authorization.js";
 import {
-  LLM_SETTINGS_NS,
   ROUTER_PROVIDER_ID,
-  catalogSettingsOps,
-  chatModelsFromRouterCatalog,
-  defaultNeedsRepair,
   listedCatalog,
   parseDefaultModelRequest,
-  pickDefaultModel,
   unregisteredRouterFailure,
 } from "./models.js";
 import { forgetSttModel } from "./stt.js";
@@ -17,61 +12,15 @@ function messageOf(err) {
   return err instanceof Error ? err.message : String(err);
 }
 
-let adapterRevision = 0;
-/** What the last successful refresh wrote, so periodic reconciles stay quiet. */
-let publishedModels = null;
-/** @type {Set<(revision: number) => void>} */
-const revisionListeners = new Set();
-
-export function catalogRevision() {
-  return adapterRevision;
-}
-
-/** @param {(revision: number) => void} listener */
+export function catalogRevision() { return catalogCoordinator.revision; }
 export function onCatalogRevision(listener) {
-  revisionListeners.add(listener);
-  return () => revisionListeners.delete(listener);
+  catalogCoordinator.listeners.add(listener);
+  return () => catalogCoordinator.listeners.delete(listener);
 }
-
-function bumpRevision() {
-  adapterRevision += 1;
-  for (const listener of revisionListeners) listener(adapterRevision);
-}
-
-/**
- * @param {{
- *   mutateSettings: (ns: string, ops: unknown[]) => Promise<void>,
- *   currentSelection: () => { provider: string, model: string },
- *   saveSelection: (next: { provider: string, model: string }) => Promise<void>,
- * }} ports
- */
-async function performRefresh(ports) {
-  const previous = catalogCache.snapshot();
-  try {
-    const { payload } = await catalogCache.get({ refresh: true });
-    const models = chatModelsFromRouterCatalog(payload);
-    await ports.mutateSettings(LLM_SETTINGS_NS, catalogSettingsOps(models));
-    const current = ports.currentSelection();
-    if (defaultNeedsRepair(current, models)) {
-      await ports.saveSelection({ provider: ROUTER_PROVIDER_ID, model: pickDefaultModel(models).id });
-    }
-    forgetSttModel();
-    const serialized = JSON.stringify(models);
-    if (serialized !== publishedModels) {
-      publishedModels = serialized;
-      bumpRevision();
-    }
-    return models;
-  } catch (err) {
-    catalogCache.restore(previous);
-    throw err;
-  }
-}
-
-const coalesceRefresh = createInFlightCoalescer();
-
-export function refreshCatalog(ports) {
-  return coalesceRefresh(() => performRefresh(ports));
+export async function refreshCatalog(ports) {
+  const snapshot = await catalogCoordinator.sync(ports, true);
+  forgetSttModel();
+  return snapshot.models;
 }
 
 /**
@@ -86,10 +35,14 @@ export async function listCatalog(ports) {
     return { models: [], failures: unregisteredRouterFailure() };
   }
   try {
-    return { models: listedCatalog(provider, await ports.listModels(ROUTER_PROVIDER_ID)), failures: [] };
+    const authorized = await catalogCoordinator.sync(ports);
+    return {
+      models: listedCatalog(provider, await ports.listModels(ROUTER_PROVIDER_ID)).filter((model) => authorized.rows.some((row) => row.id === model.id)),
+      failures: [],
+    };
   } catch (err) {
     return {
-      models: [],
+      models: listedCatalog(provider, catalogCoordinator.committed?.models ?? []),
       failures: [{ provider: ROUTER_PROVIDER_ID, name: provider.name, message: messageOf(err) }],
     };
   }
@@ -110,6 +63,8 @@ export async function saveDefault(ports, request) {
   const asked = parseDefaultModelRequest(request);
   let resolved;
   try {
+    await catalogCoordinator.sync(ports);
+    if (!await authorizedChatModel(asked)) throw new Error("Select an authorized chat model");
     resolved = await ports.resolveCallConfig(asked);
   } catch (err) {
     throw Object.assign(new Error(messageOf(err)), { code: "model_unavailable", status: 400 });

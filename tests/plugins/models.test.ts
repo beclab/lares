@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { catalogCache } from "../../packages/core/router/catalog-cache.js";
 
+test.beforeEach(() => catalogCache.seed({ data: [{ id: "Qwen/chat", mode: "chat" }, { id: "Qwen/other", mode: "chat" }] }));
+
 type Ctx = {
   llm: {
     listProviders: () => { id: string; name: string }[];
@@ -128,7 +130,7 @@ test("Router refresh declares the sizes Router states and omits the ones it does
   );
 });
 
-test("Router refresh replaces the routable catalog and repairs a stale default", async () => {
+test("Router refresh replaces the routable catalog and preserves the saved default", async () => {
   const { refreshCatalog, catalogRevision, onCatalogRevision } = await catalogModule();
   const previousFetch = globalThis.fetch;
   const saved: unknown[] = [];
@@ -157,7 +159,7 @@ test("Router refresh replaces the routable catalog and repairs a stale default",
         ],
       },
     ]);
-    assert.deepEqual(saved, [{ provider: "olares-router", model: "Qwen/new" }]);
+    assert.deepEqual(saved, []);
     assert.equal(catalogRevision(), before + 1);
     assert.deepEqual(revisions, [before + 1]);
   } finally {
@@ -189,7 +191,7 @@ test("a reconcile that finds the same catalog does not wake every client", async
   }
 });
 
-test("Router refresh repairs a stale default with the preferred MTP build", async () => {
+test("Router refresh preserves the saved default with the preferred MTP build", async () => {
   const { refreshCatalog } = await catalogModule();
   const previousFetch = globalThis.fetch;
   const saved: unknown[] = [];
@@ -206,7 +208,7 @@ test("Router refresh repairs a stale default with the preferred MTP build", asyn
     );
   try {
     await refreshCatalog(stubCtx({}, saved));
-    assert.deepEqual(saved, [{ provider: "olares-router", model: "Qwen/MTP-fast" }]);
+    assert.deepEqual(saved, []);
   } finally {
     globalThis.fetch = previousFetch;
     catalogCache.reset();

@@ -172,6 +172,8 @@
     </div>
 
     <LaresSheet :open="state.modelSheet" :title="t('model.menuAria')" @close="$emit('close-model')">
+      <p v-if="state.modelCatalogError" class="lares-shell__status" role="status">{{ state.modelCatalogError }}</p>
+      <button type="button" @click="state.refreshModels()">{{ t('agent.refresh') }}</button>
       <p v-if="state.modelError" class="lares-shell__status">{{ state.modelError }}</p>
       <p v-else-if="!state.models" class="lares-shell__hint">{{ t("agent.loading") }}</p>
       <p v-else-if="!state.modelGroups.length" class="lares-shell__hint">{{ t("model.empty") }}</p>

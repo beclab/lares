@@ -107,9 +107,9 @@ test("effort levels travel with the model, and only the ones Router will take", 
       ],
     }).map(({ id, reasoningEfforts }) => ({ id, reasoningEfforts })),
     [
-      { id: "thinks", reasoningEfforts: { low: "low", medium: "medium", xhigh: "xhigh" } },
+      { id: "thinks", reasoningEfforts: { low: "low", medium: "medium", xhigh: "xhigh", turbo: "turbo" } },
       { id: "options-without-support", reasoningEfforts: null },
-      { id: "off-only", reasoningEfforts: null },
+      { id: "off-only", reasoningEfforts: { off: "off" } },
     ],
   );
 });

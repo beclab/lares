@@ -2,6 +2,9 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 
 const patches = [
+  { markerFile: "node_modules/@deepseek-ai/dsh-llm/lib/index.js", marker: 'config.provider === "olares-router" ? void 0 : reasoning.defaultEffort', patch: "patches/dsh-router-default-effort.patch" },
+  { markerFile: "node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js", marker: "if (!await authorizedChatModel(selection)) return false;", patch: "patches/dsh-model-admission.patch" },
+  { markerFile: "node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js", marker: "...routerReasoningInfo(provider, model", patch: "patches/dsh-router-reasoning.patch" },
   {
     markerFile: "node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js",
     marker: "const bindBeforeLeave =",
@@ -12,6 +15,7 @@ const patches = [
     marker: "const compactModelLabel =",
     patch: "patches/dsh-model-compact-label.patch",
   },
+  { markerFile: "node_modules/@deepseek-ai/dsh-client-ui-model-selection/lib/client.js", marker: "const missingModelLabel =", patch: "patches/dsh-model-missing-state.patch" },
   {
     markerFile: "node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js",
     marker: 'renderSlotChain("conversation.input.primary"',
@@ -47,6 +51,7 @@ const patches = [
     marker: "function googleArrayError",
     patch: "patches/openai-array-error.patch",
   },
+  { markerFile: "node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js", marker: "routerRows = routerReasoningSnapshot()", patch: "patches/dsh-router-native-efforts.patch" },
 ];
 
 for (const item of patches) {

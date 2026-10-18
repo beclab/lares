@@ -32,6 +32,9 @@
     "skills"
   ],
   "exports": {
+    "./router/catalog-coordinator": "./router/catalog-coordinator.js",
+    "./router/model-state": "./router/model-state.js",
+    "./router/model-authorization": "./router/model-authorization.js",
     "./tools/http": "./tools/http.js",
     "./tools/json-file": "./tools/json-file.js",
     "./tools/async": "./tools/async.js",

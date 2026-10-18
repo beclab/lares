@@ -1,0 +1,62 @@
+--- a/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js
+@@ -1,3 +1,4 @@
++import { routerReasoningInfo, routerReasoningPayload } from "@olares/lares-core/router/model-authorization";
+ import { launchEnvironmentOf } from "@deepseek-ai/dsh-launch-environment";
+ import { CONTEXT_WINDOW_EXCEEDED_CODE, EMPTY_RESPONSE_CODE, IMAGE_OFFLOAD_REQUIRED_CODE, INVALID_CREDENTIAL_CODE, LlmAdapter, LlmError, QUOTA_EXCEEDED_CODE, ReasoningEffortId, RetryPolicySchema, assertUsableApiKey, attributionHeaders, contentHasImage, isContextWindowExceededError, isQuotaExceededError, normalizeApiKey, offloadedImageText, projectOffloadedImages, requestImageHandleText, requiredImageOffload, resolveImageAttachmentAccess, resolveRetryPolicy } from "@deepseek-ai/dsh-llm";
+ import { deepEqualJson } from "@deepseek-ai/dsh-util-values";
+@@ -576,7 +577,7 @@
+ 	for (const [level, wire] of declared) if (wire === null) {
+ 		if (level !== "off") invalid(provider, `model "${entry.id}" reasoningEfforts.${level} needs the wire value dispatch should send; only "off" may leave it empty`);
+ 	} else if (wire.length === 0) invalid(provider, `model "${entry.id}" reasoningEfforts.${level} must not be an empty string`);
+-	if (!declared.some(([level]) => level !== "off")) invalid(provider, `model "${entry.id}" reasoningEfforts offers no level beyond "off"; declare a thinking level, or set reasoningEfforts to false for a non-reasoning model`);
++	if (!declared.length) invalid(provider, `model "${entry.id}" reasoningEfforts offers no level beyond "off"; declare a thinking level, or set reasoningEfforts to false for a non-reasoning model`);
+ 	const map = {};
+ 	for (const level of THINKING_LEVELS) {
+ 		const wire = efforts[level];
+@@ -657,7 +658,8 @@
+ 		id: model.id,
+ 		...overrides[model.id]
+ 	}));
+-	if (entries.length === 0) invalid(provider, "resolves no models; the installed catalog does not describe this route, so its models must be listed in configuration");
++	const emptyRouter = provider === "olares-router" && request.models?.length === 0;
++	if (entries.length === 0 && !emptyRouter) invalid(provider, "resolves no models; the installed catalog does not describe this route, so its models must be listed in configuration");
+ 	const routeApi = sharedCatalogApi(defaults);
+ 	assertOfferedCompatFields(provider, "route", request.compat);
+ 	const seen = /* @__PURE__ */ new Set();
+@@ -705,7 +707,7 @@
+ 		models.push(model);
+ 	}
+ 	const serviceableModels = models.filter((model) => !modelErrors.has(model.id));
+-	for (const [field] of configuredCompatEntries(request.compat)) {
++	for (const [field] of emptyRouter && !entries.length ? [] : configuredCompatEntries(request.compat)) {
+ 		const takers = compatProtocols(field);
+ 		if (serviceableModels.some((model) => takers.includes(model.api))) continue;
+ 		invalid(provider, `sets compat "${field}", but no model on the route speaks a protocol that takes it; it exists on ${takers.join(", ")}`);
+@@ -1825,7 +1827,8 @@
+ 			inputModalities: [...resolvedModel.input],
+ 			context: { contextWindow: resolvedModel.contextWindow },
+ 			...configuredMaxTokens === void 0 ? {} : { defaultMaxTokens: configuredMaxTokens },
+-			...reasoningInfo(resolvedModel, defaultLevel)
++			...reasoningInfo(resolvedModel, defaultLevel),
++			...routerReasoningInfo(provider, model)
+ 		};
+ 	}
+ 	prepareCall(provider, model, _signal) {
+@@ -1848,7 +1851,7 @@
+ 			if (options.stop !== void 0) throw new LlmError("llm-pi-ai does not support GenerateOptions.stop", "UNSUPPORTED_OPTION");
+ 			const profile = this.profileOf(snapshot, options.provider);
+ 			const model = this.modelOf(snapshot, options.provider, options.model);
+-			const reasoning = resolveReasoningLevel(model, options.reasoningEffort ?? profile.reasoning);
++			const reasoning = resolveReasoningLevel(model, options.reasoningEffort ?? (options.provider === "olares-router" ? void 0 : profile.reasoning));
+ 			const apiKey = await this.config.resolveApiKey(options.provider, profile);
+ 			const consumer = new AbortController();
+ 			const upstream = options.signal === void 0 ? consumer.signal : AbortSignal.any([options.signal, consumer.signal]);
+@@ -1880,6 +1883,7 @@
+ 				}, onReplayDegrade);
+ 				const iterator = toStreamChunks(snapshot.models.streamSimple(model, context, {
+ 					...profileOptions(profile, reasoning, apiKey),
++					...options.provider === "olares-router" ? { onPayload: (payload) => routerReasoningPayload(payload, model.id, options.reasoningEffort) } : {},
+ 					...options.temperature === void 0 ? {} : { temperature: options.temperature },
+ 					...options.maxTokens === void 0 ? {} : { maxTokens: options.maxTokens },
+ 					...options.sessionId === void 0 ? {} : { sessionId: String(options.sessionId) },

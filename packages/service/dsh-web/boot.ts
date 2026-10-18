@@ -7,7 +7,6 @@ import { loadEnv } from "../config/env.js";
 import { bootstrapLaresSettings, ROUTER_CREDENTIAL_REF } from "../olares/bootstrap-settings.js";
 import {
   fetchRouterModels,
-  pickChatModelId,
   type RouterModelEntry,
 } from "../olares/router-models.js";
 import { seedOlaresSkills } from "../olares/skills-seed.js";
@@ -45,19 +44,20 @@ export async function bootLaresWeb(): Promise<void> {
   patchSettingsNavIcon();
 
   let catalogModels: RouterModelEntry[] = [];
+  let catalogLoaded = false;
   try {
     catalogModels = await fetchRouterModels(env);
+    catalogLoaded = true;
     console.log(`[lares] Router catalog: ${catalogModels.length} model(s)`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.warn(`[lares] Router model sync skipped: ${message}`);
   }
-  const chatFallback = pickChatModelId(catalogModels);
   const llmBase = `http://127.0.0.1:${env.port}/llm/v1`;
   const bootstrapped = bootstrapLaresSettings(dshHome, {
     catalog: catalogModels,
     baseURL: llmBase,
-    chatFallback,
+    catalogLoaded,
   });
   if (bootstrapped.changed) {
     const route = bootstrapped.routeSeeded ? "seeded" : "updated";
@@ -66,8 +66,6 @@ export async function bootLaresWeb(): Promise<void> {
   }
   const resolvedModel =
     bootstrapped.model
-    ?? chatFallback
-    ?? process.env.DSH_MODEL?.trim()
     ?? null;
   // dsh CLI rejects --host 0.0.0.0; actual bind is forced to 0.0.0.0 in
   // @lares/dsh-overlay webserver patch for K8s probes / mesh.
@@ -106,10 +104,11 @@ export async function bootLaresWeb(): Promise<void> {
     LLM_GATEWAY_URL: env.routerUrl,
     OLARES_APP_ID: env.olaresAppId,
     LARES_ROUTER_API_KEY: env.routerApiKey ?? "",
+    LARES_ROUTER_CATALOG_BOOT_FAILED: catalogLoaded ? "0" : "1",
     // The shim strips Authorization and attaches Router auth, so this only has
     // to satisfy pi-ai's non-empty credential gate on the Router route.
     [ROUTER_CREDENTIAL_REF]: SHIM_BEARER,
-    DSH_MODEL: resolvedModel ?? "default",
+    DSH_MODEL: resolvedModel ?? "",
     DSH_PERMISSION_MODE: process.env.DSH_PERMISSION_MODE ?? process.env.LARES_PERMISSION_MODE ?? "workspace-write",
     LARES_PERMISSION_MODE: process.env.LARES_PERMISSION_MODE ?? process.env.DSH_PERMISSION_MODE ?? "workspace-write",
     DSH_SYSTEM_PROMPT: process.env.DSH_SYSTEM_PROMPT?.trim() || identityPrompt(),
