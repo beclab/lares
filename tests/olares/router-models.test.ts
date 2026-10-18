@@ -114,13 +114,13 @@ test("effort levels travel with the model, and only the ones Router will take", 
   );
 });
 
-test("pickChatModelId prefers the MTP sibling over the plain build", () => {
+test("pickChatModelId respects catalog order without an MTP preference", () => {
   const catalog = [
     { id: "EmbeddingGemma/embeddinggemma-300m", name: "x", mode: "embedding" },
     { id: "Qwen3.6-27B (llama.cpp)/unsloth/Qwen3.6-27B-GGUF:Q4_K_M", name: "y", mode: "chat" },
     { id: "Qwen3.6-27B MTP (llama.cpp)/unsloth/Qwen3.6-27B-MTP-GGUF:UD-Q4_K_XL", name: "z", mode: "chat" },
   ];
-  assert.equal(pickChatModelId(catalog), "Qwen3.6-27B MTP (llama.cpp)/unsloth/Qwen3.6-27B-MTP-GGUF:UD-Q4_K_XL");
+  assert.equal(pickChatModelId(catalog), "Qwen3.6-27B (llama.cpp)/unsloth/Qwen3.6-27B-GGUF:Q4_K_M");
   assert.equal(pickChatModelId(catalog.slice(0, 2)), "Qwen3.6-27B (llama.cpp)/unsloth/Qwen3.6-27B-GGUF:Q4_K_M");
 });
 

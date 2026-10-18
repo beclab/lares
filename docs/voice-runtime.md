@@ -568,3 +568,32 @@ and its fixed-corpus WAV, plus `lares-readout-{pc,vue-desktop,vue-mobile}-playin
 and corresponding settings screenshots in the local Codex visualization output.
 The measured first-audio sample is synthesis-only; real no-tools Agent latency,
 P50/P95 and physical listening acceptance remain open, not inferred from mocks.
+
+### New-session chat model initialization
+
+The shared core resolves a successful authorized chat catalog in its returned
+order: retain a valid saved global default, otherwise persist the first concrete
+chat model. There is no MTP name preference or `default` placeholder. Router's
+`/models` does not identify the `default-chat` route target; Lares does not query
+an administrator catalog to guess it. Boot and runtime reconciliation use the
+same rule. Empty or failed catalogs never manufacture a choice, and failures
+remain visible and retryable. An automatic fallback clears a previous model's
+reasoning override; an unchanged valid selection retains its explicit choice.
+
+The dsh default save queue conditionally accepts automatic initialization only
+if its observed selection still holds. Manual saves win either queue ordering.
+The session catalog reads its default after reconciliation. Existing session
+selections remain independent; changing the global default does not rewrite
+history, retry failed tasks or replace running-request snapshots. The composer
+shows reasoning only for an available selected model. This initialization fix
+does not resolve the separately observed upstream 400/context-budget problem.
+
+Acceptance (2026-10-18): PC 1280×720 returned the fixed test answer using
+Qwen3.5-9B-AWQ-4bit; the durable request header matched the displayed model.
+Vue mobile 390×844 and desktop 1280×720 plus narrow desktop 390×844 showed
+the same default in real chat/settings components. Desktop settings retains
+the known unrelated `settings/describe` unexpected `request` error. Final full
+suite: 848/849 passed; existing macOS file-preview symlink cleanup fails with
+`ERR_FS_EISDIR`. Typecheck, all builds and isolated vendor reverse/reapply
+passed. Evidence is in ignored `__debug__/local-router/default-model-acceptance.json`.
+No real microphone, Bluetooth or physical-phone acceptance is claimed.

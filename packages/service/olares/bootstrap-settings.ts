@@ -1,3 +1,4 @@
+import { resolveDefaultSelection } from "@olares/lares-core/router/default-selection";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type Document, isSeq, parseDocument } from "yaml";
@@ -64,7 +65,7 @@ export interface LaresSettingsResult {
 
 /**
  * Reconcile $DSH_HOME/settings.yaml with the Router: seed the provider route
- * once, then mirror availability without changing the saved selection.
+ * once, then mirror availability and initialize a usable default for new sessions.
  *
  * The composition patch cannot do this job: a user-layer settings document
  * overrides it, and the Models page writes only that document.
@@ -80,7 +81,7 @@ export function bootstrapLaresSettings(dshHome: string, seed: LaresSettingsSeed)
 
   const routeSeeded = seedRouterRoute(doc, seed);
   if (!routeSeeded) refreshRouterRoute(doc, seed);
-  const model = pinDefaultModel(doc);
+  const model = pinDefaultModel(doc, seed);
   const routeModels = declaredModelCount(doc);
 
   const next = doc.toString();
@@ -177,16 +178,19 @@ function declaredModelCount(doc: Document): number {
   return Array.isArray(models) ? models.length : 0;
 }
 
-/** Preserve the selected model, including unavailable historical selections. */
-function pinDefaultModel(doc: Document): string | null {
-  const current = readString(doc, ["agent-default-model", "model"]);
-  // A catalog refresh changes availability, never the user's selection.
-  // Empty strings keep dsh's environment defaults from manufacturing a model.
-  if (current === null) {
-    doc.setIn(["agent-default-model", "provider"], PROVIDER);
+/** Existing session selections are stored separately from this new-session default. */
+function pinDefaultModel(doc: Document, seed: LaresSettingsSeed): string | null {
+  const current = {
+    provider: readString(doc, ["agent-default-model", "provider"]) ?? PROVIDER,
+    model: readString(doc, ["agent-default-model", "model"]) ?? "",
+  };
+  const next = seed.catalogLoaded === false ? current : resolveDefaultSelection(current, declarableModels(seed));
+  if (next !== current) doc.setIn(["agent-default-model"], next);
+  else if (!current.model) {
+    doc.setIn(["agent-default-model", "provider"], current.provider);
     doc.setIn(["agent-default-model", "model"], "");
   }
-  return current;
+  return next.model || null;
 }
 
 function readString(doc: Document, path: string[]): string | null {

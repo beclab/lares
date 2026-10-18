@@ -55,6 +55,7 @@ const patches = [
   },
   { markerFile: "node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js", marker: "routerRows = routerReasoningSnapshot()", patch: "patches/dsh-router-native-efforts.patch" },
   { markerFile: "node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js", marker: 'renderSlot("conversation.chat.assistant-status"', patch: "patches/dsh-assistant-status-extension.patch" },
+  { markerFile: "node_modules/@deepseek-ai/dsh-agent-default-model/lib/index.js", marker: "options.expected", patch: "patches/dsh-new-session-default.patch" },
 ];
 
 for (const item of patches) {

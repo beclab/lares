@@ -19,6 +19,7 @@ export {
 /** @param {import('@deepseek-ai/cordis').Context} ctx */
 function catalogPorts(ctx) {
   return {
+    defaultModel: ctx.agentDefaultModel,
     mutateSettings: (ns, ops) => ctx.settings.mutate(ns, ops),
     currentSelection: () => ctx.agentDefaultModel.currentSelection(),
     saveSelection: (next) => ctx.agentDefaultModel.saveSelection(next),
