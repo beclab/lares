@@ -91,9 +91,9 @@ export function reduceUtterance(state, event) {
   if (isChunkEvent(event)) {
     if (same && state.done) return state;
     const chunk = event.data?.chunk;
-    const current = same ? state : { ...stepUtterance(turn, step), attemptId: event.data?.attemptId };
+    let current = same ? state : { ...stepUtterance(turn, step), attemptId: event.data?.attemptId };
     if (Number.isInteger(event.data?.chunkIndex) && event.data.chunkIndex <= (current.chunkIndex ?? -1)) return current;
-    if (Number.isInteger(event.data?.chunkIndex)) current.chunkIndex = event.data.chunkIndex;
+    if (Number.isInteger(event.data?.chunkIndex)) current = { ...current, chunkIndex: event.data.chunkIndex };
     if (opensToolCall(chunk)) return current.silent ? current : { ...current, silent: true };
     const index = Number.isInteger(chunk?.index) ? chunk.index : 0;
     if (chunk?.type === "text-delta" && typeof chunk.text === "string") {

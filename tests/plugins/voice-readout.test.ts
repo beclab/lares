@@ -20,6 +20,9 @@ test("old completed outputs and old steps of an explicitly stopped turn cannot r
 });
 test("an errored or cancelled turn cannot turn partial text into an answer", () => {
   const state = reduceUtterance(null, { type: "assistant/chunk", data: { turn: 1, step: 0, chunk: { type: "text-delta", text: "Unconfirmed" } } });
+  const next = reduceUtterance(Object.freeze(state), { type: "assistant/chunk", data: { turn: 1, step: 0, chunkIndex: 1, chunk: { type: "text-delta", text: " tail" } } });
+  assert.equal(next.text, "Unconfirmed tail");
+  assert.equal(state.text, "Unconfirmed");
   for (const kind of ["error", "cancelled"]) assert.equal(reduceUtterance(state, { type: "turn/end", data: { turn: 1, reason: { kind } } }).silent, true);
 });
 test("long speech is not silently truncated at 2000 characters", () => {
