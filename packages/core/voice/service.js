@@ -1,3 +1,4 @@
+import { ttsVoiceForModel } from "./tts-voice.js";
 import { writeReport } from "../log/report.js";
 import { createPcmResampler, pcmSamples } from "./realtime-audio.js";
 import { realtimeModelIds, validatedRealtimeModels } from "./realtime.js";
@@ -27,7 +28,6 @@ import { gapAfter, speechSegments } from "./script.js";
 import {
   listTtsVoices,
   pcmToWav,
-  pickTtsVoice,
   silencePcm,
   synthesize,
   synthesizeStream,
@@ -133,6 +133,7 @@ export async function voiceCapabilitiesPayload(options) {
     realtimeReady: validatedRealtimeModels(models),
     selected: pickSttModelId(models, config.model),
     ttsSelected: pickTtsModelId(models, config.ttsModel),
+    ttsDefault: pickTtsModelId(models, ""),
   };
 }
 
@@ -154,6 +155,17 @@ export async function saveVoiceConfig(body) {
     }
     if (patch.ttsModel && !ttsModelIds(models).includes(patch.ttsModel)) {
       throw new VoiceError("voice_model_unavailable", 400, "selected speech model is not available");
+    }
+  }
+  if (patch.ttsVoiceByModel) {
+    const current = readConfig().ttsVoiceByModel;
+    const changed = Object.entries(patch.ttsVoiceByModel).filter(([model, voice]) => voice && current[model] !== voice);
+    if (changed.length) {
+      const models = ttsModelIds(await listModels());
+      for (const [model, voice] of changed) {
+        if (!models.includes(model)) throw new VoiceError("voice_model_unavailable", 400, "selected speech model is not available");
+        if (!(await listTtsVoices(model)).includes(voice)) throw new VoiceError("voice_config_invalid", 400, "selected voice is not available");
+      }
     }
   }
   return writeConfig(patch);
@@ -222,21 +234,6 @@ function cancelledSpeech() {
 
 const readouts = new WeakMap();
 
-/** model id → pinned voice. A failed lookup is not cached, so the next readout asks again. */
-const pinnedVoices = new Map();
-
-async function pinnedVoice(model, listVoices = listTtsVoices) {
-  if (pinnedVoices.has(model)) return pinnedVoices.get(model);
-  let voice = null;
-  try {
-    voice = pickTtsVoice(await listVoices(model));
-  } catch {
-    return null;
-  }
-  if (voice) pinnedVoices.set(model, voice);
-  return voice;
-}
-
 function deferred() {
   let resolve;
   let reject;
@@ -296,9 +293,11 @@ export async function speakFromConfig(text, options = {}) {
       if (key && part === null) return { sentences: 0 };
       throw new VoiceError("voice_config_invalid", 400, "nothing to speak");
     }
-    const model = options.model ?? await pickTtsModelId(await listModels(), config.ttsModel);
+    const catalog = options.model == null ? await listModels() : null;
+    if (catalog && config.ttsModel && !ttsModelIds(catalog).includes(config.ttsModel)) throw new VoiceError("voice_tts_unavailable", 503, "selected speech model is not available");
+    const model = options.model ?? pickTtsModelId(catalog, config.ttsModel);
     if (!model) throw new VoiceError("voice_tts_unavailable", 503, "no speech model available");
-    readout = joinable(readouts.get(coordinator), id, key, part) ?? startReadout(coordinator, id, model, options);
+    readout = joinable(readouts.get(coordinator), id, key, part) ?? startReadout(coordinator, id, model, { ...options, config: structuredClone(config) });
   }
   readout.extend(segments, done);
   if (part === null) return key ? { sentences: readout.segments.length } : readout.result;
@@ -348,7 +347,7 @@ function startReadout(coordinator, id, model, options) {
       });
     },
   };
-  readout.result = Promise.resolve(options.config?.voice || pinnedVoice(model, options.listVoices))
+  readout.result = Promise.resolve(options.voice ?? ttsVoiceForModel(options.config, model))
     .then((voice) => readAloud(readout, model, voice, lease, options));
   readout.result.catch(() => {});
   readouts.set(coordinator, readout);

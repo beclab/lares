@@ -138,3 +138,32 @@ test("speech segmentation never reads leaked model thinking delimiters", async (
   assert.deepEqual(speechSegments("orphaned reasoning</think>Actual answer."), ["Actual answer."]);
   assert.deepEqual(speechSegments("<think>unfinished reasoning"), []);
 });
+
+test("Lares TTS grants bind latest settings once and keep model/voice stable until done", async () => {
+  let current: any = { speak: true, ttsModel: "tts", ttsVoiceByModel: { tts: "new" } };
+  const requests: any[] = [];
+  const gateway = createAudioStreamGateway({ config: () => current, models: async () => [{ id: "tts", supportsTts: true }],
+    synthesize: async (request: any, chunk: any) => { requests.push({ model: request.model, voice: request.voice }); request.onFormat({ sampleRate: 24000, channels: 1, encoding: "pcm_s16le" }); await chunk(Buffer.alloc(2)); return { streamed: true }; } });
+  const server = createServer(); server.on("upgrade", (req, socket, head) => gateway.upgrade(req, socket, head)); server.listen(0, "127.0.0.1"); await once(server, "listening");
+  const scope: any = { id: "tts-snapshot", device: "device", active: true, presentationSession: true, readAloud: true, voiceConfig: { ttsModel: "old", voice: "old" }, duplex: createDuplexCoordinator() };
+  async function consume(ticket: string) {
+    const ws = new WebSocket(`ws://127.0.0.1:${(server.address() as any).port}`, ["lares-voice", `lares-ticket.${ticket}`]);
+    await new Promise<void>((resolve, reject) => { ws.on("error", reject); ws.on("message", (data, binary) => { if (!binary && JSON.parse(String(data)).type === "done") { ws.close(); resolve(); } }); });
+  }
+  try {
+    const first = await gateway.ticket(scope, { operation: "tts", text: "First. Second." });
+    current.ttsVoiceByModel.tts = "later"; await consume(first.ticket);
+    assert.ok(requests.every(row => row.model === "tts" && row.voice === "new"));
+    const second = await gateway.ticket(scope, { operation: "tts", text: "Next reply." }); await consume(second.ticket);
+    assert.equal(requests.at(-1).voice, "later");
+    current.ttsVoiceByModel.tts = "";
+    const third = await gateway.ticket(scope, { operation: "tts", text: "Default voice." }); await consume(third.ticket);
+    assert.equal(requests.at(-1).voice, undefined);
+  } finally { gateway.close(); await new Promise<void>(resolve => server.close(() => resolve())); }
+});
+
+test("a removed selected TTS model never falls back to another model", async () => {
+  const gateway = createAudioStreamGateway({ config: () => ({ speak: true, ttsModel: "removed" }), models: async () => [{ id: "other", supportsTts: true }] });
+  try { await assert.rejects(gateway.ticket({ device: "device", active: false }, { operation: "tts", text: "Preview" }), /voice_model_unavailable/); }
+  finally { gateway.close(); }
+});

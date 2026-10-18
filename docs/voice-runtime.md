@@ -1,5 +1,65 @@
 # Voice runtime
 
+## TTS voice settings and raw dictation default (local, 2026-10-18)
+
+PC and both Vue device modes share a Speech playback section: model, model-bound
+voice, explicit Preview/Stop preview, and the independent automatic read-aloud
+switch. A preview synthesizes the fixed sample “你好，这是 Lares 的语音试听。”
+through the existing authenticated Host `/llm/v1/audio/speech` shim and plays on
+the current client. It does not create a session, send an Agent turn, enable
+read-aloud, or use the configured host/Bluetooth output device. The sample is a
+short WAV; normal reply streaming remains in place.
+
+`ttsVoiceByModel` maps exact model IDs to exact voice IDs; an empty value means
+omit `voice` and let the model use its default. Legacy `voice` is considered by
+Lares only for its explicitly saved `ttsModel`, without migration writes. Generic
+Voice Service explicit voice overrides remain supported. The hidden preferred-
+voice picker was removed. Stream grants and buffered readouts bind one model and
+voice snapshot; settings changes apply to a new playback, not its remaining
+sentences. A removed selected model cannot silently select another model.
+
+Voice lists use the existing `/llm/v1/audio/voices?model=...` shim, preserve names
+and IDs, and distinguish missing preset support from auth/network/server failures.
+Directory requests time out after ten seconds, and previews after sixty seconds.
+No presets permits default audition; an unavailable saved voice is retained and
+requires a new choice. Model/voice saves keep the confirmed setting on failure.
+Stop, a changed selection, settings exit or new capture/active conversation cancels
+preview, releases its audio URL/resources and discards late audio. The shared
+panel publishes only changes in activity, not a new UI polling timer.
+
+New/unconfigured dictation defaults to `raw`, including shared panel reset and
+processing fallbacks. Explicit saved raw/clean/outline/summary choices, older
+explicit cleanup choices, processing profiles and shortcuts remain intact. Raw
+bypasses the text-processing LLM, preserving text, attachments and user-send-only
+Agent execution.
+
+Acceptance used the real local Host and authorized LAN Router with Qwen3 TTS.
+Nine preset voices loaded. Vue mobile saved `serena` and restored it after reload;
+PC restored the same choice and saved Model default. Vue audition completed, PC
+start/stop restored the button, and read-aloud remained off. Fixed-text HTTP checks
+returned valid WAV with model default (1011 ms, 161324 bytes) and serena (1001 ms,
+153644 bytes); these are two warm samples, not a P50/P95 latency claim. Synthetic
+serena audio passed real ASR, kept the negation, and raw processing preserved the
+whole transcript. Configuration before/after those checks was identical.
+
+Final browser matrix: PC 1280×720, Vue desktop 1280×720, Vue mobile 390×844. Settings
+and history/composer smoke checks passed; mobile has no horizontal overflow or
+shortcut section, desktop shows shortcuts. Vue desktop's existing Enter settings
+`settings/describe` unexpected `request` RPC error remains visible and unpassed.
+Live microphone-to-draft, subjective listening, physical phones, Bluetooth and
+full LarePass binary transport were not manually accepted this round. Multi-model
+voice switching/failure cases used automated fixtures because the authorized
+live catalog exposes only one TTS model.
+
+Validation: 278 voice tests pass; full suite 824/825, with only the existing macOS
+`file-preview.test.ts:1341` temporary symlink cleanup error (`ERR_FS_EISDIR`).
+Typecheck, PC/Vue/server builds and standalone Vue preview build pass. Evidence:
+`/private/tmp/lares-tts-{tests,full-tests,typecheck,build,preview-build}.log`, the
+ignored `tts-settings-acceptance.json`, and screenshots
+`lares-tts-{pc,vue-mobile,vue-desktop}.png` in the Codex visualization directory.
+No remote release or deployment, model configuration, GPU mode, credentials or
+existing read-aloud preference was changed.
+
 ## Router output budget truncation (local, 2026-10-18)
 
 The short “你好” / “测试” replies were genuine one-token requests, not a false

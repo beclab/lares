@@ -227,3 +227,20 @@ providers retain their existing fixed-level validation. Legacy Lares Router
 `off` selections normalize only when `off` is absent and `none` is explicitly
 advertised; normalization persists a session selection before new task admission
 and never rewrites the global default. Unsupported selections remain unavailable.
+
+
+## Speech preferences and audition
+
+The shared settings store owns TTS model selection and `ttsVoiceByModel`, with
+model-default omission distinguished from an explicit voice ID. Preset voices
+are discovered through the existing authenticated Router audio shim, not a new
+capability catalog. Settings render loading, retry, no-presets and unavailable
+saved-voice states separately. Legacy voice settings remain model-bound; reads
+do not persist migration data. Generic API voice overrides remain explicit.
+
+An explicit fixed-text audition is independent of automatic read-aloud and
+business sessions. Its controller cancels both inference and local playback on
+stop, selection change, settings disposal or capture/conversation activity.
+Reply audio binds one configuration snapshot per output; it never mixes voices
+when preferences change. New/unconfigured dictation uses raw transcription;
+existing explicit processing selections and their profile drafts are preserved.

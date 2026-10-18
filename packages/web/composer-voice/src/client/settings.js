@@ -1,5 +1,5 @@
 import React from "react";
-import { Switch } from "@deepseek-ai/dsh-client-ui-primitives";
+import { TtsSettings } from "./tts-settings.js";
 import { DICTATION_PRESETS } from "@olares/lares-core/voice/dictation";
 import { createVoicePreferences } from "@olares/lares-core/voice/preferences";
 import { voiceLanguageItems, voiceMenuValue, voiceValueFromMenu } from "@olares/lares-core/voice/languages";
@@ -39,7 +39,7 @@ export function VoiceSettings({ bindBeforeLeave } = {}) {
     view.errors[field] ? h("p", { role: "alert", className: "lares-settings-notice is-error" }, t("settings.saveFailed")) : null), hint);
   if (!view.value) return h("div", { className: "lares-voice" }, h(SettingsHeader, { title: t("settings.title"), refreshing: view.loading, disabled: view.loading, onRefresh: () => { void preferences.load(true).catch(() => {}); }, routerRoute: "audio", t }),
     h("p", { role: "status" }, t(view.loadError ? "settings.loadFailed" : "settings.loading")));
-  const { config, sttModels = [], ttsModels = [] } = view.value;
+  const { config, sttModels = [] } = view.value;
   const modelItems = (ids, selected, automatic = true) => [
     ...(automatic ? [{ id: "__auto__", label: t("settings.model.auto") }] : []),
     ...[...new Set([selected, ...ids].filter(Boolean))].map(id => ({ id, label: id })),
@@ -58,9 +58,8 @@ export function VoiceSettings({ bindBeforeLeave } = {}) {
     Group(t("settings.conversation"),
       selector("mobileMode", t("settings.mobileMode"), ["single", "continuous"].map(id => ({ id, label: t(`settings.mode.${id}`) }))),
       selector("device", t("settings.device"), ["auto", "device", "headset"].map(id => ({ id, label: t(`settings.device.${id}`) }))),
-      selector("ttsModel", t("settings.tts.model"), modelItems(ttsModels, config.ttsModel), modelHint(ttsModels)),
-      Row(t("settings.speak.title"), h(Switch, { checked: config.speak === true, disabled: Boolean(view.pending.speak), label: t("settings.speak.label"), onChange: speak => patch({ speak }) }), t("settings.tts.hint")),
-      ...["language", "speak"].filter(id => view.errors[id]).map(id => h("p", { key: id, role: "alert", className: "lares-settings-notice is-error" }, t("settings.saveFailed")))),
+      view.errors.language ? h("p", { role: "alert" }, t("settings.saveFailed")) : null),
+    h(TtsSettings, { preferences, view, t }),
     h(ShortcutSettings, { preferences, t }),
     Group(t("settings.group.bluetooth"), h(BluetoothDevices, { t })),
     leave.modal);

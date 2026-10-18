@@ -12,8 +12,14 @@ import { createVoiceController } from "@olares/lares-core/voice/controller";
 import { validateVoiceShortcuts, matchVoiceShortcut } from "@olares/lares-core/voice/shortcuts";
 import { createHoldGesture } from "@olares/lares-core/voice/hold";
 const flush = () => new Promise((resolve) => setImmediate(resolve));
-const config = () => structuredClone(VOICE_DEFAULTS);
+const config = () => ({ ...structuredClone(VOICE_DEFAULTS), dictationPreset: "clean" });
 
+test("default dictation is raw, never invokes an LLM, and leaves explicit choices intact", async () => {
+  const text = "先不要删除文件。";
+  assert.equal(VOICE_DEFAULTS.dictationPreset, "raw");
+  assert.equal(await cleanDictation(text, { config: structuredClone(VOICE_DEFAULTS), chat: async () => assert.fail("LLM called") }), text);
+  assert.equal(await cleanDictation(text, { config: {}, chat: async () => assert.fail("LLM called") }), text);
+});
 test("raw preserves every character without consulting a model", async () => {
   const text = "嗯，周三，不，周四；可能不可以删除 Lares 的 004 文件。";
   assert.equal(await cleanDictation(text, { config: { ...config(), dictationPreset: "raw" }, chat: async () => assert.fail("LLM called") }), text);
@@ -39,7 +45,7 @@ test("missing model, tool-shaped output and empty output are rejected", async ()
 test("legacy explicit cleanup choice migrates once and explicit preset wins", () => {
   const previous = process.env.DSH_HOME; const home = mkdtempSync(join(tmpdir(), "dictation-config-")); process.env.DSH_HOME = home;
   try {
-    assert.equal(readConfig().dictationPreset, "clean"); writeConfig({ dictationPreset: "raw" });
+    assert.equal(readConfig().dictationPreset, "raw"); writeConfig({ dictationPreset: "raw" });
     const path = join(home, "voice-input", "config.json");
     writeFileSync(path, JSON.stringify({ dictationCleanup: false })); assert.equal(readConfig().dictationPreset, "raw");
     writeFileSync(path, JSON.stringify({ dictationCleanup: true })); assert.equal(readConfig().dictationPreset, "clean");

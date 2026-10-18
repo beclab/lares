@@ -103,6 +103,8 @@ export function createHostSettings(request) {
           status: status ? payload(status, "/api/lares/voice/status") : { modelAvailable: Boolean(listed.selected), model: listed.selected || "" },
           sttModels: modelIds(listed, "stt"),
           ttsModels: modelIds(listed, "tts"),
+          ttsSelected: listed.ttsSelected || "",
+          ttsDefault: listed.ttsDefault || "",
           chatModels: modelIds(listed, "chat"),
           realtimeModels: modelIds(listed, "realtime"),
           realtimeReady: modelIds(listed, "realtimeReady"),

@@ -29,7 +29,7 @@ test("real Vue preferences renders one selected preset and expanded configuratio
   const Component = await component("packages/mobile/src/settings/VoicePreferences.vue");
   const snapshot = { config: { dictationPreset: "clean", dictationProfiles: defaultDictationProfiles(), dictationShortcuts: { default: "", raw: "", clean: "", outline: "", summary: "" } }, chatModels: ["chat"] };
   for (const device of ["desktop", "mobile", "tablet"]) {
-    const html = await renderToString(createSSRApp(Component, { settings: {}, snapshot, device, t: (key: string) => key }));
+    const html = await renderToString(createSSRApp(Component, { settings: {}, ttsFetch: async () => Response.json({ voices: [] }), snapshot, device, t: (key: string) => key }));
     for (const preset of ["raw", "clean", "outline", "summary"]) assert.ok(html.includes(`dictation.${preset}`));
     assert.equal(html.includes("<details"), false); assert.equal(html.includes("preferences.shortcuts"), device === "desktop");
     assert.ok(html.includes('rows="6"')); assert.ok(html.includes("preferences.dictationStyle"));
@@ -37,7 +37,7 @@ test("real Vue preferences renders one selected preset and expanded configuratio
     assert.equal(html.includes("aria-pressed"), false);
     assert.equal(html.includes("settings.preset"), false); assert.equal(html.includes("settings.backend"), false);
   }
-  const html = await renderToString(createSSRApp(Component, { settings: {}, snapshot: { ...snapshot, config: { ...snapshot.config, dictationPreset: "raw" } }, device: "mobile", t: (key: string) => key }));
+  const html = await renderToString(createSSRApp(Component, { settings: {}, ttsFetch: async () => Response.json({ voices: [] }), snapshot: { ...snapshot, config: { ...snapshot.config, dictationPreset: "raw" } }, device: "mobile", t: (key: string) => key }));
   assert.ok(html.includes("dictation.noLlm")); assert.equal(html.includes("<textarea"), false); assert.equal(html.includes("dictation.model"), false);
 });
 

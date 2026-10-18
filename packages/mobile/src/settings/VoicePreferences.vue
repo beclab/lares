@@ -26,6 +26,7 @@
       </div>
       <p v-if="view.errors[`profile:${view.value.config.dictationPreset}`]" role="alert">{{ t('settings.saveFailed') }}</p>
     </div>
+    <TtsSettings :preferences="preferences" :view="view" :t="t" :fetcher="ttsFetch" />
     <section v-if="device === 'desktop'" class="lares-voice-preferences__shortcuts">
       <h3>{{ t('preferences.shortcuts') }}</h3>
       <p>{{ t('preferences.shortcutScope') }}</p>
@@ -62,10 +63,11 @@ import { createVoicePreferences, createPreferencesGuard } from "@olares/lares-co
 import { createVoiceShortcutRecorder, formatVoiceShortcut } from "@olares/lares-core/voice/shortcuts";
 import { DICTATION_PRESETS } from "@olares/lares-core/voice/dictation";
 import LaresSheet from "./Sheet.vue";
+import TtsSettings from "./TtsSettings.vue";
 
 export default {
-  components: { LaresSheet },
-  props: { settings: { type: Object, required: true }, snapshot: { type: Object, default: null }, device: { type: String, default: "mobile" }, t: { type: Function, required: true }, bindBeforeLeave: { type: Function, default: undefined } },
+  components: { LaresSheet, TtsSettings },
+  props: { ttsFetch: { type: Function, required: true }, settings: { type: Object, required: true }, snapshot: { type: Object, default: null }, device: { type: String, default: "mobile" }, t: { type: Function, required: true }, bindBeforeLeave: { type: Function, default: undefined } },
   expose: ["beforeLeave", "reload", "patch"],
   emits: ["change"],
   data() {

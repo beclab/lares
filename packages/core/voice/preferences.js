@@ -42,6 +42,7 @@ export function createVoicePreferences({ load, save }) {
       });
     },
     async saveDirty() { for (const id of this.dirtyIds()) await this.saveProfile(id); },
+    saveTtsVoice(model, voice) { return write("ttsVoiceByModel", config => ({ ttsVoiceByModel: { ...config.ttsVoiceByModel, [model]: voice } })); },
     saveShortcut(id, key) { return write(`shortcut:${id}`, config => ({ dictationShortcuts: validateVoiceShortcuts({ ...config.dictationShortcuts, [id]: key }) })); },
   };
 }

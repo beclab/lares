@@ -153,3 +153,16 @@ out of scope. Streaming is independent of the legacy GPU reading-mode setting.
   do not classify them as solved from a successful short model request.
 - No Router/Model Console deployment, GPU policy, global preference or engine
   parameter change is included. See the dated runtime evidence below.
+
+
+## Completed locally: TTS preferences and original transcript default
+
+- Shared per-model voice map, exact IDs, explicit default, save failure recovery
+  and directory/error states; no preferred-voice substitution.
+- Official PC and Vue mobile/desktop model/voice controls with cancellable
+  fixed-text preview, independent of read-aloud and task submission.
+- Raw dictation defaults and reset paths; explicit saved presets remain intact.
+- 278 voice tests, typecheck and all builds pass; full suite 824/825 with the
+  existing file-preview cleanup failure. Real LAN TTS/ASR checks and browser
+  matrix are recorded in voice-runtime.md; manual audio/device acceptance and
+  the existing Vue Enter settings RPC failure remain separate.

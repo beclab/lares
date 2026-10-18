@@ -23,6 +23,12 @@ export function validateConfigPatch(raw) {
   const patch = {};
   for (const [key, value] of Object.entries(raw)) {
     if (!WRITABLE.has(key)) invalid(`unknown voice setting: ${key}`);
+    if (key === "ttsVoiceByModel") {
+      if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).length > 256) invalid("invalid TTS voice map");
+      const entries = Object.entries(value);
+      for (const [model, voice] of entries) if (!model || !SAFE_MODEL.test(model) || ["__proto__", "constructor", "prototype"].includes(model) || typeof voice !== "string" || !SAFE_MODEL.test(voice)) invalid("invalid TTS voice map");
+      patch[key] = Object.fromEntries(entries); continue;
+    }
     if (key === "dictationPreset") {
       if (!DICTATION_PRESETS.includes(value)) invalid("invalid dictation preset");
       patch[key] = value; continue;

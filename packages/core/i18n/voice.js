@@ -1,4 +1,15 @@
 export const ZH = {
+  "tts.voice": "音色",
+  "tts.default": "模型默认",
+  "tts.loading": "正在加载音色…",
+  "tts.loadFailed": "音色加载失败，请重试",
+  "tts.noPresets": "此模型不提供预设音色，使用模型默认声音。",
+  "tts.preview": "试听",
+  "tts.stopPreview": "停止试听",
+  "tts.previewHint": "播放固定短句，不会开启自动朗读。",
+  "tts.previewFailed": "试听失败，请重试",
+  "tts.busy": "请先结束录音或暂停语音对话。",
+
   "pc.conversation": "开始语音对话",
   "pc.pause": "暂停语音对话",
   "pc.resume": "继续语音对话",
@@ -267,6 +278,17 @@ export const ZH = {
 };
 
 export const EN = {
+  "tts.voice": "Voice",
+  "tts.default": "Model default",
+  "tts.loading": "Loading voices…",
+  "tts.loadFailed": "Could not load voices. Try again.",
+  "tts.noPresets": "This model has no preset voices. Its default voice will be used.",
+  "tts.preview": "Preview voice",
+  "tts.stopPreview": "Stop preview",
+  "tts.previewHint": "Play a sample without enabling automatic read-aloud.",
+  "tts.previewFailed": "Preview failed. Try again.",
+  "tts.busy": "Finish recording or pause the voice conversation first.",
+
   "pc.conversation": "Start voice conversation",
   "pc.pause": "Pause voice conversation",
   "pc.resume": "Resume voice conversation",

@@ -1,3 +1,4 @@
+import { ttsVoiceForModel } from "./tts-voice.js";
 import { transcribe } from "../router/stt.js";
 import { pcmToWav, synthesizeStream } from "../router/tts.js";
 import { normalizeSttPcm } from "./pcm.js";
@@ -17,12 +18,13 @@ export function createRouterAudio(config) {
   return {
     transcribe: (pcm, scope) => transcribe({ bytes: pcmToWav(pcm, 24000), filename: "voice.wav", contentType: "audio/wav", model: config().model || "default-stt", language: config().language || undefined, signal: scope.voiceAbort?.signal, once: true }),
     async synthesize(text, scope, onChunk) {
-      const settings = config();
+      const settings = structuredClone(config());
+      const model = settings.ttsModel || "default-tts";
       const chunks = [];
       let convert = null;
       const write = async (pcm) => { if (onChunk) await onChunk(pcm); else chunks.push(pcm); };
       let pending = Buffer.alloc(0);
-      const result = await synthesizeStream({ text, model: settings.ttsModel || "default-tts", voice: settings.voice || undefined, signal: scope.outputAbort?.signal,
+      const result = await synthesizeStream({ text, model, voice: settings.voice || ttsVoiceForModel(settings, model), signal: scope.outputAbort?.signal,
         onFormat: (format) => { convert = createPcmResampler(format.sampleRate, 24000); },
       }, async (chunk) => {
         const joined = Buffer.concat([pending, chunk]);

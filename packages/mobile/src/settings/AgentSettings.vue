@@ -61,20 +61,13 @@
           @click="openSheet('voiceLang')"
         />
       </div>
-      <VoicePreferences :key="hostKey" ref="voicePreferences" :settings="settings" :snapshot="voice" :device="device" :t="tVoice" :bind-before-leave="bindBeforeLeave" @change="voice = $event" />
+      <VoicePreferences :key="hostKey" ref="voicePreferences" :settings="settings" :tts-fetch="ttsFetch" :snapshot="voice" :device="device" :t="tVoice" :bind-before-leave="bindBeforeLeave" @change="voice = $event" />
       <label class="lares-agent__hint">{{ tVoice('settings.mobileMode') }}
         <select :value="voice?.config?.mobileMode || 'continuous'" @change="patchVoice('mobileMode', $event.target.value)">
           <option value="single">{{ tVoice('settings.mode.single') }}</option>
           <option value="continuous">{{ tVoice('settings.mode.continuous') }}</option>
         </select>
       </label>
-      <label class="lares-agent__hint">{{ tVoice('settings.tts.model') }}
-        <select :value="voice?.config?.ttsModel || ''" :disabled="busy" @change="patchVoice('ttsModel', $event.target.value)">
-          <option value="">{{ tVoice('settings.model.auto') }}</option>
-          <option v-for="id in voice?.ttsModels || []" :key="id" :value="id">{{ id }}</option>
-        </select>
-      </label>
-      <label class="lares-agent__hint"><input type="checkbox" :checked="voice?.config?.speak === true" :disabled="busy" @change="patchVoice('speak', $event.target.checked)" /> {{ tVoice('settings.speak.title') }}</label>
       <label class="lares-agent__hint">{{ tVoice('settings.device') }}
         <select :value="voice?.config?.device || 'auto'" @change="patchVoice('device', $event.target.value)">
           <option v-for="device in ['auto', 'device', 'headset']" :key="device" :value="device">{{ tVoice(`settings.device.${device}`) }}</option>
@@ -211,6 +204,7 @@ export default {
     hostKey() {
       return hostSessionKey(this.ports);
     },
+    ttsFetch() { return createHostClient(this.ports).ttsFetch; },
     settings() {
       return createHostClient(this.ports).settings;
     },

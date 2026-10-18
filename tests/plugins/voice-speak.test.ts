@@ -12,17 +12,10 @@ import {
 import { gapAfter, speechSegments } from "@olares/lares-core/voice/script";
 import { foldTranscript } from "@olares/lares-core/larepass/transcript";
 import { createDuplexCoordinator } from "@olares/lares-core/voice/duplex";
-import { pickTtsVoice, synthesizeStream } from "@olares/lares-core/router/tts";
+import { synthesizeStream } from "@olares/lares-core/router/tts";
 
 const config = { speak: true, ttsModel: "kokoro", model: "", language: "" };
 const noVoices = async () => [];
-
-test("the readout voice is pinned, never left to the engine", () => {
-  assert.equal(pickTtsVoice(["aiden", "vivian", "serena", "ryan"]), "serena");
-  assert.equal(pickTtsVoice(["ryan", "vivian"]), "vivian");
-  assert.equal(pickTtsVoice(["zm_b", "af_a"]), "af_a");
-  assert.equal(pickTtsVoice([]), null);
-});
 
 test("synthesis names the voice it was given", async (t) => {
   const bodies: Record<string, unknown>[] = [];
@@ -34,11 +27,11 @@ test("synthesis names the voice it was given", async (t) => {
   assert.equal(bodies[0].voice, "serena");
 });
 
-test("every sentence of one answer is read in the model's pinned voice", async () => {
+test("every sentence uses the saved model voice without hidden selection", async () => {
   const voices: unknown[] = [];
   let listed = 0;
   const options = {
-    config,
+    config: { ...config, ttsVoiceByModel: { "qwen3-tts-pin": "vivian" } },
     model: "qwen3-tts-pin",
     listVoices: async () => {
       listed += 1;
@@ -54,8 +47,8 @@ test("every sentence of one answer is read in the model's pinned voice", async (
   };
   await speakFromConfig("First one. Second one.", options);
   await speakFromConfig("Third one.", options);
-  assert.deepEqual(voices, ["serena", "serena", "serena"]);
-  assert.equal(listed, 1);
+  assert.deepEqual(voices, ["vivian", "vivian", "vivian"]);
+  assert.equal(listed, 0);
 });
 
 test("a stream labelled audio/L16 is read as PCM chunks, whatever the case", async (t) => {
@@ -786,4 +779,20 @@ test("the desktop page projects the answer being written from live chunks", asyn
   state = speechDefinition.update({ state }, { event: live(4, 0, { type: "tool-call-delta", index: 1, id: "c", argumentsDelta: "{" }) });
   const silenced = view.apply({ upserts: [speechDefinition.buildViewNode({ key: "k", kind: "lares-voice-speech", id: "3", state })] });
   assert.equal(silenced.latest.silent, true);
+});
+
+test("model default omits the voice and each new readout binds an independent config snapshot", async () => {
+  const selected: any = { speak: true, ttsModel: "tts-snapshot", voice: "legacy", ttsVoiceByModel: { "tts-snapshot": "" } };
+  const voices: any[] = [];
+  let resume: () => void = () => {};
+  const pending = new Promise<void>(resolve => { resume = resolve; });
+  let calls = 0;
+  const options = { config: selected, model: selected.ttsModel, openPlayback: async () => ({ skipped: true }), pcmToWav: (pcm: Buffer) => pcm,
+    synthesize: async (request: any, output: any) => { voices.push(request.voice); if (++calls === 1) await pending; await output(Buffer.from("pcm")); return { streamed: true }; } };
+  const first = speakFromConfig("First sentence. Second sentence.", options);
+  await new Promise(resolve => setImmediate(resolve));
+  selected.ttsVoiceByModel["tts-snapshot"] = "next";
+  resume(); await first;
+  assert.deepEqual(voices, [undefined, undefined]);
+  await speakFromConfig("New reply.", options); assert.equal(voices.at(-1), "next");
 });

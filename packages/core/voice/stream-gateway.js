@@ -1,3 +1,4 @@
+import { ttsVoiceForModel } from "./tts-voice.js";
 import { speechSegments } from "./script.js";
 import { randomUUID } from "node:crypto";
 import { WebSocket, WebSocketServer } from "ws";
@@ -16,12 +17,17 @@ export function createAudioStreamGateway({ config, models, synthesize = synthesi
     async ticket(scope, body) {
       if (scope.device !== "device") return { supported: false };
       if (!["tts", "stt"].includes(body.operation)) throw fault("voice_config_invalid", 400);
-      const snapshot = structuredClone(scope.voiceConfig || config());
-      const rows = await models();
       const tts = body.operation === "tts";
+      const snapshot = structuredClone(scope.voiceConfig || config());
+      if (tts && (scope.presentationSession || !scope.active)) {
+        const current = config();
+        snapshot.ttsModel = current.ttsModel; snapshot.voice = current.voice;
+        snapshot.ttsVoiceByModel = structuredClone(current.ttsVoiceByModel || {});
+      }
+      const rows = await models();
       if (tts && !(scope.active ? scope.readAloud : snapshot.speak)) throw fault("voice_speak_disabled");
       const selected = tts ? pickTtsModelId(rows, snapshot.ttsModel) : pickSttModelId(rows, body.model || snapshot.model);
-      if (!selected) throw fault("voice_model_unavailable", 503);
+      if (!selected || tts && snapshot.ttsModel && selected !== snapshot.ttsModel) throw fault("voice_model_unavailable", 503);
       if (!tts && !rows.find((row) => row.id === selected)?.supportsSttStream) return { supported: false };
       if (tts && (typeof body.text !== "string" || !body.text.trim() || body.text.length > 8192)) throw fault("voice_config_invalid", 400);
       for (const [key, grant] of tickets) if (grant.expires < Date.now()) tickets.delete(key);
@@ -90,7 +96,7 @@ export function createAudioStreamGateway({ config, models, synthesize = synthesi
           const segments = speechSegments(grant.text, { done: true });
           let carry = null;
           const run = async () => { for (const text of segments) {
-          const result = await synthesize({ text, model: grant.model, voice: grant.config.voice || undefined, signal: lease.signal,
+          const result = await synthesize({ text, model: grant.model, voice: ttsVoiceForModel(grant.config, grant.model), signal: lease.signal,
             onFormat(format) { if (!rate) { rate = format.sampleRate; send({ type: "format", ...format }); } else if (rate !== format.sampleRate) throw fault("voice_audio_format"); },
           }, async (chunk) => {
             if (!lease.active()) throw fault("voice_cancelled");

@@ -175,6 +175,7 @@ export async function defaultRequest(url, init = {}) {
       ...init.headers,
     },
   });
+  if (init.responseType === "blob" && res.ok && !/json/i.test(res.headers.get("content-type") || "")) return { ok: true, status: res.status, body: await res.blob() };
   const text = await res.text();
   let body;
   if (text) {
@@ -207,6 +208,16 @@ export function createHostClient(ports = {}) {
   );
   return {
     urlFor,
+    async ttsFetch(path, init = {}) {
+      const audio = path.endsWith("/audio/speech");
+      const result = await request(path, { ...init, ...(audio ? { responseType: "blob" } : {}) });
+      return { ok: result.ok, status: result.status, json: async () => result.body,
+        blob: async () => {
+          if (result.body instanceof Blob) return result.body;
+          if (result.body instanceof ArrayBuffer || ArrayBuffer.isView(result.body)) return new Blob([result.body], { type: "audio/wav" });
+          throw new Error("tts_preview_failed");
+        } };
+    },
     probe() {
       if (ports.missing) return Promise.resolve({ status: "missing" });
       return probeHost((path) => request(path), MODELS_PATH);
