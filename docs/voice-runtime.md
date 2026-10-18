@@ -261,7 +261,7 @@ Validation: 255 voice tests passed, including stalled requests ignoring abort, o
 
 | Surface | Actual checks | Result / limits |
 | --- | --- | --- |
-| Official dsh PC, 1280×720 | Concrete model selection in an existing independent test session, real text reply, new stream transport | Text reply passed; the initial physical-mic attempt failed and its capture cleanup was fixed. Physical-mic retry and audible latency remain unconfirmed. |
+| Official dsh PC, 1280×720 | Concrete model selection in an existing independent test session, real text reply, new stream transport | Text reply passed before restart; the rebuilt page subsequently showed the existing model-directory error despite a successful authorized LAN directory health check. The initial physical-mic attempt failed and its capture cleanup was fixed. Physical-mic retry and audible latency remain unconfirmed. |
 | Vue mobile, 1280×720 and 390×844 | Actual chat/history, real model response, raw settings, hidden desktop shortcuts, narrow input layout | Rendering and text transport passed; one model response leaked a closing thinking tag. Speech now filters thinking text, but engine/display normalization is not part of this fix. |
 | Vue desktop, 1280×720 | Actual chat/history and settings, visible desktop shortcuts | Basic rendering passed; existing Enter settings RPC descriptor mismatch remains. Full voice acceptance is incomplete. |
 | Shared browser audio | Synthetic audio through actual capture and playback worklets, real LAN models | Final transcript/negation and real rendering passed; not physical microphone, phone, echo or Bluetooth acceptance. |
