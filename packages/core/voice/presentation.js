@@ -27,6 +27,18 @@ export function voiceDictationPresentation(view, now = Date.now()) {
   return { ...ui, exclusive: Boolean(view.visible && view.mode === "single"), waveform: ui.phase === "recording" && !ui.error, processingFailed, recoverable: Boolean(view.raw && (ui.error || view.stage === "processing")) };
 }
 
+export function voiceIndicatorPresentation(view, settingsError = null) {
+  const error = view.error || view.snapshot?.error || view.readAloudError || settingsError;
+  const continuous = view.mode === "continuous";
+  const active = view.visible && (view.snapshot?.connection === "open" || view.busy && !view.snapshot);
+  return {
+    visible: continuous ? Boolean(active || error) : Boolean(view.visible || settingsError),
+    orb: continuous && active && !error,
+    ticking: Boolean(view.visible && !continuous && view.startedAt && view.snapshot?.capture === "recording"),
+    error,
+  };
+}
+
 /** Discovery establishes capability; a transient connection error does not revoke it. */
 export function voiceAvailability(settings) {
   if (!settings) return { dictation: false, conversation: false, reason: "loading" };

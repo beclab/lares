@@ -44,5 +44,11 @@ export function createWebVoicePanel(onSession) {
     },
   });
   panel.settings = createVoiceSettingsState();
+  const stopSettings = panel.settings.subscribe(() => {
+    const next = panel.settings.getSnapshot().value?.config?.speak;
+    if (typeof next === "boolean") void panel.setReadAloud(next);
+  });
+  const dispose = panel.dispose;
+  panel.dispose = () => { stopSettings(); return dispose(); };
   return panel;
 }

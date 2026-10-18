@@ -24,7 +24,6 @@
 .lares-inline-voice[data-phase=recording] .lares-voice-orb { animation: lares-voice-pulse 1.8s ease-in-out infinite; }
 .lares-inline-voice[data-phase=speaking] .lares-voice-orb { animation: lares-voice-pulse .8s ease-in-out infinite; }
 .lares-inline-voice[data-phase=working] .lares-voice-orb, .lares-inline-voice[data-phase=transcribing] .lares-voice-orb, .lares-inline-voice[data-phase=preparing] .lares-voice-orb { background: transparent; border: 3px solid #8884; border-top-color: currentColor; box-sizing: border-box; animation: lares-voice-spin 1s linear infinite; }
-.lares-inline-voice[data-phase=paused] .lares-voice-orb { opacity: .3; }
 .lares-voice-primary { display: grid; place-items: center; flex: none; border: 0; border-radius: 50%; width: 36px; height: 36px; color: var(--dsw-alias-bg-base, white); background: var(--dsw-alias-label-primary, #202124); cursor: pointer; }
 .lares-voice-primary:disabled { opacity: .45; cursor: default; }
 .lares-voice-primary[data-action=conversation], .lares-voice-primary[data-action=resume] { background: var(--dsw-alias-state-business-primary, #3377ff); color: white; }

@@ -7,6 +7,8 @@ export function createVoiceConversation({ request, transcribe, playback, onReply
   const voiceId = mintRpcId();
   const headers = { "x-lares-voice-id": voiceId, "x-lares-voice-device": device };
   let timer = null;
+  let outputAbort = null;
+  let outputRevision = 0, outputSerial = Promise.resolve(), confirmedReadAloud = readAloud;
   let disposed = false;
   let version = -1;
   let lastSessionId = null;
@@ -85,7 +87,7 @@ export function createVoiceConversation({ request, transcribe, playback, onReply
     if (!disposed) timer = setTimeout(watch, 250);
   };
   const stop = async () => {
-    disposed = true; clearTimeout(timer);
+    disposed = true; outputRevision++; outputAbort?.abort(); clearTimeout(timer);
     await controller.disconnect();
     if (!onTranscript) await call("/session/close", {});
   };
@@ -123,11 +125,37 @@ export function createVoiceConversation({ request, transcribe, playback, onReply
       await controller.resume(options);
       void watch();
     },
-    async setReadAloud(value) {
-      readAloud = value === true; mutedKey = lastReplyKey; mute(lastUtterance, lastSessionId);
-      controller.setOutputMuted(!readAloud);
-      if (!readAloud) await controller.stopPlayback();
-      await call("/session/output", { readAloud });
+    setReadAloud(value) {
+      const next = value === true;
+      if (readAloud === next && confirmedReadAloud === next) return Promise.resolve();
+      const changed = readAloud !== next;
+      readAloud = next;
+      const revision = ++outputRevision;
+      confirmedReadAloud = undefined;
+      if (changed) { mutedKey = lastReplyKey; mute(lastUtterance, lastSessionId); }
+      controller.setOutputMuted(!next);
+      // Stop local audio immediately, while ordering remote changes per VoiceSession.
+      const stopped = Promise.resolve(!next && changed ? controller.stopPlayback() : null).then(() => null, error => error);
+      const result = outputSerial.catch(() => {}).then(async () => {
+        const error = await stopped;
+        if (disposed || revision !== outputRevision) return;
+        if (error) throw error;
+        const abort = outputAbort = new AbortController();
+        try {
+          await call("/session/output", { readAloud: next }, AbortSignal.any([abort.signal, AbortSignal.timeout(10_000)]));
+          if (!disposed && revision === outputRevision) confirmedReadAloud = next;
+        } catch (error) {
+          if (!disposed && revision === outputRevision) {
+            readAloud = false;
+            controller.setOutputMuted(true);
+            playback.stop();
+            controller.observePlayback(false);
+          }
+          throw error;
+        } finally { if (outputAbort === abort) outputAbort = null; }
+      });
+      outputSerial = result;
+      return result;
     },
     records: async () => {
       const res = await request("/api/lares/voice/records", { method: "GET", headers });

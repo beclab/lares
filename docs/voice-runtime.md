@@ -1,5 +1,33 @@
 # Voice runtime
 
+## Voice finish and settings RPC closeout (2026-10-19)
+
+The shared panel synchronizes confirmed read-aloud preferences once per active
+conversation/value. Startup waits for the VoiceSession to exist; concurrent
+changes are ordered, old sessions cannot publish synchronization errors into a
+new session, and failed synchronization exposes retry while remaining muted.
+Disabling stops local output immediately; enabling does not replay the current
+answer or history. Neither operation cancels the Agent. New configurations still
+default to read-aloud off; explicit saved preferences remain authoritative.
+
+The official PC inline indicator disappears on pause, end, close and idle release,
+including its layout space. Automatic multi-turn listening stays visible. Compact
+errors have recovery actions; elapsed-time ticks run only for active dictation.
+Vue and PC share the same panel and conversation implementation.
+
+The Vue Enter preference now matches the installed dsh descriptors:
+`settings/describe` sends `args: {}`; `settings/update` sends named `ns`, `patch`
+and optional `expectedRevision` directly in `args`, without a `request` wrapper.
+Read-only and revision-conflict errors remain visible and preserve the previous
+preference. Real local Host read/write/reload/restore passed. Test fixtures now
+reject the former malformed wire shape. The prior macOS file-preview failure was
+owned temporary symlink cleanup, fixed by unlinking the link itself.
+
+See [the session handoff](voice-handoff.md) for current commits, local validation,
+remaining physical-device gates and the unresolved historical 400. The accepted
+natural Chinese segmentation remains unchanged by this closeout.
+
+
 ## Shared assistant speech cleanup (local, 2026-10-18)
 
 Both buffered `speakFromConfig` and the PCM WebSocket gateway call the same core

@@ -100,6 +100,10 @@
       @pick-command="pickCommand"
       @toggle-speak="toggleSpeak"
     />
+    <div v-if="voicePanelState?.readAloudError" class="lares-speak-notice" role="alert">
+      {{ voiceReadAloudError }}
+      <button type="button" @click="voicePanel.retryReadAloud()">{{ t('dictation.retry') }}</button>
+    </div>
     <LaresVoicePanel v-if="voicePanelState" :view="voicePanelState" :t="t"
       @close="runVoicePanel('close')" @edit="voicePanel.edit($event)" @preset="voicePanel.selectPreset($event, true).catch(() => {})"
       @complete="runVoicePanel('complete')" @discard="runVoicePanel('discard')" />
@@ -524,6 +528,7 @@ export default {
     modelBlocked() {
       return !modelState(this.modelStatus).valid;
     },
+    voiceReadAloudError() { return this.t("settings.readAloudSyncFailed"); },
     voiceErrorText() {
       return this.voiceError ? messageFromCode(this.t, this.voiceError, "error.voice_failed") : "";
     },
@@ -566,7 +571,13 @@ export default {
         void Promise.resolve(this.runtime.openSession(sessionId)).catch((error) => { this.voiceError = error.message; this.voiceAdoptingSession = null; });
       },
     });
-    this.voiceSettingsUnsub = subscribeVoiceSettings((value) => { this.voiceDefaultMode = value.config.mobileMode; this.voiceSettings = value; if (value.config.speak !== true) this.reader?.stop(); });
+    this.voiceSettingsUnsub = subscribeVoiceSettings((value) => {
+      this.voiceDefaultMode = value.config.mobileMode; this.voiceSettings = value;
+      const next = value.config.speak === true;
+      if (this.voiceSpeak && !next) this.reader?.stop();
+      this.voiceSpeak = next;
+      void this.voicePanel.setReadAloud(next);
+    });
     this.voicePanelState = this.voicePanel.getSnapshot();
     this.voicePanelUnsub = this.voicePanel.subscribe(() => {
       const view = this.voicePanel.getSnapshot(); this.voicePanelState = view;
