@@ -8,6 +8,7 @@ export interface RouterCatalogRow {
   supportsStt: boolean;
   /** Speech playback, from `tts`. */
   supportsTts: boolean;
+  supportsSttStream: boolean;
   /** pi-ai level → Router wire spelling, or null when the model takes no effort. */
   reasoningEfforts: Record<string, string> | null;
   /** Tokens one request may span, or null when Router states none. */

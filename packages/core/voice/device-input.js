@@ -37,7 +37,7 @@ function createInputMeter(stream, onLevel) {
   return { stop() { clearInterval(timer); source.disconnect(); analyser.disconnect(); void context.close(); } };
 }
 
-export function createDeviceInput({ transcribe, onPhase = () => {}, endpoint = createEnergyEndpoint, endpointSilenceMs = 500, media, preparation } = {}) {
+export function createDeviceInput({ transcribe, onPhase = () => {}, endpoint = createEnergyEndpoint, endpointSilenceMs = 500, media, preparation, streamInput } = {}) {
   let recorder = null;
   let settle = null;
   let timer = null;
@@ -55,7 +55,7 @@ export function createDeviceInput({ transcribe, onPhase = () => {}, endpoint = c
         settle = resolve;
         const done = (text) => { clearTimeout(timer); signal?.removeEventListener("abort", cancel); settle = null; resolve(text); };
         const prepared = preparation; preparation = null;
-        recorder = createVoiceCapture({ media, preparation: prepared, transcribe, submit: done, onStream: (stream) => {
+        recorder = createVoiceCapture({ media, streamInput, preparation: prepared, transcribe, submit: done, onStream: (stream) => {
           for (const track of stream.getTracks()) track.addEventListener?.("ended", () => { settle = null; cancel(); reject(new Error("voice_device_lost")); }, { once: true });
           if (!continuous) return createInputMeter(stream, onLevel);
           return endpoint(stream, (heard = true) => { if (heard) recorder?.stop(); else {

@@ -132,11 +132,19 @@ export async function synthesizeStream(request, onChunk) {
   if (!type.includes("audio/l16")) {
     return { streamed: false, audio: Buffer.from(await res.arrayBuffer()) };
   }
+  const sampleRate = Number(res.headers.get("x-audio-sample-rate"));
+  if (!Number.isInteger(sampleRate) || sampleRate < 8000 || sampleRate > 192000) throw new VoiceError("voice_audio_format", 502, "missing or invalid PCM sample rate");
+  await request.onFormat?.({ sampleRate, channels: 1, encoding: "pcm_s16le" });
   const reader = res.body.getReader();
+  try {
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
     if (value?.byteLength) await onChunk(Buffer.from(value));
   }
-  return { streamed: true };
+  } finally {
+    await reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+  return { streamed: true, sampleRate };
 }

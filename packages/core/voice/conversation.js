@@ -3,7 +3,7 @@ import { createDeviceInput } from "./device-input.js";
 import { createHostInput } from "./host-input.js";
 import { mintRpcId } from "../larepass/rpc.js";
 
-export function createVoiceConversation({ request, transcribe, playback, onReply = () => {}, onPhase, mode = () => "queue", device = "device", metric = () => {}, readAloud = true, preset, backend, presentationSession = false, endpointSilenceMs, idleTimeoutMs, recoveryTimeoutMs, onText = () => {}, onTranscript = null, input: inputPort, captureConfig }) {
+export function createVoiceConversation({ request, transcribe, playback, onReply = () => {}, onPhase, mode = () => "queue", device = "device", metric = () => {}, readAloud = true, preset, backend, presentationSession = false, endpointSilenceMs, idleTimeoutMs, recoveryTimeoutMs, onText = () => {}, onTranscript = null, input: inputPort, captureConfig, streamInput, preparation }) {
   const voiceId = mintRpcId();
   const headers = { "x-lares-voice-id": voiceId, "x-lares-voice-device": device };
   let timer = null;
@@ -26,7 +26,7 @@ export function createVoiceConversation({ request, transcribe, playback, onReply
   const input = inputPort ?? (device === "headset" ? createHostInput({
     start: (signal) => call("/capture", { config: captureConfig, manual: manualCapture || Boolean(onTranscript) }, signal), status: (signal) => call("/capture", undefined, signal),
     stop: () => call("/capture/stop", {}), cancel: () => call("/capture/cancel", {}),
-  }) : createDeviceInput({ transcribe, onPhase, endpointSilenceMs }));
+  }) : createDeviceInput({ transcribe, streamInput, preparation, onPhase, endpointSilenceMs }));
   const controller = createVoiceController({ voiceId, input, idleTimeoutMs, recoveryTimeoutMs, onExpired: () => stop(), onTranscript: onTranscript ? async (value) => { await onTranscript(value); if (!continuous) await stop(); } : null, metric: (event) => {
     metric(event);
     void call("/session/metric", { stage: event.stage, durationMs: event.durationMs }).catch(() => {});

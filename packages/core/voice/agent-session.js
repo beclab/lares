@@ -65,6 +65,10 @@ export function createVoiceAgentSession(api, { sessionId = null, preset, workspa
         task.firstTextAt = Date.now();
         metric({ stage: "agent_first_text", requestId: task.requestId, durationMs: task.firstTextAt - task.at });
       }
+      if (!replay && task.utterance?.done && !task.utterance.silent && !task.speechReadyAt) {
+        task.speechReadyAt = Date.now();
+        metric({ stage: "agent_speech_ready", requestId: task.requestId, durationMs: task.speechReadyAt - task.at });
+      }
       if (!replay && task.requestId === latestRequest) { utterance = task.utterance; error = task.error; }
     }
     if (event.type === "turn/end" && openTurn === event.data?.turn) { openTurn = null; observedRunning = false; }

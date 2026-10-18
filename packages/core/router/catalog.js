@@ -80,6 +80,7 @@ export function routerCatalogRows(payload) {
       supportsVision: flags.has("vision"),
       supportsStt: flags.has("stt") || flags.has("stt_stream"),
       supportsTts: flags.has("tts"),
+      supportsSttStream: flags.has("stt_stream"),
       reasoningEfforts: reasoningEfforts(item, flags),
       contextWindow,
       maxTokens: outputTokenBudget(tokenCount(item.max_output_tokens), contextWindow),

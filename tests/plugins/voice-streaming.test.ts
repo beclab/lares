@@ -1,0 +1,140 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { createServer } from "node:http";
+import { once } from "node:events";
+import { runInNewContext } from "node:vm";
+import { WebSocket } from "ws";
+import { createAudioStreamGateway } from "@olares/lares-core/voice/stream-gateway";
+import { createDuplexCoordinator } from "@olares/lares-core/voice/duplex";
+import { createSentencePlayer } from "@olares/lares-core/voice/speech";
+import { PCM_PLAYER_WORKLET } from "@olares/lares-core/voice/pcm-worklet";
+
+const tick = () => new Promise((resolve) => setTimeout(resolve, 10));
+async function fixture(synthesize: any) {
+  const scope = { id: "test-stream-client", owner: "alice", device: "device", active: true, readAloud: true, duplex: createDuplexCoordinator() };
+  const gateway = createAudioStreamGateway({ config: () => ({ speak: false, ttsModel: "tts" }), models: async () => [{ id: "tts", supportsTts: true }], synthesize });
+  const server = createServer(); server.on("upgrade", (req, socket, head) => gateway.upgrade(req, socket, head)); server.listen(0, "127.0.0.1"); await once(server, "listening");
+  const open = async (ticket: string) => { const ws = new WebSocket(`ws://127.0.0.1:${(server.address() as any).port}`, ["lares-voice", `lares-ticket.${ticket}`]); return ws; };
+  return { scope, gateway, open, close: async () => { gateway.close(); await new Promise<void>((resolve) => server.close(() => resolve())); } };
+}
+
+test("Host delivers PCM before synthesis finishes and cancellation reaches inference", async () => {
+  let cancelled = false, completed = false;
+  const h = await fixture(async (request: any, chunk: any) => {
+    request.onFormat({ sampleRate: 48000, channels: 1, encoding: "pcm_s16le" });
+    await chunk(Buffer.alloc(128));
+    await new Promise<void>((resolve) => request.signal.addEventListener("abort", () => { cancelled = true; resolve(); }, { once: true }));
+    completed = true; return { streamed: true };
+  });
+  try {
+    const grant = await h.gateway.ticket(h.scope, { operation: "tts", text: "Hello." });
+    const ws = await h.open(grant.ticket); const seen: any[] = [];
+    ws.on("message", (data, binary) => seen.push(binary ? data : JSON.parse(String(data))));
+    while (!seen.some(Buffer.isBuffer)) await tick();
+    assert.equal(completed, false); assert.equal(seen[0].sampleRate, 48000);
+    ws.close(); await once(ws, "close"); await tick();
+    assert.equal(cancelled, true);
+  } finally { await h.close(); }
+});
+
+test("single-use grants and read-aloud off cannot authorize another output", async () => {
+  const h = await fixture(async () => ({ streamed: true }));
+  try {
+    await assert.rejects(h.gateway.ticket({ ...h.scope, readAloud: false }, { operation: "tts", text: "Hello" }), /voice_speak_disabled/);
+    const grant = await h.gateway.ticket(h.scope, { operation: "tts", text: "Hello" });
+    const one = await h.open(grant.ticket); await once(one, "open"); one.close(); await once(one, "close");
+    const reused = await h.open(grant.ticket); const [error] = await once(reused, "error"); assert.match(error.message, /403/);
+  } finally { await h.close(); }
+});
+
+test("stream reader waits for committed text, stops one generation and never replays", async () => {
+  const started: any[] = [];
+  const player = createSentencePlayer({ send: async () => { throw new Error("buffered endpoint used"); }, play() {}, halt() {}, silence() {},
+    stream: async (value: any) => { started.push(value); await new Promise<void>((resolve) => value.signal.addEventListener("abort", () => resolve(), { once: true })); } });
+  player.follow({ key: "one", text: "Maybe running a tool", done: false }); await tick(); assert.equal(started.length, 0);
+  player.follow({ key: "one", text: "Actual result.", done: true }); await tick(); assert.equal(started.length, 1);
+  player.stop(); assert.equal(started[0].signal.aborted, true);
+  player.follow({ key: "one", text: "Actual result.", done: true }); await tick(); assert.equal(started.length, 1);
+});
+
+test("AudioWorklet reports consumed source frames and caps pending audio", () => {
+  let Processor: any; const events: any[] = [];
+  class Base { port = { onmessage: null, postMessage: (data: any) => events.push(data) }; }
+  runInNewContext(PCM_PLAYER_WORKLET, { AudioWorkletProcessor: Base, sampleRate: 48000, registerProcessor: (_: string, value: any) => { Processor = value; } });
+  const worker = new Processor({ processorOptions: { inputRate: 16000 } });
+  worker.port.onmessage({ data: { type: "audio", samples: new Float32Array(160).fill(.5) } });
+  worker.port.onmessage({ data: { type: "finish" } });
+  let processing = true; for (let i = 0; i < 10 && processing; i++) processing = worker.process([], [[new Float32Array(128)]]);
+  assert.equal(processing, false); assert.equal(events.findLast((e) => e.type === "progress").frames, 160);
+  worker.port.onmessage({ data: { type: "audio", samples: new Float32Array(16000 * 5) } }); assert.equal(events.at(-1).type, "error");
+});
+
+test("streaming ASR forwards partials but only completes after final and preserves caller identity", async () => {
+  const { WebSocketServer } = await import("ws");
+  const upstreamServer = createServer(); const upstream = new WebSocketServer({ server: upstreamServer });
+  upstreamServer.listen(0, "127.0.0.1"); await once(upstreamServer, "listening");
+  let authorized = false;
+  upstream.on("connection", (ws, req) => {
+    authorized = req.headers.authorization === "Bearer scoped-key";
+    ws.on("message", (data, binary) => {
+      if (binary) { ws.send(JSON.stringify({ type: "partial", text: "Temporary" })); return; }
+      if (JSON.parse(String(data)).type === "finish") {
+        ws.send(JSON.stringify({ type: "final", text: "Confirmed" }));
+        ws.send(JSON.stringify({ type: "closed", audio_seconds: .1 })); ws.close();
+      }
+    });
+  });
+  const gateway = createAudioStreamGateway({ config: () => ({ model: "asr" }), models: async () => [{ id: "asr", supportsStt: true, supportsSttStream: true }],
+    env: { LLM_GATEWAY_URL: `http://127.0.0.1:${(upstreamServer.address() as any).port}/v1`, LARES_ROUTER_API_KEY: "scoped-key" } });
+  const host = createServer(); host.on("upgrade", (req, socket, head) => gateway.upgrade(req, socket, head)); host.listen(0, "127.0.0.1"); await once(host, "listening");
+  try {
+    const grant = await gateway.ticket({ device: "device", owner: "alice" }, { operation: "stt" });
+    const ws = new WebSocket(`ws://127.0.0.1:${(host.address() as any).port}`, ["lares-voice", `lares-ticket.${grant.ticket}`]);
+    const events: any[] = [];
+    ws.on("message", (data) => { const frame = JSON.parse(String(data)); events.push(frame); if (frame.type === "ready") ws.send(Buffer.alloc(3200)); });
+    while (!events.some((event) => event.type === "partial")) await tick();
+    assert.equal(events.some((event) => event.type === "final"), false);
+    ws.send(JSON.stringify({ type: "finish" })); await once(ws, "close");
+    assert.equal(events.find((event) => event.type === "final").text, "Confirmed"); assert.equal(authorized, true);
+  } finally { gateway.close(); upstream.close(); await Promise.all([new Promise<void>((r) => host.close(() => r())), new Promise<void>((r) => upstreamServer.close(() => r()))]); }
+});
+
+test("browser capture disconnects and flushes before ASR finish; repeated cleanup is harmless", async (t) => {
+  const { createStreamingCapture } = await import("@olares/lares-core/voice/stream-client");
+  let disconnected = false, closes = 0, audioWrites = 0, socket: any;
+  class Socket extends EventTarget {
+    readyState = 1; bufferedAmount = 0;
+    constructor() { super(); setTimeout(() => this.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "ready" }) })), 0); }
+    send(data: any) {
+      if (typeof data !== "string") { audioWrites++; return; }
+      assert.equal(disconnected, true, "ASR finish must follow capture disconnect");
+      setTimeout(() => { this.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "final", text: "final" }) })); this.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "done" }) })); }, 10);
+    }
+    close() { if (this.readyState === 3) return; this.readyState = 3; this.dispatchEvent(new Event("close")); }
+  }
+  class Context {
+    state = "running"; sampleRate = 48000; destination = {};
+    audioWorklet = { addModule: async () => {} };
+    resume = async () => {};
+    close = async () => { closes++; assert.notEqual(this.state, "closed"); this.state = "closed"; };
+    createMediaStreamSource = () => ({ connect() {}, disconnect() { disconnected = true; } });
+  }
+  class Node {
+    port: any = { onmessage: null, postMessage: () => { this.port.onmessage({ data: { type: "samples", samples: new Float32Array(480) } }); this.port.onmessage({ data: { type: "flushed" } }); } };
+    connect() {} disconnect() { disconnected = true; }
+  }
+  const previous = { context: globalThis.AudioContext, node: globalThis.AudioWorkletNode };
+  (globalThis as any).AudioContext = Context; (globalThis as any).AudioWorkletNode = Node;
+  t.after(() => { (globalThis as any).AudioContext = previous.context; (globalThis as any).AudioWorkletNode = previous.node; });
+  const capture = await createStreamingCapture({} as any, { request: async () => ({ ok: true, body: { supported: true, ticket: "ticket" } }), socket: () => socket = new Socket() });
+  assert.equal(await capture.finish(), "final"); capture.cancel();
+  assert.equal(audioWrites, 1); assert.equal(closes, 1);
+});
+
+
+test("speech segmentation never reads leaked model thinking delimiters", async () => {
+  const { speechSegments } = await import("@olares/lares-core/voice/script");
+  assert.deepEqual(speechSegments("<think>private reasoning</think>Actual answer."), ["Actual answer."]);
+  assert.deepEqual(speechSegments("orphaned reasoning</think>Actual answer."), ["Actual answer."]);
+  assert.deepEqual(speechSegments("<think>unfinished reasoning"), []);
+});

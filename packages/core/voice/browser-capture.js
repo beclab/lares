@@ -71,6 +71,7 @@ export function prepareBrowserCapture({ media, onTrace = () => {}, now = Date.no
 
 export function createVoiceCapture({
   transcribe,
+  streamInput,
   submit,
   onStream,
   onPhase,
@@ -81,6 +82,8 @@ export function createVoiceCapture({
 }) {
   const mediaDevices = media?.mediaDevices ?? globalThis.navigator?.mediaDevices;
   const Recorder = media?.MediaRecorder ?? globalThis.MediaRecorder;
+  let inputAbort = null;
+  let streaming = null;
   let recorder = null;
   let detector = null;
   let stream = null;
@@ -144,6 +147,7 @@ export function createVoiceCapture({
     chunks = [];
     release();
     if (cancel) {
+      streaming?.cancel(); streaming = null;
       emit("idle", { error: "", elapsed: 0 });
       return;
     }
@@ -157,7 +161,8 @@ export function createVoiceCapture({
     emit("transcribing", { elapsed: took, error: "" });
     abort = new AbortController();
     try {
-      const text = String(await transcribe(blob, abort.signal) ?? "").trim();
+      const text = String(await (streaming ? streaming.finish() : transcribe(blob, abort.signal)) ?? "").trim();
+      streaming = null;
       if (dead || cancel) return;
       if (!text) {
         trace("no-input", {});
@@ -213,6 +218,7 @@ export function createVoiceCapture({
         fail("voice_unsupported");
         return;
       }
+      inputAbort = new AbortController();
       cancel = false;
       released = false;
       finished = false;
@@ -252,7 +258,9 @@ export function createVoiceCapture({
         const nextDetector = await onStream?.(stream);
         if (dead || cancel) { nextDetector?.stop?.(); release(); return; }
         detector = nextDetector;
-      } catch { release(); fail("voice_unsupported"); return; }
+        streaming = await streamInput?.(stream, { signal: inputAbort.signal, onPartial: (text) => emit(phase, { partial: text }) });
+        if (dead || cancel) { streaming?.cancel(); streaming = null; release(); return; }
+      } catch (error) { streaming?.cancel(); streaming = null; release(); if (!dead && !cancel) fail(error.message || "voice_unsupported"); return; }
       started = now();
       try {
         recorder.start(CHUNK_MS);
@@ -280,6 +288,7 @@ export function createVoiceCapture({
         if (aborting) {
           cancel = true;
           abort?.abort();
+          streaming?.cancel(); streaming = null;
         }
         return;
       }
@@ -293,6 +302,7 @@ export function createVoiceCapture({
         recorder: recorder?.state || "none",
       });
       if (aborting) {
+        inputAbort?.abort();
         cancel = true;
         released = false;
         if (recorder && recorder.state !== "inactive") recorder.stop();
@@ -307,12 +317,14 @@ export function createVoiceCapture({
     },
     dispose() {
       preparation?.cancel();
+      inputAbort?.abort();
       dead = true;
       cancel = true;
       if (errorTimer) clearTimeout(errorTimer);
       if (finishTimer) clearTimeout(finishTimer);
       stopTimer();
       abort?.abort();
+      streaming?.cancel(); streaming = null;
       if (recorder && recorder.state !== "inactive") recorder.stop();
       release();
     },

@@ -165,7 +165,7 @@ const BOUNDARY = /[.!?;。！？；…\n]/;
  *   fail?: (err: unknown) => void,
  * }} io
  */
-export function createSentencePlayer({ send, play, halt, silence, fail = () => {}, onState = () => {} }) {
+export function createSentencePlayer({ send, play, halt, silence, fail = () => {}, onState = () => {}, stream }) {
   let gen = 0;
   let current = null;
   // An utterance is read once: finishing it, failing, or being stopped all end it for good.
@@ -174,6 +174,7 @@ export function createSentencePlayer({ send, play, halt, silence, fail = () => {
 
   const failed = (run, err) => {
     if (run.gen !== gen) return;
+    run.abort?.abort();
     gen += 1;
     run.wake?.();
     current = null;
@@ -182,7 +183,7 @@ export function createSentencePlayer({ send, play, halt, silence, fail = () => {
   };
 
   const handOver = (run) => {
-    if (run.sending || run.gen !== gen) return;
+    if (stream || run.sending || run.gen !== gen) return;
     const due = (run.done && !run.sentDone) || BOUNDARY.test(run.text.slice(run.sentLength));
     if (!due) return;
     const { text, done } = run;
@@ -207,6 +208,11 @@ export function createSentencePlayer({ send, play, halt, silence, fail = () => {
   };
 
   const read = async (run) => {
+    if (stream) {
+      await stream({ key: run.key, text: run.text, signal: run.abort.signal });
+      if (run.gen === gen) { current = null; onState(false); }
+      return;
+    }
     let next = null;
     for (let part = 0; run.gen === gen;) {
       if (part >= run.sent) {
@@ -225,6 +231,7 @@ export function createSentencePlayer({ send, play, halt, silence, fail = () => {
 
   const stop = () => {
     gen += 1;
+    current?.abort?.abort();
     current?.wake?.();
     if (current) halt();
     current = null;
@@ -243,6 +250,8 @@ export function createSentencePlayer({ send, play, halt, silence, fail = () => {
         return;
       }
       if (!utterance.text) return;
+      // A later tool call can invalidate uncommitted assistant text.
+      if (stream && !utterance.done && !utterance.speechCommitted) return;
       if (current?.key !== utterance.key) {
         if (utterance.key === lastKey) return;
         if (current) stop();
@@ -250,6 +259,7 @@ export function createSentencePlayer({ send, play, halt, silence, fail = () => {
         lastKey = utterance.key;
         current = {
           gen,
+          abort: new AbortController(),
           key: utterance.key,
           text: utterance.text,
           done: utterance.done,

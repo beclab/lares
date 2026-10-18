@@ -28,7 +28,7 @@ test("synthesis names the voice it was given", async (t) => {
   const bodies: Record<string, unknown>[] = [];
   t.mock.method(globalThis, "fetch", async (_url: string, init: { body: string }) => {
     bodies.push(JSON.parse(init.body));
-    return new Response(new Uint8Array([0, 0]), { headers: { "content-type": "audio/L16" } });
+    return new Response(new Uint8Array([0, 0]), { headers: { "content-type": "audio/L16", "x-audio-sample-rate": "24000" } });
   });
   await synthesizeStream({ text: "你好", model: "qwen3-tts", voice: "serena" }, () => {});
   assert.equal(bodies[0].voice, "serena");
@@ -61,13 +61,13 @@ test("every sentence of one answer is read in the model's pinned voice", async (
 test("a stream labelled audio/L16 is read as PCM chunks, whatever the case", async (t) => {
   const pcm = new Uint8Array([1, 0, 2, 0]);
   t.mock.method(globalThis, "fetch", async () => new Response(pcm, {
-    headers: { "content-type": "audio/L16" },
+    headers: { "content-type": "audio/L16", "x-audio-sample-rate": "24000" },
   }));
   const chunks: Buffer[] = [];
   const outcome = await synthesizeStream({ text: "你好", model: "qwen3-tts" }, (chunk) => {
     chunks.push(chunk);
   });
-  assert.deepEqual(outcome, { streamed: true });
+  assert.deepEqual(outcome, { streamed: true, sampleRate: 24000 });
   assert.deepEqual([...Buffer.concat(chunks)], [...pcm]);
 });
 
@@ -530,7 +530,7 @@ test("a newer readout supersedes one still synthesizing, which returns no audio"
     synthesize: (request: { signal: AbortSignal }, onChunk: (chunk: Buffer) => unknown) => new Promise((resolve, reject) => {
       void onChunk(Buffer.from("a"));
       request.signal.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })));
-      release = () => resolve({ streamed: true });
+      release = () => resolve({ streamed: true, sampleRate: 24000 });
     }),
     pcmToWav: (pcm: Buffer) => pcm,
   });

@@ -36,6 +36,9 @@ function plainLine(line) {
  */
 function plainLines(text) {
   return String(text ?? "")
+    .replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, " ")
+    .replace(/^[\s\S]*?<\/think>/i, " ")
+    .replace(/<think\b[\s\S]*$/i, " ")
     .replace(/```[\s\S]*?```/g, " ")
     .slice(0, 2000)
     .split("\n")
