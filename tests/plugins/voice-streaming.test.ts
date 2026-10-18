@@ -167,3 +167,49 @@ test("a removed selected TTS model never falls back to another model", async () 
   try { await assert.rejects(gateway.ticket({ device: "device", active: false }, { operation: "tts", text: "Preview" }), /voice_model_unavailable/); }
   finally { gateway.close(); }
 });
+
+
+test("a missing capture flush closes the ASR stream before reporting timeout", async (t) => {
+  const { createStreamingCapture } = await import("@olares/lares-core/voice/stream-client");
+  let socket: any, closes = 0, disconnects = 0, commits = 0;
+  class Socket extends EventTarget {
+    readyState = 1; bufferedAmount = 0;
+    constructor() {
+      super();
+      setImmediate(() => this.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "ready" }) })));
+    }
+    send() { commits++; }
+    close() {
+      if (this.readyState === 3) return;
+      this.readyState = 3; this.dispatchEvent(new Event("close"));
+    }
+  }
+  class Context {
+    state = "running"; sampleRate = 48000; destination = {};
+    audioWorklet = { addModule: async () => {} };
+    resume = async () => {};
+    close = async () => { closes++; this.state = "closed"; };
+    createMediaStreamSource = () => ({ connect() {}, disconnect() { disconnects++; } });
+  }
+  class Node {
+    port = { onmessage: null, postMessage() {} };
+    connect() {} disconnect() { disconnects++; }
+  }
+  const previous = { context: globalThis.AudioContext, node: globalThis.AudioWorkletNode };
+  (globalThis as any).AudioContext = Context; (globalThis as any).AudioWorkletNode = Node;
+  t.after(() => { (globalThis as any).AudioContext = previous.context; (globalThis as any).AudioWorkletNode = previous.node; });
+  const capture = await createStreamingCapture({} as any, {
+    request: async () => ({ ok: true, body: { supported: true, ticket: "ticket" } }),
+    socket: () => socket = new Socket(),
+  });
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const result = assert.rejects(capture.finish(), /voice_timeout/);
+    t.mock.timers.tick(2000);
+    await result;
+    assert.equal(socket.readyState, 3, "failed finalization must release upstream ASR");
+    assert.equal(commits, 0, "unflushed audio must not be committed");
+    assert.equal(closes, 1); assert.equal(disconnects, 2);
+    capture.cancel(); assert.equal(closes, 1);
+  } finally { capture.cancel(); }
+});

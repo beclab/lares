@@ -156,7 +156,8 @@ export async function createStreamingCapture(stream, options) {
           release();
           if (failure) throw failure;
           return await port.finish();
-        } finally { release(); }
+        } catch (cause) { port.cancel(); throw cause; }
+        finally { release(); }
       },
       cancel() { port.cancel(); release(); },
     };
