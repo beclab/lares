@@ -1,0 +1,18 @@
+--- a/node_modules/@earendil-works/pi-ai/dist/api/simple-options.js
++++ b/node_modules/@earendil-works/pi-ai/dist/api/simple-options.js
+@@ -4,7 +4,14 @@
+ export function clampMaxTokensToContext(model, context, maxTokens) {
+     if (model.contextWindow <= 0)
+         return Math.max(MIN_MAX_TOKENS, maxTokens);
+-    const available = model.contextWindow - estimateContextTokens(context).tokens - CONTEXT_SAFETY_TOKENS;
++    // Router's small local context windows need proportional estimation headroom.
++    const routerContextHeadroom = model.provider === "olares-router";
++    const safetyTokens = routerContextHeadroom
++        ? Math.min(CONTEXT_SAFETY_TOKENS, Math.ceil(model.contextWindow / 8))
++        : CONTEXT_SAFETY_TOKENS;
++    const available = model.contextWindow - estimateContextTokens(context).tokens - safetyTokens;
++    if (routerContextHeadroom && available <= 0)
++        throw Object.assign(new Error("Maximum context length exceeded: no safe output token budget remains"), { code: "CONTEXT_WINDOW_EXCEEDED" });
+     return Math.min(maxTokens, Math.max(MIN_MAX_TOKENS, available));
+ }
+ export function buildBaseOptions(model, context, options, apiKey) {

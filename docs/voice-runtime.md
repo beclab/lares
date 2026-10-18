@@ -1,5 +1,47 @@
 # Voice runtime
 
+## Router output budget truncation (local, 2026-10-18)
+
+The short “你好” / “测试” replies were genuine one-token requests, not a false
+UI warning. The dsh request header declared 4096 output tokens, while pi-ai's
+second context clamp reserved another fixed 4096 tokens and silently reduced
+the final wire budget to 1. The real isolated Agent recorded 13,858 input tokens,
+1 output token and `length`. Both OpenAI output-budget field names worked in
+small-prompt controls; renaming the field was not the fix.
+
+The Router-only vendor patch now reserves one eighth of the declared context
+window, capped at the previous 4096-token headroom, then bounds the requested
+output by the remaining space. Other providers retain their existing behavior.
+No room produces `CONTEXT_WINDOW_EXCEEDED`, rather than a fabricated one-token
+answer budget. This remains a conservative estimate, not authoritative server
+tokenization; upstream context rejection must remain visible. It neither expands
+the model window nor changes a saved model/reasoning choice.
+
+An initial 5% reserve was insufficient: a real test requested 3115 completion
+tokens beside 13,901 input tokens, exceeding the 16,384-token window. The captured
+upstream error identified this precisely. After retaining 2048 tokens of headroom
+for this model, the same isolated full Agent path sent a budget of 1880 and
+completed a two-sentence reply. This identifies this test's 400; it does not prove
+the cause of the earlier historical 17:47 error whose body was not retained.
+
+Acceptance used the actual local dsh PC and Vue source preview against a separate
+local Host with the existing authorized LAN Router identity, not synthetic chat
+responses. PC (1280×720), Vue mobile (390×844), and Vue desktop (1280×720) completed
+new test turns with explicit `none`, no output-limit warning, and no tool calls.
+Vue settings loaded the saved raw preset; mobile hid shortcuts and desktop showed
+them. Desktop still exposes the already-known `settings/describe` unexpected
+`request` RPC error; that settings item is not passed. Microphone, playback,
+physical phone and Bluetooth were not retested for this output-budget change.
+
+Validation: 10 focused tests, typecheck and PC/Vue/server build passed. Full suite:
+812 tests, 811 passed, the existing macOS `file-preview.test.ts:1341` temporary
+symlink cleanup failure (`ERR_FS_EISDIR`) remained. The new vendor patch applies
+to a fresh package-lock-pinned pi-ai archive and installer replay is idempotent.
+Evidence: `/private/tmp/lares-budget-{before,after,tests,full-tests,build}.log`;
+local screenshots `lares-output-budget-{pc,vue-mobile,vue-desktop}.png` in the
+Codex visualization directory. Captured test request/error bodies stay private in
+the ignored local debug directory; no credentials are included in this record.
+
 ## Native Router reasoning identifiers (local, 2026-10-18)
 
 Lares now preserves Router's option IDs, order and default metadata. `none` stays

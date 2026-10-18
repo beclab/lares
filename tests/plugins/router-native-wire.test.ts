@@ -46,9 +46,18 @@ test("actual dsh adapter sends Router identifiers without pi-ai clamping or defa
       assert.equal(Object.hasOwn(requests.at(-1), "reasoning_effort"), effort !== undefined);
       seed();
     }
+    // The full Agent prefix can exceed 12K tokens on a 16K model.
+    model.contextWindow = 16384;
+    model.maxTokens = 4096;
+    const longPrepared = await adapter.prepareCall("olares-router", "fixture");
+    for await (const _ of longPrepared.stream({ provider: "olares-router", model: "fixture", reasoningEffort: "none", maxTokens: 4096, messages: [createUserMessage({ content: [{ type: "text", text: "x".repeat(14000 * 4) }] })] })) {}
+    assert.ok(requests.at(-1).max_completion_tokens >= 256, "A large valid prefix must retain useful answer room instead of silently requesting one token");
+    assert.ok(requests.at(-1).max_completion_tokens <= 16384 - 14000);
+    model.contextWindow = 8192;
+    model.maxTokens = 512;
     const prepared = await adapter.prepareCall("olares-router", "fixture");
     assert.throws(() => LlmRuntime.prototype.resolveCallWithInfo.call({}, { provider: "olares-router", model: "fixture", reasoningEffort: "off" }, prepared.model), /does not support/);
-    assert.equal(requests.length, 4);
+    assert.equal(requests.length, 5);
     for (const mode of ["json", "empty"] as const) {
       rejection = mode;
       const prepared = await adapter.prepareCall("olares-router", "fixture");
@@ -58,7 +67,7 @@ test("actual dsh adapter sends Router identifiers without pi-ai clamping or defa
       if (mode === "json") assert.match(JSON.stringify(errors), /fixture_rejected/);
       assert.equal(requests.at(-1).reasoning_effort, "none");
     }
-    assert.equal(requests.length, 6);
+    assert.equal(requests.length, 7);
   } finally { catalogCoordinator.committed = original; server.closeAllConnections(); await new Promise<void>(r => server.close(() => r())); }
 });
 
@@ -81,11 +90,14 @@ test("the real session controller declares its coordinated settings dependency",
 test("the full vendor installer is idempotent after native Router patches", async () => {
   const { spawnSync } = await import("node:child_process");
   const files = ["dsh-llm-pi-ai/lib/index.js", "dsh-api-session-controller/lib/index.js", "dsh-client-ui-model-selection/lib/client.js"];
+  const budgetFile = new URL("../../node_modules/@earendil-works/pi-ai/dist/api/simple-options.js", import.meta.url);
+  const budgetBefore = readFileSync(budgetFile, "utf8");
   const before = files.map(file => readFileSync(new URL(`../../node_modules/@deepseek-ai/${file}`, import.meta.url), "utf8"));
   for (let run = 0; run < 2; run++) {
     const result = spawnSync(process.execPath, ["scripts/apply-vendor-patches.mjs"], { cwd: new URL("../../", import.meta.url), encoding: "utf8" });
     assert.equal(result.status, 0, result.stdout + result.stderr);
   }
+  assert.equal(readFileSync(budgetFile, "utf8"), budgetBefore);
   assert.deepEqual(files.map(file => readFileSync(new URL(`../../node_modules/@deepseek-ai/${file}`, import.meta.url), "utf8")), before);
 });
 
@@ -110,4 +122,15 @@ test("restoring an old session awaits coordinated capabilities before persisting
   registry.selectForNextRequest = () => { throw Error("durable write rejected"); };
   await assert.rejects(registry.installSelection({}), /durable write rejected/);
   assert.equal(selected.reasoningEffort, "off");
+});
+
+
+test("Router headroom scales to the context window without changing other providers", async () => {
+  const { clampMaxTokensToContext } = await import("../../node_modules/@earendil-works/pi-ai/dist/api/simple-options.js");
+  const context: any = { messages: [{ role: "user", content: "x".repeat(56000) }] };
+  assert.equal(clampMaxTokensToContext({ provider: "olares-router", contextWindow: 16384 } as any, context, 4096), 336);
+  assert.equal(clampMaxTokensToContext({ provider: "other", contextWindow: 16384 } as any, context, 4096), 1);
+  assert.equal(clampMaxTokensToContext({ provider: "olares-router", contextWindow: 131072 } as any, context, 4096), 4096);
+  assert.equal(clampMaxTokensToContext({ provider: "olares-router", contextWindow: 16384 } as any, context, 100), 100);
+  assert.throws(() => clampMaxTokensToContext({ provider: "olares-router", contextWindow: 8192 } as any, context, 4096), /Maximum context length exceeded/);
 });
