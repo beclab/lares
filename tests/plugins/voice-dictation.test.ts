@@ -3,7 +3,7 @@ import test from "node:test";
 import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { cleanDictation } from "@olares/lares-core/voice/dialogue";
+import { cleanDictation, voiceChat } from "@olares/lares-core/voice/dialogue";
 import { defaultDictationProfiles } from "@olares/lares-core/voice/dictation";
 import { validateConfigPatch, readConfig, writeConfig } from "@olares/lares-core/voice/config";
 import { VOICE_DEFAULTS } from "@olares/lares-core/voice/options";
@@ -238,4 +238,24 @@ test("repeated Done while processing performs one text conversion", async () => 
   await panel.open({ sessionId: "s" }); const done = panel.finish();
   while (!release) await new Promise(resolve => setImmediate(resolve));
   await panel.finish(); assert.equal(converted, 1); release("clean words"); await done; await panel.dispose();
+});
+
+
+test("dictation uses Router output defaults while dialogue keeps its explicit budget", async () => {
+  const calls: any[] = [];
+  const chat = request => voiceChat({ ...request, fetch: async (_url, init) => {
+    calls.push(JSON.parse(String(init.body)));
+    return Response.json({ choices: [{ finish_reason: "stop", message: { content: "先不要删除文件。" } }] });
+  } });
+  for (const preset of ["clean", "outline", "summary"]) {
+    await cleanDictation("先不要删除文件。", { config: config(), preset, chat });
+    assert.equal(Object.hasOwn(calls.at(-1), "max_tokens"), false);
+    assert.equal(calls.at(-1).model, "default-chat");
+    assert.equal(calls.at(-1).tools, undefined);
+  }
+  await chat({ messages: [] }); assert.equal(calls.at(-1).max_tokens, 1024);
+  await chat({ messages: [], maxTokens: 256 }); assert.equal(calls.at(-1).max_tokens, 256);
+  await assert.rejects(cleanDictation("先不要删除文件。", { config: config(), chat: request => voiceChat({ ...request,
+    fetch: async () => Response.json({ choices: [{ finish_reason: "length", message: { content: "先删除" } }] }),
+  }) }), /voice_chat_limit/);
 });

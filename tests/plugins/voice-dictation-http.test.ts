@@ -25,7 +25,13 @@ test("HTTP capabilities use the catalog cache; cleanup uses authenticated identi
       return;
     }
     let text = ""; for await (const chunk of req) text += chunk;
-    calls.push({ user: req.headers["x-bfl-user"], body: JSON.parse(text) });
+    const body = JSON.parse(text);
+    calls.push({ user: req.headers["x-bfl-user"], body });
+    if (body.max_tokens > 4096) {
+      res.writeHead(400, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: { code: "max_tokens_exceeds_model_limit" } }));
+      return;
+    }
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({ choices: [{ finish_reason: "stop", message: { role: "assistant", content: "周四下午三点开会，先不要删除文件。" } }] }));
   });
@@ -48,6 +54,7 @@ test("HTTP capabilities use the catalog cache; cleanup uses authenticated identi
     assert.equal(response.status, 200); assert.deepEqual(await response.json(), { text: "周四下午三点开会，先不要删除文件。" });
     assert.equal(calls.length, 1); assert.equal(calls[0].user, "alice");
     assert.equal(calls[0].body.model, "default-chat"); assert.equal(calls[0].body.tools, undefined);
+    assert.equal(Object.hasOwn(calls[0].body, "max_tokens"), false);
     const raw = await post("/dictation/clean", { text: "原文", preset: "raw" });
     assert.deepEqual(await raw.json(), { text: "原文" }); assert.equal(calls.length, 1);
     const session = await fetch(`${base}/api/lares/voice/session`);

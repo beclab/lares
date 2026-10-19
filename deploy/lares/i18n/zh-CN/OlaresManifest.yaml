@@ -23,6 +23,10 @@ spec:
     2. 确认 Router 已安装。
     3. 打开 Lares 入口开始对话。
   upgradeDescription: |
-    **Lares 0.26.52**
+    改进语音输入启动、流式播放和中文语音自然分段。
 
-    - 同一台 Olares 上的其他应用可以通过 8081 端口的内部 webhook 入口提交问题并读取回复。
+    - 桌面端和移动端保持各模型音色及 Router 思考档位选择一致。
+    - 修复语音设置保存，以及输出上限导致的听写文字整理失败。
+    - 录音收尾出错时关闭语音识别连接。
+
+    [版本说明](https://github.com/beclab/lares/releases/tag/v0.26.52)

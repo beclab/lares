@@ -1,6 +1,81 @@
 # Lares voice session handoff — 2026-10-19
 
-## Checkout and completed units
+## Latest continuation — 2026-10-19
+
+This section supersedes the historical closeout below. Continue on
+`codex/voice-startup-latency`; current product revision is `c14e8bc`.
+
+| Commit | Confirmed fix |
+| --- | --- |
+| `773147e` | Failed capture finalization now cancels the upstream ASR stream as well as releasing the audio graph. A missing worklet flush previously left the socket open after `voice_timeout`. |
+| `c14e8bc` | Dictation transforms no longer reserve a fixed 8192 output tokens. Router chooses the output budget for the configured model/group; dialogue budgets and truncated-output rejection remain intact. |
+
+Both defects have regressions that failed before the fix. The cleanup failure was
+reproduced through the real Host: HTTP 502 represented an upstream HTTP 400,
+`max_tokens_exceeds_model_limit`, because the configured `default-chat` backend
+allows 4096 output tokens. An isolated request with the same model and no output
+override succeeded; after rebuilding, the actual `/dictation/clean` route also
+returned 200 and preserved the negation. This identifies this round's cleanup
+failure, **not** the cause of the historical 400 or earlier human-mic failure.
+
+Final runtime build: `c14e8bc-6ab7efeb1635-d3b20f2218c7-c2f3c2257f0e`, built
+`2026-10-18T17:27:35.532Z` (2026-10-19 local time). Both complete product and
+standalone Vue preview builds passed; existing large-chunk warnings remain.
+Full suite: **873/873 passed**, no skipped tests; typecheck passed.
+
+| Surface | Actual viewport | Result | Evidence / outstanding acceptance |
+| --- | --- | --- | --- |
+| Official dsh PC | 1280×720 | Test history, model/composer and voice settings passed; audition start/cancel passed | `lares-continuation-pc-{chat,settings}.png`; real microphone and audible output not executed |
+| Vue mobile: chat + settings | 390×844 | Test history/composer, raw preset, aiden, saved speak preference and hidden shortcuts passed; audition start/cancel passed; multi-digit list markers have a visual defect | `lares-continuation-mobile-{chat,settings}.png`; browser viewport only, physical phone not executed |
+| Vue desktop: chat + settings | 1280×720 | Test history/composer and settings passed; shortcuts visible; audition started and ended without a visible/browser error; multi-digit list markers have a visual defect | `lares-continuation-desktop-{chat,settings}.png`; human listening not executed; earlier audition failure not reproduced or attributed |
+
+All pages were refreshed or navigated after the final rebuild. Vue showed the
+final build marker; PC used the rebuilt official Host. Screenshots were taken
+after history and settings loaded. Absolute screenshot paths and statuses are
+indexed locally in ignored `__debug__/local-router/continuation-evidence.json`.
+
+Real-model checks used the existing authorized identity and verified LAN/TLS:
+Vue request transport returned a 257324-byte WAV; buffered and streaming ASR
+final succeeded and retained the negation; raw preserved the exact input;
+optional cleanup succeeded. Audio was synthetic, held in memory, and not saved.
+The cleanup sample took about 31 seconds; success is not a latency improvement.
+No Agent task was submitted or historical failed task replayed. The saved voice
+configuration fingerprint was unchanged across both restarts and checks.
+
+Local evidence: `continuation-probe.json`, `continuation-cleanup.json` (new 400
+with request ID and upstream error), `continuation-cleanup-default.json`,
+`continuation-tests.log`, `continuation-cleanup-before.log` and
+`continuation-cleanup-after.log`. Existing launcher `build.log` and `vue-build.log`
+contain the successful final builds. Treat these files as private diagnostics;
+do not commit credentials, recordings or captured user content.
+
+### Current remaining work
+
+1. Human microphone: reproduce any remaining failure by capture, ASR final,
+   processing and insertion stage. Verify draft/attachment preservation and no
+   automatic task submission. The flush failure is covered automatically; its
+   failure/recovery UI was not injected into a live browser this round.
+2. Human speaker/wired-headphone playback, pause/end/stop, session changes and
+   late replies remain unexecuted. Automatic tests pass for successful-empty-ASR
+   noise recovery, real speech stopping output, failed ASR never resuming,
+   explicit cancellation and stale-output fencing. Hardware echo gates remain.
+3. Physical phone, Bluetooth, complete LarePass and acoustic echo remain
+   unexecuted; do not enable automatic interruption on untested devices.
+4. Historical 400 and Chrome stalled requests remain unattributed. New failures
+   must retain sanitized request ID, model, reasoning selection, token budget,
+   upstream body/status and timings. Missing fields must be recorded as missing.
+5. GPU lease waiting remains the separate runtime issue documented in
+   [Voice streaming](voice-streaming.md#observed-shared-gpu-bottleneck). No engine,
+   model or GPU policy was changed.
+6. Separate UI follow-up: Vue ordered-list items 10–12 visually lose the leading
+   digit in their markers, although the DOM retains full numbering. The final
+   chat screenshots retain this observation; no renderer fix is claimed.
+
+Keep the accepted A segmentation, current model, `aiden`, raw dictation and saved
+read-aloud/reasoning preferences. No public API, version, model/engine/GPU setting,
+Key or remote deployment changed. Nothing was pushed, published or deployed.
+
+## Previous closeout (historical snapshot)
 
 Continue on `codex/voice-startup-latency`. Product runtime revision:
 `b752d37f4218305b034131207a1c27bf9c59692d`. A subsequent documentation-only commit
@@ -95,7 +170,7 @@ for a new/unconfigured preference remains **off**. Keep the current model, voice
 `aiden`, raw dictation and explicit reasoning choice when continuing. Do not force
 preferences to match older acceptance notes.
 
-## Remaining work for the next session
+## Previous remaining work (historical snapshot)
 
 1. **Historical 400:** the earlier upstream error body was not retained, so its
    exact cause is still unknown. The independently fixed context/output-budget
