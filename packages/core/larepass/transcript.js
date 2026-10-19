@@ -152,6 +152,9 @@ export function foldTranscript(entries) {
   };
 
   const putBlock = (turn, step, index, row) => {
+    // The block is one row for its whole life. Keying it by the event being
+    // folded makes the key change on every chunk, and the list remounts.
+    row.key = `block:${blockKey(turn, step, index)}:${row.type}`;
     const stored = upsert(items, blocks, blockKey(turn, step, index), tag(row));
     // The turn's readings belong under its closing reply, the row whose action
     // bar ends the turn on screen.

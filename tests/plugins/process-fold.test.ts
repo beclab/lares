@@ -24,6 +24,38 @@ function kinds(blocks) {
   return blocks.map((block) => (block.kind === "fold" ? "fold" : block.row.type));
 }
 
+test("a streaming reply keeps its row identity as chunks arrive", () => {
+  const base = [
+    { type: "turn/start", seq: 1, data: { turn: 1 } },
+    { type: "user/message", seq: 2, data: { content: [{ type: "text", text: "hi" }], source: { kind: "user" } } },
+  ];
+  const chunk = (seq, text) => ({
+    type: "assistant/chunk",
+    seq,
+    data: { turn: 1, chunk: { type: "text-delta", text } },
+  });
+  const first = foldTranscript([...base, chunk(3, "hel")]);
+  const second = foldTranscript([...base, chunk(3, "hel"), chunk(4, "lo")]);
+  const reply = (snap) => snap.items.find((row) => row.type === "assistant");
+  assert.equal(reply(first).key, reply(second).key);
+  assert.equal(reply(second).text, "hello");
+  const done = foldTranscript([
+    ...base,
+    chunk(3, "hel"),
+    chunk(4, "lo"),
+    { type: "assistant/message", seq: 5, data: { turn: 1, message: { content: [{ type: "text", text: "hello" }] } } },
+    { type: "turn/end", seq: 6, data: { turn: 1, reason: { kind: "completed" } } },
+  ]);
+  assert.equal(reply(done).key, reply(first).key);
+
+  const assistantKey = (items) => transcriptBlocks(items, { running: true })
+    .find((block) => block.row?.type === "assistant")?.key;
+  assert.equal(
+    assistantKey(second.items),
+    assistantKey([{ type: "user", text: "earlier", key: "voice:1" }, ...second.items]),
+  );
+});
+
 test("a settled turn folds reasoning and tool calls behind one header", () => {
   const folded = foldTranscript(events({ kind: "completed" }));
   const blocks = transcriptBlocks(folded.items, { running: folded.running });

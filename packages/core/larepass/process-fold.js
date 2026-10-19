@@ -221,7 +221,7 @@ export function transcriptBlocks(items, { running = false } = {}) {
       if (showHeader && !folded && memberSet.has(entry)) {
         blocks.push({
           kind: "fold",
-          key: `fold-${group.turn ?? `g${groupIndex}`}-${entry.index}`,
+          key: `fold-${group.turn ?? `g${groupIndex}`}-${entry.row?.key || entry.row?.id || entry.index}`,
           phase,
           foldable,
           reason,
@@ -232,7 +232,12 @@ export function transcriptBlocks(items, { running = false } = {}) {
         folded = true;
       }
       if (memberSet.has(entry) && showHeader) continue;
-      blocks.push({ kind: "row", key: `row-${entry.index}`, index: entry.index, row: entry.row });
+      blocks.push({
+        kind: "row",
+        key: entry.row?.key || entry.row?.id || `row-${entry.index}`,
+        index: entry.index,
+        row: entry.row,
+      });
     }
   });
   return blocks;
