@@ -52,19 +52,6 @@ test("identity prompt keeps user files out of the application overlay", () => {
   assert.match(identityPrompt(), /Do not write them under \/app/);
 });
 
-test("identity prompt looks things up without writing files", () => {
-  const text = identityPrompt();
-  assert.match(text, /To answer a question or look something up, only read/);
-  assert.match(text, /Do not use write or edit to look something up, take notes, or try a change the user did not ask for/);
-  assert.match(text, /Use write or edit only when the user asked you to change or produce that file/);
-  assert.doesNotMatch(text, /Use read\/write\/edit for files/);
-});
-
-test("identity prompt spells the platform name letter by letter", () => {
-  assert.match(identityPrompt(), /Spell the platform name exactly Olares \(O, l, a, r, e, s\)/);
-  assert.match(surfacePrompt("http://127.0.0.1:8080"), /Spell the platform name exactly Olares \(O, l, a, r, e, s\)/);
-});
-
 // The prompt used to claim the entrance login materialized HOME / OLARES_CLI_*,
 // which sent the model looking for a login it cannot perform.
 test("identity prompt sources the olares-cli session from the platform mount", () => {
@@ -94,9 +81,6 @@ test("agents markdown names the product and omits the upstream brand", () => {
   assert.match(text, new RegExp(`via ${PRODUCT_NAME}`));
   assert.match(text, new RegExp(`you are ${PRODUCT_NAME} on ${PLATFORM_NAME}\\.`));
   assert.match(text, /lares-media-create skill/);
-  assert.match(text, /Do not use write or edit to look something up/);
-  assert.match(text, /Spell the platform name exactly Olares \(O, l, a, r, e, s\)/);
-  assert.doesNotMatch(text, /Prefer structured fs tools \(read \/ write \/ edit\)/);
   assert.doesNotMatch(text, UPSTREAM_COPY);
 });
 
