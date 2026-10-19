@@ -6,17 +6,33 @@ import { speechSegments } from "@olares/lares-core/voice/script";
 import { PCM_PLAYER_WORKLET } from "@olares/lares-core/voice/pcm-worklet";
 const tick = () => new Promise(r => setImmediate(r));
 
-test("old completed outputs and old steps of an explicitly stopped turn cannot replay", async () => {
+test("a stopped utterance is not replayed, and the next utterance still plays", async () => {
   const seen: string[] = [];
   const reader = createSentencePlayer({ send: async () => ({}), play() {}, halt() {}, silence() {}, stream: async ({ key }: any) => { seen.push(key); } });
-  const one = { key: "session:1:0", turn: 1, sessionId: "session", text: "One.", done: true };
+  const one = { key: "session:1:0", turn: 1, sessionId: "session", text: "One.", done: true, source: { sessionId: "session", turn: 1, step: 0 } };
   reader.follow(one); await tick();
-  reader.follow({ ...one, key: "session:2:0", turn: 2 }); await tick();
+  reader.follow({ ...one, key: "session:2:0", turn: 2, source: { sessionId: "session", turn: 2, step: 0 } }); await tick();
   reader.follow(one); await tick();
   assert.equal(seen.length, 2);
   reader.stop();
-  reader.follow({ ...one, key: "session:2:1", turn: 2 }); await tick();
-  assert.equal(seen.length, 2);
+  reader.follow({ ...one, key: "session:2:1", turn: 2, step: 1, source: { sessionId: "session", turn: 2, step: 1 } }); await tick();
+  assert.equal(seen.length, 3);
+});
+
+test("stopping when nothing is playing does not cancel a later utterance", async () => {
+  const silenced: unknown[] = [];
+  const reader = createSentencePlayer({
+    send: async () => ({}), play() {}, halt() {},
+    silence(source: unknown) { silenced.push(source ?? null); },
+    stream: async ({ signal }: { signal: AbortSignal }) => { await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true })); },
+  });
+  reader.stop();
+  assert.equal(silenced.length, 0);
+  reader.follow({ key: "a", text: "One.", done: true, source: { sessionId: "s", turn: 1, step: 0 } });
+  await tick();
+  reader.stop();
+  reader.stop();
+  assert.equal(silenced.length, 1);
 });
 test("an errored or cancelled turn cannot turn partial text into an answer", () => {
   const state = reduceUtterance(null, { type: "assistant/chunk", data: { turn: 1, step: 0, chunk: { type: "text-delta", text: "Unconfirmed" } } });
@@ -120,29 +136,66 @@ test("tool-capable attempts wait for successful text settlement; failed attempts
   await assert.rejects(failed, /voice_reply_unsettled/); registry.close();
 });
 
-test("PC and Vue observing the same reply cannot claim two simultaneous TTS outputs", async () => {
+test("PC and Vue can both follow one reply, and one leaving does not end it for the other", async () => {
   const { createReplyStreamRegistry } = await import("@olares/lares-core/voice/reply-stream");
   const registry = createReplyStreamRegistry({ inspect: async () => ({}), owner: () => "alice" });
   const source = { sessionId: "same-session", turn: 1, step: 0 };
   registry.frame(source.sessionId, { ...source, type: "start", attemptId: "a", speechEligible: true });
-  await registry.bind({ owner: "alice", id: "PC" }, source);
-  await assert.rejects(registry.bind({ owner: "alice", id: "Vue" }, source), /voice_output_owned/);
+  const pc = (await registry.bind({ owner: "alice", id: "PC" }, source))(new AbortController().signal);
+  const phoneAbort = new AbortController();
+  const phone = (await registry.bind({ owner: "alice", id: "Vue" }, source))(phoneAbort.signal);
+  registry.frame(source.sessionId, { type: "chunk", attemptId: "a", index: 0, chunk: { type: "text-delta", text: "你好。" } });
+  registry.event(source.sessionId, { type: "assistant/message", data: { turn: 1, step: 0, message: { content: [{ type: "text", text: "你好。" }] } } });
+  assert.equal((await pc.next()).value.text.length > 0, true);
+  phoneAbort.abort();
+  await assert.rejects(phone.next(), /voice_cancelled/);
+  assert.equal((await pc.next()).done, true);
   registry.close();
 });
 
-test("the second observer's ticket refusal keeps its code over HTTP so the client stays quiet", async () => {
+test("two sockets share one synthesis, and cancelling it does not block the next answer", async () => {
   const { createReplyStreamRegistry } = await import("@olares/lares-core/voice/reply-stream");
-  const { sendError } = await import("@olares/lares-core/tools/http");
-  const registry = createReplyStreamRegistry({ inspect: async () => ({}), owner: () => "alice" });
-  const source = { sessionId: "same-session", turn: 1, step: 0 };
-  registry.frame(source.sessionId, { ...source, type: "start", attemptId: "a", speechEligible: true });
-  await registry.bind({ owner: "alice", id: "PC" }, source);
-  const refusal = await registry.bind({ owner: "alice", id: "Vue" }, source).catch((error) => error);
-  let status = 0, body = "";
-  sendError({ writeHead: (code: number) => { status = code; }, setHeader() {}, end: (text: string) => { body = text; } }, refusal, "voice_failed");
-  assert.equal(status, 409);
-  assert.equal(JSON.parse(body).error.code, "voice_output_owned");
-  registry.close();
+  const { createAudioStreamGateway } = await import("@olares/lares-core/voice/stream-gateway");
+  const { createDuplexCoordinator } = await import("@olares/lares-core/voice/duplex");
+  const { createServer } = await import("node:http");
+  const { once } = await import("node:events");
+  const { WebSocket } = await import("ws");
+  const source = { sessionId: "shared", turn: 1, step: 0, attemptId: "shared:a" };
+  const registry = createReplyStreamRegistry({ inspect: async () => ({}) });
+  registry.frame("shared", { type: "start", sessionId: "shared", turn: 1, step: 0, attemptId: "shared:a", speechEligible: true });
+  let release: () => void = () => {};
+  const calls: string[] = [];
+  const gateway = createAudioStreamGateway({ replies: registry, config: () => ({ speak: true, ttsModel: "tts" }), models: async () => [{ id: "tts", supportsTts: true }],
+    synthesize: async (value: { text: string }, write: (chunk: Buffer) => Promise<void>) => {
+      calls.push(value.text);
+      value.onFormat?.({ sampleRate: 16000, channels: 1, encoding: "pcm_s16le" } as never);
+      await new Promise<void>((resolve) => { release = resolve; });
+      await write(Buffer.alloc(4));
+      return { streamed: true };
+    } });
+  const server = createServer(); server.on("upgrade", (req, socket, head) => gateway.upgrade(req, socket, head)); server.listen(0, "127.0.0.1"); await once(server, "listening");
+  const scope = () => ({ id: "voice", owner: "", device: "device", active: true, readAloud: true, duplex: createDuplexCoordinator() });
+  const open = async (scopeId: string) => {
+    const grant = await gateway.ticket({ ...scope(), id: scopeId } as never, { operation: "tts", source });
+    const socket = new WebSocket(`ws://127.0.0.1:${(server.address() as any).port}`, ["lares-voice", `lares-ticket.${(grant as { ticket: string }).ticket}`]);
+    const audio: Buffer[] = [];
+    socket.on("message", (data, binary) => { if (binary) audio.push(Buffer.from(data as Buffer)); });
+    await once(socket, "open");
+    return { socket, audio };
+  };
+  try {
+    const first = await open("phone");
+    const second = await open("desktop");
+    registry.frame("shared", { type: "chunk", attemptId: "shared:a", index: 0, chunk: { type: "text-delta", text: "你好。" } });
+    registry.event("shared", { type: "assistant/message", data: { turn: 1, step: 0, message: { content: [{ type: "text", text: "你好。" }] } } });
+    for (let i = 0; calls.length < 1 && i < 50; i += 1) await new Promise((r) => setTimeout(r, 5));
+    assert.equal(calls.length, 1);
+    release();
+    for (let i = 0; (first.audio.length < 1 || second.audio.length < 1) && i < 50; i += 1) await new Promise((r) => setTimeout(r, 5));
+    assert.equal(first.audio.length > 0, true);
+    assert.equal(second.audio.length > 0, true);
+    first.socket.close(); second.socket.close();
+  } finally { registry.close(); gateway.close(); await new Promise<void>((r) => server.close(() => r())); }
 });
 
 test("file playback retains its position through pause and releases the object URL on stop", async (t) => {

@@ -604,7 +604,7 @@ export default {
         return this.player?.play(wavBlob(sentence.audio));
       },
       halt: () => this.player?.stop(),
-      silence: () => void this.runtime.interruptSpeech?.(),
+      silence: (source) => void this.runtime.interruptSpeech?.(source),
       fail: (err) => this.showSpeakProblem(err),
     });
 
@@ -728,6 +728,7 @@ export default {
       this.items = snap.items;
       this.running = snap.running;
       this.runningSince = snap.runningSince || 0;
+      if (this.voiceCall) this.reader.stop();
       const target = this.voiceSpeak && !this.voiceCall && !document.hidden ? speakable(utterance, true) : null;
       if (target) this.reader.follow({ ...target, sessionId: snap.sessionId, source: { sessionId: snap.sessionId, turn: target.turn, step: target.step, attemptId: target.attemptId }, key: `${snap.sessionId}:${target.key}` });
       this.failed = snap.failed;
@@ -1318,7 +1319,7 @@ export default {
       this.reader.stop(); this.player?.stop(); this.player?.unlock();
       let conversation;
       const reader = createSentencePlayer({
-        stream: device === "device" ? (value) => playAudioStream({ ...value, request: (path, options) => this.runtime.voiceRequest(path, options), headers: conversation.headers, socket: (ticket) => this.runtime.voiceSocket(ticket, "/api/lares/voice/stream") }) : undefined,
+        stream: (value) => playAudioStream({ ...value, request: (path, options) => this.runtime.voiceRequest(path, options), headers: conversation.headers, socket: (ticket) => this.runtime.voiceSocket(ticket, "/api/lares/voice/stream") }),
         send: (value) => conversation.speak(value),
         play: (sentence) => sentence.bluetooth === "played" ? Promise.resolve() : this.player.play(wavBlob(sentence.audio)),
         halt: () => this.player.stop(), silence: () => {},

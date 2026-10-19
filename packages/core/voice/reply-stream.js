@@ -12,7 +12,7 @@ export function createReplyStreamRegistry({ inspect, owner, now = Date.now, segm
   const notify = row => { row.version = (row.version || 0) + 1; for (const wake of row.listeners) wake(); };
   const fail = (row, code) => { row.segmenter.reset(); row.ready = []; row.error = code; row.done = true; row.at = now(); notify(row); };
   const advance = row => {
-    if (!row.claimed || row.error || !row.eligible && !row.done) return;
+    if (!row.subscribers || row.error || !row.eligible && !row.done) return;
     try { row.ready.push(...row.segmenter.update(row.utterance?.text || "", { done: row.done })); }
     catch (error) { fail(row, error.message === "voice_reply_rewritten" ? error.message : "voice_reply_invalid"); }
   };
@@ -28,7 +28,7 @@ export function createReplyStreamRegistry({ inspect, owner, now = Date.now, segm
         }
         if (rows.size >= 128) return;
         rows.set(key, { sessionId, turn: frame.turn, step: frame.step, attemptId: frame.attemptId,
-          segmenter: segmenterFactory(), ready: [], eligible: frame.speechEligible === true, utterance: null, next: 0, done: false, error: null, at: now(), listeners: new Set() });
+          segmenter: segmenterFactory(), ready: [], eligible: frame.speechEligible === true, utterance: null, next: 0, done: false, error: null, at: now(), listeners: new Set(), subscribers: 0 });
         return;
       }
       for (const row of rows.values()) {
@@ -61,10 +61,10 @@ export function createReplyStreamRegistry({ inspect, owner, now = Date.now, segm
       await inspect(source.sessionId);
       const row = rows.get(identity(source));
       if (!row || source.attemptId && source.attemptId !== row.attemptId) throw fault("voice_reply_unavailable");
-      if (row.claimed) throw fault("voice_output_owned");
-      row.claimed = true; advance(row);
       return async function* segments(signal) {
         let index = 0;
+        row.subscribers += 1;
+        advance(row);
         try {
           while (!signal.aborted) {
             if (row.error) throw fault(row.error);
@@ -88,10 +88,16 @@ export function createReplyStreamRegistry({ inspect, owner, now = Date.now, segm
           }
           throw fault("voice_cancelled");
         } finally {
-          if (!row.done) fail(row, "voice_cancelled");
-          row.segmenter.reset();
+          row.subscribers -= 1;
         }
       };
+    },
+    /** Ends this answer for every subscriber. A later turn is a different row. */
+    cancel(source) {
+      if (!source || typeof source.sessionId !== "string") return;
+      const row = rows.get(identity(source));
+      if (!row || row.done) return;
+      fail(row, "voice_cancelled");
     },
     remove(sessionId) { for (const [key, row] of rows) if (row.sessionId === sessionId) { fail(row, "voice_session_closed"); rows.delete(key); } },
     close() { for (const row of rows.values()) fail(row, "voice_session_closed"); rows.clear(); },

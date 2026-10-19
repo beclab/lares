@@ -126,6 +126,7 @@ async function handleInstall(req, res) {
 
 async function handleSpeak(req, res) {
   const body = await readJsonObject(req);
+  const scope = scopeFor(req);
   const controller = new AbortController();
   const abort = () => controller.abort();
   res.once("close", abort);
@@ -135,7 +136,7 @@ async function handleSpeak(req, res) {
   try {
     spoken = await speakFromConfig(
       typeof body.text === "string" ? body.text : "",
-      { signal: controller.signal, part, key, done: body.done === true, scope: scopeFor(req), config: { ...readConfig(), speak: scopeFor(req).active ? scopeFor(req).readAloud : readConfig().speak } },
+      { signal: controller.signal, part, key, done: body.done === true, scope, config: { ...readConfig(), speak: scope.active ? scope.readAloud : readConfig().speak } },
     );
   } finally {
     res.off("close", abort);
@@ -151,7 +152,10 @@ async function handleSpeak(req, res) {
 }
 
 async function handlePlaybackStop(req, res) {
-  await interruptSpeech(scopeFor(req));
+  const body = await readJsonObject(req);
+  const scope = scopeFor(req);
+  streams?.cancel(body);
+  await interruptSpeech(scope, body);
   sendJson(res, 200, { stopped: true });
 }
 

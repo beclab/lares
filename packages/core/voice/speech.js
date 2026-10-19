@@ -192,9 +192,6 @@ export function createSentencePlayer({ send, play, halt, silence, fail = () => {
   let lastKey = null;
   let silencedKey = null;
   const consumed = new Set();
-  const mutedTurns = new Set();
-  let lastTurn = null;
-  const turnKey = (value) => Number.isFinite(value.turn) ? `${value.sessionId ?? ""}:${value.turn}` : null;
   const mark = (set, key) => { if (key != null) set.add(key); };
 
   const emitOutput = value => {
@@ -273,20 +270,20 @@ export function createSentencePlayer({ send, play, halt, silence, fail = () => {
       if (utterance.silent) {
         if (utterance.key !== lastKey || silencedKey === lastKey) return;
         silencedKey = lastKey;
+        const active = Boolean(current);
+        const source = current?.source;
         stop();
-        silence();
+        if (active) silence(source);
         return;
       }
       if (!utterance.text) return;
-      const identity = turnKey(utterance);
-      if (identity && mutedTurns.has(identity)) return;
       // A later tool call can invalidate uncommitted assistant text.
       if (stream && !utterance.done && !utterance.source) return;
       if (current?.key !== utterance.key) {
         if (consumed.has(utterance.key)) return;
-        if (current) { mark(mutedTurns, lastTurn); stop(); }
+        if (current) { const source = current.source; stop(); silence(source); }
         gen += 1;
-        lastKey = utterance.key; lastTurn = identity; mark(consumed, lastKey);
+        lastKey = utterance.key; mark(consumed, lastKey);
         current = {
           gen,
           abort: new AbortController(),
@@ -302,7 +299,7 @@ export function createSentencePlayer({ send, play, halt, silence, fail = () => {
         };
         current.identity = utterance;
         const run = current;
-        onState(true); emitOutput({ ...utterance, status: "preparing", stop: () => { mark(mutedTurns, lastTurn); stop(); silence(); } });
+        onState(true); emitOutput({ ...utterance, status: "preparing", stop: () => { mark(consumed, run.key); const source = run.source; stop(); silence(source); } });
         handOver(run);
         read(run).catch((err) => failed(run, err));
         return;
@@ -316,9 +313,11 @@ export function createSentencePlayer({ send, play, halt, silence, fail = () => {
     pause() { if (!current?.controls?.canPause) return false; current.controls.pause(); emitOutput({ key: current.key, status: "confirming" }); return true; },
     resume() { if (!current?.controls?.canPause) return false; current.controls.resume(); emitOutput({ key: current.key, status: "playing" }); return true; },
     stop() {
-      mark(mutedTurns, lastTurn);
+      if (!current) return;
+      mark(consumed, current.key);
+      const source = current.source;
       stop();
-      silence();
+      silence(source);
     },
   };
 }

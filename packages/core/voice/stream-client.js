@@ -33,19 +33,7 @@ function streamMetric(options, event) {
 export async function playAudioStream(options) {
   const started = Date.now();
   const connection = await openAudioStream({ ...options, operation: "tts" });
-  if (!connection) {
-    const response = await options.request("/api/lares/voice/speak", { method: "POST", headers: options.headers, signal: options.signal, body: { text: options.text } });
-    if (!response?.ok) throw new Error(response?.body?.error?.code || "voice_stream_failed");
-    if (response.body.sentences === 0) return true;
-    if (response.body.bluetooth === "played") return true;
-    if (options.source) throw new Error("voice_reply_unavailable");
-    const fallback = createBrowserPlayer();
-    options.controls?.({ canPause: true, pause: () => fallback.pause(), resume: () => fallback.resume() });
-    options.onStatus?.("playing");
-    const cancel = () => fallback.stop(); options.signal?.addEventListener("abort", cancel, { once: true });
-    try { if (!options.signal?.aborted) await fallback.play(wavBlob(response.body.audio)); } finally { options.signal?.removeEventListener("abort", cancel); fallback.stop(); }
-    return true;
-  }
+  if (!connection) throw new Error("voice_stream_failed");
   const file = createBrowserPlayer();
   const player = createPcmStreamPlayer({ onProgress: (frames) => { if (connection.readyState === 1) connection.send(JSON.stringify({ type: "progress", frames })); },
     onMetric: (event) => { if (event.stage === "playback_started") options.onStatus?.("playing"); streamMetric(options, { ...event, durationMs: Date.now() - started }); } });

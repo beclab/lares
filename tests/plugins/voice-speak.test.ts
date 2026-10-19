@@ -17,6 +17,51 @@ import { synthesizeStream } from "@olares/lares-core/router/tts";
 const config = { speak: true, ttsModel: "kokoro", model: "", language: "" };
 const noVoices = async () => [];
 
+test("cancelling one answer waits for its response body before the next request starts", async () => {
+  const { createSynthesisRuns } = await import("../../packages/core/voice/synthesis-run.js");
+  let release = () => {};
+  const started: string[] = [];
+  const runs = createSynthesisRuns({
+    synthesize: async (request: { text: string }, onChunk: (chunk: Buffer) => Promise<void>) => {
+      started.push(request.text);
+      if (request.text === "first") await new Promise<void>((resolve) => { release = resolve; });
+      await onChunk(Buffer.from([0, 0]));
+      return { streamed: true };
+    },
+  });
+  const open = (key: string, text: string) => runs.attach(key, () => (async function* () { yield { text, index: 0 }; })(), { model: "tts", voice: "", voiceId: "v" });
+  const first = open("a", "first");
+  for (let i = 0; started.length < 1 && i < 20; i += 1) await new Promise((resolve) => setTimeout(resolve, 5));
+  first.cancel();
+  open("b", "second");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.deepEqual(started, ["first"]);
+  release();
+  for (let i = 0; started.length < 2 && i < 20; i += 1) await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.deepEqual(started, ["first", "second"]);
+});
+
+test("a late interrupt for the answer that already ended does not abort the next one", async () => {
+  const held = createDuplexCoordinator(async () => {});
+  const first = held.beginSpeech(undefined, "old");
+  const second = held.beginSpeech(undefined, "new");
+  assert.equal(first.signal.aborted, true);
+  await held.interrupt("old");
+  assert.equal(second.signal.aborted, false);
+  await held.interrupt("new");
+  assert.equal(second.signal.aborted, true);
+});
+
+test("stopping one answer does not keep the next answer silent", async () => {
+  const { reader, played } = fakeReader();
+  reader.follow(utterance("s:1:0", "First one.", true));
+  await tick();
+  reader.stop();
+  reader.follow(utterance("s:2:0", "Second one.", true));
+  for (let i = 0; i < 4; i += 1) await tick();
+  assert.deepEqual(played, ["First one.", "Second one."]);
+});
+
 test("synthesis names the voice it was given", async (t) => {
   const bodies: Record<string, unknown>[] = [];
   t.mock.method(globalThis, "fetch", async (_url: string, init: { body: string }) => {
@@ -53,15 +98,28 @@ test("every sentence uses the saved model voice without hidden selection", async
 
 test("a stream labelled audio/L16 is read as PCM chunks, whatever the case", async (t) => {
   const pcm = new Uint8Array([1, 0, 2, 0]);
-  t.mock.method(globalThis, "fetch", async () => new Response(pcm, {
-    headers: { "content-type": "audio/L16", "x-audio-sample-rate": "24000" },
-  }));
+  const bodies: any[] = [];
+  t.mock.method(globalThis, "fetch", async (_url: string, init: { body: string }) => {
+    bodies.push(JSON.parse(init.body));
+    return new Response(pcm, {
+      headers: { "content-type": "audio/L16", "x-audio-sample-rate": "24000" },
+    });
+  });
   const chunks: Buffer[] = [];
   const outcome = await synthesizeStream({ text: "你好", model: "qwen3-tts" }, (chunk) => {
     chunks.push(chunk);
   });
   assert.deepEqual(outcome, { streamed: true, sampleRate: 24000 });
   assert.deepEqual([...Buffer.concat(chunks)], [...pcm]);
+  assert.equal(bodies[0].response_format, "pcm");
+  assert.equal(bodies[0].stream, undefined);
+});
+
+test("speech that returns no audio fails instead of looking finished", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => new Response(new Uint8Array(), {
+    headers: { "content-type": "audio/L16", "x-audio-sample-rate": "24000" },
+  }));
+  await assert.rejects(synthesizeStream({ text: "你好", model: "qwen3-tts" }, () => {}), (err: any) => err?.code === "voice_audio_format");
 });
 
 test("turning playback on with no speech model says which problem that is", () => {

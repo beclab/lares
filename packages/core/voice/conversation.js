@@ -34,7 +34,12 @@ export function createVoiceConversation({ request, transcribe, playback, onReply
   const controller = createVoiceController({ voiceId, input, idleTimeoutMs, recoveryTimeoutMs, onExpired: () => stop(), onTranscript: onTranscript ? async (value) => { await onTranscript(value); if (!continuous) await stop(); } : null, metric: (event) => {
     metric(event);
     void call("/session/metric", { stage: event.stage, durationMs: event.durationMs }).catch(() => {});
-  }, output: { get canPause() { return playback.canPause === true; }, key: () => playback.key, pause: () => playback.pause?.(), resume: () => playback.resume?.(), async stop() { mute(lastUtterance, lastSessionId); playback.stop(); await call("/playback/stop", {}); } }, agent: {
+  }, output: { get canPause() { return playback.canPause === true; }, key: () => playback.key, pause: () => playback.pause?.(), resume: () => playback.resume?.(), async stop() {
+      const reply = lastUtterance;
+      playback.stop();
+      if (!reply || !Number.isFinite(reply.turn) || typeof lastSessionId !== "string") return;
+      await call("/playback/stop", { sessionId: lastSessionId, turn: reply.turn, step: reply.step, attemptId: reply.attemptId });
+    } }, agent: {
     lazy: true,
     create: async () => null,
     async submit({ text, requestId, signal }) {
@@ -67,7 +72,7 @@ export function createVoiceConversation({ request, transcribe, playback, onReply
       if (reserve) spokenKey = key;
       controller.observeAgent(Boolean(state.running), Boolean(reserve));
       if (!readAloud || reply?.silent) controller.observePlayback(false);
-      if (!turnMuted && readAloud && key !== mutedKey && reply) onReply({ ...reply, sessionId: state.sessionId, ...(device === "device" ? { source: { sessionId: state.sessionId, turn: reply.turn, step: reply.step, attemptId: reply.attemptId } } : {}), key: `${voiceId}:${state.sessionId}:${reply.key}` }, headers);
+      if (!turnMuted && readAloud && key !== mutedKey && reply) onReply({ ...reply, sessionId: state.sessionId, source: { sessionId: state.sessionId, turn: reply.turn, step: reply.step, attemptId: reply.attemptId }, key: `${voiceId}:${state.sessionId}:${reply.key}` }, headers);
     }
     if (device === "headset" && !state.running && !reading) {
       const audio = await call("/playback/status");
@@ -106,6 +111,13 @@ export function createVoiceConversation({ request, transcribe, playback, onReply
       clearTimeout(timer);
       const initial = onTranscript ? {} : await call("/session", { sessionId, readAloud, presentationSession, ...(preset ? { preset } : {}), ...(backend ? { backend } : {}) });
       if (!shouldStart()) { await stop(); return; }
+      // The answer already on screen belongs to the chat reader. Re-subscribing
+      // here attaches to a run that reader is about to cancel.
+      if (initial?.utterance && typeof initial.sessionId === "string") {
+        mute(initial.utterance, initial.sessionId);
+        mutedKey = `${initial.sessionId}:${initial.utterance.key}`;
+        spokenKey = mutedKey;
+      }
       await controller.start({ sessionId, continuous, manual, running: initial.running, shouldStart });
       controller.setOutputMuted(!readAloud);
       if (!onTranscript) void watch();

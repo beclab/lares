@@ -18,22 +18,28 @@ async function fixture(synthesize: any) {
   return { scope, gateway, open, close: async () => { gateway.close(); await new Promise<void>((resolve) => server.close(() => resolve())); } };
 }
 
-test("Host delivers PCM before synthesis finishes and cancellation reaches inference", async () => {
-  let cancelled = false, completed = false;
+test("Host delivers PCM before synthesis finishes, and a listener leaving does not cut the response body", async () => {
+  let finished = false;
+  let release = () => {};
   const h = await fixture(async (request: any, chunk: any) => {
+    assert.equal(request.signal, undefined);
     request.onFormat({ sampleRate: 48000, channels: 1, encoding: "pcm_s16le" });
     await chunk(Buffer.alloc(128));
-    await new Promise<void>((resolve) => request.signal.addEventListener("abort", () => { cancelled = true; resolve(); }, { once: true }));
-    completed = true; return { streamed: true };
+    await new Promise<void>((resolve) => { release = resolve; });
+    finished = true;
+    return { streamed: true };
   });
   try {
     const grant = await h.gateway.ticket(h.scope, { operation: "tts", text: "Hello." });
     const ws = await h.open(grant.ticket); const seen: any[] = [];
     ws.on("message", (data, binary) => seen.push(binary ? data : JSON.parse(String(data))));
     while (!seen.some(Buffer.isBuffer)) await tick();
-    assert.equal(completed, false); assert.equal(seen.find(event => event.type === "format").sampleRate, 48000);
+    assert.equal(finished, false); assert.equal(seen.find(event => event.type === "format").sampleRate, 48000);
     ws.close(); await once(ws, "close"); await tick();
-    assert.equal(cancelled, true);
+    assert.equal(finished, false);
+    release();
+    for (let i = 0; !finished && i < 20; i += 1) await tick();
+    assert.equal(finished, true);
   } finally { await h.close(); }
 });
 
