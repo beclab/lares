@@ -7,14 +7,14 @@ metadata:
   title: Lares
   description: Chat on Olares, wired to Router
   icon: https://app.cdn.olares.com/appstore/lares/icon_new.png
-  version: 0.26.51
+  version: 0.26.52
   categories:
     - agents
   tags:
     - framework
     - personal-assistant
 spec:
-  versionName: "0.26.51"
+  versionName: "0.26.52"
   runAsUser: true
   fullDescription: |
     Lares is a chat app on Olares.
@@ -36,9 +36,9 @@ spec:
     2. Ensure Router is installed.
     3. Open the Lares entrance and start a chat.
   upgradeDescription: |
-    **Lares 0.26.51**
+    **Lares 0.26.52**
 
-    - Show only voice controls during PC dictation and restore existing drafts and attachments afterward. Fix text cleanup requests incorrectly requiring an audio connection ID while preserving authenticated user routing.
+    - Other apps on this Olares can submit a prompt and read the reply through an internal webhook entrance on port 8081.
   developer: luolong
   submitter: Olares
   locale:
@@ -74,6 +74,20 @@ entrances:
     icon: https://app.cdn.olares.com/appstore/lares/icon_new.png
     authLevel: private
     openMethod: window
+  # Public call entrance. Commented out while only the in-cluster entrance is used.
+  # - name: webhook
+  #   host: lares-svc
+  #   port: 8081
+  #   title: Webhook
+  #   authLevel: public
+  #   invisible: true
+  # Same port, listed for other apps on this Olares. No public hostname.
+  - name: webhook-internal
+    host: lares-svc
+    port: 8081
+    title: Webhook
+    authLevel: internal
+    invisible: true
 options:
   apiTimeout: 0
   # Brand mark + PWA manifest public so the browser-tab favicon loads before the

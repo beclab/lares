@@ -23,6 +23,6 @@ spec:
     2. Ensure Router is installed.
     3. Open the Lares entrance and start a chat.
   upgradeDescription: |
-    **Lares 0.26.51**
+    **Lares 0.26.52**
 
-    - Show only voice controls during PC dictation and restore existing drafts and attachments afterward. Fix text cleanup requests incorrectly requiring an audio connection ID while preserving authenticated user routing.
+    - Other apps on this Olares can submit a prompt and read the reply through an internal webhook entrance on port 8081.

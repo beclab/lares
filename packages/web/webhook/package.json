@@ -1,0 +1,19 @@
+{
+  "name": "@lares/webhook",
+  "version": "0.15.0",
+  "private": true,
+  "type": "module",
+  "description": "Demo webhook: other apps submit a prompt and read the session reply",
+  "exports": {
+    ".": "./host/index.js",
+    "./client": "../../../dist/plugins/webhook/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": ["@deepseek-ai/dsh-client-ui-slots"]
+    }
+  },
+  "files": ["host"]
+}
