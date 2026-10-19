@@ -85,6 +85,8 @@
           @open-references="$emit('open-references', $event)"
           @pick-command="$emit('pick-command', $event)"
           @queue-action="onQueueAction"
+          @dictate="$emit('dictate')"
+          @voice-action="$emit('voice-action', $event)"
         />
         <Transition name="lares-desk-preview">
           <LaresDesktopPreview
@@ -154,7 +156,7 @@ export default {
     "refresh-workspaces", "browse-workspaces", "browse-directory",
     "close-directory", "choose-directory", "create-folder", "toggle-hidden", "rename-workspace",
     "delete-workspace", "move-workspace", "move-session", "rename-session",
-    "fork-session", "archive-session",
+    "fork-session", "archive-session", "dictate", "voice-action",
   ],
   computed: {
     newSessionHero() {

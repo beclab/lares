@@ -258,9 +258,7 @@ export function createVoiceCapture({
         const nextDetector = await onStream?.(stream);
         if (dead || cancel) { nextDetector?.stop?.(); release(); return; }
         detector = nextDetector;
-        streaming = await streamInput?.(stream, { signal: inputAbort.signal, onPartial: (text) => emit(phase, { partial: text }) });
-        if (dead || cancel) { streaming?.cancel(); streaming = null; release(); return; }
-      } catch (error) { streaming?.cancel(); streaming = null; release(); if (!dead && !cancel) fail(error.message || "voice_unsupported"); return; }
+      } catch (error) { release(); if (!dead && !cancel) fail(error.message || "voice_unsupported"); return; }
       started = now();
       try {
         recorder.start(CHUNK_MS);
@@ -278,6 +276,16 @@ export function createVoiceCapture({
       emit("recording", { elapsed: 0, error: "" });
       preparation?.recording();
       timer = setInterval(() => emit("recording", { elapsed: now() - started, error: "" }), 200);
+      // The recognizer socket is not the microphone. A take that is already
+      // recording keeps its blob when the socket is still closed.
+      const pending = streamInput?.(stream, { signal: inputAbort.signal, onPartial: (text) => emit(phase, { partial: text }) });
+      if (pending && typeof pending.then === "function") {
+        pending.then((port) => {
+          if (!port) return;
+          if (dead || cancel || finished || released || chunks.length) { port.cancel?.(); return; }
+          streaming = port;
+        }, () => {});
+      } else if (pending) streaming = pending;
     },
     /**
      * Finger-up finishes the take. The mic opens asynchronously, so the finger

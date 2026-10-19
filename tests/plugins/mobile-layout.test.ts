@@ -272,8 +272,10 @@ test("the mobile composer exposes dsh queued submissions", () => {
 test("composer menus open upward and only flip when the space runs out", () => {
   const composer = readFileSync(new URL("../../packages/mobile/src/desktop/DesktopComposer.vue", import.meta.url), "utf8");
   // Both chips sit right above the input box, so a downward menu covers it.
-  assert.match(composer, /v-model="modelOpen"[\s\S]{0,120}:width="260"[\s\S]{0,40}placement="top-end"/);
-  assert.match(composer, /v-model="effortOpen" :width="180" placement="top-end"/);
+  assert.match(composer, /v-model="modelOpen"[\s\S]{0,120}:width="280"[\s\S]{0,40}placement="top-end"/);
+  assert.doesNotMatch(composer, /effortOpen/);
+  assert.match(composer, /modelPane === 'root'/);
+  assert.match(composer, /desktop-composer__model-effort/);
 
   const box = { top: 600, bottom: 632, left: 300, right: 560 };
   const viewport = { width: 1440, height: 900 };
@@ -296,4 +298,19 @@ test("composer menus open upward and only flip when the space runs out", () => {
   assert.equal(downward.top, `${box.bottom + 5}px`);
   assert.equal(downward.bottom, "");
   assert.equal(downward.left, `${box.left}px`);
+});
+
+test("the desktop composer dictates with the computer microphone", () => {
+  const composer = readFileSync(new URL("../../packages/mobile/src/desktop/DesktopComposer.vue", import.meta.url), "utf8");
+  const shell = readFileSync(new URL("../../packages/mobile/src/desktop/DesktopShell.vue", import.meta.url), "utf8");
+  const app = readFileSync(new URL("../../packages/mobile/src/App.vue", import.meta.url), "utf8");
+
+  assert.match(composer, /data-kind="dictate"/);
+  assert.match(composer, /<LaresVoiceInput[\s\S]*state\.voicePanelState/);
+  assert.match(composer, /\$emit\("dictate"\)/);
+  assert.match(shell, /@dictate="\$emit\('dictate'\)"/);
+  assert.match(shell, /@voice-action="\$emit\('voice-action', \$event\)"/);
+  assert.match(app, /<LaresDesktopShell[\s\S]*@dictate="startDictation"[\s\S]*@voice-action="onVoiceAction"[\s\S]*\/>\s*<LaresMobileShell/);
+  assert.match(app, /settings\.config\.device === "headset" \? "headset" : "device"/);
+  assert.match(app, /prepareInput: \(config\) => config\?\.device === "headset" \? null : prepareBrowserCapture\(\)/);
 });

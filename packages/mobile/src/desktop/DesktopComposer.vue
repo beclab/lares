@@ -42,7 +42,7 @@
       <LaresPcPopover
         v-model="modelOpen"
         class="desktop-composer__model-slot"
-        :width="260"
+        :width="280"
         placement="top-end"
       >
         <template #trigger="{ toggle }">
@@ -52,61 +52,69 @@
             :disabled="state.modelBusy"
             aria-haspopup="menu"
             :aria-expanded="modelOpen"
+            :aria-label="modelSwitchLabel"
             @mousedown.prevent
             @click="toggle"
           >
-            <span>{{ state.modelLabel }}</span>
+            <span class="desktop-composer__model-name">{{ state.modelLabel }}</span>
+            <span v-if="!state.effortDisabled" class="desktop-composer__model-effort">{{ state.effortLabel }}</span>
             <ChevronIcon />
           </button>
         </template>
-        <div class="desktop-composer__menu">
-          <p v-if="state.modelCatalogError" class="desktop-composer__menu-status" role="status">{{ state.modelCatalogError }}</p>
-          <button type="button" class="desktop-composer__option" @click="state.refreshModels()">{{ t('agent.refresh') }}</button>
-          <p v-if="state.modelError" class="desktop-composer__menu-status">{{ state.modelError }}</p>
-          <p v-else-if="!state.models" class="desktop-composer__menu-status">{{ t("agent.loading") }}</p>
-          <template v-for="group in state.modelGroups" :key="group.provider">
-            <p class="desktop-composer__menu-label">{{ group.name || group.provider }}</p>
-            <button
-              v-for="model in group.models"
-              :key="modelKey(model)"
-              type="button"
-              class="desktop-composer__option"
-              :data-selected="modelKey(model) === state.modelCurrent"
-              @click="chooseModel(model)"
-            >
-              <span>{{ model.name }}</span>
-              <CheckIcon v-if="modelKey(model) === state.modelCurrent" />
+        <div class="desktop-composer__menu" @keydown="onModelMenuKey">
+          <template v-if="modelPane === 'root'">
+            <button type="button" class="desktop-composer__drill" @click="modelPane = 'model'">
+              <span>{{ t("menu.model") }}</span>
+              <span class="desktop-composer__drill-value">{{ state.modelLabel }}</span>
+              <ChevronIcon class="desktop-composer__drill-caret" />
+            </button>
+            <button v-if="!state.effortDisabled" type="button" class="desktop-composer__drill" @click="modelPane = 'effort'">
+              <span>{{ t("menu.effort") }}</span>
+              <span class="desktop-composer__drill-value">{{ state.effortLabel }}</span>
+              <ChevronIcon class="desktop-composer__drill-caret" />
             </button>
           </template>
-        </div>
-      </LaresPcPopover>
-      <LaresPcPopover v-if="!state.effortDisabled" v-model="effortOpen" :width="180" placement="top-end">
-        <template #trigger="{ toggle }">
-          <button
-            type="button"
-            class="desktop-composer__model"
-            :disabled="state.modelBusy"
-            aria-haspopup="menu"
-            :aria-expanded="effortOpen"
-            @mousedown.prevent
-            @click="toggle"
-          >
-            <span>{{ state.effortLabel }}</span>
-            <ChevronIcon />
-          </button>
-        </template>
-        <div class="desktop-composer__menu">
-          <button
-            v-for="row in state.effortRows"
-            :key="row.key"
-            type="button"
-            class="desktop-composer__option"
-            :data-selected="row.id === state.effortId"
-            @click="chooseEffort(row.id)"
-          >
-            <span>{{ effortName(row) }}</span>
-            <CheckIcon v-if="row.id === state.effortId" />
-          </button>
+          <template v-else-if="modelPane === 'model'">
+            <button type="button" class="desktop-composer__drill" @click="modelPane = 'root'">
+              <ChevronIcon class="desktop-composer__back-caret" />
+              <span>{{ t("menu.model") }}</span>
+            </button>
+            <p v-if="state.modelCatalogError" class="desktop-composer__menu-status" role="status">{{ state.modelCatalogError }}</p>
+            <button type="button" class="desktop-composer__option" @click="state.refreshModels()">{{ t('agent.refresh') }}</button>
+            <p v-if="state.modelError" class="desktop-composer__menu-status">{{ state.modelError }}</p>
+            <p v-else-if="!state.models" class="desktop-composer__menu-status">{{ t("agent.loading") }}</p>
+            <template v-for="group in state.modelGroups" :key="group.provider">
+              <p class="desktop-composer__menu-label">{{ group.name || group.provider }}</p>
+              <button
+                v-for="model in group.models"
+                :key="modelKey(model)"
+                type="button"
+                class="desktop-composer__option"
+                :data-selected="modelKey(model) === state.modelCurrent"
+                @click="chooseModel(model)"
+              >
+                <span>{{ model.name }}</span>
+                <CheckIcon v-if="modelKey(model) === state.modelCurrent" />
+              </button>
+            </template>
+          </template>
+          <template v-else>
+            <button type="button" class="desktop-composer__drill" @click="modelPane = 'root'">
+              <ChevronIcon class="desktop-composer__back-caret" />
+              <span>{{ t("menu.effort") }}</span>
+            </button>
+            <button
+              v-for="row in state.effortRows"
+              :key="row.key"
+              type="button"
+              class="desktop-composer__option"
+              :data-selected="row.id === state.effortId"
+              @click="chooseEffort(row.id)"
+            >
+              <span>{{ effortName(row) }}</span>
+              <CheckIcon v-if="row.id === state.effortId" />
+            </button>
+          </template>
         </div>
       </LaresPcPopover>
     </div>
@@ -245,7 +253,14 @@
           </button>
         </figure>
       </div>
+      <LaresVoiceInput
+        v-if="dictating"
+        :view="state.voicePanelState"
+        :t="t"
+        @action="$emit('voice-action', $event)"
+      />
       <textarea
+        v-show="!dictating"
         ref="input"
         :value="state.draft"
         class="desktop-composer__input"
@@ -373,6 +388,20 @@
           :breakdown="state.contextBreakdown"
           :t="t"
         />
+        <div class="desktop-composer__submit">
+        <LaresPcTooltip v-if="showMic" :label="micLabel" placement="top">
+          <button
+            type="button"
+            class="desktop-composer__circle"
+            data-kind="dictate"
+            :disabled="micDisabled"
+            :aria-label="micLabel"
+            @mousedown.prevent
+            @click="dictate"
+          >
+            <MicIcon />
+          </button>
+        </LaresPcTooltip>
         <LaresPcTooltip
           class="desktop-composer__send-slot"
           :label="state.running ? t('chat.stop') : t('chat.send')"
@@ -390,6 +419,7 @@
             <ArrowIcon v-else />
           </button>
         </LaresPcTooltip>
+        </div>
       </div>
       </div>
     </Transition>
@@ -445,6 +475,7 @@ import { resolveSubmitMode } from "@olares/lares-core/larepass/submission-settin
 import { DEFAULT_WORKSPACE_TITLE } from "@olares/lares-core/workspace/constants";
 import { activeReferenceToken, insertReference } from "@olares/lares-core/larepass/references";
 import { draftImageStatus } from "@olares/lares-core/files/draft-images";
+import LaresVoiceInput from "../chat/VoiceInput.vue";
 import LaresDesktopQueue from "./DesktopQueue.vue";
 import LaresDesktopQuestions from "./DesktopQuestions.vue";
 import LaresDesktopContextMeter from "./DesktopContextMeter.vue";
@@ -475,6 +506,15 @@ const StopIcon = {
   },
 };
 const CloseIcon = icon("CloseIcon", "m7 7 10 10M17 7 7 17");
+const MicIcon = {
+  name: "MicIcon",
+  render() {
+    return h("svg", { viewBox: "0 0 24 24", "aria-hidden": "true" }, [
+      h("rect", { x: 9, y: 2, width: 6, height: 12, rx: 3 }),
+      h("path", { d: "M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8" }),
+    ]);
+  },
+};
 
 const SHIELD = "M12 3.5 19 6v5.4c0 4.2-2.8 7.4-7 9.1-4.2-1.7-7-4.9-7-9.1V6l7-2.5Z";
 /** One shield, three glyphs: what this preset lets a tool do. */
@@ -498,7 +538,7 @@ const PermissionIcon = {
 
 export default {
   name: "LaresDesktopComposer",
-  components: { LaresDesktopContextMeter, LaresDesktopGoal, LaresDesktopQuestions, LaresDesktopQueue, LaresDesktopTodos, LaresPcDialog, LaresPcPopover, LaresPcTooltip, ChevronIcon, CheckIcon, PlusIcon, PaperclipIcon, ArrowIcon, StopIcon, CloseIcon, PermissionIcon },
+  components: { LaresVoiceInput, LaresDesktopContextMeter, LaresDesktopGoal, LaresDesktopQuestions, LaresDesktopQueue, LaresDesktopTodos, LaresPcDialog, LaresPcPopover, LaresPcTooltip, ChevronIcon, CheckIcon, PlusIcon, PaperclipIcon, ArrowIcon, StopIcon, CloseIcon, MicIcon, PermissionIcon },
   props: {
     state: { type: Object, required: true },
     t: { type: Function, required: true },
@@ -509,12 +549,13 @@ export default {
   emits: [
     "update-draft", "send", "stop", "steer-queue", "files", "choose-model", "choose-effort", "answer-approval", "answer-questions",
     "choose-permission", "disable-plan", "goal-action", "open-commands", "pick-command", "queue-action", "remove-image", "pick-workspace",
+    "dictate", "voice-action",
   ],
   data() {
     return {
       modelOpen: false,
+      modelPane: "root",
       workspaceOpen: false,
-      effortOpen: false,
       permissionOpen: false,
       permissionConfirm: false,
       permissionAcknowledged: false,
@@ -559,6 +600,25 @@ export default {
     attachDisabled() {
       return !this.state.sessionId || this.state.historyLoading || this.state.starting;
     },
+    modelSwitchLabel() {
+      const model = this.state.modelLabel;
+      const label = this.state.effortDisabled ? model : `${model}, ${this.state.effortLabel}`;
+      return this.t("model.switchAria", { label });
+    },
+    dictating() {
+      const view = this.state.voicePanelState;
+      return Boolean(view?.inputActive && view.mode === "single");
+    },
+    showMic() {
+      return this.state.voiceDictation !== false;
+    },
+    micLabel() {
+      return this.t(this.state.voiceReady ? "settings.mode.single" : "mic.checking");
+    },
+    micDisabled() {
+      const view = this.state.voicePanelState;
+      return !this.state.voiceReady || view?.busy || (view?.visible && view?.mode === "single");
+    },
     visibleCommands() {
       const rows = this.state.commands || [];
       if (!this.commandTyped) return rows;
@@ -587,7 +647,15 @@ export default {
     },
   },
   watch: {
-    modelOpen(open) { if (open && this.state.modelCatalogError) void this.state.refreshModels(); },
+    modelOpen(open) {
+      if (open) {
+        this.modelPane = "root";
+        window.addEventListener("keydown", this.onModelMenuKey, true);
+        if (this.state.modelCatalogError) void this.state.refreshModels();
+      } else {
+        window.removeEventListener("keydown", this.onModelMenuKey, true);
+      }
+    },
     "state.draft"() {
       this.autosize();
     },
@@ -602,6 +670,7 @@ export default {
   beforeUnmount() {
     window.clearTimeout(this.referenceTimer);
     window.removeEventListener("mousedown", this.onComposerOverlayPointer, true);
+    window.removeEventListener("keydown", this.onModelMenuKey, true);
   },
   methods: {
     pickWorkspace(workspaceId) {
@@ -614,8 +683,14 @@ export default {
       this.$emit("choose-model", model);
     },
     chooseEffort(id) {
-      this.effortOpen = false;
+      this.modelOpen = false;
       this.$emit("choose-effort", id);
+    },
+    onModelMenuKey(event) {
+      if (event.key !== "Escape" || !this.modelOpen || this.modelPane === "root") return;
+      event.preventDefault();
+      event.stopPropagation();
+      this.modelPane = "root";
     },
     choosePermission(value) {
       this.permissionOpen = false;
@@ -812,6 +887,9 @@ export default {
     primary() {
       this.$emit(this.state.running ? "stop" : "send");
     },
+    dictate() {
+      this.$emit("dictate");
+    },
     autosize() {
       this.$nextTick(() => {
         const input = this.$refs.input;
@@ -847,8 +925,15 @@ export default {
 .desktop-composer__workspace,
 .desktop-composer__model-slot .desktop-composer__model { min-width:0; max-width:100%; }
 .desktop-composer__workspace span,
-.desktop-composer__model-slot .desktop-composer__model span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.desktop-composer__model-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.desktop-composer__model-effort { flex:none; color:var(--q-ink-3); }
+.desktop-composer__drill { display:flex; align-items:center; gap:8px; width:100%; min-height:34px; border:0; border-radius:6px; padding:7px 8px; background:transparent; color:var(--q-ink-1); font:inherit; font-size:14px; text-align:left; cursor:pointer; }
+.desktop-composer__drill:hover { background:var(--q-background-hover); }
+.desktop-composer__drill-value { min-width:0; flex:1; overflow:hidden; color:var(--q-ink-3); text-align:right; text-overflow:ellipsis; white-space:nowrap; }
+.desktop-composer__drill-caret { transform:rotate(-90deg); }
+.desktop-composer__back-caret { transform:rotate(90deg); }
 .desktop-composer__model svg,
+.desktop-composer__drill svg,
 .desktop-composer__permission svg,
 .desktop-composer__circle svg,
 .desktop-composer__send svg,
@@ -914,8 +999,9 @@ export default {
 /* The meter rides with the send button; it renders nothing without an occupancy,
    in which case the send button keeps the auto margin itself. */
 .desktop-composer__meter { margin-left:auto; }
-.desktop-composer__send-slot { margin-left:auto; }
-.desktop-composer__meter + .desktop-composer__send-slot { margin-left:0; }
+.desktop-composer__submit { margin-left:auto; display:flex; align-items:center; gap:8px; }
+.desktop-composer__meter + .desktop-composer__submit { margin-left:0; }
+.desktop-composer__submit .desktop-composer__send-slot { margin-left:0; }
 .desktop-composer__send { display:grid; width:28px; height:28px; place-items:center; border-radius:50%; background:var(--q-blue-default); color:var(--q-ink-on-brand); }
 .desktop-composer button:disabled { opacity:.45; cursor:default; }
 .desktop-composer__menu { margin:-2px; }
