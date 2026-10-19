@@ -7,14 +7,14 @@ metadata:
   title: Lares
   description: Chat on Olares, wired to Router
   icon: https://app.cdn.olares.com/appstore/lares/icon_new.png
-  version: 0.26.52
+  version: 0.26.53
   categories:
     - agents
   tags:
     - framework
     - personal-assistant
 spec:
-  versionName: "0.26.52"
+  versionName: "0.26.53"
   runAsUser: true
   fullDescription: |
     Lares is a chat app on Olares.
@@ -36,13 +36,12 @@ spec:
     2. Ensure Router is installed.
     3. Open the Lares entrance and start a chat.
   upgradeDescription: |
-    Improve voice input startup, streaming playback and natural Chinese speech segmentation.
+    Desktop dictation uses the computer microphone, and recording starts as soon as that microphone is open.
 
-    - Keep model-specific voices and Router reasoning selections consistent across desktop and mobile.
-    - Fix saving voice settings and dictation cleanup failures caused by output limits.
-    - Close recognition connections after recording finalization errors.
+    - LarePass desktop gets a microphone button and one combined model and effort menu.
+    - An open microphone no longer stays on "Opening microphone" while recognition connects.
 
-    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.52)
+    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.53)
   developer: luolong
   submitter: Olares
   locale:

@@ -19,10 +19,9 @@ spec:
 
     Konfigurieren und aktivieren Sie für Webrecherchen die Werkzeuge in Router. Wählen Sie für die Websuche zusätzlich einen Standardsuchdienst in den Einstellungen von Lares aus. Werkzeuge, die ausschließlich Webseiten lesen, werden aufgerufen, wenn Sie Lares bitten, eine bestimmte URL zu lesen.
   upgradeDescription: |
-    Verbessert den Start der Spracheingabe, die Streaming-Wiedergabe und die natürliche Segmentierung chinesischer Sprache.
+    Die Desktop-Diktierfunktion nutzt das Mikrofon des Computers und startet die Aufnahme, sobald es geöffnet ist.
 
-    - Behält modellspezifische Stimmen und Router-Denkstufen auf Desktop und Mobilgeräten bei.
-    - Behebt Fehler beim Speichern der Spracheinstellungen und bei der Diktatverarbeitung durch Ausgabelimits.
-    - Schließt Spracherkennungsverbindungen bei Fehlern beim Abschließen einer Aufnahme.
+    - LarePass Desktop erhält eine Mikrofontaste und ein gemeinsames Menü für Modell und Aufwand.
+    - Ein geöffnetes Mikrofon bleibt nicht mehr bei „Mikrofon wird geöffnet“, während die Erkennung verbindet.
 
-    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.52)
+    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.53)

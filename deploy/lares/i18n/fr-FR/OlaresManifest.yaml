@@ -19,10 +19,9 @@ spec:
 
     Pour effectuer des recherches sur le web, configurez et activez les outils dans Router. Pour utiliser la recherche web, sélectionnez également un service de recherche par défaut dans les paramètres de Lares. Les outils qui servent uniquement à lire des pages web sont appelés lorsque vous demandez à Lares de lire une URL précise.
   upgradeDescription: |
-    Améliore le démarrage de la saisie vocale, la lecture en continu et le découpage naturel de la parole en chinois.
+    La dictée sur ordinateur utilise le microphone de l’ordinateur et l’enregistrement commence dès qu’il est ouvert.
 
-    - Conserve les voix propres à chaque modèle et les niveaux de raisonnement Router sur ordinateur et mobile.
-    - Corrige l’enregistrement des paramètres vocaux et les échecs de traitement des dictées dus aux limites de sortie.
-    - Ferme les connexions de reconnaissance vocale en cas d’erreur à la fin de l’enregistrement.
+    - LarePass bureau ajoute un bouton de microphone et un menu unique pour le modèle et l’effort.
+    - Un microphone déjà ouvert ne reste plus sur « Ouverture du microphone » pendant la connexion de la reconnaissance.
 
-    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.52)
+    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.53)
