@@ -130,6 +130,21 @@ test("PC and Vue observing the same reply cannot claim two simultaneous TTS outp
   registry.close();
 });
 
+test("the second observer's ticket refusal keeps its code over HTTP so the client stays quiet", async () => {
+  const { createReplyStreamRegistry } = await import("@olares/lares-core/voice/reply-stream");
+  const { sendError } = await import("@olares/lares-core/tools/http");
+  const registry = createReplyStreamRegistry({ inspect: async () => ({}), owner: () => "alice" });
+  const source = { sessionId: "same-session", turn: 1, step: 0 };
+  registry.frame(source.sessionId, { ...source, type: "start", attemptId: "a", speechEligible: true });
+  await registry.bind({ owner: "alice", id: "PC" }, source);
+  const refusal = await registry.bind({ owner: "alice", id: "Vue" }, source).catch((error) => error);
+  let status = 0, body = "";
+  sendError({ writeHead: (code: number) => { status = code; }, setHeader() {}, end: (text: string) => { body = text; } }, refusal, "voice_failed");
+  assert.equal(status, 409);
+  assert.equal(JSON.parse(body).error.code, "voice_output_owned");
+  registry.close();
+});
+
 test("file playback retains its position through pause and releases the object URL on stop", async (t) => {
   const { createBrowserPlayer } = await import("@olares/lares-core/voice/browser-playback");
   const original = globalThis.Audio;

@@ -115,6 +115,7 @@
 <script>
 import { modelState, modelStateLabel } from "@olares/lares-core/router/model-state";
 import { matchVoiceShortcut } from "@olares/lares-core/voice/shortcuts";
+import { markRaw } from "vue";
 import { subscribeVoiceSettings } from "@olares/lares-core/larepass/settings";
 import { createVoicePanel } from "@olares/lares-core/voice/panel";
 import { mergeVoiceTranscript, subscribeVoiceHistory } from "@olares/lares-core/voice/projection";
@@ -578,7 +579,7 @@ export default {
       },
     });
     this.voiceSettingsUnsub = subscribeVoiceSettings((value) => {
-      this.voiceDefaultMode = value.config.mobileMode; this.voiceSettings = value;
+      this.voiceDefaultMode = value.config.mobileMode; this.voiceSettings = markRaw(value);
       const next = value.config.speak === true;
       if (this.voiceSpeak && !next) this.reader?.stop();
       this.voiceSpeak = next;
@@ -1008,7 +1009,7 @@ export default {
       try {
         await this.runtime.start({ workspaces: this.chatDevice === "desktop" });
         if (gen !== this.hostGen) return;
-        void this.runtime.settings.voice(false, { diagnostics: false }).then(value => { if (gen === this.hostGen) { this.voiceSettings = value; this.voiceDefaultMode = value.config.mobileMode; } }).catch(() => {});
+        void this.runtime.settings.voice(false, { diagnostics: false }).then(value => { if (gen === this.hostGen) { this.voiceSettings = markRaw(value); this.voiceDefaultMode = value.config.mobileMode; } }).catch(() => {});
         if (this.chatDevice !== "desktop") await this.runtime.refreshWorkspaces();
         await this.loadComposerMeta();
       } finally {
@@ -1280,7 +1281,7 @@ export default {
     async openDictation(preset) {
       if (document.hidden || navigator.onLine === false) return;
       if (!this.voiceSettings) {
-        try { this.voiceSettings = await this.runtime.settings.voice(false, { diagnostics: false }); }
+        try { this.voiceSettings = markRaw(await this.runtime.settings.voice(false, { diagnostics: false })); }
         catch { return; }
       }
       if (!laresVoiceAvailability(this.voiceSettings).dictation) return;

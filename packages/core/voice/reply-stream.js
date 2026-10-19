@@ -1,7 +1,9 @@
+import { VoiceError } from "../router/stt.js";
 import { reduceUtterance } from "./speech.js";
 import { createSpeechSegmenter } from "./script.js";
 
-const fault = code => Object.assign(new Error(code), { code });
+const STATUS = { voice_reply_invalid: 400, voice_reply_forbidden: 403 };
+const fault = code => new VoiceError(code, STATUS[code] ?? 409, code);
 const identity = source => JSON.stringify([source.sessionId, source.turn, source.step]);
 
 /** Only trusted Agent events may authorize live text; client input supplies an address, never text. */
