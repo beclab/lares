@@ -69,6 +69,25 @@ test("disposal during asynchronous recorder setup releases both stream and late 
   assert.equal(mic.starts, 0); assert.equal(mic.stops, 1); assert.equal(metersStopped, 1);
 });
 
+test("a closed recognizer socket does not keep an open microphone in the opening state", async () => {
+  const mic = microphone(); let clock = 0, transcribed = 0;
+  const preparation = prepareBrowserCapture({ media: mic.media });
+  mic.grant.resolve(mic.stream);
+  const cap = createVoiceCapture({
+    preparation, media: mic.media, now: () => clock,
+    streamInput: () => new Promise(() => {}),
+    transcribe: async () => { transcribed++; return "hello"; },
+    submit: () => {},
+  });
+  await cap.start();
+  assert.equal(cap.phase, "recording");
+  clock = 1000;
+  cap.stop();
+  await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(transcribed, 1);
+  cap.dispose();
+});
+
 test("unsupported recorder cancels and releases a prepared late stream", async () => {
   const mic = microphone(); const preparation = prepareBrowserCapture({ media: mic.media });
   const cap = createVoiceCapture({ media: { mediaDevices: mic.media.mediaDevices }, preparation });

@@ -51,6 +51,8 @@
       @rename-session="renameSession"
       @fork-session="forkSession"
       @archive-session="archiveSession"
+      @dictate="startDictation"
+      @voice-action="onVoiceAction"
     />
     <LaresMobileShell
       v-else
@@ -126,6 +128,7 @@ import { laresVoiceConfig, laresVoiceAvailability } from "@olares/lares-core/voi
 import { createVoiceConversation } from "@olares/lares-core/voice/conversation";
 import { createAnswerPlayer } from "./chat/playback.js";
 import { createReplySpeaker, createSentencePlayer, speakable } from "@olares/lares-core/voice/speech";
+import { prepareBrowserCapture } from "@olares/lares-core/voice/browser-capture";
 import { playAudioStream, createStreamingCapture } from "@olares/lares-core/voice/stream-client";
 import { voiceHeaders, wavBlob } from "@olares/lares-core/voice/client";
 import { browserPlays } from "@olares/lares-core/voice/playback";
@@ -356,6 +359,8 @@ export default {
         voiceDefaultMode: this.voiceDefaultMode,
         voiceCall: this.voiceCall,
         voicePanelState: this.voicePanelState,
+        voiceReady: Boolean(this.voiceSettings),
+        voiceDictation: !this.voiceSettings || laresVoiceAvailability(this.voiceSettings).dictation,
         voicePhase: this.voicePhase,
         voiceElapsed: this.voiceElapsed,
         voiceErrorText: this.voiceErrorText,
@@ -558,6 +563,7 @@ export default {
     this.player = createAnswerPlayer();
     this.voicePanel = createVoicePanel({
       create: (options) => this.createMobileVoiceConversation(options),
+      prepareInput: (config) => config?.device === "headset" ? null : prepareBrowserCapture(),
       loadConfig: async () => (await this.runtime.settings.voice(false, { diagnostics: false })).config,
       process: async ({ text, preset, config, signal }) => { const response = await this.runtime.voiceRequest("/api/lares/voice/dictation/clean", { method: "POST", body: { text, preset, config: { dictationProfiles: config.dictationProfiles } }, signal }); if (!response.ok) throw new Error(response.body?.error?.code || "voice_cleanup_failed"); return response.body.text; },
       complete: async ({ sessionId, text }) => {
@@ -1266,11 +1272,23 @@ export default {
       const action = matchVoiceShortcut(event, this.voiceSettings?.config?.dictationShortcuts);
       if (!action || !laresVoiceAvailability(this.voiceSettings).dictation) return;
       event.preventDefault();
+      await this.openDictation(action);
+    },
+    async startDictation() {
+      await this.openDictation();
+    },
+    async openDictation(preset) {
+      if (document.hidden || navigator.onLine === false) return;
+      if (!this.voiceSettings) {
+        try { this.voiceSettings = await this.runtime.settings.voice(false, { diagnostics: false }); }
+        catch { return; }
+      }
+      if (!laresVoiceAvailability(this.voiceSettings).dictation) return;
       const view = this.voicePanel.getSnapshot();
       if (view.busy) return;
       if (view.visible && view.mode === "single") { if (view.snapshot?.capture === "recording") await this.voicePanel.finish().catch(() => {}); return; }
       await this.voicePanel.pause().catch(() => {});
-      await this.voicePanel.open({ mode: "single", sessionId: this.sessionId || null, preset: action === "default" ? undefined : action, configSnapshot: this.voiceSettings.config }).catch(() => {});
+      await this.voicePanel.open({ mode: "single", sessionId: this.sessionId || null, preset: preset && preset !== "default" ? preset : undefined, configSnapshot: this.voiceSettings.config }).catch(() => {});
     },
     async onHoldStart() {
       if (this.voicePanelState?.mode === "single" && this.voicePanelState.raw) {
@@ -1293,12 +1311,13 @@ export default {
       config = laresVoiceConfig(config, mode);
       const settings = { config };
       const continuous = mode === "continuous";
-      onDevice(captureSource("mobile", settings.config.device));
+      const device = settings.config.device === "headset" ? "headset" : "device";
+      onDevice(device);
       if (settings.config.backend === "realtime" && continuous) throw new Error("voice_manual_realtime_unavailable");
       this.reader.stop(); this.player?.stop(); this.player?.unlock();
       let conversation;
       const reader = createSentencePlayer({
-        stream: captureSource("mobile", config.device) === "device" ? (value) => playAudioStream({ ...value, request: (path, options) => this.runtime.voiceRequest(path, options), headers: conversation.headers, socket: (ticket) => this.runtime.voiceSocket(ticket, "/api/lares/voice/stream") }) : undefined,
+        stream: device === "device" ? (value) => playAudioStream({ ...value, request: (path, options) => this.runtime.voiceRequest(path, options), headers: conversation.headers, socket: (ticket) => this.runtime.voiceSocket(ticket, "/api/lares/voice/stream") }) : undefined,
         send: (value) => conversation.speak(value),
         play: (sentence) => sentence.bluetooth === "played" ? Promise.resolve() : this.player.play(wavBlob(sentence.audio)),
         halt: () => this.player.stop(), silence: () => {},
@@ -1310,14 +1329,14 @@ export default {
         captureConfig: { model: config.model, language: config.language },
         request: (path, options) => this.runtime.voiceRequest(path, options),
         transcribe: (blob, signal) => this.runtime.transcribe(blob, config.language, signal, config.model),
-        device: captureSource("mobile", settings.config.device),
+        device,
         readAloud: continuous && settings.config.speak,
         preset: settings.config.preset, backend: settings.config.backend, endpointSilenceMs: settings.config.endpointSilenceMs, idleTimeoutMs: settings.config.idleTimeoutMs, recoveryTimeoutMs: settings.config.recoveryTimeoutMs,
         presentationSession: true,
         onTranscript: continuous ? null : onTranscript,
         mode: () => resolveSubmitMode(this.running, false, true, this.busyEnter),
         playback: { get canPause() { return reader.canPause; }, get key() { return reader.key; }, pause: () => reader.pause(), resume: () => reader.resume(), stop: () => { reader.stop(); this.player.stop(); } },
-        onReply: (reply) => { const value = speakable(reply, captureSource("mobile", config.device) === "device"); if (value) reader.follow(value); },
+        onReply: (reply) => { const value = speakable(reply, device === "device"); if (value) reader.follow(value); },
       });
       return conversation;
     },
