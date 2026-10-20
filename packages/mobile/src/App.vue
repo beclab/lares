@@ -124,6 +124,7 @@ import { failText, withPendingUser } from "./chat/format.js";
 import { captureSource } from "@olares/lares-core/voice/input";
 import { laresVoiceConfig, laresVoiceAvailability } from "@olares/lares-core/voice/lares-policy";
 import { createVoiceConversation } from "@olares/lares-core/voice/conversation";
+import { createUnifiedConversation } from "@olares/lares-core/voice/unified-conversation";
 import { createAnswerPlayer } from "./chat/playback.js";
 import { createReplySpeaker, createSentencePlayer, speakable } from "@olares/lares-core/voice/speech";
 import { playAudioStream, createStreamingCapture } from "@olares/lares-core/voice/stream-client";
@@ -1296,6 +1297,12 @@ export default {
       onDevice(captureSource("mobile", settings.config.device));
       if (settings.config.backend === "realtime" && continuous) throw new Error("voice_manual_realtime_unavailable");
       this.reader.stop(); this.player?.stop(); this.player?.unlock();
+      if (config.transport !== "legacy") {
+        return createUnifiedConversation({ request: (path, options) => this.runtime.voiceRequest(path, options), socket: (ticket) => this.runtime.voiceSocket(ticket),
+          device: captureSource("mobile", config.device), readAloud: continuous && config.speak, preset: config.preset, presentationSession: true,
+          endpointSilenceMs: config.endpointSilenceMs, idleTimeoutMs: config.idleTimeoutMs, recoveryTimeoutMs: config.recoveryTimeoutMs,
+          onTranscript: continuous ? null : onTranscript, mode: () => resolveSubmitMode(this.running, false, true, this.busyEnter) });
+      }
       let conversation;
       const reader = createSentencePlayer({
         stream: captureSource("mobile", config.device) === "device" ? (value) => playAudioStream({ ...value, request: (path, options) => this.runtime.voiceRequest(path, options), headers: conversation.headers, socket: (ticket) => this.runtime.voiceSocket(ticket, "/api/lares/voice/stream") }) : undefined,

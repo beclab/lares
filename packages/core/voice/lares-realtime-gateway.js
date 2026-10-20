@@ -230,8 +230,9 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
           cancel("cancelled", { truncate: true });
           epoch = generation;
         }
-        if (!text.trim()) return;
+        // An empty transcript still completes the item, so a client waiting on its take can settle.
         send({ type: "conversation.item.input_audio_transcription.completed", item_id: id, content_index: 0, transcript: text });
+        if (!text.trim()) return;
         userItem(id, { type: "input_audio", transcript: text });
         if (preset !== "dictation") await submit(text, id, epoch, ms);
       } catch (cause) { if (!closed && epoch === generation) report(cause); }
