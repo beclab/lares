@@ -15,6 +15,7 @@ import { identityPrompt } from "@olares/lares-core/brand/identity";
 import {
   ensureLaresWebProfile,
   installProfileDeps,
+  patchCompactionHeadroom,
   patchConnectionTrustFences,
   patchLocaleDefaultToEnglish,
   patchSettingsNavIcon,
@@ -42,6 +43,7 @@ export async function bootLaresWeb(): Promise<void> {
   patchConnectionTrustFences();
   patchLocaleDefaultToEnglish();
   patchSettingsNavIcon();
+  patchCompactionHeadroom();
 
   let catalogModels: RouterModelEntry[] = [];
   let catalogLoaded = false;
