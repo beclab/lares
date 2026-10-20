@@ -10,15 +10,21 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 import {
   ensureLaresWebProfile,
+  LARES_COMPACTION_HEADROOM,
   linkOwnedProfileDeps,
   sectionComponentNavIcon,
   trustOlaresConnectionClient,
   useEnglishLocaleDefault,
+  useLaresCompactionHeadroom,
   useOlaresDocumentLanguage,
 } from "../../packages/service/dsh-web/profile.js";
+
+const require = createRequire(import.meta.url);
+const COMPACTION_HEADROOM = "const headroomTokens = config.headroomTokens ?? 65536;";
 
 const CLIENT_LOOPBACK =
   "isLoopback: transport?.ownsHost === true || pageLocation === void 0 || isLoopbackHostname(pageLocation.hostname),";
@@ -88,6 +94,21 @@ test("a settings section's own component supplies its nav glyph", () => {
 
 test("nav icon patch fails loudly when the settings shell drifts", () => {
   assert.throws(() => sectionComponentNavIcon("unrelated upstream source"), /anchor not found/);
+});
+
+test("compaction keeps only Lares headroom in front of the model window", () => {
+  const patched = useLaresCompactionHeadroom(COMPACTION_HEADROOM);
+  assert.equal(patched, `const headroomTokens = config.headroomTokens ?? ${LARES_COMPACTION_HEADROOM};`);
+  assert.equal(useLaresCompactionHeadroom(patched), patched);
+});
+
+test("compaction headroom patch fails loudly when upstream anchors drift", () => {
+  assert.throws(() => useLaresCompactionHeadroom("unrelated upstream source"), /anchor not found/);
+});
+
+test("the installed compaction backend still carries the headroom anchor", () => {
+  const source = readFileSync(require.resolve("@deepseek-ai/dsh-compaction-basic"), "utf8");
+  assert.match(useLaresCompactionHeadroom(source), new RegExp(`headroomTokens \\?\\? ${LARES_COMPACTION_HEADROOM};`));
 });
 
 test("Lares profile packages link to authoritative source directories", () => {

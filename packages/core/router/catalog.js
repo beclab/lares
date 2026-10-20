@@ -55,7 +55,7 @@ function tokenCount(value) {
  * beside its own prompt. Compaction subtracts this cap from the model's
  * context window before the 80% pressure line, so the cap has to fit in the
  * remaining fifth or that line never fires. A tenth of the window does, once
- * the summary headroom (4096) is counted, for any window of at least 40k.
+ * the summary headroom (8192) is counted, for any window of at least 80k.
  */
 export function outputTokenBudget(declared, contextWindow) {
   if (contextWindow === null) return declared;

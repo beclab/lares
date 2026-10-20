@@ -95,16 +95,6 @@
 - id: session-title-llm
   disabled: true
 
-# Compact at 80% of the routed model's own contextWindow. Upstream headroom
-# (65536) plus a quarter-window output reserve fired at ~32k on a 128k model
-# and left a 32k model with no budget. Headroom here only holds the summary;
-# outputTokenBudget keeps the reply reserve inside the remaining 20%, so the
-# 80% line is what fires.
-- id: compaction-basic
-  config:
-    thresholdRatio: 0.8
-    headroomTokens: 4096
-
 - id: agent-default-model
   config:
     provider: olares-router
