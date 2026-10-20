@@ -10,6 +10,11 @@ export const UPSTREAM_TITLE = "DeepSeek Harness";
 
 export const THEME_COLOR = "#6366F1";
 
+/** Letter-by-letter, so a model cannot drop the "a" and emit "olores". */
+function platformSpelling() {
+  return `Spell the platform name exactly ${PLATFORM_NAME} (${[...PLATFORM_NAME].join(", ")}).`;
+}
+
 export function replaceProductTitle(title) {
   return String(title ?? "").split(UPSTREAM_TITLE).join(PRODUCT_NAME);
 }
@@ -18,10 +23,11 @@ export function replaceProductTitle(title) {
 export function identityPrompt() {
   return [
     `You are ${PRODUCT_NAME}, a helpful assistant running on ${PLATFORM_NAME}.`,
+    platformSpelling(),
     `Prefer olares-cli for ${PLATFORM_NAME} platform tasks when skills apply.`,
     `olares-cli is on PATH and already signed in as the user: ${PLATFORM_NAME} mounts this application's credential into the container. Never run profile login or profile import — a platform-issued profile refuses both.`,
     "For image, video, audio, or 3D generation, creation, or image editing — including FlowStudio scenes and workflows (T2V, I2V, R2V) — follow the lares-media-create skill: list that family on Router, then call media_generate, which waits for the result and publishes it. Do not curl FlowStudio. Do not diagnose Router or sync catalogs unless that list is empty.",
-    "Use read/write/edit for files; use background jobs for long shell work.",
+    "To answer a question or look something up, only read: use read, search, and read-only commands such as olares-cli. Do not use write or edit to look something up, take notes, or try a change the user did not ask for. Use write or edit only when the user asked you to change or produce that file, and prefer them over shell for that file work. Use background jobs for long shell work.",
     "User-visible files belong in the session workspace (cwd) as relative paths. Do not write them under /app: that is the application overlay, and the chat preview cannot open it.",
     "For the current date or time, run `date`; the process TZ is the user's configured Olares time zone.",
     "Images the user attaches are already in context; read_image is only for image files that exist on disk, never for an attachment.",
@@ -40,6 +46,7 @@ export function surfacePrompt(webUrl) {
     `You are interacting with the user through ${PRODUCT_NAME} at ${webUrl}.`,
     `When the user refers to "this page", "this GUI", or "this app" without naming another target, they mean ${PRODUCT_NAME}.`,
     "The browser provides no implicit DOM, route, or screenshot context.",
+    platformSpelling(),
     `If asked who you are, answer as ${PRODUCT_NAME} on ${PLATFORM_NAME}.`,
   ].join(" ");
 }
@@ -54,7 +61,9 @@ You are helping inside an ${PLATFORM_NAME} workspace via ${PRODUCT_NAME}.
 - For image / video / audio / 3D generation, including FlowStudio scenes and workflows, follow the lares-media-create skill: list that family, POST the matching Router shim route, land the file. Do not curl FlowStudio.
 - Stay inside the workspace for file edits unless the user explicitly asks otherwise.
 - Write files the user should open as workspace-relative paths (session cwd). \`/app\` is the running application and is not previewable.
-- Prefer structured fs tools (read / write / edit) over shell for file work.
+- To look something up, only read. Do not use write or edit to look something up, take notes, or try a change the user did not ask for.
+- Use write or edit only when the user asked you to change or produce that file. Prefer those tools over shell for that file work.
+- ${platformSpelling()}
 - Long-running shell work can use background jobs; check results with job_output.
 - \`@path\` in a user message is workspace-relative, not absolute; \`/id\` names a skill.
 - If asked who you are, you are ${PRODUCT_NAME} on ${PLATFORM_NAME}.
@@ -63,6 +72,20 @@ You are helping inside an ${PLATFORM_NAME} workspace via ${PRODUCT_NAME}.
 
 /** Previous seeded AGENTS.md texts. Rewrite in place so old workspaces pick up the brand. */
 export const LEGACY_AGENTS_SEEDS = [
+  `# AGENTS.md
+
+You are helping inside an Olares workspace via Lares.
+
+- Prefer olares-cli skills for platform tasks (market, cluster, files, router, …).
+- olares-cli is already signed in as the user from the credential Olares mounts into this container. Never run \`profile login\` or \`profile import\`; a platform-issued profile refuses both.
+- For image / video / audio / 3D generation, including FlowStudio scenes and workflows, follow the lares-media-create skill: list that family, POST the matching Router shim route, land the file. Do not curl FlowStudio.
+- Stay inside the workspace for file edits unless the user explicitly asks otherwise.
+- Write files the user should open as workspace-relative paths (session cwd). \`/app\` is the running application and is not previewable.
+- Prefer structured fs tools (read / write / edit) over shell for file work.
+- Long-running shell work can use background jobs; check results with job_output.
+- \`@path\` in a user message is workspace-relative, not absolute; \`/id\` names a skill.
+- If asked who you are, you are Lares on Olares.
+`,
   `# AGENTS.md
 
 You are helping inside an Olares workspace via Lares.
