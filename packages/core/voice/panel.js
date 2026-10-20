@@ -56,7 +56,11 @@ export function createVoicePanel({ create, complete, loadConfig = async () => ({
     }
   };
   const prepare = async (token) => {
-    if (call?.controller.getSnapshot().connection === "paused") { await call.resume({ shouldResume: () => token === intent && state.visible }); return; }
+    if (call?.controller.getSnapshot().connection === "paused") {
+      await call.resume({ shouldResume: () => token === intent && state.visible });
+      if (token === intent && state.visible && state.mode === "continuous" && typeof readAloudPreference === "boolean") await panel.setReadAloud(readAloudPreference);
+      return;
+    }
     if (call?.controller.getSnapshot().connection === "open") return;
     await end(); config = state.mode === "single" && config ? config : structuredClone(await loadConfig());
     if (token !== intent || !state.visible) return;
@@ -87,7 +91,11 @@ export function createVoicePanel({ create, complete, loadConfig = async () => ({
   };
   const pause = async () => {
     try { if (state.mode === "single") { await finishCapture(); renderDraft(); } else await call?.controller.cancelRecording(); }
-    finally { if (call?.controller.getSnapshot().connection === "open") await call.pause(); }
+    finally {
+      if (call?.controller.getSnapshot().connection === "open") await call.pause();
+      // The banner belongs to the open call. Leaving it must not keep a mute/sync notice on the chat.
+      if (!state.visible) { outputRevision++; emit({ readAloudError: null }); }
+    }
   };
   const insertDraft = async () => {
     if (!state.draft || state.stage !== "preview") return;
@@ -108,6 +116,10 @@ export function createVoicePanel({ create, complete, loadConfig = async () => ({
       if (!readAloudPending && appliedReadAloud === next && !state.readAloudError) return Promise.resolve(true);
       const revision = ++outputRevision;
       const current = () => target === call && epoch === generation && revision === outputRevision;
+      // Phone playback is local. Asking for silence already stopped it, so a missed
+      // server ack is not a readout failure. A headset can keep playing until the host agrees.
+      const localSilence = next !== true && state.device !== "headset";
+      if (localSilence) emit({ readAloudError: null });
       const pending = { target, value: next, promise: null };
       pending.promise = Promise.resolve().then(() => {
         if (target !== call || epoch !== generation) return;
@@ -116,7 +128,9 @@ export function createVoicePanel({ create, complete, loadConfig = async () => ({
         if (current()) { appliedReadAloud = next; emit({ readAloudError: null }); }
         return true;
       }, error => {
-        if (current()) emit({ readAloudError: error.code || error.message || "voice_failed" });
+        if (!current()) return false;
+        if (localSilence) { appliedReadAloud = false; emit({ readAloudError: null }); return true; }
+        emit({ readAloudError: error.code || error.message || "voice_failed" });
         return false;
       }).finally(() => { if (readAloudPending === pending) readAloudPending = null; });
       readAloudPending = pending;

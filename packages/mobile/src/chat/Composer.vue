@@ -1,5 +1,9 @@
 <template>
   <form class="lares-composer" :class="{ 'lares-composer--hero': hero }" @submit.prevent="onSend">
+    <div v-if="voiceView?.readAloudError" class="lares-composer__alert" role="alert">
+      <p>{{ t("settings.readAloudSyncFailed") }}</p>
+      <button type="button" @click="$emit('voice-action', { action: 'retryReadAloud' })">{{ t("dictation.retry") }}</button>
+    </div>
     <div
       class="lares-composer__card"
       data-composer-card
@@ -444,6 +448,36 @@ export default {
 
 .lares-composer--hero {
   padding: 0;
+}
+
+.lares-composer__alert {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--q-background-1);
+  color: var(--q-orange-default);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.lares-composer__alert p {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.lares-composer__alert button {
+  flex: none;
+  border: 0;
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: var(--q-blue-alpha);
+  color: var(--q-blue-default);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .lares-composer__card {

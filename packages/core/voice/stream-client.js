@@ -65,8 +65,9 @@ export async function playAudioStream(options) {
           else if (event.type === "done") { await player.finish(); complete = true; resolve(); }
         }).catch(fail);
       });
-      connection.addEventListener("error", () => fail(new Error("voice_disconnected")), { once: true });
-      connection.addEventListener("close", () => { options.signal?.removeEventListener("abort", cancelled); if (!complete) reject(new Error("voice_disconnected")); }, { once: true });
+      const dropped = () => new Error(options.signal?.aborted ? "voice_cancelled" : "voice_disconnected");
+      connection.addEventListener("error", () => fail(dropped()), { once: true });
+      connection.addEventListener("close", () => { options.signal?.removeEventListener("abort", cancelled); if (!complete) reject(dropped()); }, { once: true });
       if (options.signal?.aborted) cancelled();
     });
     return true;
@@ -101,8 +102,9 @@ export async function startTranscriptionStream(options) {
       else if (event.type === "error") fail(new Error(event.code));
     } catch { fail(new Error("voice_stream_failed")); }
   });
-  connection.addEventListener("close", () => fail(new Error("voice_disconnected")), { once: true });
-  connection.addEventListener("error", () => fail(new Error("voice_disconnected")), { once: true });
+  const dropped = () => fail(new Error(options.signal?.aborted ? "voice_cancelled" : "voice_disconnected"));
+  connection.addEventListener("close", dropped, { once: true });
+  connection.addEventListener("error", dropped, { once: true });
   if (options.signal?.aborted) fail(new Error("voice_cancelled"));
   await ready;
   return {

@@ -6,7 +6,9 @@ export function voicePanelPresentation(view) {
   const preview = view.mode === "single" && ["preview", "processing"].includes(view.stage);
   const preparing = view.busy || capture === "recording" && view.snapshot?.inputReady === false;
   const recording = capture === "recording" && !preparing;
-  const error = view.error || view.snapshot?.error;
+  const reported = view.error || view.snapshot?.error;
+  // A muted call is not a listen session. "Resume to listen again" is the readout copy.
+  const error = reported === "voice_disconnected" && view.snapshot?.outputMuted ? "voice_background" : reported;
   const phase = view.cancelArmed ? "cancel" : error ? "error" : processing ? "processing" : transcribing ? "transcribing" : preparing ? "preparing" : recording ? "recording" : preview ? "preview" : view.snapshot && view.snapshot.playback !== "idle" ? "speaking" : view.snapshot?.agent === "running" ? "working" : "waiting";
   const status = error ? `error.${error}` : ({ cancel: "gesture.cancelRelease", processing: "dictation.processing", transcribing: "mic.transcribing", preparing: "mic.preparing", recording: "call.listening", preview: "dictation.preview", speaking: "dictation.speaking", working: "call.working", waiting: view.mode === "continuous" ? "gesture.waiting" : "dictation.preview" })[phase];
   return { phase, status, preview, recording, pending: processing || transcribing || preparing, error };

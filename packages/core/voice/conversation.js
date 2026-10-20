@@ -3,6 +3,18 @@ import { createDeviceInput } from "./device-input.js";
 import { createHostInput } from "./host-input.js";
 import { mintRpcId } from "../larepass/rpc.js";
 
+/** Bound a request without requiring AbortSignal.any / timeout, which some mobile webviews lack. */
+function outputSignal(abort) {
+  const signals = [abort.signal];
+  if (typeof AbortSignal?.timeout === "function") {
+    try { signals.push(AbortSignal.timeout(10_000)); } catch { /* the caller signal still cancels the request */ }
+  }
+  if (signals.length > 1 && typeof AbortSignal.any === "function") {
+    try { return AbortSignal.any(signals); } catch { /* same */ }
+  }
+  return abort.signal;
+}
+
 export function createVoiceConversation({ request, transcribe, playback, onReply = () => {}, onPhase, mode = () => "queue", device = "device", metric = () => {}, readAloud = true, preset, backend, presentationSession = false, endpointSilenceMs, idleTimeoutMs, recoveryTimeoutMs, onText = () => {}, onTranscript = null, input: inputPort, captureConfig, streamInput, preparation }) {
   const voiceId = mintRpcId();
   const headers = { "x-lares-voice-id": voiceId, "x-lares-voice-device": device };
@@ -154,7 +166,7 @@ export function createVoiceConversation({ request, transcribe, playback, onReply
         if (error) throw error;
         const abort = outputAbort = new AbortController();
         try {
-          await call("/session/output", { readAloud: next }, AbortSignal.any([abort.signal, AbortSignal.timeout(10_000)]));
+          await call("/session/output", { readAloud: next }, outputSignal(abort));
           if (!disposed && revision === outputRevision) confirmedReadAloud = next;
         } catch (error) {
           if (!disposed && revision === outputRevision) {

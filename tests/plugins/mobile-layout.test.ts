@@ -50,6 +50,8 @@ test("mobile new session uses a centered hero; model and effort live on the top 
   assert.match(bar, /\$emit\('speak'\)/);
   assert.match(bar, /data-speak/);
   assert.match(mobile, /state\.speakNotice/);
+  assert.match(composer, /lares-composer__alert/);
+  assert.match(composer, /retryReadAloud/);
   assert.doesNotMatch(bar, /\$emit\('create'\)/);
   assert.match(hero, /mobile-new-session__brand[\s\S]*flex:\s*1/);
   assert.match(hero, /safe-area-inset-bottom/);
@@ -58,6 +60,8 @@ test("mobile new session uses a centered hero; model and effort live on the top 
   assert.match(mobile, /state\.effortRows/);
   assert.match(mobile, /reasoning\.title/);
   const app = readFileSync(new URL("../../packages/mobile/src/App.vue", import.meta.url), "utf8");
+  assert.doesNotMatch(app, /voiceReadAloudError/);
+  assert.match(app, /retryReadAloud/);
   assert.match(app, /voiceSpeak: false/);
   assert.match(app, /speakNotice: ""/);
   assert.match(app, /speakProblemText/);

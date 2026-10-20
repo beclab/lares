@@ -133,6 +133,10 @@
       :t="t"
       @action="(itemId, action) => $emit('queue-action', itemId, action)"
     />
+    <div v-if="state.voicePanelState?.readAloudError" class="desktop-composer__alert" role="alert">
+      <p>{{ t("settings.readAloudSyncFailed") }}</p>
+      <button type="button" @click="$emit('voice-action', { action: 'retryReadAloud' })">{{ t("dictation.retry") }}</button>
+    </div>
 
     <Transition name="lares-panel" mode="out-in">
       <div v-if="state.approval" key="approval" class="desktop-composer__approval">
@@ -910,6 +914,9 @@ export default {
   margin: 0 auto;
   padding: 8px 0 20px;
 }
+.desktop-composer__alert { display:flex; align-items:center; gap:12px; margin:0 0 8px; padding:8px 12px; border-radius:12px; background:var(--q-background-1); color:var(--q-orange-default); font-size:13px; line-height:18px; }
+.desktop-composer__alert p { flex:1; min-width:0; margin:0; }
+.desktop-composer__alert button { flex:none; border:0; border-radius:8px; padding:6px 10px; background:var(--q-blue-alpha); color:var(--q-blue-default); font:inherit; font-size:13px; font-weight:600; cursor:pointer; }
 .desktop-composer__model-row { display:flex; justify-content:flex-end; gap:2px; min-height:28px; margin-bottom:6px; }
 .desktop-composer[data-hero="true"] .desktop-composer__model-row { justify-content:space-between; }
 .desktop-composer__model,

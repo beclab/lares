@@ -102,10 +102,6 @@
       @pick-command="pickCommand"
       @toggle-speak="toggleSpeak"
     />
-    <div v-if="voicePanelState?.readAloudError" class="lares-speak-notice" role="alert">
-      {{ voiceReadAloudError }}
-      <button type="button" @click="voicePanel.retryReadAloud()">{{ t('dictation.retry') }}</button>
-    </div>
     <LaresVoicePanel v-if="voicePanelState" :view="voicePanelState" :t="t"
       @close="runVoicePanel('close')" @edit="voicePanel.edit($event)" @preset="voicePanel.selectPreset($event, true).catch(() => {})"
       @complete="runVoicePanel('complete')" @discard="runVoicePanel('discard')" />
@@ -534,7 +530,6 @@ export default {
     modelBlocked() {
       return !modelState(this.modelStatus).valid;
     },
-    voiceReadAloudError() { return this.t("settings.readAloudSyncFailed"); },
     voiceErrorText() {
       return this.voiceError ? messageFromCode(this.t, this.voiceError, "error.voice_failed") : "";
     },
@@ -1304,6 +1299,7 @@ export default {
       await this.voicePanel.open({ mode: this.voiceDefaultMode, sessionId: this.sessionId || null });
     },
     onVoiceAction({ action, value }) {
+      if (action === "retryReadAloud") { void this.voicePanel.retryReadAloud(); return; }
       if (action === "stopPlayback") { void this.voicePanel.conversation?.controller.stopPlayback().catch(() => {}); return; }
       if (action === "setCancelArmed") { this.voicePanel.setCancelArmed(value); return; }
       if (["holdStart", "holdEnd", "finish", "start", "close"].includes(action)) void Promise.resolve(this.voicePanel[action](value)).catch(() => {});
