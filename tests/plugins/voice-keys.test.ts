@@ -34,3 +34,19 @@ test("voice keys reject unknown models and malformed names", () => {
     assert.throws(() => store.issue({ name: "a\nb", models: ["voice-chat"] }), { code: "voice_key_invalid" });
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("voice keys client issues, lists and revokes through one request port", async () => {
+  const { createVoiceKeysClient, VOICE_KEY_DEFAULT_MODELS } = await import("@olares/lares-core/voice/keys-client");
+  assert.deepEqual([...VOICE_KEY_DEFAULT_MODELS], ["voice-dictation", "voice-chat"]);
+  const calls: any[] = [];
+  const client = createVoiceKeysClient(async (path: string, init: any = {}) => {
+    calls.push([path, init.method || "GET", init.body]);
+    if (init.method === "POST") return { ok: true, status: 201, body: { id: "k1", key: "lvk_x" } };
+    if (init.method === "DELETE") return { ok: false, status: 404, body: { revoked: false } };
+    return { ok: true, status: 200, body: { keys: [{ id: "k1" }] } };
+  });
+  assert.equal((await client.issue({ name: " Router ", models: ["voice-chat"] })).key, "lvk_x");
+  assert.deepEqual(await client.list(), [{ id: "k1" }]);
+  await assert.rejects(client.revoke("k1"), /voice_key_failed/);
+  assert.deepEqual(calls[0], ["/api/lares/voice/keys", "POST", { name: "Router", models: ["voice-chat"] }]);
+});

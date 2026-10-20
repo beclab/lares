@@ -5,6 +5,7 @@ import { normalizeReferenceCandidates, referencesUrl } from "@olares/lares-core/
 import { muxWsUrl, remoteStreamOpen, workspaceBaseline } from "@olares/lares-core/larepass/mux";
 import { RESPOND_PATH } from "@olares/lares-core/larepass/rpc";
 import { createHostSettings } from "@olares/lares-core/larepass/settings";
+import { createVoiceKeysClient } from "@olares/lares-core/voice/keys-client";
 import {
   downloadFileUrl,
   isPreviewPayload,
@@ -339,5 +340,6 @@ export function createHostClient(ports = {}) {
     },
     consumeMux,
     settings: createHostSettings(request),
+    voiceKeys: createVoiceKeysClient((path, init) => request(path, init)),
   };
 }

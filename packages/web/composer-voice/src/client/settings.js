@@ -10,6 +10,7 @@ import { PresetEditor } from "./preset-editor.js";
 import { ShortcutSettings } from "./shortcut-settings.js";
 import { usePreferencesLeave } from "./preferences-leave.js";
 import { BluetoothDevices } from "./bluetooth.js";
+import { VoiceKeys } from "./voice-keys.js";
 import { MicGlyph } from "./icons.js";
 import { useT } from "./locale.js";
 import localSettingsCss from "./styles/settings.css";
@@ -62,6 +63,7 @@ export function VoiceSettings({ bindBeforeLeave } = {}) {
     h(TtsSettings, { preferences, view, t }),
     h(ShortcutSettings, { preferences, t }),
     Group(t("settings.group.bluetooth"), h(BluetoothDevices, { t })),
+    Group(t("settings.group.keys"), h(VoiceKeys, { t })),
     leave.modal);
 }
 VoiceSettings.navIcon = MicGlyph;

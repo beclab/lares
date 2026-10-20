@@ -2,8 +2,9 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { dirname, join } from "node:path";
 import { readJsonFile, writeJsonFile } from "../tools/json-file.js";
 import { dshPluginConfigPath } from "../workspace/home.js";
+import { VOICE_KEY_MODELS } from "./key-models.js";
 
-export const VOICE_KEY_MODELS = Object.freeze(["voice-dictation", "voice-chat", "voice-assistant", "voice-direct"]);
+export { VOICE_KEY_MODELS };
 const KEY = /^lvk_([a-f0-9]{16})_[A-Za-z0-9_-]{43}$/;
 const LIMIT = 32;
 
