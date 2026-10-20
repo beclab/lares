@@ -357,7 +357,8 @@ export function apply(ctx) {
   ctx.on("api-session/removed", (sessionId) => voiceHost.remove(sessionId));
   ctx.effect(() => {
     const unified = createLaresRealtimeGateway({ service: voiceHost, config: readConfig, ...createRouterAudio(readConfig), keys: voiceKeys, hostOwner: routerEndUser(),
-      hostAudio: openRealtimeHostAudio, busyDefault: () => busyEnterDefault(ctx) });
+      hostAudio: openRealtimeHostAudio, busyDefault: () => busyEnterDefault(ctx),
+      onError: (cause, scope) => writeReport({ scope: "voice", event: "realtime-error", voiceId: scope.id, code: cause?.code || cause?.message || "voice_failed" }) });
     realtime = registerRealtime(ctx, voiceHost, unified);
     return () => { realtime.dispose(); unified.close(); };
   });

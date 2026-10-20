@@ -46,7 +46,7 @@ export function joinSpoken(parts) {
  * `lares-realtime-v1` (docs/realtime-protocol.md) on one endpoint. Bearer voice-key callers get a
  * scope owned by the socket; ticket sockets attach to the Lares client's open voice scope.
  */
-export function createLaresRealtimeGateway({ service, config, transcribe, synthesize, openTranscription, keys, hostOwner = "", hostAudio, busyDefault = () => "queue", bargeIn = () => process.env.LARES_VOICE_BARGE_IN === "1", segment = speechSegments, limit = 64 }) {
+export function createLaresRealtimeGateway({ service, config, transcribe, synthesize, openTranscription, keys, hostOwner = "", hostAudio, busyDefault = () => "queue", bargeIn = () => process.env.LARES_VOICE_BARGE_IN === "1", segment = speechSegments, onError = () => {}, limit = 64 }) {
   const server = new WebSocketServer({ noServer: true, maxPayload: 96 * 1024, perMessageDeflate: false, handleProtocols: (values) => values.has("lares-voice") ? "lares-voice" : false });
   const clients = new Map();
   const tickets = new Map();
@@ -73,6 +73,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
     };
     const report = (cause, eventId) => {
       const known = cause instanceof ProtocolError;
+      if (!known) { try { onError(cause, scope); } catch {} }
       send({ type: "error", error: { type: known ? cause.type : "server_error", code: known ? cause.code : "upstream_failed", message: known ? "Unsupported or invalid realtime event" : "Voice operation failed", ...(eventId ? { event_id: eventId } : {}) } });
     };
     const view = () => ({
