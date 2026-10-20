@@ -109,7 +109,7 @@ test("buffered fallback and real synthesis request construction use the same can
     segmenterFactory: () => createSpeechSegmenter({ policy }), openPlayback: async () => ({ skipped: true }), pcmToWav: (pcm: Buffer) => pcm };
   await speakFromConfig(list, options);
   assert.deepEqual(bodies.map(b => b.input), speechSegments(list, { policy }));
-  assert.ok(bodies.every(b => b.model === "tts" && b.stream === true));
+  assert.ok(bodies.every(b => b.model === "tts" && b.response_format === "pcm" && b.stream === undefined));
   bodies.length = 0;
   const keyed = { ...options, coordinator: createDuplexCoordinator(), key: "waiting", done: false };
   assert.deepEqual(await speakFromConfig("1. 鼠\n2. 牛", keyed), { sentences: 1 });

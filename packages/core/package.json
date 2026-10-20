@@ -1,6 +1,6 @@
 {
   "name": "@olares/lares-core",
-  "version": "0.15.18",
+  "version": "0.15.22",
   "description": "Lares 共享业务核心：Router、workspace、文件/媒体、Olares 身份（无 UI、无平台壳）",
   "type": "module",
   "repository": {
@@ -28,6 +28,7 @@
     "search",
     "tools",
     "voice",
+    "webhook",
     "workspace",
     "skills"
   ],
@@ -53,6 +54,7 @@
     "./i18n/preview": "./i18n/preview.js",
     "./i18n/mobile": "./i18n/mobile.js",
     "./i18n/mcp": "./i18n/mcp.js",
+    "./i18n/webhook": "./i18n/webhook.js",
     "./router/catalog": "./router/catalog.js",
     "./router/catalog-cache": {
       "types": "./router/catalog-cache.d.ts",
@@ -142,6 +144,10 @@
     "./media/tool": "./media/tool.js",
     "./mcp/config": "./mcp/config.js",
     "./mcp/client": "./mcp/client.js",
+    "./webhook/config": "./webhook/config.js",
+    "./webhook/public": "./webhook/public.js",
+    "./webhook/reply": "./webhook/reply.js",
+    "./webhook/client": "./webhook/client.js",
     "./mcp/approval": "./mcp/approval.js",
     "./olares/identity": "./olares/identity.js",
     "./olares/session-identity": "./olares/session-identity.js",

@@ -23,6 +23,7 @@ const CHAT_MODEL = join(APP_ROOT, "packages", "web", "chat-model");
 const SESSION_COMMANDS = join(APP_ROOT, "packages", "web", "session-commands");
 const SKILL_PACKS = join(APP_ROOT, "packages", "web", "skill-packs");
 const MCP = join(APP_ROOT, "packages", "web", "mcp");
+const WEBHOOK = join(APP_ROOT, "packages", "web", "webhook");
 const LOCAL_PROFILE_PACKAGES = [
   ["@lares/dsh-overlay", DSH_OVERLAY],
   ["@lares/brand", BRAND],
@@ -35,6 +36,7 @@ const LOCAL_PROFILE_PACKAGES = [
   ["@lares/chat-model", CHAT_MODEL],
   ["@lares/skill-packs", SKILL_PACKS],
   ["@lares/mcp", MCP],
+  ["@lares/webhook", WEBHOOK],
   ["@lares/session-commands", SESSION_COMMANDS],
 ] as const;
 

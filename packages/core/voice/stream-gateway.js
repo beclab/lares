@@ -1,5 +1,6 @@
 import { ttsVoiceForModel } from "./tts-voice.js";
 import { speechSegments } from "./script.js";
+import { createSynthesisRuns, utteranceKey } from "./synthesis-run.js";
 import { randomUUID } from "node:crypto";
 import { WebSocket, WebSocketServer } from "ws";
 import { synthesizeStream } from "../router/tts.js";
@@ -11,13 +12,14 @@ const fault = (code, status = 409) => new VoiceError(code, status, code);
 /** Single-use HTTP grants bind raw audio sockets to the authenticated Host scope. */
 export function createAudioStreamGateway({ config, models, replies, synthesize = synthesizeStream, env = process.env, metric = () => {} }) {
   const tickets = new Map(), clients = new Set();
+  const synthesis = createSynthesisRuns({ synthesize, metric });
   const server = new WebSocketServer({ noServer: true, maxPayload: 96 * 1024, perMessageDeflate: false,
     handleProtocols: (values) => values.has("lares-voice") ? "lares-voice" : false });
   return {
     async ticket(scope, body) {
-      if (scope.device !== "device") return { supported: false };
       if (!["tts", "stt"].includes(body.operation)) throw fault("voice_config_invalid", 400);
       const tts = body.operation === "tts";
+      if (!tts && scope.device !== "device") return { supported: false };
       const snapshot = structuredClone(scope.voiceConfig || config());
       if (tts && (scope.presentationSession || !scope.active)) {
         const current = config();
@@ -35,7 +37,7 @@ export function createAudioStreamGateway({ config, models, replies, synthesize =
       const reply = tts && body.source ? await replies?.bind(scope, body.source) : null;
       if (body.source && !reply) throw fault("voice_reply_unavailable");
       const ticket = randomUUID();
-      tickets.set(ticket, { scope, model: selected, operation: body.operation, text: body.text, reply,
+      tickets.set(ticket, { scope, model: selected, operation: body.operation, text: body.text, reply, replySource: body.source || null,
         config: snapshot, language: body.language || snapshot.language, expires: Date.now() + 30000 });
       return { supported: true, ticket };
     },
@@ -95,52 +97,68 @@ export function createAudioStreamGateway({ config, models, replies, synthesize =
           upstream.on("error", error);
           upstream.on("close", () => { send({ type: "eof" }); close(); });
         } else {
-          // A stop/new output owns the scope's existing duplex lease too.
-          const lease = grant.scope.duplex.beginSpeech(abort.signal);
-          const segments = grant.reply ? grant.reply(lease.signal) : speechSegments(grant.text, { done: true }).map((text, index) => ({ text, index }));
-          let carry = null;
-          const run = async () => { for await (const segment of segments) {
-          if (!lease.active()) throw fault("voice_cancelled");
-          const { text, index } = segment;
-          metric({ stage: "synthesis_segment", voiceId: grant.scope.id, index, chars: text.length, at: Date.now() });
-          send({ type: "segment", index, attemptId: segment.attemptId, startFrame: sentFrames });
-          const result = await synthesize({ text, model: grant.model, voice: ttsVoiceForModel(grant.config, grant.model), signal: lease.signal,
-            onFormat(format) { if (outputFormat && (format.channels !== outputFormat.channels || format.encoding !== outputFormat.encoding)) throw fault("voice_audio_format"); outputFormat = format; if (!rate) { rate = format.sampleRate; send({ type: "format", ...format }); } else if (rate !== format.sampleRate) throw fault("voice_audio_format"); },
-          }, async (chunk) => {
-            if (!lease.active()) throw fault("voice_cancelled");
-            if (!rate) throw fault("voice_audio_format", 502);
-            if (carry !== null) { chunk = Buffer.concat([Buffer.from([carry]), chunk]); carry = null; }
-            if (chunk.length % 2) { carry = chunk[chunk.length - 1]; chunk = chunk.subarray(0, -1); }
-            for (let offset = 0; offset < chunk.length; offset += 16384) {
-              while (pausedAt || sentFrames - playedFrames > rate * 2 || client.bufferedAmount > 128 * 1024) {
-                await new Promise((resolve, reject) => { const timer = setTimeout(() => { waiter = null; reject(fault(pausedAt ? "voice_interruption_timeout" : "voice_audio_backpressure")); }, pausedAt ? Math.max(1, 10000 - (Date.now() - pausedAt)) : 10000); waiter = () => { clearTimeout(timer); resolve(); }; });
-                if (!lease.active() || abort.signal.aborted) throw fault("voice_cancelled");
-              }
-              if (!lease.active() || client.readyState !== 1) throw fault("voice_cancelled");
-              const part = chunk.subarray(offset, offset + 16384);
-              sentFrames += part.length / 2;
-              client.send(part);
-              if (!outputStarted) { outputStarted = true; metric({ stage: "synthesis_first_audio", voiceId: grant.scope.id, at: Date.now(), durationMs: Date.now() - started }); }
-            }
+          const key = grant.replySource ? utteranceKey(grant.replySource) : `text:${grant.text}`;
+          const run = synthesis.attach(key, (signal) => grant.reply ? grant.reply(signal) : (async function* text() {
+            const parts = speechSegments(grant.text, { done: true });
+            for (let index = 0; index < parts.length; index += 1) yield { text: parts[index], index };
+          })(), { model: grant.model, voice: ttsVoiceForModel(grant.config, grant.model), voiceId: grant.scope.id });
+          let cursor = 0;
+          const unsub = run.subscribe(() => { waiter?.(); waiter = null; });
+          const waitFor = () => new Promise((resolve, reject) => {
+            if (abort.signal.aborted) { reject(fault("voice_cancelled")); return; }
+            const wake = () => { abort.signal.removeEventListener("abort", wake); waiter = null; if (abort.signal.aborted) reject(fault("voice_cancelled")); else resolve(); };
+            waiter = wake;
+            abort.signal.addEventListener("abort", wake, { once: true });
           });
-          send({ type: "segment.end", index, endFrame: sentFrames });
-          if (carry !== null) throw fault("voice_audio_format");
-          if (!result.streamed) {
-            if (rate) throw fault("voice_audio_format");
-            await new Promise((resolve, reject) => {
-              const timer = setTimeout(() => reject(fault("voice_timeout")), 120000);
-              fileDone = () => { clearTimeout(timer); resolve(); };
-              send({ type: "file", audio: result.audio.toString("base64") });
-            });
-          }
-          if (!lease.active()) throw fault("voice_cancelled");
-          } };
-          const wake = () => { waiter?.(); waiter = null; fileDone?.(); fileDone = null; close(); };
-          lease.signal.addEventListener("abort", wake, { once: true });
-          void run().then(() => { if (!abort.signal.aborted) send({ type: "done" }); }).catch(error).finally(() => { lease.signal.removeEventListener("abort", wake); lease.finish(); });
+          const pump = async () => {
+            while (!abort.signal.aborted) {
+              if (cursor >= run.events.length) {
+                if (run.settled) return;
+                await waitFor();
+                continue;
+              }
+              const event = run.events[cursor++];
+              if (event.type === "segment") send({ type: "segment", index: event.index, attemptId: event.attemptId, startFrame: sentFrames });
+              else if (event.type === "format") {
+                const format = event.format;
+                if (outputFormat && (format.channels !== outputFormat.channels || format.encoding !== outputFormat.encoding)) throw fault("voice_audio_format");
+                outputFormat = format;
+                if (!rate) { rate = format.sampleRate; send({ type: "format", ...format }); }
+                else if (rate !== format.sampleRate) throw fault("voice_audio_format");
+              } else if (event.type === "audio") {
+                if (!rate) throw fault("voice_audio_format", 502);
+                for (let offset = 0; offset < event.chunk.length; offset += 16384) {
+                  while (pausedAt || sentFrames - playedFrames > rate * 2 || client.bufferedAmount > 128 * 1024) {
+                    await new Promise((resolve, reject) => { const timer = setTimeout(() => { waiter = null; reject(fault(pausedAt ? "voice_interruption_timeout" : "voice_audio_backpressure")); }, pausedAt ? Math.max(1, 10000 - (Date.now() - pausedAt)) : 10000); waiter = () => { clearTimeout(timer); resolve(); }; });
+                    if (abort.signal.aborted || client.readyState !== 1) throw fault("voice_cancelled");
+                  }
+                  if (client.readyState !== 1) throw fault("voice_cancelled");
+                  const part = event.chunk.subarray(offset, offset + 16384);
+                  sentFrames += part.length / 2;
+                  client.send(part);
+                  if (!outputStarted) { outputStarted = true; metric({ stage: "synthesis_first_audio", voiceId: grant.scope.id, at: Date.now(), durationMs: Date.now() - started }); }
+                }
+              } else if (event.type === "segment.end") send({ type: "segment.end", index: event.index, endFrame: sentFrames });
+              else if (event.type === "file") {
+                if (rate) throw fault("voice_audio_format");
+                await new Promise((resolve, reject) => {
+                  const timer = setTimeout(() => reject(fault("voice_timeout")), 120000);
+                  fileDone = () => { clearTimeout(timer); resolve(); };
+                  send({ type: "file", audio: Buffer.from(event.audio).toString("base64") });
+                });
+              } else if (event.type === "done") { send({ type: "done" }); return; }
+              else if (event.type === "cancelled") throw fault("voice_cancelled");
+              else if (event.type === "error") throw fault(event.code || "voice_stream_failed");
+            }
+          };
+          void pump().catch((cause) => { if (!abort.signal.aborted) error(cause); }).finally(() => { unsub(); close(); });
         }
       });
     },
-    close() { tickets.clear(); for (const client of clients) client.terminate(); server.close(); },
+    cancel(source) {
+      synthesis.cancel(utteranceKey(source));
+      replies?.cancel?.(source);
+    },
+    close() { tickets.clear(); synthesis.close(); for (const client of clients) client.terminate(); server.close(); },
   };
 }

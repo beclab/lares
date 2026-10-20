@@ -223,3 +223,9 @@
     - id: lares-session-commands
       name: '@lares/session-commands'
       inject: [webServer, commands, agents, fileReferences, sessionReferenceResolver]
+
+    # Demo entrance for other apps. Settings stay on this web server; call
+    # routes also listen on LARES_WEBHOOK_PORT for the public webhook entrance.
+    - id: lares-webhook
+      name: '@lares/webhook'
+      inject: [webServer, agents, agentDefaultModel, agentPresets, permissionPresets, workspaceRegistry, sessionTitle]

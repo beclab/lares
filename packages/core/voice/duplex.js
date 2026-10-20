@@ -5,13 +5,16 @@
 export function createDuplexCoordinator(stopPlayback = async () => {}) {
   let speech = null;
 
-  function beginSpeech(externalSignal) {
-    if (speech) {
+  function beginSpeech(externalSignal, id = "") {
+    if (speech && (!id || speech.id !== id)) {
       speech.controller.abort();
       void Promise.resolve(stopPlayback()).catch(() => {});
+      speech = null;
     }
+    if (speech && id && speech.id === id) return speech.pub;
     const controller = new AbortController();
     const lease = {
+      id,
       controller,
       active() {
         return speech === lease && !controller.signal.aborted;
@@ -20,6 +23,7 @@ export function createDuplexCoordinator(stopPlayback = async () => {}) {
         if (speech === lease) speech = null;
       },
     };
+    lease.pub = { signal: controller.signal, active: lease.active, finish: lease.finish };
     speech = lease;
     if (externalSignal) {
       const abort = () => {
@@ -30,10 +34,11 @@ export function createDuplexCoordinator(stopPlayback = async () => {}) {
       if (externalSignal.aborted) abort();
       else externalSignal.addEventListener("abort", abort, { once: true });
     }
-    return { signal: controller.signal, active: lease.active, finish: lease.finish };
+    return lease.pub;
   }
 
-  async function interrupt() {
+  async function interrupt(id = "") {
+    if (id && speech?.id !== id) return;
     const current = speech;
     speech = null;
     current?.controller.abort();

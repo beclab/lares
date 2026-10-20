@@ -140,6 +140,7 @@ export const ZH = {
   "error.voice_tts_unavailable": "没有可用的语音播报模型，请先在语音设置里安装",
   "error.voice_speak_disabled": "语音播报是关着的",
   "error.voice_speak_failed": "语音播报失败，请重试",
+  "error.voice_playback_failed": "语音播报失败，请重试",
   "error.voice_speak_timeout": "语音播报超时，请重试",
   "error.voice_speak_unready": "当前不能保存语音播报开关",
   "error.voice_gpu_failed": "切换显卡模式失败（{detail}）。可以点重试；仍然失败，请到 Olares「设置 → GPU」查看显卡状态",
@@ -423,6 +424,7 @@ export const EN = {
   "error.voice_tts_unavailable": "No speech model is available. Install one in voice settings first",
   "error.voice_speak_disabled": "Speech playback is off",
   "error.voice_speak_failed": "Couldn't speak the answer, please retry",
+  "error.voice_playback_failed": "Couldn't speak the answer, please retry",
   "error.voice_speak_timeout": "Speech timed out, please retry",
   "error.voice_speak_unready": "Speech playback can't be saved right now",
   "error.voice_gpu_failed":

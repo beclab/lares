@@ -89,6 +89,31 @@ test("dictation hands raw text to preview without making any cleanup model call"
   await call.start(); transcript("raw text"); await tick(); assert.deepEqual(texts, ["raw text"]); await call.stop();
 });
 
+test("opening a conversation leaves the answer already on screen silent, then reads the next one", async () => {
+  const played: string[] = [];
+  const stops: unknown[] = [];
+  let state: any = { active: true, version: 1, sessionId: "s", running: false, utterance: { key: "1:0", turn: 1, step: 0, attemptId: "a", text: "already spoken", done: true, silent: false } };
+  const call = createVoiceConversation({
+    input: { capabilities: { bargeIn: false, echoTested: true }, capture: () => new Promise(() => {}), cancel() {} },
+    playback: { stop() {} },
+    readAloud: true,
+    onReply: (reply: any) => { played.push(reply.text); },
+    request: async (path: string, options: any) => {
+      if (path.endsWith("/playback/stop")) stops.push(options.body ?? null);
+      return { ok: true, body: state };
+    },
+  });
+  try {
+    await call.start({ sessionId: "s", continuous: true });
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    assert.deepEqual(played, []);
+    assert.deepEqual(stops, []);
+    state = { ...state, version: 2, utterance: { key: "2:0", turn: 2, step: 0, attemptId: "b", text: "next answer", done: true, silent: false } };
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    assert.deepEqual(played, ["next answer"]);
+  } finally { await call.stop(); }
+});
+
 test("a state poll returning after stop cannot rebind or restart speech", async () => {
   let finish: (value: any) => void = () => {};
   let played = 0;

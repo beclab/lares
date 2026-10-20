@@ -77,6 +77,20 @@ entrances:
     icon: https://app.cdn.olares.com/appstore/lares/icon_new.png
     authLevel: private
     openMethod: window
+  # Public call entrance. Commented out while only the in-cluster entrance is used.
+  # - name: webhook
+  #   host: lares-svc
+  #   port: 8081
+  #   title: Webhook
+  #   authLevel: public
+  #   invisible: true
+  # Same port, listed for other apps on this Olares. No public hostname.
+  - name: webhook-internal
+    host: lares-svc
+    port: 8081
+    title: Webhook
+    authLevel: internal
+    invisible: true
 options:
   apiTimeout: 0
   # Brand mark + PWA manifest public so the browser-tab favicon loads before the

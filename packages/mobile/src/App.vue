@@ -102,10 +102,6 @@
       @pick-command="pickCommand"
       @toggle-speak="toggleSpeak"
     />
-    <div v-if="voicePanelState?.readAloudError" class="lares-speak-notice" role="alert">
-      {{ voiceReadAloudError }}
-      <button type="button" @click="voicePanel.retryReadAloud()">{{ t('dictation.retry') }}</button>
-    </div>
     <LaresVoicePanel v-if="voicePanelState" :view="voicePanelState" :t="t"
       @close="runVoicePanel('close')" @edit="voicePanel.edit($event)" @preset="voicePanel.selectPreset($event, true).catch(() => {})"
       @complete="runVoicePanel('complete')" @discard="runVoicePanel('discard')" />
@@ -115,6 +111,7 @@
 <script>
 import { modelState, modelStateLabel } from "@olares/lares-core/router/model-state";
 import { matchVoiceShortcut } from "@olares/lares-core/voice/shortcuts";
+import { markRaw } from "vue";
 import { subscribeVoiceSettings } from "@olares/lares-core/larepass/settings";
 import { createVoicePanel } from "@olares/lares-core/voice/panel";
 import { mergeVoiceTranscript, subscribeVoiceHistory } from "@olares/lares-core/voice/projection";
@@ -533,7 +530,6 @@ export default {
     modelBlocked() {
       return !modelState(this.modelStatus).valid;
     },
-    voiceReadAloudError() { return this.t("settings.readAloudSyncFailed"); },
     voiceErrorText() {
       return this.voiceError ? messageFromCode(this.t, this.voiceError, "error.voice_failed") : "";
     },
@@ -578,7 +574,7 @@ export default {
       },
     });
     this.voiceSettingsUnsub = subscribeVoiceSettings((value) => {
-      this.voiceDefaultMode = value.config.mobileMode; this.voiceSettings = value;
+      this.voiceDefaultMode = value.config.mobileMode; this.voiceSettings = markRaw(value);
       const next = value.config.speak === true;
       if (this.voiceSpeak && !next) this.reader?.stop();
       this.voiceSpeak = next;
@@ -603,7 +599,7 @@ export default {
         return this.player?.play(wavBlob(sentence.audio));
       },
       halt: () => this.player?.stop(),
-      silence: () => void this.runtime.interruptSpeech?.(),
+      silence: (source) => void this.runtime.interruptSpeech?.(source),
       fail: (err) => this.showSpeakProblem(err),
     });
 
@@ -727,6 +723,7 @@ export default {
       this.items = snap.items;
       this.running = snap.running;
       this.runningSince = snap.runningSince || 0;
+      if (this.voiceCall) this.reader.stop();
       const target = this.voiceSpeak && !this.voiceCall && !document.hidden ? speakable(utterance, true) : null;
       if (target) this.reader.follow({ ...target, sessionId: snap.sessionId, source: { sessionId: snap.sessionId, turn: target.turn, step: target.step, attemptId: target.attemptId }, key: `${snap.sessionId}:${target.key}` });
       this.failed = snap.failed;
@@ -1008,7 +1005,7 @@ export default {
       try {
         await this.runtime.start({ workspaces: this.chatDevice === "desktop" });
         if (gen !== this.hostGen) return;
-        void this.runtime.settings.voice(false, { diagnostics: false }).then(value => { if (gen === this.hostGen) { this.voiceSettings = value; this.voiceDefaultMode = value.config.mobileMode; } }).catch(() => {});
+        void this.runtime.settings.voice(false, { diagnostics: false }).then(value => { if (gen === this.hostGen) { this.voiceSettings = markRaw(value); this.voiceDefaultMode = value.config.mobileMode; } }).catch(() => {});
         if (this.chatDevice !== "desktop") await this.runtime.refreshWorkspaces();
         await this.loadComposerMeta();
       } finally {
@@ -1280,7 +1277,7 @@ export default {
     async openDictation(preset) {
       if (document.hidden || navigator.onLine === false) return;
       if (!this.voiceSettings) {
-        try { this.voiceSettings = await this.runtime.settings.voice(false, { diagnostics: false }); }
+        try { this.voiceSettings = markRaw(await this.runtime.settings.voice(false, { diagnostics: false })); }
         catch { return; }
       }
       if (!laresVoiceAvailability(this.voiceSettings).dictation) return;
@@ -1302,6 +1299,7 @@ export default {
       await this.voicePanel.open({ mode: this.voiceDefaultMode, sessionId: this.sessionId || null });
     },
     onVoiceAction({ action, value }) {
+      if (action === "retryReadAloud") { void this.voicePanel.retryReadAloud(); return; }
       if (action === "stopPlayback") { void this.voicePanel.conversation?.controller.stopPlayback().catch(() => {}); return; }
       if (action === "setCancelArmed") { this.voicePanel.setCancelArmed(value); return; }
       if (["holdStart", "holdEnd", "finish", "start", "close"].includes(action)) void Promise.resolve(this.voicePanel[action](value)).catch(() => {});
@@ -1317,7 +1315,7 @@ export default {
       this.reader.stop(); this.player?.stop(); this.player?.unlock();
       let conversation;
       const reader = createSentencePlayer({
-        stream: device === "device" ? (value) => playAudioStream({ ...value, request: (path, options) => this.runtime.voiceRequest(path, options), headers: conversation.headers, socket: (ticket) => this.runtime.voiceSocket(ticket, "/api/lares/voice/stream") }) : undefined,
+        stream: (value) => playAudioStream({ ...value, request: (path, options) => this.runtime.voiceRequest(path, options), headers: conversation.headers, socket: (ticket) => this.runtime.voiceSocket(ticket, "/api/lares/voice/stream") }),
         send: (value) => conversation.speak(value),
         play: (sentence) => sentence.bluetooth === "played" ? Promise.resolve() : this.player.play(wavBlob(sentence.audio)),
         halt: () => this.player.stop(), silence: () => {},

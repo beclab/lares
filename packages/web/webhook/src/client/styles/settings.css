@@ -1,0 +1,81 @@
+.lares-webhook {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 720px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.lares-webhook-card {
+  display: flex;
+  flex-direction: column;
+  padding: 0 16px;
+  border: 0.5px solid var(--dsw-alias-settings-card-stroke);
+  border-radius: var(--dsw-radius-xl);
+  background: var(--dsw-alias-settings-card-fill);
+}
+
+.lares-webhook-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 56px;
+  padding: 12px 0;
+}
+
+.lares-webhook-row + .lares-webhook-row {
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.lares-webhook-row.is-block {
+  align-items: stretch;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lares-webhook-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.lares-webhook-label {
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.lares-webhook-hint {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.lares-webhook-contract {
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  border-radius: var(--dsw-radius-lg);
+  background: var(--dsw-alias-markdown-code-block);
+  color: var(--dsw-alias-label-primary);
+  font: 12px/18px ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+}
+
+.lares-webhook-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lares-webhook-note {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.lares-webhook-note.is-error {
+  color: var(--dsw-alias-state-error-primary);
+}

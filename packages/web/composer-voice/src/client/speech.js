@@ -42,7 +42,7 @@ function createReader() {
     send: (request) => postSpeak(request),
     play: (sentence) => (browserPlays("pc", sentence.bluetooth) ? browser.play(sentence.blob) : Promise.resolve()),
     halt: browser.stop,
-    silence: () => void postPlaybackStop().catch(() => {}),
+    silence: (source) => void postPlaybackStop(source).catch(() => {}),
   });
 }
 
@@ -92,7 +92,7 @@ export function SpeechPlayer({ sessionId, conversation, suspended = false }) {
   useEffect(() => {
     const latest = speech?.latest;
     if (!latest || document.hidden || !opened.current.has(latest.turn)) return;
-    const utterance = { ...latest, sessionId, source: { sessionId, turn: latest.turn, step: latest.step }, key: `${sessionId}:${latest.key}` };
+    const utterance = { ...latest, sessionId, source: { sessionId, turn: latest.turn, step: latest.step, attemptId: latest.attemptId }, key: `${sessionId}:${latest.key}` };
     if (suspended) {
       reader.current.stop();
       allowed.current = { key: utterance.key, speak: false, streaming: false, latest: utterance };

@@ -33,19 +33,7 @@ function streamMetric(options, event) {
 export async function playAudioStream(options) {
   const started = Date.now();
   const connection = await openAudioStream({ ...options, operation: "tts" });
-  if (!connection) {
-    const response = await options.request("/api/lares/voice/speak", { method: "POST", headers: options.headers, signal: options.signal, body: { text: options.text } });
-    if (!response?.ok) throw new Error(response?.body?.error?.code || "voice_stream_failed");
-    if (response.body.sentences === 0) return true;
-    if (response.body.bluetooth === "played") return true;
-    if (options.source) throw new Error("voice_reply_unavailable");
-    const fallback = createBrowserPlayer();
-    options.controls?.({ canPause: true, pause: () => fallback.pause(), resume: () => fallback.resume() });
-    options.onStatus?.("playing");
-    const cancel = () => fallback.stop(); options.signal?.addEventListener("abort", cancel, { once: true });
-    try { if (!options.signal?.aborted) await fallback.play(wavBlob(response.body.audio)); } finally { options.signal?.removeEventListener("abort", cancel); fallback.stop(); }
-    return true;
-  }
+  if (!connection) throw new Error("voice_stream_failed");
   const file = createBrowserPlayer();
   const player = createPcmStreamPlayer({ onProgress: (frames) => { if (connection.readyState === 1) connection.send(JSON.stringify({ type: "progress", frames })); },
     onMetric: (event) => { if (event.stage === "playback_started") options.onStatus?.("playing"); streamMetric(options, { ...event, durationMs: Date.now() - started }); } });
@@ -77,8 +65,9 @@ export async function playAudioStream(options) {
           else if (event.type === "done") { await player.finish(); complete = true; resolve(); }
         }).catch(fail);
       });
-      connection.addEventListener("error", () => fail(new Error("voice_disconnected")), { once: true });
-      connection.addEventListener("close", () => { options.signal?.removeEventListener("abort", cancelled); if (!complete) reject(new Error("voice_disconnected")); }, { once: true });
+      const dropped = () => new Error(options.signal?.aborted ? "voice_cancelled" : "voice_disconnected");
+      connection.addEventListener("error", () => fail(dropped()), { once: true });
+      connection.addEventListener("close", () => { options.signal?.removeEventListener("abort", cancelled); if (!complete) reject(dropped()); }, { once: true });
       if (options.signal?.aborted) cancelled();
     });
     return true;
@@ -113,8 +102,9 @@ export async function startTranscriptionStream(options) {
       else if (event.type === "error") fail(new Error(event.code));
     } catch { fail(new Error("voice_stream_failed")); }
   });
-  connection.addEventListener("close", () => fail(new Error("voice_disconnected")), { once: true });
-  connection.addEventListener("error", () => fail(new Error("voice_disconnected")), { once: true });
+  const dropped = () => fail(new Error(options.signal?.aborted ? "voice_cancelled" : "voice_disconnected"));
+  connection.addEventListener("close", dropped, { once: true });
+  connection.addEventListener("error", dropped, { once: true });
   if (options.signal?.aborted) fail(new Error("voice_cancelled"));
   await ready;
   return {

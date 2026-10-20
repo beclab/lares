@@ -319,8 +319,9 @@ export function createHostClient(ports = {}) {
       const message = typeof error?.message === "string" && error.message ? error.message : code;
       throw Object.assign(new Error(message), { code });
     },
-    async interruptSpeech() {
-      const res = await request(`${VOICE_API}/playback/stop`, { method: "POST", headers: voiceHeaders("device") });
+    async interruptSpeech(source) {
+      const body = source && typeof source === "object" ? { sessionId: source.sessionId, turn: source.turn, step: source.step, attemptId: source.attemptId } : {};
+      const res = await request(`${VOICE_API}/playback/stop`, { method: "POST", headers: voiceHeaders("device"), body });
       return Boolean(res?.ok);
     },
     async openMux(signal) {

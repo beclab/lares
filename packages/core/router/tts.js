@@ -89,6 +89,9 @@ export async function synthesizeStream(request, onChunk) {
     const signal = request.signal
       ? AbortSignal.any([request.signal, timeout])
       : timeout;
+    // A complete PCM body. The Qwen speech engine's streaming generator does not
+    // yield, so `stream: true` holds the model slot until the client times out
+    // and the readout never leaves "preparing".
     res = await fetch(`${routerShimBaseUrl()}/audio/speech`, {
       method: "POST",
       headers: { "content-type": "application/json", accept: "audio/l16,audio/wav" },
@@ -96,7 +99,6 @@ export async function synthesizeStream(request, onChunk) {
         model: request.model,
         input: text,
         response_format: "pcm",
-        stream: true,
         ...(request.voice ? { voice: request.voice } : {}),
       }),
       signal,
@@ -121,15 +123,17 @@ export async function synthesizeStream(request, onChunk) {
   if (!Number.isInteger(sampleRate) || sampleRate < 8000 || sampleRate > 192000) throw new VoiceError("voice_audio_format", 502, "missing or invalid PCM sample rate");
   await request.onFormat?.({ sampleRate, channels: 1, encoding: "pcm_s16le" });
   const reader = res.body.getReader();
+  let bytes = 0;
   try {
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    if (value?.byteLength) await onChunk(Buffer.from(value));
+    if (value?.byteLength) { bytes += value.byteLength; await onChunk(Buffer.from(value)); }
   }
   } finally {
     await reader.cancel().catch(() => {});
     reader.releaseLock();
   }
+  if (!bytes) throw new VoiceError("voice_audio_format", 502, "speech returned no audio");
   return { streamed: true, sampleRate };
 }

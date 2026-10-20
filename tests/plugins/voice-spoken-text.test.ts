@@ -83,14 +83,13 @@ test("unfinished syntax is held and final literal text is flushed without state 
   assert.deepEqual(speechSegments("[literal text"), ["[literal text"]);
 });
 
-test("the shared browser fallback completes empty speech without creating a player", async () => {
+test("a chat readout does not synthesize on its own when the stream is unavailable", async () => {
   const paths: string[] = [];
-  const result = await playAudioStream({ text: "🐭", request: async (path: string) => {
+  await assert.rejects(playAudioStream({ text: "🐭", request: async (path: string) => {
     paths.push(path);
-    return { ok: true, body: path.endsWith("/ticket") ? { supported: false } : { sentences: 0 } };
-  } });
-  assert.equal(result, true);
-  assert.deepEqual(paths, ["/api/lares/voice/stream/ticket", "/api/lares/voice/speak"]);
+    return { ok: true, body: { supported: false } };
+  } }), /voice_stream_failed/);
+  assert.deepEqual(paths, ["/api/lares/voice/stream/ticket"]);
 });
 
 test("buffered and websocket Lares speech clean the actual outgoing HTTP body; raw TTS does not", async (t) => {

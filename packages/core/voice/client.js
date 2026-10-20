@@ -106,8 +106,15 @@ export async function postSpeak({ key, text, done, part }) {
   };
 }
 
-export async function postPlaybackStop(signal) {
-  const res = await fetch(`${API}/playback/stop`, { method: "POST", signal, headers: voiceHeaders() });
+export async function postPlaybackStop(source, signal) {
+  const body = source && typeof source === "object" && typeof source.addEventListener !== "function" ? source : undefined;
+  if (!body || typeof body.sessionId !== "string" || !Number.isSafeInteger(body.turn)) return { stopped: false };
+  const res = await fetch(`${API}/playback/stop`, {
+    method: "POST",
+    signal: body ? signal : source,
+    headers: { ...voiceHeaders(), ...(body ? { "content-type": "application/json" } : {}) },
+    body: body ? JSON.stringify({ sessionId: body.sessionId, turn: body.turn, step: body.step, attemptId: body.attemptId }) : undefined,
+  });
   if (!res.ok) throw new Error(String(res.status));
   return res.json();
 }

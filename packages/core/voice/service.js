@@ -22,6 +22,7 @@ import {
 } from "./session.js";
 import { createCaptureSession } from "./capture.js";
 import { createDuplexCoordinator } from "./duplex.js";
+import { utteranceKey } from "./synthesis-run.js";
 import { createDeviceLease } from "./lease.js";
 import { normalizeSttPcm } from "./pcm.js";
 import { gapAfter, createSpeechSegmenter } from "./script.js";
@@ -486,8 +487,8 @@ async function readAloud(readout, model, voice, lease, options) {
 
 export function playbackStatus(scope) { return { playing: (scope?.duplex ?? duplex).isSpeaking() }; }
 
-export function interruptSpeech(scope) {
-  return (scope?.duplex ?? duplex).interrupt();
+export function interruptSpeech(scope, source) {
+  return (scope?.duplex ?? duplex).interrupt(utteranceKey(source));
 }
 
 export function languageForTranscribe(requestedLanguage, configLanguage) {
