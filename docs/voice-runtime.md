@@ -442,6 +442,8 @@ Capture, transcription, synthesis, playback and bounded metrics routes remain in
 
 ## External composite WebSocket
 
+This section describes the current implementation. The target is the unified [`lares-realtime-v1` protocol](realtime-protocol.md), which replaces this bridge, the native `/realtime` events and the pipeline session control; until its [migration plan](realtime-protocol.md#migration-plan) lands, the behavior below stays authoritative for shipped builds.
+
 This endpoint is disabled by default. It implements `olares-voice-ws-v1`, not all OpenAI Realtime APIs. It accepts mono PCM16 at 24 kHz, manual commit or server energy/VAD endpointing, and returns transcript/text/audio events. It supports explicit context resume and text-only output. No client tools, arbitrary instructions/business binding, WebRTC, SIP or precise truncation are advertised.
 
 External clients may use `@olares/lares-core/voice/protocol-client` with an already authenticated Router socket. Call `configure`, append base64 PCM frames, then `commit`; `discard` clears input and `stopOutput` stops generation without cancelling Lares. Reconfiguration with `contextId` is allowed only before input/turns; wait for `session.updated` before sending audio after a context change. Call `playbackCompleted()` only after output actually drains; until that acknowledgement, the half-duplex server rejects new audio. Applications must not feed their speaker output back into ASR. There is no automatic transport replay.
@@ -462,7 +464,7 @@ Router registration uses an OpenAI-compatible provider whose base URL ends in `/
 {"extensions":{"voice_service":{"protocol":"olares-voice-ws-v1","billing":"child-models"}}}
 ```
 
-Router signs a fresh resolved identity on each upstream dial. Composite responses are trace records with zero extra model charge and `usage_in_child_models`; actual child ASR/LLM/TTS calls retain their own usage. No native token counts are invented. Dependency IDs may not point back to the public voice models. See Router ADR-81 and branch `codex/composite-voice-service` (commit `de57be9b`).
+Router signs a fresh resolved identity on each upstream dial. Composite responses are trace records with zero extra model charge and `usage_in_child_models`; actual child ASR/LLM/TTS calls retain their own usage. No native token counts are invented. Dependency IDs may not point back to the public voice models. Router ADR-81, which defined this signed-identity path, is superseded by Router ADR-83 (proposed): Router dials with a Lares-issued voice key as `Authorization: Bearer` and forwards no caller identity. That change is not implemented on either side yet.
 
 ## Native Realtime gate
 

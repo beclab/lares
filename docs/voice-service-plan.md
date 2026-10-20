@@ -55,6 +55,7 @@ The sections below describe earlier deliveries; the PC revision supersedes their
 - [ ] Validate against real native/composite models and PostgreSQL composite settlement.
 - [x] Run focused/full regression and typecheck/build; record the unrelated file-preview cleanup failure.
 - [ ] Complete real browser/mobile/host/Bluetooth model and hardware acceptance; do not enable gates before it passes.
+- [ ] Unify voice sessions on [`lares-realtime-v1`](realtime-protocol.md) following its [migration plan](realtime-protocol.md#migration-plan): unified handler, voice keys, Router Bearer dialing (Router ADR-83), client migration, then removal of the bridge, old `/realtime` events and pipeline session control.
 
 ## Verification and rollout
 
