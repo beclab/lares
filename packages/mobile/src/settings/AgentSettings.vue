@@ -74,6 +74,7 @@
         </select>
       </label>
       <p v-if="voiceError" class="lares-agent__hint" data-status="error">{{ voiceError }}</p>
+      <VoiceKeys :key="`keys-${hostKey}`" :client="voiceKeys" :t="tVoice" />
     </section>
     <section class="lares-agent__group">
       <h2>{{ tSearch("settings.title") }}</h2>
@@ -138,6 +139,7 @@ import { adoptHost } from "../runtime.js";
 import { createT } from "../i18n.js";
 import { chatDevice, DEVICE_DESKTOP } from "../layout.js";
 import VoicePreferences from "./VoicePreferences.vue";
+import VoiceKeys from "./VoiceKeys.vue";
 import LaresSettingRow from "./SettingRow.vue";
 import LaresSheet from "./Sheet.vue";
 import LaresSelect from "./Select.vue";
@@ -154,7 +156,7 @@ function itemLabel(items, id) {
 
 export default {
   name: "LaresAgentSettings",
-  components: { VoicePreferences, LaresSettingRow, LaresSheet, LaresSelect },
+  components: { VoicePreferences, VoiceKeys, LaresSettingRow, LaresSheet, LaresSelect },
   expose: ["reload", "beforeLeave"],
   props: {
     locale: { type: String, default: "en" },
@@ -205,6 +207,7 @@ export default {
       return hostSessionKey(this.ports);
     },
     ttsFetch() { return createHostClient(this.ports).ttsFetch; },
+    voiceKeys() { return createHostClient(this.ports).voiceKeys; },
     settings() {
       return createHostClient(this.ports).settings;
     },

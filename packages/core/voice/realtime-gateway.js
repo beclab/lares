@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { WebSocket, WebSocketServer } from "ws";
 import { routerAuthHeaders, routerGatewayUrl } from "../router/gateway.js";
 import { createRealtimeDelegate, LARES_TOOL, REALTIME_INSTRUCTIONS, validatedRealtimeModels } from "./realtime.js";
+import { REALTIME_CAPABILITIES } from "./lares-realtime-gateway.js";
 
 /** HTTP-issued, single-use tickets keep upstream credentials and tools on the Host. */
 export function createRealtimeGateway({ models, config, audio, record = () => {}, env = process.env }) {
@@ -9,6 +10,7 @@ export function createRealtimeGateway({ models, config, audio, record = () => {}
   const connections = new Set();
   const server = new WebSocketServer({ noServer: true, maxPayload: 96 * 1024, perMessageDeflate: false, handleProtocols: (values) => values.has("lares-voice") ? "lares-voice" : false });
   return {
+    owns(req) { return tickets.has(String(req.headers["sec-websocket-protocol"] || "").split(",").map((s) => s.trim()).find((s) => s.startsWith("lares-ticket."))?.slice(13)); },
     async ticket(scope) {
       if (!scope.active || !scope.session) throw Object.assign(new Error("voice session closed"), { status: 409, code: "voice_session_closed" });
       if (scope.voiceConfig && !["chat", "assistant"].includes(scope.voiceConfig.preset)) throw Object.assign(new Error("This preset requires the pipeline backend"), { status: 409, code: "voice_preset_backend_unsupported" });
@@ -51,10 +53,18 @@ export function createRealtimeGateway({ models, config, audio, record = () => {}
         let responding = false;
         let userSpeaking = false;
         const completed = [];
+        // Lares clients speak lares-realtime-v1 here too (docs/realtime-protocol.md); the native upstream stays OpenAI.
+        const translate = (value) => {
+          if (value.type === "lares.ready") return { type: "session.created", session: { id: scope.id, object: "realtime.session", type: "realtime", model: grant.model, output_modalities: [scope.readAloud ? "audio" : "text"], lares: { capabilities: { ...REALTIME_CAPABILITIES, message_truncation: scope.device === "headset" ? "none" : "played", backend: "native" }, context_id: scope.contextId, device: scope.device === "headset" ? "headset" : "device" } } };
+          if (value.type === "lares.error") return { type: "error", error: { type: "server_error", code: value.code, message: "Voice session failed" } };
+          if (value.type === "lares.playback") return { type: "lares.device.playback", playing: value.playing };
+          if (value.type === "lares.task") return { type: "lares.task.updated", task_id: value.requestId || null, status: value.status, session_id: value.sessionId || null };
+          return value;
+        };
         const sendClient = (value) => {
           if (client.readyState !== WebSocket.OPEN) return;
           if (client.bufferedAmount > 1024 * 1024) { close("voice_audio_backpressure"); return; }
-          client.send(JSON.stringify(value));
+          client.send(JSON.stringify(translate(value)));
         };
         const send = (value) => {
           if (closed || upstream.readyState !== WebSocket.OPEN) return;
@@ -151,9 +161,12 @@ export function createRealtimeGateway({ models, config, audio, record = () => {}
           try { event = JSON.parse(raw.toString()); } catch { close("voice_realtime_protocol"); return; }
           if (!event || typeof event !== "object" || Array.isArray(event)) { close("voice_realtime_protocol"); return; }
           if (event.type === "input_audio_buffer.append" && scope.device === "device" && typeof event.audio === "string" && event.audio.length <= 64 * 1024 && /^[A-Za-z0-9+/]*={0,2}$/.test(event.audio)) send({ type: event.type, audio: event.audio });
-          else if (event.type === "lares.output" && typeof event.enabled === "boolean") { scope.readAloud = event.enabled; send({ type: "session.update", session: { output_modalities: event.enabled ? ["audio"] : ["text"] } }); }
-          else if (event.type === "lares.input.pause") { send({ type: "input_audio_buffer.clear" }); void Promise.resolve(audioPort?.pauseInput()).catch(() => close("voice_device_unavailable")); }
-          else if (event.type === "lares.input.resume") void Promise.resolve(audioPort?.resumeInput()).catch(() => close("voice_device_unavailable"));
+          else if (event.type === "session.update" && event.session && Object.keys(event.session).every((key) => key === "output_modalities") && Array.isArray(event.session.output_modalities) && ["audio", "text"].includes(event.session.output_modalities[0])) {
+            scope.readAloud = event.session.output_modalities[0] === "audio"; send({ type: "session.update", session: { output_modalities: [event.session.output_modalities[0]] } });
+          }
+          else if (event.type === "lares.playback.progress" || event.type === "lares.playback.completed") return;
+          else if (event.type === "lares.device.input.pause") { send({ type: "input_audio_buffer.clear" }); void Promise.resolve(audioPort?.pauseInput()).catch(() => close("voice_device_unavailable")); }
+          else if (event.type === "lares.device.input.resume") void Promise.resolve(audioPort?.resumeInput()).catch(() => close("voice_device_unavailable"));
           else if (event.type === "response.cancel") { audioGeneration++; send({ type: "response.cancel" }); void Promise.resolve(audioPort?.interrupt()).catch(() => close("voice_device_unavailable")); }
           else if (event.type === "conversation.item.truncate" && typeof currentItem === "string" && event.item_id === currentItem && event.content_index === 0 && Number.isInteger(event.audio_end_ms) && event.audio_end_ms >= 0 && event.audio_end_ms <= Math.ceil(receivedMs)) send({ type: event.type, item_id: currentItem, content_index: 0, audio_end_ms: event.audio_end_ms });
           else close("voice_realtime_event_forbidden");

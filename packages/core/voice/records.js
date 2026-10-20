@@ -56,7 +56,7 @@ export function createVoiceRecords({ directory = join(dshHome(), "voice-records"
         taskId: record.taskId || null, requestId: record.requestId || record.taskId || record.turnId,
         taskTurn: Number.isInteger(record.taskTurn) ? record.taskTurn : null,
         anchorSeq: previous?.anchorSeq ?? (Number.isInteger(record.anchorSeq) ? record.anchorSeq : -1),
-        status: ["streaming", "failed"].includes(record.status) ? record.status : "completed",
+        status: ["streaming", "failed", "truncated"].includes(record.status) ? record.status : "completed",
         sequence: previous?.sequence || (index >= 0 ? index + 1 : value.records.length + 1), at: previous?.at || now() };
       if (previous && JSON.stringify(previous) === JSON.stringify(next)) return value;
       if (index < 0) value.records.push(next); else value.records[index] = next;

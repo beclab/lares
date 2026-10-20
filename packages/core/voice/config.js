@@ -55,8 +55,8 @@ export function validateConfigPatch(raw) {
       patch[key] = value;
       continue;
     }
-    if (["mode", "mobileMode", "device", "backend"].includes(key)) {
-      const choices = { mobileMode: ["single", "continuous"], mode: ["single", "continuous"], device: ["auto", "device", "headset"], backend: ["pipeline", "realtime"] };
+    if (["mode", "mobileMode", "device", "backend", "transport"].includes(key)) {
+      const choices = { mobileMode: ["single", "continuous"], mode: ["single", "continuous"], device: ["auto", "device", "headset"], backend: ["pipeline", "realtime"], transport: ["unified", "legacy"] };
       if (!choices[key].includes(value)) invalid(`invalid ${key}`);
       patch[key] = value;
       continue;

@@ -16,6 +16,8 @@ export const VOICE_DEFAULTS = {
   recoveryTimeoutMs: 120_000,
   device: "auto",
   backend: "pipeline",
+  // Lares clients speak lares-realtime-v1 by default; "legacy" keeps the pipeline endpoints until device acceptance.
+  transport: "unified",
   realtimeModel: "",
   model: "",
   ttsModel: "",
