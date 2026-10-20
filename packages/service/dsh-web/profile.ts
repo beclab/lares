@@ -314,6 +314,39 @@ export function patchSettingsNavIcon(): void {
   console.log("[lares] settings nav icons → section component navIcon");
 }
 
+const COMPACTION_HEADROOM_ANCHOR = "const headroomTokens = config.headroomTokens ?? 65536;";
+
+export const LARES_COMPACTION_HEADROOM = 8192;
+
+const COMPACTION_HEADROOM_REPLACEMENT =
+  `const headroomTokens = config.headroomTokens ?? ${LARES_COMPACTION_HEADROOM};`;
+
+export function useLaresCompactionHeadroom(source: string): string {
+  return replaceRequired(source, COMPACTION_HEADROOM_ANCHOR, COMPACTION_HEADROOM_REPLACEMENT);
+}
+
+/**
+ * Auto-compaction fires at min(0.8 × window, window − request maxTokens − headroom),
+ * and the summary request's output cap defaults to the same headroom. Upstream's
+ * 65536 puts a 102k Router model's trigger at ~28k, below what one compaction
+ * leaves behind, so every compaction runs twice and then fails.
+ *
+ * The live compaction-basic rows sit inside each agent preset's `config.plugins`,
+ * which profile patches cannot address by id (the top-level row dsh-web-app
+ * disables is the only one they reach), so the default itself is replaced.
+ *
+ * Remove once preset plugin rows accept profile overrides.
+ */
+export function patchCompactionHeadroom(): void {
+  const lib = require.resolve("@deepseek-ai/dsh-compaction-basic");
+  const source = readFileSync(lib, "utf8");
+  const patched = useLaresCompactionHeadroom(source);
+  if (patched === source) return;
+
+  writeFileSync(lib, patched);
+  console.log(`[lares] compaction headroom → ${LARES_COMPACTION_HEADROOM}`);
+}
+
 const SIDEBAR_FENCE_ANCHOR =
   'for (const entry of ctx.loader.entries()) if (entry.options.name === "connection") return entry.options.config?.trustedHosts ?? [];';
 
