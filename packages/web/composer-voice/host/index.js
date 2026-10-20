@@ -3,6 +3,7 @@ import { createReplyStreamRegistry } from "@olares/lares-core/voice/reply-stream
 import { createAudioStreamGateway } from "@olares/lares-core/voice/stream-gateway";
 import { createLaresRealtimeGateway } from "@olares/lares-core/voice/lares-realtime-gateway";
 import { createVoiceKeyStore } from "@olares/lares-core/voice/keys";
+import { busyEnterBehavior, CONVERSATION_SETTINGS_NAMESPACE } from "@olares/lares-core/larepass/submission-settings";
 import { createRouterAudio } from "@olares/lares-core/voice/router-audio";
 import { createVoiceHostService } from "@olares/lares-core/voice/host-service";
 import { registerRealtime } from "./realtime.js";
@@ -34,6 +35,7 @@ import {
   voiceModelsPayload,
   voiceCapabilitiesPayload,
   voiceStatusPayload,
+  openRealtimeHostAudio,
 } from "@olares/lares-core/voice/service";
 import { bluetoothRequest, ensureBluetoothReady } from "@olares/lares-core/voice/link";
 import { gpuAppAction, gpuModePayload, saveSlicePlan, switchReadingMode } from "@olares/lares-core/voice/gpu-mode";
@@ -42,7 +44,7 @@ import { SPOKEN_PROMPT } from "@olares/lares-core/voice/agent-session";
 import { writeReport } from "@olares/lares-core/log/report";
 
 export const name = "lares-composer-voice";
-export const inject = ["webServer", "sessionController"];
+export const inject = ["webServer", "sessionController", "settings"];
 
 const ROUTE_PREFIX = "/api/lares/voice";
 const require = createRequire(import.meta.url);
@@ -220,6 +222,12 @@ async function handleTranscribe(req, res) {
   }
 }
 
+/** The owner's busy-Enter choice also decides a spoken turn that arrives while the Agent runs. */
+function busyEnterDefault(ctx) {
+  try { return busyEnterBehavior(ctx.settings?.describe?.().find((descriptor) => descriptor.ns === CONVERSATION_SETTINGS_NAMESPACE)?.value?.busyEnter); }
+  catch { return "queue"; }
+}
+
 /** @type {Record<string, Record<string, (req, res) => Promise<void>>>} */
 let voiceHost;
 let realtime;
@@ -348,9 +356,10 @@ export function apply(ctx) {
   voiceKeys = createVoiceKeyStore();
   ctx.on("api-session/removed", (sessionId) => voiceHost.remove(sessionId));
   ctx.effect(() => {
-    const keyed = createLaresRealtimeGateway({ service: voiceHost, config: readConfig, ...createRouterAudio(readConfig), keys: voiceKeys, hostOwner: routerEndUser() });
-    realtime = registerRealtime(ctx, voiceHost, keyed);
-    return () => { realtime.dispose(); keyed.close(); };
+    const unified = createLaresRealtimeGateway({ service: voiceHost, config: readConfig, ...createRouterAudio(readConfig), keys: voiceKeys, hostOwner: routerEndUser(),
+      hostAudio: openRealtimeHostAudio, busyDefault: () => busyEnterDefault(ctx) });
+    realtime = registerRealtime(ctx, voiceHost, unified);
+    return () => { realtime.dispose(); unified.close(); };
   });
   ctx.effect(
     () => ctx.webServer.register({ kind: "prefix", path: ROUTE_PREFIX, handler: voiceHandler }),

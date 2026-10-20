@@ -194,6 +194,7 @@
     "./voice/records": "./voice/records.js",
     "./voice/dialogue": "./voice/dialogue.js",
     "./voice/keys": "./voice/keys.js",
+    "./router/session-alias": "./router/session-alias.js",
     "./voice/lares-realtime-gateway": "./voice/lares-realtime-gateway.js",
     "./voice/router-audio": "./voice/router-audio.js",
     "./voice/protocol-client": "./voice/protocol-client.js",

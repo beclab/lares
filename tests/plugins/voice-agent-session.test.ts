@@ -108,3 +108,39 @@ test("queue and steer retain each request's result instead of overwriting pendin
   assert.equal(h.session.snapshot().running, false);
   await h.session.close();
 });
+
+test("withdraw removes a queued prompt from the dsh inbox and cancels only the running turn", async () => {
+  const frames: any[] = [];
+  let wake: (() => void) | null = null;
+  const removed: any[] = [];
+  let cancelled = 0;
+  const api = {
+    create: async () => ({ sessionId: "voice-session" }),
+    async *follow(_request: unknown, signal: AbortSignal) {
+      yield { type: "snapshot", records: [], projections: { asOfSeq: 0, values: { inbox: { "next-turn": [] } } } };
+      while (!signal.aborted) {
+        if (frames.length) { yield frames.shift(); continue; }
+        await new Promise<void>((resolve) => { wake = resolve; signal.addEventListener("abort", resolve, { once: true }); });
+      }
+    },
+    prompt: async () => ({ accepted: true }),
+    cancel: async () => { cancelled++; },
+    updateQueue: async (request: any) => { removed.push(request); return { accepted: true }; },
+  };
+  const session = createVoiceAgentSession(api);
+  const event = (seq: number, type: string, data: any) => { frames.push({ type: "event", event: { seq, type, data } }); wake?.(); };
+  await session.submit("first", "running-one");
+  await session.submit("second", "queued-two");
+  event(1, "turn/start", { turn: 1 });
+  event(2, "user/message", { source: { kind: "user", rpcId: "running-one" } });
+  event(3, "agent/inbox/spliced", { target: "next-turn", start: 0, removedCount: 0, inserted: [{ id: "inbox-2", source: { kind: "user", rpcId: "queued-two" } }] });
+  await tick();
+  assert.equal(await session.withdraw("queued-two"), "withdrawn");
+  assert.deepEqual(removed, [{ sessionId: "voice-session", itemId: "inbox-2", action: { kind: "remove" } }]);
+  assert.equal(session.snapshot().tasks.find((task: any) => task.requestId === "queued-two").status, "cancelled");
+  assert.equal(cancelled, 0);
+  assert.equal(await session.withdraw("running-one"), "cancelled");
+  assert.equal(cancelled, 1);
+  assert.equal(await session.withdraw("unknown"), "not_cancellable");
+  await session.close();
+});
