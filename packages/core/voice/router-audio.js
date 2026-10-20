@@ -1,6 +1,6 @@
 import { WebSocket } from "ws";
 import { ttsVoiceForModel } from "./tts-voice.js";
-import { listModels, pickSttModelId, transcribe } from "../router/stt.js";
+import { listModels, pickSttModelId, pickTtsModelId, transcribe } from "../router/stt.js";
 import { routerAuthHeaders, routerGatewayUrl } from "../router/gateway.js";
 import { pcmToWav, synthesizeStream } from "../router/tts.js";
 import { normalizeSttPcm } from "./pcm.js";
@@ -21,7 +21,8 @@ const routerSession = (scope) => scope.routerSessionId ? { "x-session-id": scope
 
 export function createRouterAudio(config) {
   return {
-    transcribe: (pcm, scope) => transcribe({ bytes: pcmToWav(pcm, 24000), filename: "voice.wav", contentType: "audio/wav", model: config().model || "default-stt", language: scope.voiceOverrides?.language || config().language || undefined, signal: scope.voiceAbort?.signal, once: true, headers: routerSession(scope) }),
+    // Same resolution as the streaming path: a configured model that is not installed falls back to one that is.
+    transcribe: async (pcm, scope) => transcribe({ bytes: pcmToWav(pcm, 24000), filename: "voice.wav", contentType: "audio/wav", model: pickSttModelId(await listModels(), config().model) || config().model || "default-stt", language: scope.voiceOverrides?.language || config().language || undefined, signal: scope.voiceAbort?.signal, once: true, headers: routerSession(scope) }),
     /**
      * Streaming ASR for one turn when the selected model supports it: 24 kHz PCM in,
      * partial transcripts out. Returns null so the caller keeps the batch path otherwise.
@@ -61,7 +62,7 @@ export function createRouterAudio(config) {
     },
     async synthesize(text, scope, onChunk) {
       const settings = { ...structuredClone(config()), ...scope.voiceOverrides?.voice && { voice: scope.voiceOverrides.voice } };
-      const model = settings.ttsModel || "default-tts";
+      const model = pickTtsModelId(await listModels(), settings.ttsModel) || settings.ttsModel || "default-tts";
       const chunks = [];
       let convert = null;
       const write = async (pcm) => { if (onChunk) await onChunk(pcm); else chunks.push(pcm); };
