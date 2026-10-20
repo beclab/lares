@@ -16,6 +16,7 @@ import {
   webhookView,
   WEBHOOK_ROUTE,
 } from "@olares/lares-core/webhook/config";
+import { internalRealtimeUpgrade } from "@olares/lares-core/voice/internal-upgrade";
 import { createJobBook, submitPrompt } from "./session.js";
 
 export const name = "lares-webhook";
@@ -118,6 +119,8 @@ function listenWebhookEntrance(ctx, book) {
     }
     handler(req, res);
   });
+  // The same internal entrance carries Router's lares-realtime-v1 socket (Router ADR-83).
+  server.on("upgrade", internalRealtimeUpgrade);
   server.on("error", (err) => {
     const message = err instanceof Error ? err.message : String(err);
     ctx.logger?.error?.(`webhook entrance :${port} failed: ${message}`);

@@ -3,6 +3,7 @@ import { createReplyStreamRegistry } from "@olares/lares-core/voice/reply-stream
 import { createAudioStreamGateway } from "@olares/lares-core/voice/stream-gateway";
 import { createLaresRealtimeGateway } from "@olares/lares-core/voice/lares-realtime-gateway";
 import { createVoiceKeyStore } from "@olares/lares-core/voice/keys";
+import { publishRealtimeUpgrade } from "@olares/lares-core/voice/internal-upgrade";
 import { busyEnterBehavior, CONVERSATION_SETTINGS_NAMESPACE } from "@olares/lares-core/larepass/submission-settings";
 import { createRouterAudio } from "@olares/lares-core/voice/router-audio";
 import { createVoiceHostService } from "@olares/lares-core/voice/host-service";
@@ -365,7 +366,8 @@ export function apply(ctx) {
       onError: (cause, scope) => writeReport({ scope: "voice", event: "realtime-error", voiceId: scope.id, code: cause?.code || cause?.message || "voice_failed" }),
       onOpen: (fields) => writeReport({ scope: "voice", event: "realtime-open", ...fields }) });
     realtime = registerRealtime(ctx, voiceHost, unified);
-    return () => { realtime.dispose(); unified.close(); };
+    const unpublish = publishRealtimeUpgrade((req, socket, head) => unified.upgrade(req, socket, head));
+    return () => { unpublish(); realtime.dispose(); unified.close(); };
   });
   ctx.effect(
     () => ctx.webServer.register({ kind: "prefix", path: ROUTE_PREFIX, handler: voiceHandler }),
