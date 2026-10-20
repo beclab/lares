@@ -442,9 +442,9 @@ Capture, transcription, synthesis, playback and bounded metrics routes remain in
 
 ## Server-side Realtime callers
 
-Router and other server-side callers use [`lares-realtime-v1`](realtime-protocol.md) on `/api/lares/voice/realtime` with `Authorization: Bearer <voice key>`; sockets that carry a ticket instead still reach the native gateway below. What the build implements is listed in the spec's [implementation status](realtime-protocol.md#implementation-status).
+Lares desktop and mobile (by default) and server-side callers such as Router all use [`lares-realtime-v1`](realtime-protocol.md) on `/api/lares/voice/realtime`: Lares clients with a ticket, server-side callers with `Authorization: Bearer <voice key>`. The voice setting `transport: "legacy"` returns Lares clients to the pipeline endpoints above until device acceptance. What the build implements is listed in the spec's [implementation status](realtime-protocol.md#implementation-status).
 
-The owner issues and revokes voice keys through the authenticated Host API; there is no settings UI yet. Only SHA-256 hashes are stored in `$DSH_HOME/voice-input/keys.json`, and the file is re-read on every connection, so revocation applies to the next connection without a restart. A key lists its allowed models (`voice-dictation`, `voice-chat`, `voice-assistant`, `voice-direct`) and may pin `sessionId` / `workspaceId`. With no key there is no access.
+The owner issues and revokes voice keys in voice settings (desktop and mobile), backed by the authenticated Host API. Only SHA-256 hashes are stored in `$DSH_HOME/voice-input/keys.json`, and the file is re-read on every connection, so revocation applies to the next connection without a restart. A key lists its allowed models (`voice-dictation`, `voice-chat`, `voice-assistant`, `voice-direct`) and may pin `sessionId` / `workspaceId`. With no key there is no access.
 
 ```sh
 curl -X POST .../api/lares/voice/keys -d '{"name":"Router","models":["voice-dictation","voice-chat"]}'   # returns the key once
@@ -454,13 +454,13 @@ curl -X DELETE .../api/lares/voice/keys -d '{"id":"<id>"}'
 
 The caller is the key owner; identity headers on the request are ignored. `voice-assistant` and `voice-direct` operate the owner's Agent, so grant them only to keys whose Router side is restricted to the owner.
 
-Register in Router an OpenAI-compatible provider with base URL `http://<lares service>/api/lares/voice` and the voice key as its encrypted credential, models `voice-dictation`, `voice-chat`, `voice-assistant`, `voice-direct` with `mode=realtime` and:
+Register in Router an OpenAI-compatible provider with base URL `https://<webhook-internal entrance host>/api/lares/voice` (the per-user namespace refuses direct Service traffic from router-shared, so Router comes through the internal entrance on 8081) and the voice key as its encrypted credential, models `voice-dictation`, `voice-chat`, `voice-assistant`, `voice-direct` with `mode=realtime` and:
 
 ```json
 {"extensions":{"voice_service":{"protocol":"lares-realtime-v1","billing":"child-models"}}}
 ```
 
-Router dials with the key as Bearer and its realtime session ID as `X-Session-Id` (Router ADR-83). Every `response.done` carries all-zero OpenAI `usage`; Router records a zero-charge `usage_in_child_models` row, while the ASR and TTS requests Lares makes for that session carry the same `X-Session-Id` and are metered normally. Dependency model IDs may not point back to the public voice models. Before registering, confirm that Router in `router-shared` can reach the Lares Service under the Olares network policy.
+Router dials with the key as Bearer and its realtime session ID as `X-Session-Id` (Router ADR-83). Every `response.done` carries all-zero OpenAI `usage`; Router records a zero-charge `usage_in_child_models` row, while the ASR and TTS requests Lares makes for that session carry the same `X-Session-Id` and are metered normally. Dependency model IDs may not point back to the public voice models. Before registering, probe the internal entrance from router-shared.
 
 `@olares/lares-core/voice/protocol-client` wraps an authenticated socket: `configure` (which also announces playback acknowledgement), `append`, `commit`, `discard`, `say`, `playbackProgress`, `playbackCompleted`, `stopOutput` and `cancelTask`. Once a client has sent any playback acknowledgement, the half-duplex server rejects new audio until the current reply is acknowledged. Applications must not feed their speaker output back into ASR.
 

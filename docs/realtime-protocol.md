@@ -1,9 +1,9 @@
 # Lares Realtime protocol (`lares-realtime-v1`)
 
-Status: partly implemented. Voice-key callers such as Router get
-`lares-realtime-v1` today; Lares's own clients still use the pipeline and
-native endpoints described in [Voice runtime](voice-runtime.md). What is live
-and what is still target is listed in [Implementation status](#implementation-status).
+Status: implemented except full-duplex acceptance; see
+[Implementation status](#implementation-status). Lares desktop and mobile use
+it by default, and the voice setting `transport: "legacy"` keeps the earlier
+pipeline endpoints in [Voice runtime](voice-runtime.md) until device acceptance.
 Router's side is
 [Router ADR-83](https://github.com/beclab/router/blob/main/ARCHITECTURE.md#adr-83),
 which supersedes ADR-81.
@@ -58,7 +58,7 @@ One endpoint: `GET /api/lares/voice/realtime?model=<model>`, WebSocket upgrade.
 | Caller | Authentication | Entry |
 | --- | --- | --- |
 | Lares desktop and mobile | `POST /api/lares/voice/realtime/ticket` returns a single-use ticket valid for 30 s; connect with subprotocols `lares-voice, lares-ticket.<ticket>`. Browsers cannot set headers, so the ticket stays | Olares entrance; the platform has authenticated the user |
-| Router and other server-side callers | `Authorization: Bearer <lares voice key>` | In-cluster Service address, never the entrance |
+| Router and other server-side callers | `Authorization: Bearer <lares voice key>` | The `webhook-internal` entrance (`authLevel: internal`, port 8081). The per-user namespace's NetworkPolicy refuses direct Service traffic from shared apps |
 
 Voice keys:
 
@@ -68,7 +68,9 @@ Voice keys:
 - The caller identity is the key owner. Identity headers such as
   `x-caller-appid` and `X-BFL-USER` are ignored.
 - Router stores the key as an ordinary encrypted provider credential with base
-  URL `http://<lares service>/api/lares/voice` and appends `/realtime?model=`.
+  URL `https://<webhook-internal entrance host>/api/lares/voice` and appends
+  `/realtime?model=`. The 8081 listener forwards only that WebSocket path to
+  this handler; everything else there stays the webhook API or 404.
 - Access control on Router's side (model allowlists, quotas) belongs to Router.
   Lares neither knows nor cares who is behind Router.
 
@@ -139,7 +141,7 @@ Any OpenAI client event not listed returns `error` with code
 | `input_audio_buffer.clear` | Yes | Drops uncommitted audio |
 | `response.cancel` | Yes | Stops generation and synthesis of the current reply. It does **not** cancel background Agent tasks; use `lares.task.cancel` |
 | `conversation.item.truncate` | Yes | `audio_end_ms` must be the position the client actually played |
-| `response.create` | Partial | Empty parameters only, to retry the previous turn in manual mode. `instructions`, `tools`, `input` and similar parameters return an error |
+| `response.create` | Partial | Empty parameters only: speaks the last reply again without resubmitting anything to the Agent, so a retry never repeats side effects. `instructions`, `tools`, `input` and similar parameters return an error |
 | `conversation.item.create` | Partial | Only `role:"user"` `input_text`, equivalent to saying a sentence in text. No assistant / system messages or `function_call_output` |
 | `conversation.item.delete`, `conversation.item.retrieve` | No | Lares owns history |
 | `output_audio_buffer.clear` | No | WebRTC only |
@@ -394,29 +396,30 @@ unwanted action.
 
 | Area | State |
 | --- | --- |
-| Voice keys: `GET` / `POST` / `DELETE /api/lares/voice/keys`, hashed in `$DSH_HOME/voice-input/keys.json` (`core/voice/keys.js`) | Live; no settings UI yet |
-| Bearer upgrade on `/api/lares/voice/realtime` (`core/voice/lares-realtime-gateway.js`); ticket sockets still reach the native gateway | Live |
-| Session types, `session.update` fields, client and server events in this spec | Live, except the rows below |
-| `instructions`, `response.create`, `conversation.item.truncate`, `conversation.item.done`, `conversation.item.truncated`, `transcription.delta` | Not yet; rejected or not sent |
-| `lares.busy_turn` override | Live; without it a busy turn queues instead of following the owner's busy-Enter preference |
-| `lares.task.updated`, `lares.task.cancel` | Live; cancel stops the running dsh turn, and interrupting before acceptance does not withdraw a submitted task yet |
-| `X-Session-Id` on child requests | ASR and TTS carry it; Agent and dialogue LLM calls made through dsh do not yet |
-| Host device mode, Lares client migration, removal of old endpoints, full-duplex | Not yet (steps 1 and 4–6) |
+| Voice keys (`core/voice/keys.js`), settings UI on desktop and mobile | Live |
+| One handler for Bearer keys and Lares tickets (`core/voice/lares-realtime-gateway.js`); native-backend tickets forward to Router through `realtime-gateway.js`, which speaks the same events | Live |
+| Session types, `session.update` fields, client and server events, `lares.*` extensions | Live |
+| Sentence-level truncate, chat `instructions`, `response.create`, item events, streaming transcription deltas (models with `stt_stream`) | Live |
+| Per-task withdraw and cancel through the dsh queue; busy turns follow the owner's busy-Enter preference | Live |
+| `X-Session-Id` on ASR, TTS, dialogue and Agent model calls | Live; dsh sends its session id and the `/llm/v1` shim swaps in the Realtime one while a keyed session drives it |
+| Host headset mode on ticket sockets | Live |
+| Lares desktop and mobile clients (`core/voice/unified-conversation.js`) | Live by default; `transport: "legacy"` keeps the pipeline endpoints |
+| Full-duplex barge-in | Code present; off unless `LARES_VOICE_BARGE_IN=1` and the client reports echo cancellation |
+| Removal of the pipeline session endpoints | After device acceptance (step 5) |
 
-Deployment gate: Router runs in `router-shared` and must reach the Lares
-Service in the user's namespace. Verify that the Olares network policy allows
-it before registering the provider.
+Deployment gate: Router reaches Lares only through the internal entrance on
+8081, which the webhook listener serves. Probe it from router-shared before
+registering the provider.
 
 ## Migration plan
 
 Merge the server first, then migrate clients, then delete old interfaces. Each
 step ships independently; old interfaces stay available until step 5.
 
-1. **Lares: unified handler.** *Partly done: voice-key callers are served by
-   `lares-realtime-gateway.js` on the shared endpoint.* Remaining: move the
-   host device mode and native model forwarding of `realtime-gateway.js` into
-   it, so ticket sockets use the same handler.
-2. **Lares: voice keys.** *Done except the settings UI.* Issue and revoke keys in settings, replacing the
+1. **Lares: unified handler.** *Done.* Bearer keys and pipeline tickets share
+   `lares-realtime-gateway.js`; native-backend tickets keep the forwarding
+   gateway with the same client events.
+2. **Lares: voice keys.** *Done.* Issue and revoke keys in settings, replacing the
    `LARES_VOICE_ROUTER_SECRET` and `LARES_VOICE_EXTERNAL_GRANTS` environment
    variables.
 3. **Router: Bearer for composite voice.** *Done (beclab/router#147).* Remove the HMAC identity signature
@@ -425,7 +428,7 @@ step ships independently; old interfaces stay available until step 5.
    marker; all-zero `usage` is no longer flagged incomplete (Router ADR-83).
    Send the realtime session ID as `X-Session-Id` on the dial and stamp it on
    the composite record.
-4. **Lares client migration.** `realtime-conversation.js` only needs event
+4. **Lares client migration.** *Done behind the `transport` setting.* `realtime-conversation.js` only needs event
    renames; the pipeline session in `conversation.js` and `stream-client.js`
    moves to the unified WS. Desktop and mobile share one protocol client in
    `@olares/lares-core`.
