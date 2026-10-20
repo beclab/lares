@@ -1,8 +1,10 @@
 # Lares Realtime protocol (`lares-realtime-v1`)
 
-Status: proposed target. The shipped endpoints still follow
-[Voice runtime](voice-runtime.md#external-composite-websocket) until the
-[migration plan](#migration-plan) lands. Router's side is
+Status: partly implemented. Voice-key callers such as Router get
+`lares-realtime-v1` today; Lares's own clients still use the pipeline and
+native endpoints described in [Voice runtime](voice-runtime.md). What is live
+and what is still target is listed in [Implementation status](#implementation-status).
+Router's side is
 [Router ADR-83](https://github.com/beclab/router/blob/main/ARCHITECTURE.md#adr-83),
 which supersedes ADR-81.
 
@@ -26,13 +28,13 @@ flowchart LR
 To Lares, Router is just another client holding a key. Lares's own child
 requests go back to Router and are metered there.
 
-It replaces three current interfaces:
+It replaces three earlier interfaces:
 
 | Current interface | Used by | Source |
 | --- | --- | --- |
 | Pipeline: HTTP `/session*` + private `/stream` WS + `/transcribe`, `/speak` | Desktop and mobile default | `core/voice/conversation.js`, `stream-gateway.js` |
 | Native Realtime: `/realtime` WS (OpenAI events + `lares.*`) | Desktop and mobile, opt-in, off by default | `core/voice/realtime-gateway.js` |
-| Composite bridge: `/bridge/realtime` (`olares-voice-ws-v1`, HMAC identity) | Router composite voice, off by default | `core/voice/composite-gateway.js` |
+| Composite bridge: `/bridge/realtime` (`olares-voice-ws-v1`, HMAC identity) | Router composite voice; removed, voice-key callers now use `lares-realtime-v1` | formerly `core/voice/composite-gateway.js` |
 
 Design rules:
 
@@ -113,7 +115,9 @@ Configurable `session.update` fields (anything else returns `error`):
 | `lares.busy_turn` | `"queue"` or `"steer"` | Optional override for a user turn arriving while the Agent runs. Defaults to the owner's saved busy-Enter preference (`core/larepass/submission-settings.js`); idle turns always queue |
 
 `session.created` / `session.updated` additionally carry
-`session.lares.capabilities`. Clients decide from it instead of hard-coding:
+`session.lares.capabilities`. Clients decide from it instead of hard-coding.
+The current build sends `"message_truncation":"none"`; the target below is
+`"played"` once truncate lands:
 
 ```json
 {"protocol":"lares-realtime-v1","transport":"websocket","barge_in":false,"playback_ack":true,"message_truncation":"played","turn_detection":["manual","server_vad"],"user_transcription":true,"context_resume":true,"client_tools":false}
@@ -181,7 +185,7 @@ protection are imprecise.
 | --- | --- | --- | --- |
 | `lares.playback.progress` | Client → server | `item_id`, `played_ms` | New, about every 250 ms |
 | `lares.playback.completed` | Client → server | `item_id` | `voice.playback.completed` |
-| `lares.task.updated` | Server → client | `task_id`, `status` (`pending` / `running` / `completed` / `failed` / `unknown`), `session_id`, optional `summary` | `lares.task` |
+| `lares.task.updated` | Server → client | `task_id`, `status` (`pending` / `running` / `completed` / `failed` / `cancelled` / `unknown`), `session_id`, optional `summary` | `lares.task` |
 | `lares.task.cancel` | Client → server | `task_id` | HTTP `/session/cancel` |
 | `lares.device.input.pause` / `.resume` | Client → server | None | `lares.input.pause` / `.resume` |
 | `lares.device.playback` | Server → client | `playing` | `lares.playback` |
@@ -283,7 +287,7 @@ child requests Lares makes. `response.done.usage` is always an all-zero object,
 and actual usage is in `response.metadata.lares.usage`:
 
 ```json
-{"billing":"child-models","input_audio_ms":4200,"output_audio_ms":6100,"child_requests":3}
+{"billing":"child-models","input_audio_ms":4200,"output_audio_ms":6100}
 ```
 
 The zero `usage` keeps the OpenAI shape so SDKs that expect it parse normally:
@@ -386,19 +390,36 @@ Lares keeps tasks after the session closes; see
 chat-only: submitting a task before the user finishes could trigger an
 unwanted action.
 
+## Implementation status
+
+| Area | State |
+| --- | --- |
+| Voice keys: `GET` / `POST` / `DELETE /api/lares/voice/keys`, hashed in `$DSH_HOME/voice-input/keys.json` (`core/voice/keys.js`) | Live; no settings UI yet |
+| Bearer upgrade on `/api/lares/voice/realtime` (`core/voice/lares-realtime-gateway.js`); ticket sockets still reach the native gateway | Live |
+| Session types, `session.update` fields, client and server events in this spec | Live, except the rows below |
+| `instructions`, `response.create`, `conversation.item.truncate`, `conversation.item.done`, `conversation.item.truncated`, `transcription.delta` | Not yet; rejected or not sent |
+| `lares.busy_turn` override | Live; without it a busy turn queues instead of following the owner's busy-Enter preference |
+| `lares.task.updated`, `lares.task.cancel` | Live; cancel stops the running dsh turn, and interrupting before acceptance does not withdraw a submitted task yet |
+| `X-Session-Id` on child requests | ASR and TTS carry it; Agent and dialogue LLM calls made through dsh do not yet |
+| Host device mode, Lares client migration, removal of old endpoints, full-duplex | Not yet (steps 1 and 4–6) |
+
+Deployment gate: Router runs in `router-shared` and must reach the Lares
+Service in the user's namespace. Verify that the Olares network policy allows
+it before registering the provider.
+
 ## Migration plan
 
 Merge the server first, then migrate clients, then delete old interfaces. Each
 step ships independently; old interfaces stay available until step 5.
 
-1. **Lares: unified handler.** Start from `composite-gateway.js` (already an
-   OpenAI event subset) and merge in `realtime-gateway.js` host devices, Agent
-   task announcements and native model forwarding. Mount it at
-   `/api/lares/voice/realtime` behind both ticket and voice key authentication.
-2. **Lares: voice keys.** Issue and revoke keys in settings, replacing the
+1. **Lares: unified handler.** *Partly done: voice-key callers are served by
+   `lares-realtime-gateway.js` on the shared endpoint.* Remaining: move the
+   host device mode and native model forwarding of `realtime-gateway.js` into
+   it, so ticket sockets use the same handler.
+2. **Lares: voice keys.** *Done except the settings UI.* Issue and revoke keys in settings, replacing the
    `LARES_VOICE_ROUTER_SECRET` and `LARES_VOICE_EXTERNAL_GRANTS` environment
    variables.
-3. **Router: Bearer for composite voice.** Remove the HMAC identity signature
+3. **Router: Bearer for composite voice.** *Done (beclab/router#147).* Remove the HMAC identity signature
    in `compositeVoiceHeaders` and send the provider credential as
    `Authorization: Bearer`. Keep `extensions.voice_service` as the billing
    marker; all-zero `usage` is no longer flagged incomplete (Router ADR-83).
@@ -408,7 +429,7 @@ step ships independently; old interfaces stay available until step 5.
    renames; the pipeline session in `conversation.js` and `stream-client.js`
    moves to the unified WS. Desktop and mobile share one protocol client in
    `@olares/lares-core`.
-5. **Delete old interfaces.** Remove `/bridge/realtime`, the old private
+5. **Delete old interfaces.** `/bridge/realtime` is already gone. Remove the old private
    `/realtime` events and pipeline HTTP control endpoints such as
    `/session/prompt`. `/transcribe`, `/speak` and the `/stream` TTS that reads
    existing replies aloud are not sessions and stay.

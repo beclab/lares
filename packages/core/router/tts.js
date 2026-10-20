@@ -77,7 +77,7 @@ export async function synthesize(request) {
  * Deliver each PCM sentence as Kokoro yields it.
  * A non-stream response comes back as `{ streamed: false, audio }` instead.
  *
- * @param {{ text: string, model: string, signal?: AbortSignal }} request
+ * @param {{ text: string, model: string, voice?: string, signal?: AbortSignal, headers?: Record<string, string> }} request
  * @param {(chunk: Buffer) => Promise<void> | void} onChunk
  */
 export async function synthesizeStream(request, onChunk) {
@@ -91,7 +91,7 @@ export async function synthesizeStream(request, onChunk) {
       : timeout;
     res = await fetch(`${routerShimBaseUrl()}/audio/speech`, {
       method: "POST",
-      headers: { "content-type": "application/json", accept: "audio/l16,audio/wav" },
+      headers: { ...request.headers, "content-type": "application/json", accept: "audio/l16,audio/wav" },
       body: JSON.stringify({
         model: request.model,
         input: text,

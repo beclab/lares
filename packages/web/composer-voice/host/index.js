@@ -1,7 +1,8 @@
 import { listModels as voiceModels } from "@olares/lares-core/router/stt";
 import { createReplyStreamRegistry } from "@olares/lares-core/voice/reply-stream";
 import { createAudioStreamGateway } from "@olares/lares-core/voice/stream-gateway";
-import { createCompositeGateway } from "@olares/lares-core/voice/composite-gateway";
+import { createLaresRealtimeGateway } from "@olares/lares-core/voice/lares-realtime-gateway";
+import { createVoiceKeyStore } from "@olares/lares-core/voice/keys";
 import { createRouterAudio } from "@olares/lares-core/voice/router-audio";
 import { createVoiceHostService } from "@olares/lares-core/voice/host-service";
 import { registerRealtime } from "./realtime.js";
@@ -222,7 +223,7 @@ async function handleTranscribe(req, res) {
 /** @type {Record<string, Record<string, (req, res) => Promise<void>>>} */
 let voiceHost;
 let realtime;
-let composite;
+let voiceKeys;
 async function handleVoiceSession(req, res) {
   const scope = scopeFor(req);
   const body = await readJsonObject(req);
@@ -252,7 +253,11 @@ async function handleVoiceClose(req, res) {
 const ROUTES = {
   "/stream/ticket": { POST: async (req, res) => sendJson(res, 200, await streams.ticket(scopeFor(req), await readJsonObject(req))) },
   "/realtime/ticket": { POST: async (req, res) => sendJson(res, 200, await realtime.ticket(scopeFor(req))) },
-  "/bridge/capabilities": { GET: (_req, res) => sendJson(res, 200, composite.capabilities()) },
+  "/keys": {
+    GET: (_req, res) => sendJson(res, 200, { keys: voiceKeys.list() }),
+    POST: async (req, res) => sendJson(res, 201, voiceKeys.issue(await readJsonObject(req))),
+    DELETE: async (req, res) => { const value = await readJsonObject(req); const revoked = voiceKeys.revoke(value.id); sendJson(res, revoked ? 200 : 404, { revoked }); },
+  },
   "/dictation/clean": { POST: async (req, res) => { const value = await readJsonObject(req); const abort = new AbortController(); res.once("close", () => abort.abort()); sendJson(res, 200, { text: await voiceHost.clean({ owner: routerEndUser(process.env, req.headers) }, value.text, { preset: value.preset, config: value.config, signal: abort.signal }) }); } },
   "/history": { POST: async (req, res) => {
     const abort = new AbortController();
@@ -340,16 +345,13 @@ export function apply(ctx) {
     return () => { unregister(); streams.close(); };
   });
   voiceHost = createVoiceHostService(ctx.sessionController, { metric: (fields) => writeReport({ scope: "voice", event: "metric", ...fields }) });
-  ctx.effect(() => {
-    let grants;
-    try { grants = JSON.parse(process.env.LARES_VOICE_EXTERNAL_GRANTS || "{}"); } catch { throw new Error("Invalid voice grants configuration"); }
-    composite = createCompositeGateway({ service: voiceHost, config: readConfig, ...createRouterAudio(readConfig),
-      secret: process.env.LARES_VOICE_ROUTER_SECRET, grants, hostOwner: routerEndUser(), enabled: process.env.LARES_VOICE_EXTERNAL_ENABLED === "1" });
-    const unregister = ctx.webServer.registerUpgrade({ path: "/api/lares/voice/bridge/realtime", handler: (req, socket, head) => composite.upgrade(req, socket, head) });
-    return () => { unregister(); composite.close(); };
-  });
+  voiceKeys = createVoiceKeyStore();
   ctx.on("api-session/removed", (sessionId) => voiceHost.remove(sessionId));
-  ctx.effect(() => { realtime = registerRealtime(ctx, voiceHost); return () => realtime.dispose(); });
+  ctx.effect(() => {
+    const keyed = createLaresRealtimeGateway({ service: voiceHost, config: readConfig, ...createRouterAudio(readConfig), keys: voiceKeys, hostOwner: routerEndUser() });
+    realtime = registerRealtime(ctx, voiceHost, keyed);
+    return () => { realtime.dispose(); keyed.close(); };
+  });
   ctx.effect(
     () => ctx.webServer.register({ kind: "prefix", path: ROUTE_PREFIX, handler: voiceHandler }),
     "lares-composer-voice-routes",
