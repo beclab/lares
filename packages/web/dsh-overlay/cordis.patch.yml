@@ -95,14 +95,15 @@
 - id: session-title-llm
   disabled: true
 
-# Auto-compaction fires at min(0.8 × window, window − request maxTokens − headroom).
-# Upstream headroom is 65536, which on a 128k Router model (maxTokens = window/4)
-# leaves a 32k trigger, and on a 32k model no budget at all. Headroom only has to
-# hold the summary reply, so 8192 moves the trigger to ~90k on 128k windows while
-# large windows stay at 80%.
+# Compact at 80% of the routed model's own contextWindow. Upstream headroom
+# (65536) plus a quarter-window output reserve fired at ~32k on a 128k model
+# and left a 32k model with no budget. Headroom here only holds the summary;
+# outputTokenBudget keeps the reply reserve inside the remaining 20%, so the
+# 80% line is what fires.
 - id: compaction-basic
   config:
-    headroomTokens: 8192
+    thresholdRatio: 0.8
+    headroomTokens: 4096
 
 - id: agent-default-model
   config:

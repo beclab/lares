@@ -42,13 +42,14 @@ function tokenCount(value) {
 /**
  * Output tokens a turn may ask for. A local engine reports its whole context
  * as max_output_tokens, and a request that reserves all of it cannot fit
- * beside its own prompt: the engine's KV budget refuses it or, worse, admits
- * it and evicts every other request. A quarter of the window leaves room for
- * the prompt and still exceeds any reply a chat turn writes.
+ * beside its own prompt. Compaction subtracts this cap from the model's
+ * context window before the 80% pressure line, so the cap has to fit in the
+ * remaining fifth or that line never fires. A tenth of the window does, once
+ * the summary headroom (4096) is counted, for any window of at least 40k.
  */
 export function outputTokenBudget(declared, contextWindow) {
   if (contextWindow === null) return declared;
-  const cap = Math.max(1, Math.floor(contextWindow / 4));
+  const cap = Math.max(1, Math.floor(contextWindow / 10));
   return declared === null ? cap : Math.min(declared, cap);
 }
 
