@@ -8,13 +8,14 @@ import { createSentencePlayer, speakable } from "@olares/lares-core/voice/speech
 import { captureSource } from "@olares/lares-core/voice/input";
 import { loadVoiceSettings, wavBlob } from "@olares/lares-core/voice/client";
 import { createVoiceSettingsState } from "./settings-state.js";
+import { primePlaybackContext } from "@olares/lares-core/voice/pcm-player";
 import { recordVoiceStartup } from "@olares/lares-core/voice/startup";
 export const request = async (url, options = {}) => {
   const response = await fetch(url, { ...options, headers: { "content-type": "application/json", ...options.headers }, body: options.body === undefined ? undefined : JSON.stringify(options.body) });
   return { ok: response.ok, body: await response.json() };
 };
 export function createWebVoicePanel(onSession) {
-  const panel = createVoicePanel({ onSession, manualTurns: false, inlineDictation: true,
+  const panel = createVoicePanel({ onSession, manualTurns: false, inlineDictation: true, armOutput: () => primePlaybackContext(),
     loadConfig: async () => (await loadVoiceSettings({ diagnostics: false })).config,
     prepareInput: config => captureSource("pc", config.device) === "device" ? prepareBrowserCapture({ onTrace: (stage, fields) => recordVoiceStartup(stage, stage === "permission-request" && panel.startupAt != null ? performance.now() - panel.startupAt : fields.durationMs) }) : null,
     process: async ({ text, preset, config, signal }) => { const result = await request("/api/lares/voice/dictation/clean", { method: "POST", body: { text, preset, config: { dictationProfiles: config.dictationProfiles } }, signal }); if (!result.ok) throw new Error(result.body?.error?.code || "voice_cleanup_failed"); return result.body.text; },

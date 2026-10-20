@@ -88,3 +88,37 @@ test("browser PCM writes preserve odd-byte packet boundaries and release the con
     else (globalThis as any).AudioWorkletNode = original;
   }
 });
+
+test("a context primed during the gesture is reused and kept open", async () => {
+  const { createPcmStreamPlayer, primePlaybackContext } = await import("@olares/lares-core/voice/pcm-player");
+  const original = (globalThis as any).AudioWorkletNode;
+  let closed = 0;
+  const metrics: any[] = [];
+  class Context {
+    state = "running";
+    destination = {};
+    audioWorklet = { addModule: async () => {} };
+    async resume() {}
+    async close() { this.state = "closed"; closed++; }
+  }
+  class Node {
+    port = { onmessage: null as any, postMessage() {} };
+    connect() {}
+    disconnect() {}
+  }
+  (globalThis as any).AudioWorkletNode = Node;
+  const primed = primePlaybackContext(Context as any);
+  const player = createPcmStreamPlayer({ context: Context, onMetric: (event) => metrics.push(event) });
+  try {
+    await player.start({ sampleRate: 24000, channels: 1, encoding: "pcm_s16le" });
+    player.stop();
+    assert.equal(closed, 0);
+    assert.equal(primed.state, "running");
+    assert.equal(metrics.find((event) => event.stage === "playback_context").shared, true);
+  } finally {
+    await primed.close();
+    player.stop();
+    if (original === undefined) delete (globalThis as any).AudioWorkletNode;
+    else (globalThis as any).AudioWorkletNode = original;
+  }
+});

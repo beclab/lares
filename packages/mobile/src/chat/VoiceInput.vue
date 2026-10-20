@@ -6,7 +6,7 @@
       <svg v-if="view.mode === 'single' && ui.recording && levels.length" class="lares-inline-level" viewBox="0 0 32 24" aria-hidden="true"><line v-for="(level, index) in levels" :key="index" :x1="index * 5 + 3" :x2="index * 5 + 3" :y1="12 - Math.max(2, Math.min(10, level * 500))" :y2="12 + Math.max(2, Math.min(10, level * 500))" /></svg>
       <span>{{ t(ui.label) }}</span><span v-if="ui.timed" class="lares-inline-time" aria-hidden="true"> · {{ ui.elapsed }}</span>
     </button>
-    <span class="lares-inline-status" :data-error="Boolean(ui.error)" :data-visible="['speaking', 'working'].includes(ui.phase)" role="status" aria-live="polite" aria-atomic="true">{{ status }}</span>
+    <span v-if="!ui.error" class="lares-inline-status" :data-visible="['speaking', 'working'].includes(ui.phase)" role="status" aria-live="polite" aria-atomic="true">{{ status }}</span>
   </div>
 </template>
 <script>
@@ -45,6 +45,5 @@ export default {
 [data-phase=recording] .lares-inline-main { color: var(--q-blue-default, #3377ff); }
 [data-phase=cancel] .lares-inline-main, .lares-inline-cancel[data-armed=true] { color: var(--q-red-default, #c23d32); }
 .lares-inline-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-.lares-inline-status[data-visible=true], .lares-inline-status[data-error=true] { width: auto; height: auto; clip-path: none; bottom: calc(100% + 16px); background: var(--q-background-1, white); padding: 6px; font-size: 12px; color: var(--q-ink-2, #777); }
-.lares-inline-status[data-error=true] { color: var(--q-red-default, #c23d32); }
+.lares-inline-status[data-visible=true] { width: auto; height: auto; clip-path: none; bottom: calc(100% + 16px); background: var(--q-background-1, white); padding: 6px; font-size: 12px; color: var(--q-ink-2, #777); }
 </style>

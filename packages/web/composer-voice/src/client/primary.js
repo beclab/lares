@@ -14,6 +14,7 @@ export function VoicePrimary({ panel, nativePrimary, empty, running, disabled, n
   panel.agentAvailable = modelState(agent).valid;
   React.useEffect(() => { void loadAgent().catch(() => {}); }, [loadAgent]);
   React.useEffect(() => inputActions?.bindBeforeSubmit?.(async () => {
+    panel.arm();
     requireComposerModel(agentDirectory.getSnapshot(), document.documentElement.lang);
     const current = panel.getSnapshot();
     if (current.visible && current.mode === "single") throw new Error(t("pc.finishFirst"));
@@ -22,6 +23,7 @@ export function VoicePrimary({ panel, nativePrimary, empty, running, disabled, n
   const choice = voicePrimaryAction({ view, available: laresVoiceAvailability(settings.value, panel.agentAvailable).conversation, empty, running, disabled, nativeDisabled });
   if (choice.action === "native") return nativePrimary;
   const act = async () => {
+    panel.arm();
     if (choice.action === "pause") return panel.pause();
     if (opening.current) return;
     opening.current = true;

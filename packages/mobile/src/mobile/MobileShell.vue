@@ -15,7 +15,10 @@
       @effort="$emit('open-model')"
       @speak="$emit('toggle-speak')"
     />
-    <p v-if="state.speakNotice" class="lares-speak-notice" role="status">{{ state.speakNotice }}</p>
+    <p v-if="state.speakNotice" class="lares-speak-notice" role="status">
+      <span>{{ state.speakNotice }}</span>
+      <button type="button" @click="$emit('dismiss-speak')">{{ t('readout.dismiss') }}</button>
+    </p>
     <LaresHistoryPanel
       :open="state.panel === 'history'"
       :sessions="state.sessions"
@@ -268,6 +271,7 @@ export default {
     "close-directory", "choose-directory", "create-folder", "toggle-hidden",
     "rename-session", "archive-session",
     "move-session",
+    "dismiss-speak",
   ],
   data() {
     return { composerMode: "text" };
@@ -340,10 +344,33 @@ export default {
 }
 
 .lares-speak-notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   margin: 0 16px 8px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--q-orange-alpha);
   color: var(--q-orange-default);
   font-size: 14px;
   line-height: 20px;
+}
+
+.lares-speak-notice span {
+  flex: 1;
+  min-width: 0;
+}
+
+.lares-speak-notice button {
+  flex: none;
+  border: 0;
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: transparent;
+  color: var(--q-ink-2);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .lares-shell__retry {

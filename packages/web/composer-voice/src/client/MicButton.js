@@ -30,6 +30,7 @@ export function MicButton({ panel, sessionId, inputActions, useInput, mode, onAc
   }, [dictating, inputActions, panel, sessionId]);
   panel.target = { sessionId: sessionId || null, inputActions, draft, mode };
   const open = async preset => {
+    panel.arm();
     if (opening.current || panel.getSnapshot().busy) return;
     opening.current = true; panel.anchor = trigger.current;
     panel.startupAt = performance.now();

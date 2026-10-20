@@ -35,7 +35,19 @@ export async function playAudioStream(options) {
   const connection = await openAudioStream({ ...options, operation: "tts" });
   if (!connection) throw new Error("voice_stream_failed");
   const file = createBrowserPlayer();
-  const player = createPcmStreamPlayer({ onProgress: (frames) => { if (connection.readyState === 1) connection.send(JSON.stringify({ type: "progress", frames })); },
+  let progressNoted = false, progressBlocked = false;
+  const player = createPcmStreamPlayer({ onProgress: (frames) => {
+    if (connection.readyState !== 1) {
+      if (!progressBlocked) { progressBlocked = true; streamMetric(options, { stage: "playback_progress_blocked", readyState: connection.readyState, frames }); }
+      return;
+    }
+    try { connection.send(JSON.stringify({ type: "progress", frames })); }
+    catch (error) {
+      if (!progressBlocked) { progressBlocked = true; streamMetric(options, { stage: "playback_progress_blocked", code: error?.message || "send_failed", frames }); }
+      return;
+    }
+    if (!progressNoted) { progressNoted = true; streamMetric(options, { stage: "playback_progress_sent", frames }); }
+  },
     onMetric: (event) => { if (event.stage === "playback_started") options.onStatus?.("playing"); streamMetric(options, { ...event, durationMs: Date.now() - started }); } });
   let chain = Promise.resolve(), complete = false, firstReceived = false, ready = false, paused = false, segmentIndex = -1;
   options.controls?.({
@@ -45,7 +57,14 @@ export async function playAudioStream(options) {
   });
   try {
     await new Promise((resolve, reject) => {
-      const fail = (error) => { reject(error); connection.close(); };
+      let failureLogged = false;
+      const noteFailure = (error) => {
+        const code = error?.message || "voice_playback_failed";
+        if (failureLogged || code === "voice_cancelled") return;
+        failureLogged = true;
+        streamMetric(options, { stage: "playback_failed", code, durationMs: Date.now() - started });
+      };
+      const fail = (error) => { noteFailure(error); reject(error); connection.close(); };
       const cancelled = () => { player.stop(); file.stop(); fail(new Error("voice_cancelled")); };
       options.signal?.addEventListener("abort", cancelled, { once: true });
       connection.addEventListener("message", ({ data }) => {
@@ -67,7 +86,10 @@ export async function playAudioStream(options) {
       });
       const dropped = () => new Error(options.signal?.aborted ? "voice_cancelled" : "voice_disconnected");
       connection.addEventListener("error", () => fail(dropped()), { once: true });
-      connection.addEventListener("close", () => { options.signal?.removeEventListener("abort", cancelled); if (!complete) reject(dropped()); }, { once: true });
+      connection.addEventListener("close", () => {
+        options.signal?.removeEventListener("abort", cancelled);
+        if (!complete) { const error = dropped(); noteFailure(error); reject(error); }
+      }, { once: true });
       if (options.signal?.aborted) cancelled();
     });
     return true;

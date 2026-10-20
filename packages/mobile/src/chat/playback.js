@@ -1,3 +1,5 @@
+import { primePlaybackContext } from "@olares/lares-core/voice/pcm-player";
+
 const SILENT_WAV = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
 
 /**
@@ -20,6 +22,7 @@ export function createAnswerPlayer() {
   };
   return {
     unlock() {
+      primePlaybackContext();
       if (!audio || !audio.paused) return;
       audio.src = SILENT_WAV;
       void audio.play().catch(() => {});

@@ -1,3 +1,4 @@
+import { primePlaybackContext } from "./pcm-player.js";
 import { createVoiceController } from "./controller.js";
 import { createDeviceInput } from "./device-input.js";
 import { createHostInput } from "./host-input.js";
@@ -46,7 +47,7 @@ export function createVoiceConversation({ request, transcribe, playback, onReply
   const controller = createVoiceController({ voiceId, input, idleTimeoutMs, recoveryTimeoutMs, onExpired: () => stop(), onTranscript: onTranscript ? async (value) => { await onTranscript(value); if (!continuous) await stop(); } : null, metric: (event) => {
     metric(event);
     void call("/session/metric", { stage: event.stage, durationMs: event.durationMs }).catch(() => {});
-  }, output: { get canPause() { return playback.canPause === true; }, key: () => playback.key, pause: () => playback.pause?.(), resume: () => playback.resume?.(), async stop() {
+  }, output: { arm() { primePlaybackContext(); }, get canPause() { return playback.canPause === true; }, key: () => playback.key, pause: () => playback.pause?.(), resume: () => playback.resume?.(), async stop() {
       const reply = lastUtterance;
       playback.stop();
       if (!reply || !Number.isFinite(reply.turn) || typeof lastSessionId !== "string") return;

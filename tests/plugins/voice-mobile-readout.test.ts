@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createSentencePlayer } from "../../packages/core/voice/speech.js";
 import { playAudioStream, startTranscriptionStream } from "../../packages/core/voice/stream-client.js";
-import { voiceInputPresentation, voicePanelPresentation } from "../../packages/core/voice/presentation.js";
+import { voiceCallFailure, voiceInputPresentation, voicePanelPresentation } from "../../packages/core/voice/presentation.js";
 import { createVoiceConversation } from "../../packages/core/voice/conversation.js";
 
 const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -437,6 +437,21 @@ test("a muted call does not tell the user to resume listening", () => {
 test("an unmuted disconnect still says the listen session dropped", () => {
   const view = { visible: true, mode: "continuous", snapshot: { connection: "paused", outputMuted: false, error: "voice_disconnected", playback: "idle" } };
   assert.equal(voicePanelPresentation(view).status, "error.voice_disconnected");
+});
+
+test("a paused call can be resumed from one banner", () => {
+  const view = { visible: true, mode: "continuous", snapshot: { connection: "paused", error: "voice_disconnected", playback: "idle" } };
+  assert.deepEqual(voiceCallFailure(view), { code: "voice_disconnected", action: "resume" });
+});
+
+test("an expired recovery window starts a new call instead of resuming", () => {
+  const view = { visible: true, mode: "continuous", snapshot: { connection: "closed", error: "voice_recovery_expired", playback: "idle" } };
+  assert.deepEqual(voiceCallFailure(view), { code: "voice_recovery_expired", action: "restart" });
+});
+
+test("a healthy call and a dictation error are not call-failure banners", () => {
+  assert.equal(voiceCallFailure({ visible: true, mode: "continuous", snapshot: { connection: "open", playback: "playing" } }), null);
+  assert.equal(voiceCallFailure({ visible: true, mode: "single", error: "voice_failed", snapshot: { connection: "paused" } }), null);
 });
 
 test("dispose drops an in-flight enable so it cannot fail a dead panel", async () => {

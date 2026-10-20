@@ -54,7 +54,11 @@ export function createAudioStreamGateway({ config, models, replies, synthesize =
         const started = Date.now();
         const send = (value) => { if (client.readyState === 1) client.send(JSON.stringify(value)); };
         const close = () => { if (closing) return; closing = true; abort.abort(); waiter?.(); fileDone?.(); clearTimeout(lifetime); upstream?.terminate(); clients.delete(client); client.close(); };
-        const error = (cause) => { send({ type: "error", code: cause.code || "voice_stream_failed" }); close(); };
+        const error = (cause) => {
+          const code = cause?.code || "voice_stream_failed";
+          if (grant.operation === "tts" && code !== "voice_cancelled") metric({ stage: "playback_stop", voiceId: grant.scope.id, code, sentFrames, playedFrames });
+          send({ type: "error", code }); close();
+        };
         const lifetime = setTimeout(() => error(fault("voice_timeout")), 180000);
         client.on("close", close); client.on("error", close);
         client.on("message", (raw, binary) => {
@@ -77,7 +81,9 @@ export function createAudioStreamGateway({ config, models, replies, synthesize =
               if (frame.type === "resume") { pausedAt = 0; waiter?.(); waiter = null; return; }
               if (frame.type === "file.done" && fileDone) { fileDone(); fileDone = null; return; }
               if (frame.type !== "progress" || !Number.isSafeInteger(frame.frames) || frame.frames < playedFrames || frame.frames > sentFrames) throw fault("voice_stream_state");
+              const firstProgress = playedFrames === 0 && frame.frames > 0;
               playedFrames = frame.frames; waiter?.(); waiter = null;
+              if (firstProgress) metric({ stage: "playback_progress", voiceId: grant.scope.id, frames: playedFrames });
             }
           } catch (cause) { error(cause); }
         });
@@ -110,6 +116,7 @@ export function createAudioStreamGateway({ config, models, replies, synthesize =
             waiter = wake;
             abort.signal.addEventListener("abort", wake, { once: true });
           });
+          let reportedWait = false;
           const pump = async () => {
             while (!abort.signal.aborted) {
               if (cursor >= run.events.length) {
@@ -129,6 +136,7 @@ export function createAudioStreamGateway({ config, models, replies, synthesize =
                 if (!rate) throw fault("voice_audio_format", 502);
                 for (let offset = 0; offset < event.chunk.length; offset += 16384) {
                   while (pausedAt || sentFrames - playedFrames > rate * 2 || client.bufferedAmount > 128 * 1024) {
+                    if (!reportedWait) { reportedWait = true; metric({ stage: "playback_wait", voiceId: grant.scope.id, sentFrames, playedFrames, paused: Boolean(pausedAt) }); }
                     await new Promise((resolve, reject) => { const timer = setTimeout(() => { waiter = null; reject(fault(pausedAt ? "voice_interruption_timeout" : "voice_audio_backpressure")); }, pausedAt ? Math.max(1, 10000 - (Date.now() - pausedAt)) : 10000); waiter = () => { clearTimeout(timer); resolve(); }; });
                     if (abort.signal.aborted || client.readyState !== 1) throw fault("voice_cancelled");
                   }

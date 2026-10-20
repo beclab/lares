@@ -14,6 +14,21 @@ export function voicePanelPresentation(view) {
   return { phase, status, preview, recording, pending: processing || transcribing || preparing, error };
 }
 
+const RESTART_ERRORS = new Set(["voice_recovery_expired", "voice_idle_timeout"]);
+
+/**
+ * A continuous call that has failed is one composer banner.
+ * The session can still be resumed while it is paused; once the recovery
+ * window has closed, the only way back is a new call.
+ */
+export function voiceCallFailure(view) {
+  if (!view?.visible || view.mode !== "continuous") return null;
+  const ui = voicePanelPresentation(view);
+  if (!ui.error) return null;
+  const recoverable = view.snapshot?.connection === "paused" && !RESTART_ERRORS.has(ui.error);
+  return { code: ui.error, action: recoverable ? "resume" : "restart" };
+}
+
 /** Shared inline labels; clients own focus, positioning and the timer tick. */
 export function voiceInputPresentation(view, now = Date.now()) {
   const ui = voicePanelPresentation(view);

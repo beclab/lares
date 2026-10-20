@@ -1,6 +1,11 @@
 <template>
   <form class="lares-composer" :class="{ 'lares-composer--hero': hero }" @submit.prevent="onSend">
-    <div v-if="voiceView?.readAloudError" class="lares-composer__alert" role="alert">
+    <div v-if="callFailure" class="lares-composer__alert" role="alert">
+      <p>{{ callFailureText }}</p>
+      <button type="button" :disabled="voiceView.busy" @click="$emit('voice-action', { action: 'start' })">{{ t(callFailure.action === 'resume' ? 'call.resume' : 'call.restart') }}</button>
+      <button type="button" class="lares-composer__alert-quiet" :disabled="voiceView.busy" @click="$emit('voice-action', { action: 'end' })">{{ t('panel.close') }}</button>
+    </div>
+    <div v-else-if="voiceView?.readAloudError" class="lares-composer__alert" role="alert">
       <p>{{ t("settings.readAloudSyncFailed") }}</p>
       <button type="button" @click="$emit('voice-action', { action: 'retryReadAloud' })">{{ t("dictation.retry") }}</button>
     </div>
@@ -164,6 +169,8 @@
 </template>
 
 <script>
+import { messageFromCode } from "@olares/lares-core/i18n/t";
+import { voiceCallFailure } from "@olares/lares-core/voice/presentation";
 import LaresVoiceInput from "./VoiceInput.vue";
 import {
   REFERENCE_DEBOUNCE_MS,
@@ -241,6 +248,12 @@ export default {
     },
     overlayPointerActive() {
       return this.referenceOpen || this.commandsOpen;
+    },
+    callFailure() {
+      return this.voiceView?.inputActive ? voiceCallFailure(this.voiceView) : null;
+    },
+    callFailureText() {
+      return this.callFailure ? messageFromCode(this.t, this.callFailure.code, "error.voice_failed") : "";
     },
   },
   watch: {
@@ -453,7 +466,8 @@ export default {
 .lares-composer__alert {
   display: flex;
   align-items: center;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 8px 12px;
   padding: 8px 12px;
   border-radius: 12px;
   background: var(--q-background-1);
@@ -478,6 +492,11 @@ export default {
   font: inherit;
   font-size: 13px;
   font-weight: 600;
+}
+
+.lares-composer__alert button.lares-composer__alert-quiet {
+  background: transparent;
+  color: var(--q-ink-2);
 }
 
 .lares-composer__card {

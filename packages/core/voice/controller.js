@@ -107,6 +107,7 @@ export function createVoiceController({ input, agent, output, voiceId = mintRpcI
     bindSession(sessionId) { if (sessionId) change({ sessionId }); },
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
     async start({ sessionId = null, continuous = false, running = false, manual = false, shouldStart = () => true } = {}) {
+      output.arm?.();
       manualTurns = manual;
       const startedEpoch = ++epoch;
       creating = null;

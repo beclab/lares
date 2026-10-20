@@ -2,7 +2,7 @@ import { setVoiceActivity } from "./activity.js";
 import { DICTATION_PRESETS } from "./dictation.js";
 
 /** The panel owns drafts and turn policy; adapters only supply settings, audio and insertion ports. */
-export function createVoicePanel({ create, complete, loadConfig = async () => ({}), process = async ({ text }) => text, onSession = () => {}, manualTurns = true, inlineDictation = false, prepareInput = () => null }) {
+export function createVoicePanel({ create, complete, loadConfig = async () => ({}), process = async ({ text }) => text, onSession = () => {}, manualTurns = true, inlineDictation = false, prepareInput = () => null, armOutput = () => {} }) {
   let state = { visible: false, inputActive: false, previewVisible: false, mode: "single", sessionId: null, raw: "", draft: "", edited: false, preset: "raw", stage: "idle", snapshot: null, busy: false, error: null, readAloudError: null, device: "", levels: [], startedAt: null, elapsedMs: 0, holding: false, cancelArmed: false };
   let call = null, config = null, generation = 0, intent = 0, processing = null;
   let inputPreparation = null;
@@ -136,8 +136,10 @@ export function createVoicePanel({ create, complete, loadConfig = async () => ({
       readAloudPending = pending;
       return pending.promise;
     },
-    retryReadAloud() { return panel.setReadAloud(readAloudPreference); },
+    retryReadAloud() { armOutput(); return panel.setReadAloud(readAloudPreference); },
+    arm() { armOutput(); },
     open({ mode = state.mode, sessionId = state.sessionId, preset, configSnapshot } = {}) {
+      armOutput();
       if (state.busy) return Promise.resolve();
       cancelPreparation();
       const snapshot = configSnapshot ? structuredClone(configSnapshot) : null;
@@ -162,7 +164,7 @@ export function createVoicePanel({ create, complete, loadConfig = async () => ({
     },
     close() { intent++; cancelPreparation(); cancelProcessing(); emit({ visible: false, holding: false, cancelArmed: false }); if (state.mode === "continuous") void call?.controller.cancelRecording(); return enqueue(pause); },
     pause() { intent++; cancelPreparation(); cancelProcessing(); emit({ holding: false, cancelArmed: false }); if (state.mode === "continuous") void call?.controller.cancelRecording(); return enqueue(pause); },
-    start() { const token = ++intent; return enqueue(() => prepare(token)); },
+    start() { armOutput(); const token = ++intent; return enqueue(() => prepare(token)); },
     finish() {
       if (state.busy) return Promise.resolve();
       const token = intent;
@@ -182,6 +184,7 @@ export function createVoicePanel({ create, complete, loadConfig = async () => ({
       return enqueue(async () => { await transform(preset); return true; });
     },
     holdStart() {
+      armOutput();
       if (state.busy || state.holding || state.snapshot?.capture === "transcribing") return Promise.resolve();
       const token = ++intent; emit({ holding: true, cancelArmed: false });
       return enqueue(async () => {
