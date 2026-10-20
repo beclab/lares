@@ -123,8 +123,8 @@ test("Router refresh declares the sizes Router states and omits the ones it does
     [
       { id: "Qwen/sized", name: "Qwen/sized", contextWindow: 104448, maxTokens: 8192 },
       { id: "Qwen/unsized", name: "Qwen/unsized" },
-      { id: "Qwen/context-only", name: "Qwen/context-only", contextWindow: 32768, maxTokens: 8192 },
-      { id: "Qwen/whole-window", name: "Qwen/whole-window", contextWindow: 131072, maxTokens: 32768 },
+      { id: "Qwen/context-only", name: "Qwen/context-only", contextWindow: 32768, maxTokens: 3276 },
+      { id: "Qwen/whole-window", name: "Qwen/whole-window", contextWindow: 131072, maxTokens: 13107 },
       { id: "Qwen/zeroed", name: "Qwen/zeroed" },
       { id: "Qwen/fractional", name: "Qwen/fractional" },
       { id: "Qwen/stringly", name: "Qwen/stringly" },
