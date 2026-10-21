@@ -85,6 +85,8 @@ entrances:
   #   authLevel: public
   #   invisible: true
   # Same port, listed for other apps on this Olares. No public hostname.
+  # The page entrance is pinned to this install's app id in deployment.yaml,
+  # so this second entrance does not take the app-list host.
   - name: webhook-internal
     host: lares-svc
     port: 8081

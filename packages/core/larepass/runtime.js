@@ -11,7 +11,7 @@ import { permissionLine, permissionSelect } from "./permissions.js";
 import { mintRpcId } from "./rpc.js";
 import { sessionReferenceCandidates } from "./references.js";
 import { createSessionCache } from "./session-cache.js";
-import { createInboxTracker } from "./queue.js";
+import { createInboxTracker, settleQueueResult } from "./queue.js";
 import { foldTranscript } from "./transcript.js";
 import { normalizeWorkspaceList, workspaceForSession } from "./workspace.js";
 
@@ -40,10 +40,11 @@ function viewOf(state, cache, pendingQuestions, pendingApprovals, inbox) {
   const page = cache.peek(state.sessionId);
   const events = page?.events ?? [];
   const snap = foldTranscript(events);
+  const admitted = inbox.pendingUsers(state.sessionId, snap.items);
   const session = state.sessions.find((row) => row.sessionId === state.sessionId);
   return {
     sessionId: isDraft(state.sessionId) ? "" : state.sessionId,
-    items: snap.items,
+    items: admitted.length ? [...snap.items, ...admitted] : snap.items,
     messages: snap.messages,
     running: snap.running,
     runningSince: snap.runningSince,
@@ -773,7 +774,7 @@ export function createChatRuntime(client) {
       if (!sessionId || isDraft(sessionId) || !itemId) {
         return Promise.resolve({ ok: false, error: { code: "no_session", message: "no session" } });
       }
-      return client.rpc("session.updateQueue", { sessionId, itemId, action });
+      return client.rpc("session.updateQueue", { sessionId, itemId, action }).then(settleQueueResult);
     },
     listDirectory(path) {
       return client.rpc("host.listDirectory", path ? { path } : {});

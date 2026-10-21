@@ -56,7 +56,10 @@ export function createPcmStreamPlayer({ onProgress = () => {}, onMetric = () => 
         owned = false; context = null;
         throw error;
       }
-      node = new AudioWorkletNode(opened, "lares-pcm-player", { processorOptions: { inputRate: sampleRate }, numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [1] });
+      node = new AudioWorkletNode(opened, "lares-pcm-player", {
+        processorOptions: { inputRate: sampleRate, outputRate: opened.sampleRate || sampleRate, preroll: Math.round(sampleRate * 0.2) },
+        numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [1],
+      });
       node.port.onmessage = ({ data }) => {
         if (epoch !== generation) return;
         if (data.type === "progress") { played = data.frames; onProgress(played); }

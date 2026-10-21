@@ -115,6 +115,15 @@ test("a stream labelled audio/L16 is read as PCM chunks, whatever the case", asy
   assert.equal(bodies[0].stream, undefined);
 });
 
+test("the audio/L16 rate clocks playback when a custom header still says 16 kHz", async (t) => {
+  const pcm = new Uint8Array([1, 0, 2, 0]);
+  t.mock.method(globalThis, "fetch", async () => new Response(pcm, {
+    headers: { "content-type": "audio/L16; rate=24000", "x-audio-sample-rate": "16000" },
+  }));
+  const outcome = await synthesizeStream({ text: "你好", model: "qwen3-tts" }, () => {});
+  assert.equal(outcome.sampleRate, 24000);
+});
+
 test("speech that returns no audio fails instead of looking finished", async (t) => {
   t.mock.method(globalThis, "fetch", async () => new Response(new Uint8Array(), {
     headers: { "content-type": "audio/L16", "x-audio-sample-rate": "24000" },

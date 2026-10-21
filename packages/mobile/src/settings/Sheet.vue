@@ -19,6 +19,9 @@
         <div class="lares-sheet__body">
           <slot />
         </div>
+        <footer v-if="$slots.footer" class="lares-sheet__foot">
+          <slot name="footer" />
+        </footer>
       </div>
     </div>
   </Teleport>
@@ -84,6 +87,11 @@ export default {
   transform: translateY(0);
 }
 
+.lares-sheet:has(.lares-sheet__foot) .lares-sheet__panel {
+  height: 45%;
+  overflow: hidden;
+}
+
 .lares-sheet__head {
   display: flex;
   align-items: center;
@@ -127,6 +135,17 @@ export default {
   padding: 0 0 calc(12px + env(safe-area-inset-bottom, 0px));
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+}
+
+.lares-sheet:has(.lares-sheet__foot) .lares-sheet__body {
+  flex: 1 1 auto;
+  padding-bottom: 8px;
+}
+
+.lares-sheet__foot {
+  flex-shrink: 0;
+  padding: 0 0 env(safe-area-inset-bottom, 0px);
+  background: var(--q-yellow-default);
 }
 
 @media (prefers-reduced-motion: reduce) {

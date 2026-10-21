@@ -101,6 +101,20 @@
 .lares-panel-leave-to {
   opacity: 0;
   transform: translateY(8px);
+  pointer-events: none;
+}
+
+/* A panel that is still arriving or leaving is not a click target. */
+.lares-panel-leave-active {
+  pointer-events: none;
+}
+
+@keyframes lares-queue-in {
+  from { opacity: 0; transform: translateY(8px); }
+}
+
+.lares-queue-in {
+  animation: lares-queue-in var(--lares-duration-normal, 220ms) var(--lares-ease-out, cubic-bezier(0.32, 0.72, 0, 1));
 }
 
 /* Preview tab strip — slide in from the header edge. */
@@ -150,6 +164,8 @@
   .lares-tab-leave-active {
     transition: none;
   }
+
+  .lares-queue-in { animation: none; }
 
   .lares-preview-enter-from,
   .lares-preview-leave-to,

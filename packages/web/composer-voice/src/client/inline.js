@@ -18,10 +18,10 @@ export function InlineVoice({ panel }) {
   if (!view.visible) return indicator.error ? h("div", { className: "lares-inline-voice", "data-mode": "single", "data-phase": "error", role: "status" },
     view.readAloudError ? t("settings.readAloudSyncFailed") : messageFor(t, indicator.error), h("button", { type: "button", onClick: () => act(() => view.readAloudError ? panel.retryReadAloud() : panel.settings.refresh()) }, t("dictation.retry"))) : null;
   const ui = voiceDictationPresentation(view, now), continuous = view.mode === "continuous";
-  const status = continuous ? t(ui.phase === "speaking" ? "pc.speaking" : ui.phase === "working" ? "call.working" : ui.phase === "recording" ? "call.listening" : ui.status) : t(ui.status);
-  const error = view.error || view.snapshot?.error || view.readAloudError || settings.error;
+  const error = ui.error || view.readAloudError || settings.error;
+  if (continuous && !error) return null;
   return h("div", { className: "lares-inline-voice", "data-mode": view.mode, "data-exclusive": ui.exclusive, "data-phase": ui.phase, "data-error": error || undefined },
-    continuous ? indicator.orb ? h("div", { className: "lares-voice-orb", "aria-hidden": true }) : null : h(React.Fragment, null,
+    continuous ? null : h(React.Fragment, null,
       h("button", { type: "button", className: "lares-dictation-cancel", "aria-label": t("dictation.discard"), onClick: () => act(() => panel.discard()) }, "×"),
       ui.waveform ? h("svg", { className: "lares-dictation-meter", viewBox: "0 0 400 24", preserveAspectRatio: "none", "aria-hidden": true },
         ...Array.from({ length: 40 }, (_, index) => {
@@ -29,7 +29,7 @@ export function InlineVoice({ panel }) {
           const size = Math.max(1, Math.min(10, level * 500));
           return h("line", { key: index, x1: index * 10 + 5, x2: index * 10 + 5, y1: 12 - size, y2: 12 + size });
         })) : null),
-    h("span", { className: "lares-inline-status", role: "status", "aria-live": "polite", "aria-atomic": true }, error ? view.readAloudError ? t("settings.readAloudSyncFailed") : ui.processingFailed ? t("dictation.processingFailed") : messageFor(t, error) : status),
+    h("span", { className: "lares-inline-status", role: "status", "aria-live": "polite", "aria-atomic": true }, error ? view.readAloudError ? t("settings.readAloudSyncFailed") : ui.processingFailed ? t("dictation.processingFailed") : messageFor(t, error) : t(ui.status)),
     continuous && error ? h("button", { type: "button", onClick: () => act(() => view.readAloudError ? panel.retryReadAloud() : settings.error ? panel.settings.refresh() : panel.start()) }, t("dictation.retry")) : null,
     !continuous && ui.waveform ? h("span", { className: "lares-inline-time", "aria-hidden": true }, ui.elapsed) : null,
     !continuous && ui.recoverable ? h("div", { className: "lares-dictation-recovery" },

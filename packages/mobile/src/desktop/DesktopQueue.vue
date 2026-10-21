@@ -1,6 +1,5 @@
 <template>
-  <Transition name="lares-panel">
-    <div v-if="rows.length" class="desktop-queue">
+    <div v-if="rows.length" class="desktop-queue lares-queue-in">
     <div class="desktop-queue__panel">
       <button
         v-if="rows.length > 1"
@@ -70,7 +69,6 @@
       </ul>
     </div>
     </div>
-  </Transition>
 </template>
 
 <script>

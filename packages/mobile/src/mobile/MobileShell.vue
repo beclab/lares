@@ -51,6 +51,7 @@
     />
     <div class="lares-shell__conversation" :data-hero="newSessionHero ? 'true' : 'false'">
       <p v-if="state.failed" class="lares-shell__status">{{ state.failText }}</p>
+      <p v-else-if="state.actionNotice" class="lares-shell__status" role="status">{{ state.actionNotice }}</p>
       <button
         v-if="state.failed"
         type="button"
@@ -176,7 +177,6 @@
 
     <LaresSheet :open="state.modelSheet" :title="t('model.menuAria')" @close="$emit('close-model')">
       <p v-if="state.modelCatalogError" class="lares-shell__status" role="status">{{ state.modelCatalogError }}</p>
-      <button type="button" @click="state.refreshModels()">{{ t('agent.refresh') }}</button>
       <p v-if="state.modelError" class="lares-shell__status">{{ state.modelError }}</p>
       <p v-else-if="!state.models" class="lares-shell__hint">{{ t("agent.loading") }}</p>
       <p v-else-if="!state.modelGroups.length" class="lares-shell__hint">{{ t("model.empty") }}</p>
@@ -201,6 +201,9 @@
           :disabled="state.modelBusy"
           @click="$emit('choose-effort', row.id)"
         />
+      </template>
+      <template #footer>
+        <button type="button" class="lares-shell__refresh" @click="state.refreshModels()">{{ t('agent.refresh') }}</button>
       </template>
     </LaresSheet>
     <Transition name="lares-preview">
@@ -381,6 +384,28 @@ export default {
   padding: 8px 12px;
   background: var(--q-blue-alpha);
   color: var(--q-blue-default);
+}
+
+.lares-shell__refresh {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 48px;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: var(--q-yellow-default);
+  color: var(--q-ink-1);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 500;
+  text-align: center;
+}
+
+.lares-shell__refresh:active {
+  background: var(--q-yellow-pressed);
 }
 
 .lares-shell__heading {

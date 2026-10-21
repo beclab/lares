@@ -34,10 +34,6 @@
       :data-type="row.type"
       :data-pending="row.pending ? 'true' : 'false'"
     >
-      <div v-if="hasReadout(row)" role="status" class="lares-message-readout">
-        <span>{{ speechLabel }}</span>
-        <button type="button" class="lares-message-stop" @click="readout.stop()">{{ t(readout.status === 'error' ? 'readout.dismiss' : 'readout.stop') }}</button>
-      </div>
       <div v-if="row.type === 'user'" class="lares-msg" data-role="user">{{ row.text }}</div>
       <LaresStageRow
         v-else-if="row.type === 'context'"
@@ -75,16 +71,19 @@
         :title="retryLabel(row)"
         :body="retryBody(row)"
       />
-      <div
-        v-else-if="row.type === 'assistant' && row.pending"
-        class="lares-md"
-        data-pending="true"
-      >{{ row.text }}</div>
       <template v-else-if="row.type === 'assistant'">
-        <div class="lares-md" v-html="renderMarkdown(row.text)" />
-        <p v-if="row.voiceSummary" class="lares-voice-summary">{{ row.voiceSummary }}</p>
-        <button v-if="!readout && isSpeaking(row)" type="button" class="lares-message-stop" @click="$emit('stop-speaking')">{{ t('input.stopSpeaking') }}</button>
+        <div v-if="row.pending" class="lares-md" data-pending="true">{{ row.text }}</div>
+        <template v-else>
+          <div class="lares-md" v-html="renderMarkdown(row.text)" />
+          <p v-if="row.voiceSummary" class="lares-voice-summary">{{ row.voiceSummary }}</p>
+        </template>
+        <div v-if="hasReadout(row)" role="status" class="lares-message-readout">
+          <span>{{ speechLabel }}</span>
+          <button type="button" class="lares-message-stop" @click="readout.stop()">{{ t(readout.status === 'error' ? 'readout.dismiss' : 'readout.stop') }}</button>
+        </div>
+        <button v-if="!row.pending && !readout && isSpeaking(row)" type="button" class="lares-message-stop" @click="$emit('stop-speaking')">{{ t('input.stopSpeaking') }}</button>
         <LaresMessageActions
+          v-if="!row.pending"
           :text="row.text"
           :reaction="reactions[actionKey(index)] || ''"
           :metrics="row.metrics || null"

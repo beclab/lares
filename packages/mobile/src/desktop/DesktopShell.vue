@@ -35,6 +35,7 @@
           <span>{{ state.failText }}</span>
           <button type="button" :disabled="state.starting" @click="$emit('retry')">{{ t("probe.retry") }}</button>
         </div>
+        <p v-else-if="state.actionNotice" class="desktop-shell__failure" role="status">{{ state.actionNotice }}</p>
         <div v-if="newSessionHero" class="desktop-shell__brand">
           <div class="desktop-shell__logo" :style="logoStyle" aria-hidden="true" />
           <h1>{{ t("shell.title") }}</h1>

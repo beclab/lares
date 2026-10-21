@@ -197,6 +197,9 @@ export function createSentencePlayer({ send, play, halt, silence, fail = () => {
   const emitOutput = value => {
     if (value || readoutState.getSnapshot()?.key === lastKey || onOutput !== readoutState.publish) onOutput(value);
   };
+  // A dropped socket is the same quiet ending as a cancel: the next utterance
+  // opens a new stream. It is not a broken voice setting.
+  const quietPlayback = new Set(["voice_cancelled", "voice_output_owned", "voice_disconnected"]);
   const failed = (run, err) => {
     if (run.gen !== gen) return;
     run.abort?.abort();
@@ -204,7 +207,10 @@ export function createSentencePlayer({ send, play, halt, silence, fail = () => {
     run.wake?.();
     current = null;
     onState(false); emitOutput(null);
-    if (!["voice_cancelled", "voice_output_owned"].includes(err?.code || err?.message)) { emitOutput({ ...run.identity, status: "error", error: err?.code || err?.message || "voice_playback_failed", stop: () => emitOutput(null) }); fail(err); }
+    const code = err?.code || err?.message;
+    if (quietPlayback.has(code)) return;
+    emitOutput({ ...run.identity, status: "error", error: code || "voice_playback_failed", stop: () => emitOutput(null) });
+    fail(err);
   };
 
   const handOver = (run) => {

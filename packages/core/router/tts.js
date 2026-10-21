@@ -6,6 +6,17 @@ const REQUEST_TIMEOUT_MS = 180_000;
 
 const PCM_RATE = 24000;
 
+/** audio/L16 carries its clock in the media type. A custom header only fills that in. */
+export function declaredPcmRate(contentType, headerValue) {
+  const match = /(?:^|[;\s])rate\s*=\s*(\d+)/i.exec(String(contentType || ""));
+  const fromType = match ? Number(match[1]) : NaN;
+  const fromHeader = Number(headerValue);
+  const usable = (rate) => Number.isInteger(rate) && rate >= 8000 && rate <= 192000;
+  if (usable(fromType)) return fromType;
+  if (usable(fromHeader)) return fromHeader;
+  return null;
+}
+
 /** @returns {Promise<string[]>} Exact preset IDs; failures remain distinguishable from no presets. */
 export async function listTtsVoices(model) {
   const voices = await fetchTtsVoices(model, { fetcher: (path, options) => fetch(`${routerShimBaseUrl()}${path.replace("/llm/v1", "")}`, options) });
@@ -119,8 +130,8 @@ export async function synthesizeStream(request, onChunk) {
   if (!type.includes("audio/l16")) {
     return { streamed: false, audio: Buffer.from(await res.arrayBuffer()) };
   }
-  const sampleRate = Number(res.headers.get("x-audio-sample-rate"));
-  if (!Number.isInteger(sampleRate) || sampleRate < 8000 || sampleRate > 192000) throw new VoiceError("voice_audio_format", 502, "missing or invalid PCM sample rate");
+  const sampleRate = declaredPcmRate(type, res.headers.get("x-audio-sample-rate"));
+  if (sampleRate === null) throw new VoiceError("voice_audio_format", 502, "missing or invalid PCM sample rate");
   await request.onFormat?.({ sampleRate, channels: 1, encoding: "pcm_s16le" });
   const reader = res.body.getReader();
   let bytes = 0;

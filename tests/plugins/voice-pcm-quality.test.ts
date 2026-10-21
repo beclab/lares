@@ -3,11 +3,11 @@ import test from "node:test";
 import { runInNewContext } from "node:vm";
 import { PCM_PLAYER_WORKLET } from "@olares/lares-core/voice/pcm-worklet";
 
-function player(rate: number, outputRate: number) {
+function player(rate: number, outputRate: number, extra: Record<string, unknown> = {}) {
   let Processor: any; const events: any[] = [];
   class Base { port = { onmessage: null, postMessage: (e: any) => events.push(e) }; }
   runInNewContext(PCM_PLAYER_WORKLET, { AudioWorkletProcessor: Base, sampleRate: outputRate, registerProcessor: (_: string, cls: any) => { Processor = cls; } });
-  const worker = new Processor({ processorOptions: { inputRate: rate } });
+  const worker = new Processor({ processorOptions: { inputRate: rate, outputRate, ...extra } });
   const send = (data: any) => worker.port.onmessage({ data });
   return { worker, events, send };
 }
@@ -43,6 +43,32 @@ test("a late neighboring sample pauses interpolation without consuming or repeat
   const heard = [first[0], ...rest.slice(0, 5)];
   const expected = [.1, .15, .2, .25, .3, .3];
   heard.forEach((sample, i) => assert.ok(Math.abs(sample - expected[i]) < 1e-6));
+});
+
+test("playback holds the first samples until a short buffer arrives, then plays them at the source clock", () => {
+  const { worker, events, send } = player(24000, 48000, { preroll: 4 });
+  send({ type: "audio", samples: Float32Array.of(0.2, 0.4) });
+  const blocked = new Float32Array(128);
+  worker.process([], [[blocked]]);
+  assert.equal(blocked[0], 0);
+  assert.equal(events.some((event) => event.type === "started"), false);
+  assert.equal(worker.offset, 0);
+  send({ type: "audio", samples: Float32Array.of(0.6, 0.8) });
+  const out = new Float32Array(8);
+  worker.process([], [[out]]);
+  assert.equal(events.some((event) => event.type === "started"), true);
+  assert.ok(Math.abs(out[0] - 0.2) < 1e-6);
+  assert.ok(Math.abs(out[1] - 0.3) < 1e-6);
+});
+
+test("a finished utterance shorter than the buffer still plays at the source clock", () => {
+  const { worker, send } = player(24000, 48000, { preroll: 4800 });
+  send({ type: "audio", samples: Float32Array.of(0.5) });
+  send({ type: "finish" });
+  const out = new Float32Array(4);
+  assert.equal(worker.process([], [[out]]), false);
+  assert.ok(Math.abs(out[0] - 0.5) < 1e-6);
+  assert.ok(Math.abs(out[1] - 0.5) < 1e-6);
 });
 
 

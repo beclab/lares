@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createInboxTracker, normalizeQueueItems } from "@olares/lares-core/larepass/queue";
+import { createInboxTracker, normalizeQueueItems, settleQueueResult } from "@olares/lares-core/larepass/queue";
 
 test("queue rows derive a text preview so the dock can edit them", () => {
   assert.deepEqual(
@@ -52,4 +52,65 @@ test("inbox replays only splices newer than its baseline", () => {
   assert.deepEqual(inbox.queue("s1").map((row) => row.id), ["m1", "m2"]);
   inbox.apply("s1", [{ type: "agent/inbox/spliced", seq: 32, data: { target: "next-step", start: 0, inserted: [message("m3", "c")] } }]);
   assert.deepEqual(inbox.queue("s1").map((row) => row.id), ["m1", "m2"]);
+});
+
+test("a steered line joins the conversation before the running step records it", () => {
+  const inbox = createInboxTracker();
+  const steered = message("m3", "改说晴");
+  assert.equal(inbox.apply("s1", [{
+    type: "agent/inbox/spliced",
+    seq: 1,
+    data: { target: "next-step", start: 0, inserted: [steered] },
+  }]), true);
+  assert.deepEqual(inbox.queue("s1"), []);
+  assert.deepEqual(inbox.pendingUsers("s1", []).map((row) => [row.messageId, row.text]), [["m3", "改说晴"]]);
+  inbox.apply("s1", [{
+    type: "agent/inbox/spliced",
+    seq: 2,
+    data: { target: "next-step", start: 0, removedCount: 1, inserted: [] },
+  }]);
+  assert.deepEqual(inbox.pendingUsers("s1", []).map((row) => row.messageId), ["m3"]);
+  assert.deepEqual(inbox.pendingUsers("s1", [{ type: "user", text: "改说晴", messageId: "m3" }]), []);
+});
+
+test("canceling a steered line removes it from the conversation", () => {
+  const inbox = createInboxTracker();
+  inbox.apply("s1", [{
+    type: "agent/inbox/spliced",
+    seq: 1,
+    data: { target: "next-step", start: 0, inserted: [message("m3", "不要")] },
+  }]);
+  inbox.apply("s1", [{
+    type: "agent/inbox/spliced",
+    seq: 2,
+    data: { target: "next-step", start: 0, removedCount: 1, inserted: [], outcome: "canceled" },
+  }]);
+  assert.deepEqual(inbox.pendingUsers("s1", []), []);
+});
+
+test("context staged for the next step is not a conversation line", () => {
+  const inbox = createInboxTracker();
+  inbox.apply("s1", [{
+    type: "agent/inbox/spliced",
+    seq: 1,
+    data: {
+      target: "next-step",
+      start: 0,
+      inserted: [{
+        id: "ctx",
+        content: [{ type: "text", text: "secret" }],
+        source: { kind: "plugin", plugin: "fs" },
+      }],
+    },
+  }]);
+  assert.deepEqual(inbox.pendingUsers("s1", []), []);
+});
+
+test("a queue row the host already released is not a failed send", () => {
+  const settled = settleQueueResult({ ok: false, error: { code: "session/queue-item-not-pending", message: "queued item is no longer pending" } });
+  assert.deepEqual(settled, { ok: true, settled: true });
+  const missing = settleQueueResult({ ok: false, error: { code: "session/queue-item-not-found", message: "queue item not found" } });
+  assert.equal(missing.settled, true);
+  const broken = settleQueueResult({ ok: false, error: { code: "unavailable", message: "host unreachable" } });
+  assert.equal(broken.ok, false);
 });

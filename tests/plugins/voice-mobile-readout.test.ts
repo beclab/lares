@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createSentencePlayer } from "../../packages/core/voice/speech.js";
+import { createSentencePlayer, readoutState } from "../../packages/core/voice/speech.js";
 import { playAudioStream, startTranscriptionStream } from "../../packages/core/voice/stream-client.js";
-import { voiceCallFailure, voiceInputPresentation, voicePanelPresentation } from "../../packages/core/voice/presentation.js";
+import { voiceCallFailure, voiceIndicatorPresentation, voiceInputPresentation, voicePanelPresentation } from "../../packages/core/voice/presentation.js";
 import { createVoiceConversation } from "../../packages/core/voice/conversation.js";
 
 const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -407,6 +407,47 @@ test("a transcription socket that dies before it is ready is voice_disconnected"
   await assert.rejects(pending, (error: Error) => error.message === "voice_disconnected");
 });
 
+test("a dropped readout socket clears the badge instead of warning about voice settings", async () => {
+  const failures: unknown[] = [];
+  let reject: (error: Error) => void = () => {};
+  const player = createSentencePlayer({
+    stream: () => new Promise((_, no) => { reject = no; }),
+    send: async () => ({ sentences: 1 }),
+    play: async () => {},
+    halt() {},
+    silence() {},
+    fail: (error) => failures.push(error),
+  });
+  player.follow({ key: "drop", text: "你好。", done: true, source: { sessionId: "s", turn: 1, step: 0 } });
+  await flush();
+  assert.equal(readoutState.getSnapshot()?.status, "preparing");
+  reject(new Error("voice_disconnected"));
+  await flush();
+  assert.equal(readoutState.getSnapshot(), null);
+  assert.deepEqual(failures, []);
+});
+
+test("a real playback failure still stays on the readout", async () => {
+  const failures: unknown[] = [];
+  let reject: (error: Error) => void = () => {};
+  const player = createSentencePlayer({
+    stream: () => new Promise((_, no) => { reject = no; }),
+    send: async () => ({ sentences: 1 }),
+    play: async () => {},
+    halt() {},
+    silence() {},
+    fail: (error) => failures.push(error),
+  });
+  player.follow({ key: "lost", text: "你好。", done: true, source: { sessionId: "s", turn: 2, step: 0 } });
+  await flush();
+  reject(Object.assign(new Error("voice_device_lost"), { code: "voice_device_lost" }));
+  await flush();
+  assert.equal(readoutState.getSnapshot()?.status, "error");
+  assert.equal(readoutState.getSnapshot()?.error, "voice_device_lost");
+  assert.equal(failures.length, 1);
+  readoutState.publish(null);
+});
+
 test("stopping the reader swallows a disconnect from the stream it just aborted", async () => {
   const failures: unknown[] = [];
   let reject: (error: Error) => void = () => {};
@@ -426,22 +467,33 @@ test("stopping the reader swallows a disconnect from the stream it just aborted"
   assert.deepEqual(failures, []);
 });
 
-test("a muted call does not tell the user to resume listening", () => {
-  const view = { visible: true, mode: "continuous", snapshot: { connection: "paused", outputMuted: true, error: "voice_disconnected", playback: "idle" } };
-  const ui = voiceInputPresentation(view);
-  assert.equal(ui.error, "voice_background");
-  assert.equal(ui.status, "error.voice_background");
-  assert.notEqual(ui.status, "error.voice_disconnected");
+test("a dropped continuous call stays quiet; hold is the way back", () => {
+  for (const outputMuted of [true, false]) {
+    const view = { visible: true, mode: "continuous", snapshot: { connection: "paused", outputMuted, error: "voice_disconnected", playback: "idle" } };
+    const ui = voiceInputPresentation(view);
+    assert.equal(ui.error, null);
+    assert.equal(ui.label, "dictation.hold");
+    assert.equal(voiceCallFailure(view), null);
+    assert.equal(voiceIndicatorPresentation(view).visible, false);
+    assert.equal(voiceIndicatorPresentation(view).error, null);
+    assert.notEqual(ui.status, "error.voice_disconnected");
+    assert.notEqual(ui.status, "error.voice_background");
+  }
 });
 
-test("an unmuted disconnect still says the listen session dropped", () => {
-  const view = { visible: true, mode: "continuous", snapshot: { connection: "paused", outputMuted: false, error: "voice_disconnected", playback: "idle" } };
+test("dictation still reports a dropped socket", () => {
+  const view = { visible: true, mode: "single", snapshot: { connection: "paused", error: "voice_disconnected", playback: "idle" } };
   assert.equal(voicePanelPresentation(view).status, "error.voice_disconnected");
 });
 
-test("a paused call can be resumed from one banner", () => {
-  const view = { visible: true, mode: "continuous", snapshot: { connection: "paused", error: "voice_disconnected", playback: "idle" } };
-  assert.deepEqual(voiceCallFailure(view), { code: "voice_disconnected", action: "resume" });
+test("a muted dictation disconnect does not ask the user to resume listening", () => {
+  const view = { visible: true, mode: "single", snapshot: { connection: "paused", outputMuted: true, error: "voice_disconnected", playback: "idle" } };
+  assert.equal(voicePanelPresentation(view).error, "voice_background");
+});
+
+test("a paused device failure can still be resumed from one banner", () => {
+  const view = { visible: true, mode: "continuous", snapshot: { connection: "paused", error: "voice_device_lost", playback: "idle" } };
+  assert.deepEqual(voiceCallFailure(view), { code: "voice_device_lost", action: "resume" });
 });
 
 test("recovery and idle endings are quiet; hold stays the way back", () => {

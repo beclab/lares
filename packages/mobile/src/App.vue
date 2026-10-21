@@ -214,6 +214,7 @@ export default {
       draftBySession: {},
       imagesBySession: {},
       failed: "",
+      actionNotice: "",
       error: "",
       items: [],
       pendingUser: "",
@@ -326,6 +327,7 @@ export default {
         draft: this.draft,
         failed: this.failed,
         failText: this.failText,
+        actionNotice: this.actionNotice,
         viewItems: this.viewItems,
         historyLoading: this.historyLoading,
         previews: this.previews,
@@ -705,6 +707,7 @@ export default {
         this.noteSeen(this.sessionId);
         this.noteSeen(snap.sessionId);
         this.pendingUser = "";
+        this.actionNotice = "";
         this.previews = {};
         this.resetPreview();
         this.commands = null;
@@ -1038,6 +1041,7 @@ export default {
       this.resetPreview();
       this.pendingUser = "";
       this.failed = "";
+      this.actionNotice = "";
       this.error = "";
       this.modelCatalog = null;
       this.modelCatalogError = "";
@@ -1591,10 +1595,12 @@ export default {
     async updateQueue(itemId, action) {
       if (!itemId || this.queueBusy) return;
       this.queueBusy = itemId;
+      this.actionNotice = "";
       try {
         const changed = await this.runtime.updateQueue(itemId, action);
         if (!changed.ok) {
-          this.failed = changed.error?.message || changed.error?.code || "queue";
+          const detail = changed.error?.message || changed.error?.code || "queue";
+          this.actionNotice = this.t("chat.failed", { error: detail });
         }
       } finally {
         this.queueBusy = "";

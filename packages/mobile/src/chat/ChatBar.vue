@@ -163,6 +163,10 @@ export default {
   line-height: 20px;
 }
 
+.lares-bar__segment:only-child {
+  max-width: none;
+}
+
 .lares-bar__segment + .lares-bar__segment::before {
   content: "";
   width: 1px;

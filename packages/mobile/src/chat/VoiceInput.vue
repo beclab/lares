@@ -6,20 +6,17 @@
       <svg v-if="view.mode === 'single' && ui.recording && levels.length" class="lares-inline-level" viewBox="0 0 32 24" aria-hidden="true"><line v-for="(level, index) in levels" :key="index" :x1="index * 5 + 3" :x2="index * 5 + 3" :y1="12 - Math.max(2, Math.min(10, level * 500))" :y2="12 + Math.max(2, Math.min(10, level * 500))" /></svg>
       <span>{{ t(ui.label) }}</span><span v-if="ui.timed" class="lares-inline-time" aria-hidden="true"> · {{ ui.elapsed }}</span>
     </button>
-    <span v-if="!ui.error" class="lares-inline-status" :data-visible="['speaking', 'working'].includes(ui.phase)" role="status" aria-live="polite" aria-atomic="true">{{ status }}</span>
   </div>
 </template>
 <script>
 import { createHoldGesture } from '@olares/lares-core/voice/hold';
 import { voiceInputPresentation } from '@olares/lares-core/voice/presentation';
-import { messageFromCode } from '@olares/lares-core/i18n/t';
 export default {
   name: 'LaresVoiceInput', props: { view: { type: Object, required: true }, t: { type: Function, required: true } }, emits: ['action'],
   data: () => ({ now: Date.now(), clock: null, gesture: null }),
   computed: {
     ui() { return voiceInputPresentation(this.view, this.now); },
     levels() { return (this.view.levels || []).slice(-6); },
-    status() { return this.ui.error ? messageFromCode(this.t, this.ui.error, 'error.voice_failed') : this.t(this.ui.status); },
   },
   created() { this.gesture = createHoldGesture({ start: () => this.action('holdStart'), end: value => this.action('holdEnd', value), onCancelChange: value => this.action('setCancelArmed', value), isActive: () => this.view.holding }); },
   mounted() { this.$refs.main?.focus(); this.clock = setInterval(() => { this.now = Date.now(); }, 250); window.addEventListener('blur', this.cancel); window.addEventListener('pointerdown', this.additionalPointer, true); },
@@ -44,6 +41,4 @@ export default {
 .lares-inline-cancel { position: absolute; bottom: calc(100% + 18px); left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: 13px; padding: 7px 12px; border-radius: 10px; background: var(--q-background-1, white); box-shadow: 0 2px 12px #0001; pointer-events: none; }
 [data-phase=recording] .lares-inline-main { color: var(--q-blue-default, #3377ff); }
 [data-phase=cancel] .lares-inline-main, .lares-inline-cancel[data-armed=true] { color: var(--q-red-default, #c23d32); }
-.lares-inline-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-.lares-inline-status[data-visible=true] { width: auto; height: auto; clip-path: none; bottom: calc(100% + 16px); background: var(--q-background-1, white); padding: 6px; font-size: 12px; color: var(--q-ink-2, #777); }
 </style>

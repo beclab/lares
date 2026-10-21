@@ -274,7 +274,11 @@ export function foldTranscript(entries) {
     if (event.type === "user/message") {
       const text = textFromBlocks(data.content);
       if (isHumanUserSource(data.source)) {
-        if (text) items.push(tag({ type: "user", text }));
+        if (text) {
+          const row = { type: "user", text };
+          if (typeof data.id === "string" && data.id) row.messageId = data.id;
+          items.push(tag(row));
+        }
         continue;
       }
       const provenance = contextProvenance(data.source);

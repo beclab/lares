@@ -3,7 +3,10 @@ export const PCM_PLAYER_WORKLET = `
 class LaresPcmPlayer extends AudioWorkletProcessor {
   constructor(options) {
     super(); this.queue = []; this.offset = 0; this.frames = 0; this.reported = 0;
-    this.rate = options.processorOptions.inputRate; this.step = this.rate / sampleRate;
+    this.rate = options.processorOptions.inputRate;
+    const outputRate = options.processorOptions.outputRate || sampleRate;
+    this.step = this.rate / outputRate;
+    this.preroll = options.processorOptions.preroll || 0;
     this.paused = false; this.queued = 0; this.finished = false; this.started = false; this.starved = false;
     this.port.onmessage = ({ data }) => {
       if (data.type === 'audio') {
@@ -18,6 +21,8 @@ class LaresPcmPlayer extends AudioWorkletProcessor {
     const out = outputs[0][0];
     out.fill(0);
     if (this.paused) return true;
+    // A late first packet must not open a hole inside the first syllable.
+    if (!this.started && !this.finished && this.queued < this.preroll) return true;
     for (let i = 0; i < out.length; i++) {
       while (this.queue.length && this.offset >= this.queue[0].length) {
         const head = this.queue.shift(); this.offset -= head.length; this.queued -= head.length;
