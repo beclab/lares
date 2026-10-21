@@ -28,4 +28,4 @@ spec:
     - 播报方式跟随从集群读到的显卡分片模式。
     - 播报会跳过文件名和其他不该念出来的文本。
 
-    [版本说明](https://github.com/beclab/lares/releases/tag/v0.26.58)
+    [版本说明](https://github.com/beclab/lares/releases/tag/v0.26.59)
