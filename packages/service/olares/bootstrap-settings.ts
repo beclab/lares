@@ -34,6 +34,10 @@ const ROUTE_COMPAT = {
   // (`Unknown name "store"`) never shows up in detection. Omitting the field
   // matches OpenAI's own default of false.
   supportsStore: false,
+  // dsh session id as `x-session-id`: Router groups an Agent turn's calls by it,
+  // and the shim swaps in a Realtime session id while one drives the session.
+  sendSessionAffinityHeaders: true,
+  sessionAffinityFormat: "openrouter",
 };
 /**
  * The shim bearer's credential reference — never LARES_ROUTER_API_KEY. The

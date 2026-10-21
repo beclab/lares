@@ -1,0 +1,283 @@
+import assert from "node:assert/strict";
+import { createServer } from "node:http";
+import test from "node:test";
+import { WebSocket } from "ws";
+import { createLaresRealtimeGateway } from "@olares/lares-core/voice/lares-realtime-gateway";
+
+const KEY = "lvk_0123456789abcdef_" + "a".repeat(43);
+const keys = { verify: (header: any) => header === `Bearer ${KEY}` ? { id: "0123456789abcdef", name: "Router", models: ["voice-chat", "voice-dictation", "voice-assistant"], sessionId: null, workspaceId: null } : null };
+
+async function serve(options: any = {}, overrides: any = {}) {
+  const calls: any = { prompts: [], closes: 0, transcribed: [], synthesized: [], truncated: [], instructions: [], withdrawn: [] };
+  const service: any = {
+    async open(scope: any) { scope.active = true; scope.contextId = scope.contextId || "ctx-1"; scope.session = { snapshot: () => ({ running: false, tasks: [] }) }; },
+    async prompt(_scope: any, body: any) { calls.prompts.push(body); return { utterance: { key: body.requestId, text: "actual reply", silent: false } }; },
+    async clean(_scope: any, text: string) { return text.trim(); },
+    truncate(_scope: any, key: string, text: string) { calls.truncated.push({ key, text }); },
+    instructions(_scope: any, text: string) { calls.instructions.push(text); },
+    async withdraw(_scope: any, id: string) { calls.withdrawn.push(id); return "withdrawn"; },
+    state() { return {}; }, async cancel() {}, async close(scope: any) { scope.active = false; calls.closes++; },
+    ...overrides,
+  };
+  const gateway = createLaresRealtimeGateway({ service, config: () => ({ idleTimeoutMs: 300000 }), keys,
+    transcribe: async (pcm: Buffer, scope: any) => { calls.transcribed.push({ bytes: pcm.length, session: scope.routerSessionId }); return " test request "; },
+    synthesize: async () => Buffer.alloc(2400), segment: (text: string) => [text], ...options });
+  const server = createServer();
+  server.on("upgrade", (req, socket, head) => gateway.upgrade(req, socket, head));
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = (server.address() as any).port;
+  return { calls, port, service, async stop() { gateway.close(); await new Promise<void>((resolve) => server.close(() => resolve())); } };
+}
+function connect(port: number, model: string, headers: any = {}) {
+  return new WebSocket(`ws://127.0.0.1:${port}/api/lares/voice/realtime?model=${model}`, { headers: { authorization: `Bearer ${KEY}`, ...headers } });
+}
+function until(client: WebSocket, predicate: (event: any, events: any[]) => boolean, onEvent: (event: any) => void = () => {}) {
+  const events: any[] = [];
+  return new Promise<any[]>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`timeout: ${events.map((e) => e.type).join(",")}`)), 3000);
+    client.on("error", reject);
+    client.on("message", (raw) => {
+      const event = JSON.parse(raw.toString()); events.push(event); onEvent(event);
+      if (predicate(event, events)) { clearTimeout(timer); resolve(events); }
+    });
+  });
+}
+const handshake = (port: number, model: string, headers: any) => new Promise<number>((resolve) => {
+  const client = new WebSocket(`ws://127.0.0.1:${port}/api/lares/voice/realtime?model=${model}`, { headers });
+  client.on("unexpected-response", (_req, res) => resolve(res.statusCode || 0));
+  client.on("open", () => { client.terminate(); resolve(101); });
+  client.on("error", () => {});
+});
+
+test("lares-realtime-v1 rejects missing keys and models the key does not grant", async () => {
+  const fixture = await serve();
+  try {
+    assert.equal(await handshake(fixture.port, "voice-chat", {}), 401);
+    assert.equal(await handshake(fixture.port, "voice-chat", { authorization: "Bearer lvk_wrong" }), 401);
+    assert.equal(await handshake(fixture.port, "voice-direct", { authorization: `Bearer ${KEY}` }), 403);
+    assert.equal(await handshake(fixture.port, "voice-chat", { authorization: `Bearer ${KEY}` }), 101);
+  } finally { await fixture.stop(); }
+});
+
+test("lares-realtime-v1 runs an OpenAI-shaped turn with zero usage and the Router session id", async () => {
+  const fixture = await serve();
+  const client = connect(fixture.port, "voice-chat", { "x-session-id": "rtc_router", "x-bfl-user": "mallory" });
+  try {
+    const events = await until(client, (event) => event.type === "response.done", (event) => {
+      if (event.type === "session.created") {
+        client.send(JSON.stringify({ type: "session.update", event_id: "evt-tools", session: { tools: [{ name: "shell" }] } }));
+        client.send(JSON.stringify({ type: "session.update", session: { lares: { busy_turn: "steer" }, audio: { input: { turn_detection: null } } } }));
+        client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: Buffer.alloc(4800).toString("base64") }));
+        client.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
+      }
+    });
+    const created = events.find((event) => event.type === "session.created");
+    assert.equal(created.session.lares.capabilities.protocol, "lares-realtime-v1");
+    assert.equal(created.session.lares.context_id, "ctx-1");
+    const error = events.find((event) => event.type === "error");
+    assert.deepEqual([error.error.code, error.error.event_id], ["unsupported_parameter", "evt-tools"]);
+    const types = events.map((event) => event.type);
+    for (const type of ["input_audio_buffer.committed", "conversation.item.input_audio_transcription.completed", "response.created", "response.output_item.added", "response.output_audio_transcript.delta", "response.output_audio.delta", "response.output_audio.done", "response.output_item.done"]) assert.ok(types.includes(type), type);
+    const done = events.find((event) => event.type === "response.done");
+    assert.equal(done.response.status, "completed");
+    assert.equal(done.response.usage.total_tokens, 0);
+    assert.equal(done.response.usage.output_token_details.audio_tokens, 0);
+    assert.deepEqual(done.response.metadata.lares.usage, { billing: "child-models", input_audio_ms: 100, output_audio_ms: 50 });
+    assert.equal(done.response.metadata.lares.origin, "turn");
+    assert.deepEqual(fixture.calls.transcribed, [{ bytes: 4800, session: "rtc_router" }]);
+    assert.equal(fixture.calls.prompts.length, 1);
+    assert.equal(fixture.calls.prompts[0].mode, undefined);
+  } finally { client.terminate(); await fixture.stop(); }
+  assert.equal(fixture.calls.closes, 1);
+});
+
+test("lares-realtime-v1 dictation is a transcription session without responses", async () => {
+  const fixture = await serve();
+  const client = connect(fixture.port, "voice-dictation");
+  try {
+    const events = await until(client, (_event, seen) => seen.some((event) => event.type === "error") && seen.some((event) => event.type === "conversation.item.input_audio_transcription.completed"), (event) => {
+      if (event.type === "session.created") {
+        assert.equal(event.session.type, "transcription");
+        client.send(JSON.stringify({ type: "session.update", session: { output_modalities: ["audio"] } }));
+        client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: Buffer.alloc(4800).toString("base64") }));
+        client.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
+      }
+    });
+    assert.equal(events.find((event) => event.type === "error").error.code, "unsupported_parameter");
+    assert.equal(events.find((event) => event.type === "conversation.item.input_audio_transcription.completed").transcript, "test request");
+    assert.equal(fixture.calls.prompts.length, 0);
+  } finally { client.terminate(); await fixture.stop(); }
+});
+
+test("lares-realtime-v1 holds input until playback is acknowledged once the client acknowledges", async () => {
+  const fixture = await serve();
+  const client = connect(fixture.port, "voice-chat");
+  const audio = Buffer.alloc(4800).toString("base64");
+  try {
+    let stage = 0;
+    const events = await until(client, (event) => event.type === "input_audio_buffer.committed" && stage === 2, (event) => {
+      if (event.type === "session.created") {
+        client.send(JSON.stringify({ type: "lares.playback.progress", item_id: null, played_ms: 0 }));
+        client.send(JSON.stringify({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] } }));
+      }
+      if (event.type === "response.done" && stage === 0) {
+        stage = 1;
+        client.send(JSON.stringify({ type: "input_audio_buffer.append", audio }));
+        client.send(JSON.stringify({ type: "lares.playback.completed", item_id: event.response.id }));
+        client.send(JSON.stringify({ type: "input_audio_buffer.append", audio }));
+        client.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
+        stage = 2;
+      }
+    });
+    assert.equal(fixture.calls.prompts[0].text, "hello");
+    assert.ok(events.some((event) => event.type === "error" && event.error.code === "waiting_for_playback"));
+  } finally { client.terminate(); await fixture.stop(); }
+});
+
+const pcm = (ms: number, level = 0) => { const buffer = Buffer.alloc(ms * 48); for (let i = 0; i < buffer.length; i += 2) buffer.writeInt16LE(Math.round(level * 32767 * (i % 4 ? 1 : -1)), i); return buffer.toString("base64"); };
+
+test("lares-realtime-v1 truncates a reply at the last fully played sentence", async () => {
+  const fixture = await serve({ segment: () => ["First part.", "Second part."] });
+  const client = connect(fixture.port, "voice-chat");
+  try {
+    let item = "";
+    const events = await until(client, (event) => event.type === "conversation.item.truncated", (event) => {
+      if (event.type === "session.created") client.send(JSON.stringify({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text: "hi" }] } }));
+      if (event.type === "response.output_item.added") item = event.item.id;
+      if (event.type === "response.done") client.send(JSON.stringify({ type: "conversation.item.truncate", item_id: item, content_index: 0, audio_end_ms: 60 }));
+    });
+    assert.deepEqual(events.filter((event) => event.type === "response.output_audio_transcript.delta").map((event) => event.delta), ["First part.", " Second part."]);
+    assert.equal(events.find((event) => event.type === "conversation.item.truncated").audio_end_ms, 60);
+    assert.deepEqual(fixture.calls.truncated, [{ key: fixture.calls.prompts[0].requestId, text: "First part." }]);
+    const done = events.filter((event) => event.type === "conversation.item.done");
+    assert.deepEqual(done.map((event) => event.item.role), ["user", "assistant"]);
+  } finally { client.terminate(); await fixture.stop(); }
+});
+
+test("lares-realtime-v1 applies chat instructions, re-speaks on response.create and rejects instructions elsewhere", async () => {
+  const fixture = await serve();
+  const client = connect(fixture.port, "voice-chat");
+  try {
+    let replies = 0;
+    const events = await until(client, (event) => event.type === "response.done" && replies === 2, (event) => {
+      if (event.type === "session.created") {
+        client.send(JSON.stringify({ type: "session.update", session: { instructions: "Answer in French." } }));
+        client.send(JSON.stringify({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text: "hi" }] } }));
+      }
+      if (event.type === "response.done") { replies++; if (replies === 1) client.send(JSON.stringify({ type: "response.create" })); }
+    });
+    assert.deepEqual(fixture.calls.instructions, ["Answer in French."]);
+    assert.equal(fixture.calls.prompts.length, 1);
+    assert.equal(events.filter((event) => event.type === "response.done").length, 2);
+  } finally { client.terminate(); await fixture.stop(); }
+  const assistant = await serve();
+  const other = connect(assistant.port, "voice-assistant");
+  try {
+    const events = await until(other, (event) => event.type === "error", (event) => {
+      if (event.type === "session.created") other.send(JSON.stringify({ type: "session.update", session: { instructions: "x" } }));
+    });
+    assert.equal(events.at(-1).error.code, "unsupported_parameter");
+  } finally { other.terminate(); await assistant.stop(); }
+});
+
+test("lares-realtime-v1 streams partial transcripts as deltas and uses the stream's final text", async () => {
+  const fixture = await serve({
+    openTranscription: async (_scope: any, onPartial: (text: string) => void) => {
+      let written = 0;
+      return { write(chunk: Buffer) { written += chunk.length; onPartial(written >= 4800 ? "hello world" : "hello"); }, async finish() { return "hello world"; }, cancel() {} };
+    },
+  });
+  const client = connect(fixture.port, "voice-chat");
+  try {
+    const events = await until(client, (event) => event.type === "response.done", (event) => {
+      if (event.type === "session.created") {
+        client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: pcm(50) }));
+        client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: pcm(50) }));
+        setTimeout(() => client.send(JSON.stringify({ type: "input_audio_buffer.commit" })), 20);
+      }
+    });
+    assert.deepEqual(events.filter((event) => event.type === "conversation.item.input_audio_transcription.delta").map((event) => event.delta), ["hello", " world"]);
+    assert.equal(events.find((event) => event.type === "conversation.item.input_audio_transcription.completed").transcript, "hello world");
+    assert.equal(fixture.calls.transcribed.length, 0);
+    assert.equal(fixture.calls.prompts[0].text, "hello world");
+  } finally { client.terminate(); await fixture.stop(); }
+});
+
+test("lares-realtime-v1 follows the busy-Enter default and withdraws tasks by id", async () => {
+  const tasks: any[] = [{ requestId: "item_x:delegate", status: "accepted" }];
+  const fixture = await serve({ busyDefault: () => "steer" }, {
+    async open(scope: any) { scope.active = true; scope.contextId = "ctx-1"; scope.session = { snapshot: () => ({ running: true, sessionId: "dsh-1", tasks }) }; },
+    async prompt(_scope: any, body: any) { fixture.calls.prompts.push(body); return { utterance: null }; },
+  });
+  const client = connect(fixture.port, "voice-assistant");
+  try {
+    fixture.service.withdraw = async (_scope: any, id: string) => { fixture.calls.withdrawn.push(id); tasks[0].status = "cancelled"; return "withdrawn"; };
+    const events = await until(client, (event) => event.type === "lares.task.updated" && event.status === "cancelled", (event) => {
+      if (event.type === "session.created") client.send(JSON.stringify({ type: "conversation.item.create", item: { id: "item_y", type: "message", role: "user", content: [{ type: "input_text", text: "go" }] } }));
+      if (event.type === "lares.task.updated" && event.status === "pending" && !fixture.calls.withdrawn.length) client.send(JSON.stringify({ type: "lares.task.cancel", task_id: event.task_id }));
+    });
+    assert.equal(fixture.calls.prompts[0].mode, "steer");
+    assert.equal(events.find((event) => event.type === "lares.task.updated").session_id, "dsh-1");
+    assert.deepEqual(fixture.calls.withdrawn, ["item_x:delegate"]);
+  } finally { client.terminate(); await fixture.stop(); }
+});
+
+test("lares-realtime-v1 serves a Lares ticket on the open scope with host audio", async () => {
+  const fixture = await serve();
+  const port: any = { events: [] as string[], async resumeInput() { port.events.push("resume"); }, async pauseInput() { port.events.push("pause"); }, async write(bytes: Buffer) { port.events.push(`write:${bytes.length}`); }, async finish() { port.events.push("finish"); }, async interrupt() {}, async stop() { port.events.push("stop"); } };
+  const gateway = createLaresRealtimeGateway({ service: { ...fixture.service, async prompt(_scope: any, body: any) { return { utterance: { key: body.requestId, text: "on the speaker", silent: false } }; } }, config: () => ({ idleTimeoutMs: 300000 }), keys,
+    transcribe: async () => "hello", synthesize: async () => Buffer.alloc(2400), segment: (text: string) => [text], hostAudio: async () => port });
+  const server = createServer();
+  server.on("upgrade", (req, socket, head) => gateway.upgrade(req, socket, head));
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const scope: any = { id: "voice-1", owner: "owner", device: "headset", active: true, readAloud: true, contextId: "ctx-9", voiceConfig: { preset: "chat" }, session: { snapshot: () => ({ running: false, tasks: [] }) } };
+  const { ticket } = gateway.ticket(scope);
+  const client = new WebSocket(`ws://127.0.0.1:${(server.address() as any).port}/api/lares/voice/realtime`, ["lares-voice", `lares-ticket.${ticket}`]);
+  try {
+    const events = await until(client, (event) => event.type === "response.done", (event) => {
+      if (event.type === "session.created") {
+        assert.equal(event.session.lares.device, "headset");
+        assert.equal(event.session.lares.context_id, "ctx-9");
+        client.send(JSON.stringify({ type: "lares.device.input.resume" }));
+        client.send(JSON.stringify({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text: "hi" }] } }));
+      }
+    });
+    assert.ok(!events.some((event) => event.type === "response.output_audio.delta"));
+    assert.deepEqual(events.filter((event) => event.type === "lares.device.playback").map((event) => event.playing), [true, false]);
+    assert.deepEqual(port.events, ["resume", "write:2400", "finish"]);
+  } finally {
+    client.terminate(); gateway.close();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await fixture.stop();
+  }
+  assert.ok(port.events.includes("stop"));
+  assert.equal(scope.active, true);
+});
+
+test("lares-realtime-v1 barge-in only with the flag and echo cancellation; silence resumes, words stop", async () => {
+  let release: () => void = () => {};
+  const fixture = await serve({ bargeIn: () => true, segment: () => ["One.", "Two.", "Three."],
+    synthesize: async (text: string) => { if (text === "Two.") await new Promise<void>((resolve) => { release = resolve; }); return Buffer.alloc(2400); },
+    transcribe: async (pcmBytes: Buffer) => pcmBytes.length > 48 * 900 ? "stop please" : "" });
+  const client = connect(fixture.port, "voice-chat");
+  try {
+    let stage = 0;
+    const events = await until(client, (event, seen) => event.type === "response.done" && seen.filter((value) => value.type === "response.done").length === 2, (event) => {
+      if (event.type === "session.created") {
+        assert.equal(event.session.lares.capabilities.barge_in, true);
+        client.send(JSON.stringify({ type: "session.update", session: { audio: { input: { turn_detection: { type: "server_vad", silence_duration_ms: 200 } } } } }));
+        client.send(JSON.stringify({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text: "talk" }] } }));
+      }
+      if (event.type === "response.output_audio_transcript.delta" && event.delta === "One." && stage === 0) {
+        stage = 1;
+        for (let i = 0; i < 12; i++) client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: pcm(100, 0.2) }));
+        for (let i = 0; i < 6; i++) client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: pcm(100) }));
+        setTimeout(() => { stage = 2; release(); }, 100);
+      }
+    });
+    const done = events.find((event) => event.type === "response.done");
+    assert.equal(done.response.status, "cancelled");
+    assert.ok(events.some((event) => event.type === "conversation.item.truncated"));
+    assert.equal(fixture.calls.prompts.at(-1).text, "stop please");
+  } finally { client.terminate(); await fixture.stop(); }
+});

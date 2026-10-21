@@ -3,6 +3,7 @@ import { prepareBrowserCapture } from "@olares/lares-core/voice/browser-capture"
 import { laresVoiceConfig } from "@olares/lares-core/voice/lares-policy";
 import { createVoicePanel } from "@olares/lares-core/voice/panel";
 import { createVoiceConversation } from "@olares/lares-core/voice/conversation";
+import { createUnifiedConversation } from "@olares/lares-core/voice/unified-conversation";
 import { createBrowserPlayer } from "@olares/lares-core/voice/browser-playback";
 import { createSentencePlayer, speakable } from "@olares/lares-core/voice/speech";
 import { captureSource } from "@olares/lares-core/voice/input";
@@ -28,6 +29,10 @@ export function createWebVoicePanel(onSession) {
       config = laresVoiceConfig(config, mode);
       const continuous = mode === "continuous"; const device = captureSource("pc", config.device); onDevice(device);
       if (config.backend === "realtime" && continuous) throw new Error("voice_manual_realtime_unavailable");
+      if (config.transport !== "legacy") {
+        return createUnifiedConversation({ request, mode: () => panel.target?.mode?.() || "queue", device, readAloud: continuous && config.speak, presentationSession: true, preset: config.preset,
+          endpointSilenceMs: config.endpointSilenceMs, idleTimeoutMs: config.idleTimeoutMs, recoveryTimeoutMs: config.recoveryTimeoutMs, onTranscript: continuous ? null : onTranscript, preparation });
+      }
       const browser = createBrowserPlayer(); let conversation;
       const reader = createSentencePlayer({ stream: device === "device" ? (value) => playAudioStream({ ...value, request, headers: conversation.headers }) : undefined, send: (value) => conversation.speak(value).then((result) => ({ ...result, blob: result.audio ? wavBlob(result.audio) : null })),
         play: (sentence) => sentence.bluetooth === "played" ? Promise.resolve() : browser.play(sentence.blob), halt: browser.stop, silence: () => {},

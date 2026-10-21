@@ -55,3 +55,13 @@ test("Vue settings SDK lightweight path and save avoid diagnostics and preserve 
   assert.deepEqual(paths, ["/api/lares/voice/config", "/api/lares/voice/capabilities", "/api/lares/voice/config"]);
   assert.equal(config.preset, "assistant"); assert.equal(config.backend, "realtime"); assert.equal(config.chatModel, "separate");
 });
+
+test("Vue voice keys lists keys, leaves Agent models unchecked and warns when they are chosen", async () => {
+  const Component = await component("packages/mobile/src/settings/VoiceKeys.vue");
+  const client = { list: async () => [], issue: async () => ({}), revoke: async () => true };
+  const html = await renderToString(createSSRApp(Component, { client, t: (key: string) => key }));
+  assert.ok(html.includes("settings.group.keys")); assert.ok(html.includes("settings.keys.issue"));
+  for (const model of ["voice-dictation", "voice-chat", "voice-assistant", "voice-direct"]) assert.ok(html.includes(model));
+  assert.equal((html.match(/checked/g) || []).length, 2);
+  assert.equal(html.includes("settings.keys.agentWarning"), false);
+});
