@@ -24,4 +24,4 @@ spec:
     - LarePass desktop aggiunge un pulsante del microfono e un unico menu per modello e impegno.
     - Un microfono già aperto non resta più su «Apertura del microfono» mentre il riconoscimento si collega.
 
-    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.53)
+    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.57)

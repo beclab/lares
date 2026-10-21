@@ -7,14 +7,14 @@ metadata:
   title: Lares
   description: Chat on Olares, wired to Router
   icon: https://app.cdn.olares.com/appstore/lares/icon_new.png
-  version: 0.26.53
+  version: 0.26.57
   categories:
     - agents
   tags:
     - framework
     - personal-assistant
 spec:
-  versionName: "0.26.53"
+  versionName: "0.26.57"
   runAsUser: true
   fullDescription: |
     Lares is a chat app on Olares.
@@ -41,7 +41,7 @@ spec:
     - LarePass desktop gets a microphone button and one combined model and effort menu.
     - An open microphone no longer stays on "Opening microphone" while recognition connects.
 
-    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.53)
+    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.57)
   developer: luolong
   submitter: Olares
   locale:

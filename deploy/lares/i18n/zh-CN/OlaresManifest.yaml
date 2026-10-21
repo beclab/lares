@@ -28,4 +28,4 @@ spec:
     - LarePass 桌面端增加麦克风按钮，模型和推理等级合并为一个菜单。
     - 麦克风已经打开时，不再停在「正在打开麦克风」。
 
-    [版本说明](https://github.com/beclab/lares/releases/tag/v0.26.53)
+    [版本说明](https://github.com/beclab/lares/releases/tag/v0.26.57)

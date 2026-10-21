@@ -24,4 +24,4 @@ spec:
     - LarePass デスクトップにマイクボタンを追加し、モデルと推論レベルを一つのメニューにまとめました。
     - マイクが開いたあと、認識の接続を待って「マイクを開いています」のまま止まることはありません。
 
-    [リリースノート](https://github.com/beclab/lares/releases/tag/v0.26.53)
+    [リリースノート](https://github.com/beclab/lares/releases/tag/v0.26.57)

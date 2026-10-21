@@ -24,4 +24,4 @@ spec:
     - LarePass bureau ajoute un bouton de microphone et un menu unique pour le modèle et l’effort.
     - Un microphone déjà ouvert ne reste plus sur « Ouverture du microphone » pendant la connexion de la reconnaissance.
 
-    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.53)
+    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.57)
