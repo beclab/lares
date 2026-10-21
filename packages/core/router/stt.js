@@ -171,7 +171,7 @@ async function readTranscript(res) {
 }
 
 /**
- * @param {{ bytes: Buffer, filename: string, contentType: string, model: string, language?: string, prompt?: string, preferred?: string }} take
+ * @param {{ bytes: Buffer, filename: string, contentType: string, model: string, language?: string, prompt?: string, preferred?: string, headers?: Record<string, string> }} take
  * @returns {Promise<string>}
  */
 export async function transcribe(take) {
@@ -195,7 +195,7 @@ export async function transcribe(take) {
       const signal = take.signal ? AbortSignal.any([take.signal, timeout]) : timeout;
       const res = await fetch(`${routerShimBaseUrl()}/audio/transcriptions`, {
         method: "POST",
-        headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+        headers: { ...take.headers, "content-type": `multipart/form-data; boundary=${boundary}` },
         body,
         signal,
       });

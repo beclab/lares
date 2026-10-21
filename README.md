@@ -36,7 +36,7 @@ scripts/install-better-sidebar.sh 1   # Right-side workspace
 
 Voice input is provided by the built-in `@lares/composer-voice` plugin and does not require a separate installation. Use the microphone next to the composer to record audio. After recording, Lares sends it to Router STT through `/api/lares/voice/transcribe` and inserts the transcription into the composer. Select the model and language under **Settings → Voice Input**. Voice models must be installed separately in Olares Model Console.
 
-Voice also supports continuous conversations and an opt-in Router Realtime backend. See [Voice runtime](docs/voice-runtime.md) for lifecycle boundaries, device requirements, and rollout gates.
+Voice also supports continuous conversations and an opt-in Router Realtime backend. See [Voice runtime](docs/voice-runtime.md) for lifecycle boundaries, device requirements, and rollout gates, and the [Realtime protocol](docs/realtime-protocol.md) for the target wire format shared by Lares clients and Router.
 
 ## Cluster (machine 1)
 

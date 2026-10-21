@@ -49,13 +49,15 @@ test("Realtime gateway seals credentials and tools and rejects client session in
   const client = new WebSocket(base.replace("http", "ws") + "/api/lares/voice/realtime", ["lares-voice", `lares-ticket.${ticket}`]);
   const next = messages(client);
   try {
-    await next("lares.ready");
+    const created = await next("session.created");
+    assert.equal(created.session.lares.capabilities.protocol, "lares-realtime-v1");
+    assert.equal(created.session.lares.capabilities.backend, "native");
     assert.equal(instructions.tools.length, 1);
     assert.equal(instructions.tools[0].name, "ask_lares");
     assert.equal(instructions.tools[0].parameters.additionalProperties, false);
     client.send(JSON.stringify({ type: "session.update", session: { instructions: "replace policy" } }));
-    const error = await next("lares.error");
-    assert.equal(error.code, "voice_realtime_event_forbidden");
+    const error = await next("error");
+    assert.equal(error.error.code, "voice_realtime_event_forbidden");
     const replay = new WebSocket(base.replace("http", "ws") + "/api/lares/voice/realtime", ["lares-voice", `lares-ticket.${ticket}`]);
     await new Promise<void>((resolve, reject) => { replay.on("unexpected-response", (_req, response) => { response.resume(); replay.terminate(); assert.equal(response.statusCode, 403); resolve(); }); replay.on("error", () => {}); replay.on("open", () => reject(new Error("ticket replay accepted"))); });
   } finally {
