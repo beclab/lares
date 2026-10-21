@@ -61,7 +61,7 @@ function harness(options: any = {}) {
       let finish: any; const controller = createVoiceController({ onTranscript: ports.mode === "single" ? ports.onTranscript : null,
         input: { capture: ({ onReady }: any) => { onReady?.(); return new Promise((resolve) => { finish = resolve; }); }, stop: () => finish?.("raw words"), cancel: () => finish?.("") },
         output: { stop: () => {} }, agent: { create: async () => "s", submit: async () => {}, running: async () => false, cancel: () => assert.fail("task cancelled") } });
-      const call = { controller, start: (value: any) => controller.start(value), stop: () => controller.disconnect(), pause: () => controller.pause(), resume: () => controller.resume() }; calls.push(call); return call;
+      const call = { controller, start: (value: any) => controller.start(value), stop: () => controller.disconnect(), pause: () => controller.pause(), resume: (value: any) => controller.resume(value) }; calls.push(call); return call;
     }, ...options }); return { panel, calls, inserted, processed };
 }
 test("dictation starts once, finishes into editable preview and inserts only on confirmation", async () => {
@@ -113,6 +113,51 @@ test("closing while creation is pending never opens the microphone", async () =>
   const opening = h.panel.open(); await flush(); const closing = h.panel.close();
   resolve({ start: async () => { starts++; }, stop: async () => { stops++; } }); await opening; await closing;
   assert.equal(starts, 0); assert.equal(stops, 1); await h.panel.dispose();
+});
+test("holding after the call has ended opens readout and listens again", async () => {
+  const h = harness({ loadConfig: async () => ({ ...config(), speak: true }) });
+  await h.panel.open({ mode: "continuous" });
+  await h.panel.holdStart();
+  await h.calls[0].controller.disconnect();
+  await h.panel.holdEnd();
+  await h.panel.holdStart();
+  assert.equal(h.calls.length, 2);
+  assert.equal(h.calls[1].controller.getSnapshot().connection, "open");
+  assert.equal(h.calls[1].controller.getSnapshot().capture, "recording");
+  assert.equal(h.panel.getSnapshot().visible, true);
+  await h.panel.dispose();
+});
+test("text send reopens readout without the voice control or the microphone", async () => {
+  const h = harness({ manualTurns: false, loadConfig: async () => ({ ...config(), speak: true }) });
+  await h.panel.open({ mode: "continuous" });
+  await h.panel.start();
+  assert.equal(h.calls[0].controller.getSnapshot().capture, "recording");
+  await h.panel.close();
+  assert.equal(h.panel.getSnapshot().visible, false);
+  assert.equal(h.calls[0].controller.getSnapshot().connection, "paused");
+  await h.panel.openReadout();
+  assert.equal(h.calls.length, 1);
+  assert.equal(h.panel.getSnapshot().visible, false);
+  assert.equal(h.calls[0].controller.getSnapshot().connection, "open");
+  assert.equal(h.calls[0].controller.getSnapshot().capture, "idle");
+  await h.calls[0].controller.disconnect();
+  await h.panel.openReadout();
+  assert.equal(h.calls.length, 2);
+  assert.equal(h.panel.getSnapshot().visible, false);
+  assert.equal(h.calls[1].controller.getSnapshot().connection, "open");
+  assert.equal(h.calls[1].controller.getSnapshot().capture, "idle");
+  await h.panel.dispose();
+});
+test("text send does not open a readout session while speech is off", async () => {
+  const h = harness();
+  await h.panel.open({ mode: "continuous" });
+  await h.panel.start();
+  await h.calls[0].controller.disconnect();
+  await h.panel.close();
+  await h.panel.openReadout();
+  assert.equal(h.calls.length, 1);
+  assert.equal(h.panel.getSnapshot().visible, false);
+  await h.panel.dispose();
 });
 test("conversation waits for a hold; release submits once and never automatically listens again", async () => {
   const h = harness(); await h.panel.open({ mode: "continuous" }); assert.equal(h.calls.length, 0);

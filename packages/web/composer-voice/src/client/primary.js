@@ -18,7 +18,8 @@ export function VoicePrimary({ panel, nativePrimary, empty, running, disabled, n
     requireComposerModel(agentDirectory.getSnapshot(), document.documentElement.lang);
     const current = panel.getSnapshot();
     if (current.visible && current.mode === "single") throw new Error(t("pc.finishFirst"));
-    if (current.visible && current.mode === "continuous") await panel.pause();
+    if (current.mode === "continuous" && current.snapshot?.connection !== "open") await panel.openReadout();
+    else if (current.visible && current.mode === "continuous") await panel.pause();
   }), [panel, inputActions, t, agentDirectory]);
   const choice = voicePrimaryAction({ view, available: laresVoiceAvailability(settings.value, panel.agentAvailable).conversation, empty, running, disabled, nativeDisabled });
   if (choice.action === "native") return nativePrimary;

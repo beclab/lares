@@ -1533,8 +1533,12 @@ export default {
       const text = this.draft.trim();
       if (!this.canSend) return;
       this.player?.unlock();
+      const continuous = this.voicePanelState?.mode === "continuous";
+      if (this.voiceSpeak && continuous) {
+        try { await this.voicePanel.openReadout(); }
+        catch (error) { this.voiceError = error?.code || error?.message || "voice_failed"; }
+      } else if (this.voiceCall?.connection === "open") await this.voicePanel.pause();
       this.reader.stop();
-      if (this.voiceCall?.connection === "open") await this.voicePanel.pause();
       const sessionId = this.sessionId;
       const images = this.draftImages.filter((row) => draftImageStatus(row) === "ready");
       const wasRunning = this.running;

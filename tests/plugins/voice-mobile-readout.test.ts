@@ -444,9 +444,13 @@ test("a paused call can be resumed from one banner", () => {
   assert.deepEqual(voiceCallFailure(view), { code: "voice_disconnected", action: "resume" });
 });
 
-test("an expired recovery window starts a new call instead of resuming", () => {
-  const view = { visible: true, mode: "continuous", snapshot: { connection: "closed", error: "voice_recovery_expired", playback: "idle" } };
-  assert.deepEqual(voiceCallFailure(view), { code: "voice_recovery_expired", action: "restart" });
+test("recovery and idle endings are quiet; hold stays the way back", () => {
+  for (const error of ["voice_recovery_expired", "voice_idle_timeout"]) {
+    const view = { visible: true, mode: "continuous", snapshot: { connection: "closed", error, playback: "idle" } };
+    assert.equal(voiceCallFailure(view), null);
+    assert.equal(voicePanelPresentation(view).error, null);
+    assert.equal(voiceInputPresentation(view).label, "dictation.hold");
+  }
 });
 
 test("a healthy call and a dictation error are not call-failure banners", () => {

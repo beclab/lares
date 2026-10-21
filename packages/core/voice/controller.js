@@ -157,14 +157,15 @@ export function createVoiceController({ input, agent, output, voiceId = mintRpcI
       change({ connection: code ? "paused" : "closed", error: code });
       await Promise.allSettled([cancelInput(), stopPlayback()]);
     },
-    async resume({ shouldResume = () => true } = {}) {
+    async resume({ shouldResume = () => true, resumeListening = !manualTurns } = {}) {
       const resumedEpoch = epoch;
       if (state.connection !== "paused") return;
       const running = state.sessionId ? await agent.running(state.sessionId) : false;
       if (resumedEpoch !== epoch || !shouldResume()) return;
       clearTimers();
       change({ connection: "open", agent: running ? "running" : "idle", error: null });
-      touch(); if (!manualTurns) void listen();
+      touch();
+      if (resumeListening) void listen();
     },
   };
   return controller;

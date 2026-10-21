@@ -55,16 +55,28 @@ export function createVoicePanel({ create, complete, loadConfig = async () => ({
       if (processing === abort) { processing = null; renderDraft(); }
     }
   };
-  const prepare = async (token) => {
+  const readoutWanted = async () => {
+    if (readAloudPreference === true) return true;
+    if (readAloudPreference === false) return false;
+    return (await loadConfig())?.speak === true;
+  };
+  const prepare = async (token, { readout = false } = {}) => {
+    const armed = () => token === intent && (readout || state.visible);
+    if (readout && !await readoutWanted()) return;
     if (call?.controller.getSnapshot().connection === "paused") {
-      await call.resume({ shouldResume: () => token === intent && state.visible });
-      if (token === intent && state.visible && state.mode === "continuous" && typeof readAloudPreference === "boolean") await panel.setReadAloud(readAloudPreference);
+      await call.resume({ shouldResume: armed, ...(readout ? { resumeListening: false } : {}) });
+      if (armed() && readout) await panel.setReadAloud(true);
+      else if (armed() && state.mode === "continuous" && typeof readAloudPreference === "boolean") await panel.setReadAloud(readAloudPreference);
       return;
     }
-    if (call?.controller.getSnapshot().connection === "open") return;
+    if (call?.controller.getSnapshot().connection === "open") {
+      if (readout && readAloudPreference === true) await panel.setReadAloud(true);
+      return;
+    }
     await end(); config = state.mode === "single" && config ? config : structuredClone(await loadConfig());
-    if (token !== intent || !state.visible) return;
+    if (!armed()) return;
     if (state.mode === "continuous" && typeof readAloudPreference === "boolean") config = { ...config, speak: readAloudPreference };
+    if (readout && config.speak !== true) return;
     const initialReadAloud = state.mode === "continuous" && config.speak === true;
     const target = state.sessionId, epoch = ++generation;
     const conversation = await create({ mode: state.mode, sessionId: target, config, preparation: inputPreparation,
@@ -73,7 +85,7 @@ export function createVoicePanel({ create, complete, loadConfig = async () => ({
         const raw = [state.raw, text].filter(Boolean).join(" "); emit({ raw, draft: raw, edited: false }); save();
       }, onDevice(device) { if (epoch === generation) emit({ device }); },
     });
-    if (token !== intent || !state.visible) { await conversation.stop(); return; }
+    if (!armed()) { await conversation.stop(); return; }
     call = conversation; appliedReadAloud = initialReadAloud;
     unsubscribe = call.controller.subscribe(() => {
       if (epoch !== generation) return;
@@ -82,11 +94,12 @@ export function createVoicePanel({ create, complete, loadConfig = async () => ({
       emit({ snapshot, ...(snapshot.inputLevel == null ? {} : { levels: [...state.levels.slice(-19), snapshot.inputLevel] }),
         ...(snapshot.capture === "recording" && snapshot.inputReady && !state.startedAt ? { startedAt: Date.now(), elapsedMs: 0 } : snapshot.capture !== "recording" && state.startedAt ? { startedAt: null, elapsedMs: Date.now() - state.startedAt } : {}) });
     });
-    await call.start({ sessionId: target, continuous: state.mode === "continuous", manual: state.mode === "continuous" && manualTurns, shouldStart: () => token === intent && state.visible });
-    if (token !== intent || !state.visible) await call.controller.cancelRecording();
+    await call.start({ sessionId: target, continuous: state.mode === "continuous", manual: state.mode === "continuous" && (manualTurns || readout), shouldStart: armed });
+    if (!armed()) await call.controller.cancelRecording();
     else {
       readAloudReady = true;
-      if (state.mode === "continuous" && typeof readAloudPreference === "boolean") await panel.setReadAloud(readAloudPreference);
+      if (readout) await panel.setReadAloud(true);
+      else if (state.mode === "continuous" && typeof readAloudPreference === "boolean") await panel.setReadAloud(readAloudPreference);
     }
   };
   const pause = async () => {
@@ -165,6 +178,12 @@ export function createVoicePanel({ create, complete, loadConfig = async () => ({
     close() { intent++; cancelPreparation(); cancelProcessing(); emit({ visible: false, holding: false, cancelArmed: false }); if (state.mode === "continuous") void call?.controller.cancelRecording(); return enqueue(pause); },
     pause() { intent++; cancelPreparation(); cancelProcessing(); emit({ holding: false, cancelArmed: false }); if (state.mode === "continuous") void call?.controller.cancelRecording(); return enqueue(pause); },
     start() { armOutput(); const token = ++intent; return enqueue(() => prepare(token)); },
+    openReadout() {
+      if (state.mode !== "continuous") return Promise.resolve();
+      armOutput();
+      const token = ++intent;
+      return enqueue(() => prepare(token, { readout: true }));
+    },
     finish() {
       if (state.busy) return Promise.resolve();
       const token = intent;
