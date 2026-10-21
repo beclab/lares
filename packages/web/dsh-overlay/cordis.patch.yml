@@ -186,7 +186,7 @@
 
     - id: lares-composer-voice
       name: '@lares/composer-voice'
-      inject: [webServer]
+      inject: [webServer, settings]
 
     - id: lares-file-upload
       name: '@lares/file-upload'

@@ -188,3 +188,46 @@
   .lares-voice-controls { flex-wrap: wrap; }
   .lares-preset-editor .lares-voice-row { align-items: stretch; }
 }
+
+.lares-voice-keys {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.lares-voice-key-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.lares-voice-key-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+}
+
+.lares-voice-key-models {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-size: 14px;
+}
+
+.lares-voice-key-models legend {
+  width: 100%;
+  margin-bottom: 4px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.lares-voice-key-secret {
+  display: block;
+  overflow-wrap: anywhere;
+  user-select: all;
+  font-size: 13px;
+}

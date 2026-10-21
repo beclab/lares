@@ -1,5 +1,6 @@
 import { mintRpcId } from "../larepass/rpc.js";
 import { createSessionFollow } from "../larepass/mux.js";
+import { createInboxTracker } from "../larepass/queue.js";
 import { reduceUtterance } from "./speech.js";
 
 export const SPOKEN_PROMPT = "This is a voice conversation. Keep user-facing answers concise and natural for speech. Do not read reasoning or tool payloads aloud. Preserve the task's factual results and use the user's language.";
@@ -24,6 +25,7 @@ export function createVoiceAgentSession(api, { sessionId = null, preset, workspa
     requests.set(restored.requestId, { requestId: restored.requestId, turn: null, status: "unknown", utterance: null, error: null, at: Date.now(), firstTextAt: null });
   }
   const decoder = createSessionFollow();
+  const inbox = createInboxTracker();
   const unfinished = (task) => ["accepted", "running", "waiting", "unknown"].includes(task.status);
   const snapshot = () => ({ sessionId, running: observedRunning || [...requests.values()].some(unfinished), utterance, error, version,
     requestId: latestRequest, cursor,
@@ -44,6 +46,7 @@ export function createVoiceAgentSession(api, { sessionId = null, preset, workspa
       if (event.seq <= cursor) return;
       cursor = event.seq;
     }
+    if (sessionId) inbox.apply(sessionId, [event]);
     if (event.type === "turn/start") { openTurn = event.data.turn; observedRunning = true; }
     if (event.type === "user/message") {
       const id = event.data?.requestId ?? event.data?.source?.rpcId;
@@ -89,6 +92,7 @@ export function createVoiceAgentSession(api, { sessionId = null, preset, workspa
         for await (const frame of api.follow({ address: { kind: "session", sessionId }, assistantStream: true }, abort.signal)) {
           const decoded = decoder.push(frame);
           if (frame.type === "snapshot") {
+            if (decoded?.projections) inbox.seed(sessionId, decoded.projections);
             for (const event of decoded?.events ?? []) publish(event, true);
             clearTimeout(readyTimer); resolveReady();
           } else for (const event of decoded?.events ?? []) publish(event);
@@ -133,6 +137,30 @@ export function createVoiceAgentSession(api, { sessionId = null, preset, workspa
       return task.operation;
     },
     async cancel() { if (sessionId) await api.cancel({ sessionId }); },
+    /**
+     * Withdraws one request: a queued prompt leaves the dsh inbox, the running turn is cancelled.
+     * Anything else (unknown, finished, steered into the current step) is not cancellable.
+     * @returns {Promise<"withdrawn" | "cancelled" | "not_cancellable">}
+     */
+    async withdraw(requestId) {
+      const task = requests.get(requestId);
+      if (!task || !unfinished(task) || task.status === "unknown") return "not_cancellable";
+      if (task.status === "accepted") await task.operation?.catch(() => {});
+      if (task.turn != null && task.turn === openTurn && ["running", "waiting"].includes(task.status)) {
+        await api.cancel({ sessionId });
+        return "cancelled";
+      }
+      const queued = sessionId && inbox.messages(sessionId).find((message) => message?.source?.rpcId === requestId);
+      if (!queued) return "not_cancellable";
+      try {
+        await api.updateQueue({ sessionId, itemId: queued.id, action: { kind: "remove" } });
+      } catch (cause) {
+        if (cause?.code === "session/queue-item-not-found") return "not_cancellable";
+        throw cause;
+      }
+      task.status = "cancelled"; task.error = "voice_cancelled"; version++; onChange();
+      return "withdrawn";
+    },
     async close() { closed = true; clearTimeout(readyTimer); following?.abort(); await followTask; },
   };
 }

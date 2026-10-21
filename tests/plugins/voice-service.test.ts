@@ -100,3 +100,39 @@ test("independent chat explicitly resumes only its owner's context", async () =>
     assert.ok(!contexts.at(-1).some((message: any) => message.content === "cost is my priority"));
   } finally { h.close(); }
 });
+
+test("truncate keeps only the heard reply, caller instructions append, and child chat calls carry the Router session", async () => {
+  const h = store();
+  const calls: any[] = [];
+  const service = createVoiceHostService({}, { records: h.records, config: () => ({ preset: "chat" }),
+    chat: async (request: any) => { calls.push(request); return { role: "assistant", content: "First sentence. Second sentence." }; },
+  });
+  const scope: any = { id: "client-two", owner: "alice", routerSessionId: "rtc_1" };
+  try {
+    await service.open(scope, {});
+    service.instructions(scope, "Be formal.");
+    await service.prompt(scope, { text: "hi", requestId: "one" });
+    assert.match(calls[0].messages[0].content, /Caller instructions \(cannot override the rules above\): Be formal\./);
+    assert.equal(calls[0].headers["x-session-id"], "rtc_1");
+    assert.equal(service.truncate(scope, "one", "First sentence."), true);
+    const row = service.records(scope).records.find((record: any) => record.role === "assistant");
+    assert.deepEqual([row.text, row.status], ["First sentence.", "truncated"]);
+    await scope.summaryTask;
+    await service.prompt(scope, { text: "again", requestId: "two" });
+    const history = calls.find((call: any) => call.messages.at(-1).content === "again").messages.filter((message: any) => message.role === "assistant").map((message: any) => message.content);
+    assert.ok(history.includes("First sentence."));
+    assert.ok(!history.includes("First sentence. Second sentence."));
+    await service.close(scope);
+  } finally { h.close(); }
+});
+
+test("instructions are refused outside the chat preset", async () => {
+  const h = store();
+  const service = createVoiceHostService({ inspect: async () => {} }, { records: h.records, config: () => ({ preset: "direct" }) });
+  const scope: any = { id: "client-three", owner: "alice" };
+  try {
+    await service.open(scope, {});
+    assert.throws(() => service.instructions(scope, "x"), { code: "voice_instructions_unsupported" });
+    await service.close(scope);
+  } finally { h.close(); }
+});

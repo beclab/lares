@@ -8,6 +8,7 @@ import { routerAuthHeaders, routerEndUser, routerGatewayUrl } from "./gateway.js
 import { STT_MAX_AUDIO_BYTES } from "./stt.js";
 import { adaptGeminiChatBuffer } from "./gemini-schema.js";
 import { isGenerationCreateRoute, withSrefBuffer } from "./sref.js";
+import { routerSessionFor } from "./session-alias.js";
 
 export const SHIM_PATH = "/llm/v1";
 export const SHIM_CHAT_TIMEOUT_MS = 120_000;
@@ -59,6 +60,7 @@ export function shimRequestHeaders(incoming, env = process.env) {
     if (value == null || DROPPED_REQ.has(key.toLowerCase())) continue;
     headers[key] = Array.isArray(value) ? value.join(",") : value;
   }
+  if (typeof headers["x-session-id"] === "string") headers["x-session-id"] = routerSessionFor(headers["x-session-id"]);
   Object.assign(
     headers,
     routerAuthHeaders(

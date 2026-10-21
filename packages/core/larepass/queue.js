@@ -65,6 +65,9 @@ export function createInboxTracker() {
       }
       return changed;
     },
+    messages(sessionId) {
+      return inboxes.get(sessionId)?.nextTurn ?? [];
+    },
     queue(sessionId) {
       const nextTurn = inboxes.get(sessionId)?.nextTurn ?? [];
       return normalizeQueueItems(nextTurn.map((message) => ({

@@ -1,6 +1,6 @@
 import { createVoiceAgentSession } from "./agent-session.js";
 import { createVoiceRecords } from "./records.js";
-import { createVoiceDialogue, cleanDictation } from "./dialogue.js";
+import { createVoiceDialogue, cleanDictation, voiceChat } from "./dialogue.js";
 import { readConfig, validateConfigPatch } from "./config.js";
 import { listModels } from "../router/stt.js";
 import { validatedRealtimeModels } from "./realtime.js";
@@ -24,12 +24,21 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
     records.clear(ownerOf(scope), before);
     records.bind(ownerOf(scope), scope.contextId, keyOf(scope));
   };
+  // Router groups a keyed Realtime session's child requests by its session id (Router ADR-83).
+  const chatFor = (scope) => (request) => (chat || voiceChat)({ ...request, ...(scope.routerSessionId ? { headers: { ...request.headers, "x-session-id": scope.routerSessionId } } : {}) });
+  const summarize = (scope) => {
+    const key = keyOf(scope);
+    const checkpointVersion = records.read(ownerOf(scope), key).version;
+    scope.summaryTask = Promise.resolve(scope.summaryTask).catch(() => {}).then(() => scope.dialogue.summarize()).then((summary) => records.checkpoint(ownerOf(scope), key, summary, checkpointVersion)).catch((cause) => {
+      scope.summaryError = cause.code || cause.message || "voice_summary_failed";
+    });
+  };
   const scopes = new Set();
   const service = {
     async clean(scope, text, options = {}) {
       if (typeof text !== "string" || text.length > 16000) throw failure("voice_input_invalid", 400);
       if (options.config && Object.keys(options.config).some((key) => key !== "dictationProfiles")) throw failure("voice_config_invalid", 400);
-      return cleanDictation(text, { config: { ...config(), ...validateConfigPatch(options.config || {}) }, owner: scope.owner, chat, preset: options.preset, signal: options.signal });
+      return cleanDictation(text, { config: { ...config(), ...validateConfigPatch(options.config || {}) }, owner: scope.owner, chat: chatFor(scope), preset: options.preset, signal: options.signal });
     },
     async open(scope, body) {
       if (scope.active || scope.opening || scope.closing) throw failure("voice_session_active", 409);
@@ -69,7 +78,7 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
       scope.active = true; scope.readAloud = body.readAloud === true;
       scope.voiceState = { version: 0, running: false, utterance: null, error: null };
       scope.voiceRequests = new Map(); scope.deliveredTasks = new Set(restoredRequests.map((item) => item.requestId));
-      scope.dialogue = preset === "direct" ? null : createVoiceDialogue({ config: scope.voiceConfig, owner: scope.owner, context: history.summary?.recent || [], summary: history.summary?.text || "", chat,
+      scope.dialogue = preset === "direct" ? null : createVoiceDialogue({ config: scope.voiceConfig, owner: scope.owner, context: history.summary?.recent || [], summary: history.summary?.text || "", chat: chatFor(scope),
         submit: async (text, requestId, operation) => {
           if (operation === "status") return scope.session.snapshot();
           const id = `${requestId}:delegate`;
@@ -122,11 +131,7 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
           });
           const source = records.read(ownerOf(scope), keyOf(scope)).records.find((row) => row.id === `${scope.id}:${body.requestId}:user`);
           append(scope, "assistant", text, body.requestId, source?.taskId || null);
-          const key = keyOf(scope);
-          const checkpointVersion = records.read(ownerOf(scope), key).version;
-          scope.summaryTask = scope.dialogue.summarize().then((summary) => records.checkpoint(ownerOf(scope), key, summary, checkpointVersion)).catch((cause) => {
-            scope.summaryError = cause.code || cause.message || "voice_summary_failed";
-          });
+          summarize(scope);
           scope.voiceState.utterance = { key: body.requestId, turn: scope.voiceState.version, step: 0, text, done: true, silent: false };
         } catch (cause) {
           scope.voiceState.error = cause.code || cause.message || "voice_failed";
@@ -204,6 +209,33 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
     output(scope, value) { if (typeof value !== "boolean") throw failure("voice_output_invalid", 400); scope.readAloud = value; },
     resume: (scope) => scope.session?.resume(),
     cancel: (scope) => scope.session?.cancel(),
+    instructions(scope, text) {
+      if (!scope.dialogue || scope.voiceConfig?.preset !== "chat") throw failure("voice_instructions_unsupported", 400);
+      scope.dialogue.setInstructions(text);
+    },
+    /**
+     * Keeps only the heard part of a spoken reply in records and dialogue context.
+     * Agent output lives in the dsh log and is not rewritten there.
+     */
+    truncate(scope, utteranceKey, text) {
+      const key = String(utteranceKey || "");
+      const turnId = key.startsWith("task:") ? `result:${key.slice(5)}` : key;
+      const row = records.read(ownerOf(scope), keyOf(scope)).records.find((item) => item.id === `${scope.id}:${turnId}:assistant`);
+      if (!row || row.text === text) return false;
+      append(scope, "assistant", text, turnId, row.taskId, { status: "truncated", ...(Number.isInteger(row.taskTurn) ? { taskTurn: row.taskTurn } : {}) });
+      if (!key.startsWith("task:") && scope.dialogue?.replaceLastAssistant(text)) summarize(scope);
+      return true;
+    },
+    async withdraw(scope, requestId) {
+      if (!scope.session) return "not_cancellable";
+      // A delegated assistant task is submitted under its turn id plus ":delegate".
+      const ids = [requestId, `${requestId}:delegate`];
+      for (const id of ids) {
+        const result = await scope.session.withdraw(id);
+        if (result !== "not_cancellable") return result;
+      }
+      return "not_cancellable";
+    },
     async close(scope) {
       scope.epoch = (scope.epoch || 0) + 1; scope.opening = false; scope.closing = true;
       scope.active = false; scope.voiceAbort?.abort(); scope.realtimeSocket?.close();

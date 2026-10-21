@@ -14,7 +14,7 @@ export interface RouterCatalogRow {
   reasoningDefault?: string;
   /** Tokens one request may span, or null when Router states none. */
   contextWindow: number | null;
-  /** Output tokens a turn may reserve: Router's limit capped at a quarter of the window. */
+  /** Output tokens a turn may reserve: Router's limit capped at a tenth of the window. */
   maxTokens: number | null;
 }
 

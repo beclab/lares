@@ -55,6 +55,9 @@ The sections below describe earlier deliveries; the PC revision supersedes their
 - [ ] Validate against real native/composite models and PostgreSQL composite settlement.
 - [x] Run focused/full regression and typecheck/build; record the unrelated file-preview cleanup failure.
 - [ ] Complete real browser/mobile/host/Bluetooth model and hardware acceptance; do not enable gates before it passes.
+- [x] Serve voice-key callers with [`lares-realtime-v1`](realtime-protocol.md) on `/api/lares/voice/realtime`, replace the signed bridge and its environment grants, and dial from Router with Bearer and `X-Session-Id` (Router ADR-83).
+- [x] Finish the unified handler, voice key settings UI, client migration (`transport` setting) and flag-gated full-duplex per the [migration plan](realtime-protocol.md#migration-plan).
+- [ ] Accept the unified transport on yaotest004 and physical devices, then remove the pipeline session endpoints and turn on barge-in only after echo tests pass.
 
 ## Verification and rollout
 

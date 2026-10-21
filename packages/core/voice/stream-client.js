@@ -114,8 +114,9 @@ export async function startTranscriptionStream(options) {
   };
 }
 
+/** `options.port` swaps the `/stream` STT socket for another PCM sink at `options.sampleRate`. */
 export async function createStreamingCapture(stream, options) {
-  const port = await startTranscriptionStream(options);
+  const port = await (options.port ? options.port(options) : startTranscriptionStream(options));
   if (!port) return null;
   let context, source, node, failure, flushed;
   const release = () => {
@@ -130,7 +131,7 @@ export async function createStreamingCapture(stream, options) {
     const url = URL.createObjectURL(new Blob([PCM_CAPTURE_WORKLET], { type: "text/javascript" }));
     try { await context.audioWorklet.addModule(url); await context.resume(); } finally { URL.revokeObjectURL(url); }
     if (options.signal?.aborted) throw new Error("voice_cancelled");
-    const convert = createPcmResampler(context.sampleRate, 16000);
+    const convert = createPcmResampler(context.sampleRate, options.sampleRate || 16000);
     source = context.createMediaStreamSource(stream);
     node = new AudioWorkletNode(context, "lares-pcm-capture", { numberOfOutputs: 1, outputChannelCount: [1] });
     node.port.onmessage = ({ data }) => {
