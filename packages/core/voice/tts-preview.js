@@ -1,8 +1,10 @@
+import { speechInput } from "./tts-input.js";
+
 /** Explicit audition is independent of automatic read-aloud and business sessions. */
 export async function previewTts({ model, voice, text, signal }, { fetcher = fetch, createAudio = url => new Audio(url) } = {}) {
   const response = await fetcher("/llm/v1/audio/speech", {
     method: "POST", headers: { "content-type": "application/json" }, signal,
-    body: JSON.stringify({ model, input: text, response_format: "wav", ...(voice ? { voice } : {}) }),
+    body: JSON.stringify({ model, input: speechInput(model, text), response_format: "wav", ...(voice ? { voice } : {}) }),
   });
   if (!response.ok) throw new Error("tts_preview_failed");
   const blob = await response.blob(); signal.throwIfAborted();

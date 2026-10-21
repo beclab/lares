@@ -18,6 +18,29 @@ async function fixture(synthesize: any) {
   return { scope, gateway, open, close: async () => { gateway.close(); await new Promise<void>((resolve) => server.close(() => resolve())); } };
 }
 
+test("the playback socket stays open after done until the client closes it", async () => {
+  const h = await fixture(async (request: any, chunk: any) => {
+    request.onFormat({ sampleRate: 24000, channels: 1, encoding: "pcm_s16le" });
+    await chunk(Buffer.alloc(48000));
+    return { streamed: true };
+  });
+  try {
+    const grant = await h.gateway.ticket(h.scope, { operation: "tts", text: "我是一个可爱的小猫咪" });
+    const ws = await h.open(grant.ticket);
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("done timeout")), 2000);
+      ws.on("error", reject);
+      ws.on("message", (data, binary) => {
+        if (!binary && JSON.parse(String(data)).type === "done") { clearTimeout(timer); resolve(); }
+      });
+    });
+    await tick();
+    assert.equal(ws.readyState, WebSocket.OPEN);
+    ws.close();
+    await once(ws, "close");
+  } finally { await h.close(); }
+});
+
 test("Host delivers PCM before synthesis finishes, and a listener leaving does not cut the response body", async () => {
   let finished = false;
   let release = () => {};

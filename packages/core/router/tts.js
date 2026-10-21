@@ -1,3 +1,4 @@
+import { speechInput } from "../voice/tts-input.js";
 import { fetchTtsVoices } from "../voice/tts-voice.js";
 import { VoiceError } from "./stt.js";
 import { routerShimBaseUrl } from "./gateway.js";
@@ -54,8 +55,9 @@ export function pcmToWav(pcm, sampleRate = PCM_RATE) {
  * @returns {Promise<Buffer>}
  */
 export async function synthesize(request) {
-  const text = request.text.trim();
-  if (!text) throw new VoiceError("voice_config_invalid", 400, "nothing to speak");
+  const spoken = request.text.trim();
+  if (!spoken) throw new VoiceError("voice_config_invalid", 400, "nothing to speak");
+  const text = speechInput(request.model, spoken);
   let res;
   try {
     res = await fetch(`${routerShimBaseUrl()}/audio/speech`, {
@@ -92,8 +94,9 @@ export async function synthesize(request) {
  * @param {(chunk: Buffer) => Promise<void> | void} onChunk
  */
 export async function synthesizeStream(request, onChunk) {
-  const text = request.text.trim();
-  if (!text) throw new VoiceError("voice_config_invalid", 400, "nothing to speak");
+  const spoken = request.text.trim();
+  if (!spoken) throw new VoiceError("voice_config_invalid", 400, "nothing to speak");
+  const text = speechInput(request.model, spoken);
   let res;
   try {
     const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);

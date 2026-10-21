@@ -49,7 +49,7 @@ export async function playAudioStream(options) {
     if (!progressNoted) { progressNoted = true; streamMetric(options, { stage: "playback_progress_sent", frames }); }
   },
     onMetric: (event) => { if (event.stage === "playback_started") options.onStatus?.("playing"); streamMetric(options, { ...event, durationMs: Date.now() - started }); } });
-  let chain = Promise.resolve(), complete = false, firstReceived = false, ready = false, paused = false, segmentIndex = -1;
+  let chain = Promise.resolve(), complete = false, ending = false, firstReceived = false, ready = false, paused = false, segmentIndex = -1;
   options.controls?.({
     get canPause() { return ready; },
     pause() { if (!ready || paused) return; paused = true; player.pause(); file.pause(); if (connection.readyState === 1) connection.send(JSON.stringify({ type: "pause" })); },
@@ -69,10 +69,14 @@ export async function playAudioStream(options) {
       options.signal?.addEventListener("abort", cancelled, { once: true });
       connection.addEventListener("message", ({ data }) => {
         if (typeof data !== "string" && !firstReceived) { firstReceived = true; streamMetric(options, { stage: "playback_first_received", durationMs: Date.now() - started }); }
+        let event = null;
+        if (typeof data === "string") {
+          try { event = JSON.parse(data); } catch (error) { chain = chain.then(() => { throw error; }).catch(fail); return; }
+          if (event?.type === "done") ending = true;
+        }
         chain = chain.then(async () => {
           if (options.signal?.aborted) throw new Error("voice_cancelled");
           if (typeof data !== "string") { player.write(new Uint8Array(data)); return; }
-          const event = JSON.parse(data);
           if (event.type === "segment") {
             if (event.index !== segmentIndex + 1) throw new Error("voice_reply_sequence");
             segmentIndex = event.index;
@@ -88,7 +92,7 @@ export async function playAudioStream(options) {
       connection.addEventListener("error", () => fail(dropped()), { once: true });
       connection.addEventListener("close", () => {
         options.signal?.removeEventListener("abort", cancelled);
-        if (!complete) { const error = dropped(); noteFailure(error); reject(error); }
+        if (!complete && !ending) { const error = dropped(); noteFailure(error); reject(error); }
       }, { once: true });
       if (options.signal?.aborted) cancelled();
     });

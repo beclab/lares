@@ -12,7 +12,8 @@ import {
 import { gapAfter, speechSegments } from "@olares/lares-core/voice/script";
 import { foldTranscript } from "@olares/lares-core/larepass/transcript";
 import { createDuplexCoordinator } from "@olares/lares-core/voice/duplex";
-import { synthesizeStream } from "@olares/lares-core/router/tts";
+import { synthesize, synthesizeStream } from "@olares/lares-core/router/tts";
+import { previewTts } from "@olares/lares-core/voice/tts-preview";
 
 const config = { speak: true, ttsModel: "kokoro", model: "", language: "" };
 const noVoices = async () => [];
@@ -60,6 +61,41 @@ test("stopping one answer does not keep the next answer silent", async () => {
   reader.follow(utterance("s:2:0", "Second one.", true));
   for (let i = 0; i < 4; i += 1) await tick();
   assert.deepEqual(played, ["First one.", "Second one."]);
+});
+
+test("12Hz Qwen speech requests carry an unspoken tail", async (t) => {
+  const bodies: Record<string, unknown>[] = [];
+  t.mock.method(globalThis, "fetch", async (_url: string, init: { body: string }) => {
+    bodies.push(JSON.parse(init.body));
+    const pcm = init.body.includes('"response_format":"pcm"');
+    return new Response(new Uint8Array([0, 0]), {
+      headers: pcm
+        ? { "content-type": "audio/L16", "x-audio-sample-rate": "24000" }
+        : { "content-type": "audio/wav" },
+    });
+  });
+  const ended = () => ({
+    addEventListener(name: string, fn: () => void) { if (name === "ended") queueMicrotask(fn); },
+    play() { return Promise.resolve(); },
+    pause() {},
+  });
+  await synthesizeStream({ text: "今天天气很好。", model: "audioqwen3tts06v3/Qwen3-TTS-12Hz-0.6B-CustomVoice" }, () => {});
+  await synthesize({ text: "今天天气很好。", model: "Qwen3-TTS-12Hz-0.6B-CustomVoice" });
+  await synthesizeStream({ text: "今天天气很好。", model: "kokoro" }, () => {});
+  await previewTts({ model: "audioqwen3tts06v3", text: "今天天气很好。", signal: new AbortController().signal }, {
+    fetcher: async (_path: string, options: { body: string }) => {
+      bodies.push(JSON.parse(options.body));
+      return new Response(new Uint8Array([1]), { headers: { "content-type": "audio/wav" } });
+    },
+    createAudio: ended,
+  });
+  assert.equal(bodies[0].input, "今天天气很好。 ^.");
+  assert.equal(bodies[0].response_format, "pcm");
+  assert.equal(bodies[1].input, "今天天气很好。 ^.");
+  assert.equal(bodies[1].response_format, "wav");
+  assert.equal(bodies[2].input, "今天天气很好。");
+  assert.equal(bodies[3].input, "今天天气很好。 ^.");
+  assert.equal(bodies[3].response_format, "wav");
 });
 
 test("synthesis names the voice it was given", async (t) => {

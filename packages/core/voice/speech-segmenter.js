@@ -20,30 +20,49 @@ function boundaries(text) {
   return { positions, balanced: !stack.length };
 }
 
+function cjkCuts(text, positions) {
+  const cuts = [];
+  for (let i = 0; i < text.length; i++) {
+    if (!/[。！？]/.test(text[i])) continue;
+    let end = i + 1;
+    while (/[”’」』）)\]]/.test(text[end] || "") && end < text.length) end++;
+    if (positions.has(end)) cuts.push(end);
+  }
+  return [...new Set(cuts)].sort((a, b) => a - b);
+}
+
+// sentencex is an English segmenter. A Chinese 。！？ already closed the previous
+// sentence; feeding that terminator back in makes it treat "Mr." as another end.
+function sentenceCuts(slice, sliceClosed) {
+  const parts = segment("en", slice);
+  const ends = [];
+  let from = 0;
+  for (let i = 0; i < parts.length; i++) {
+    const at = slice.indexOf(parts[i], from);
+    if (at < 0) continue;
+    from = at + parts[i].length;
+    if (i < parts.length - 1) ends.push(from);
+    else if (sliceClosed) ends.push(slice.length);
+  }
+  return ends;
+}
+
 function sentences(text, closed) {
   const { positions, balanced } = boundaries(text);
   const ends = new Set();
-  let from = 0;
-  const parts = segment("en", text);
-  for (let i = 0; i < parts.length; i++) {
-    const at = text.indexOf(parts[i], from); if (at < 0) continue;
-    from = at + parts[i].length;
-    if (i < parts.length - 1 || closed) ends.add(from);
+  const cuts = cjkCuts(text, positions);
+  let start = 0;
+  for (const cut of cuts) {
+    for (const end of sentenceCuts(text.slice(start, cut), true)) ends.add(start + end);
+    start = cut;
   }
-  for (let i = 0; i < text.length; i++) {
-    if (/[。！？]/.test(text[i])) {
-      let end = i + 1;
-      while (/[”’」』）)\]]/.test(text[end] || "") && end < text.length) end++;
-      ends.add(end);
-    }
-  }
-  if (closed) ends.add(text.length);
+  for (const end of sentenceCuts(text.slice(start), closed)) ends.add(start + end);
   const out = []; let consumed = 0;
   for (const end of [...ends].sort((a, b) => a - b)) {
     if (!positions.has(end) && !(closed && end === text.length)) continue;
     const sentence = text.slice(consumed, end).trim();
     if (sentence.includes("\uFFFC")) break;
-    if (sentence) out.push(sentence);
+    if (/[\p{L}\p{N}]/u.test(sentence)) out.push(sentence);
     consumed = end;
   }
   return { out, consumed, balanced };

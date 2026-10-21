@@ -159,7 +159,9 @@ export function createAudioStreamGateway({ config, models, replies, synthesize =
               else if (event.type === "error") throw fault(event.code || "voice_stream_failed");
             }
           };
-          void pump().catch((cause) => { if (!abort.signal.aborted) error(cause); }).finally(() => { unsub(); close(); });
+          // `done` means the bytes have been handed over. The browser still has up to
+          // the two-second send-ahead queued. Closing now is a disconnect and stops that tail.
+          void pump().catch((cause) => { if (!abort.signal.aborted) error(cause); }).finally(() => unsub());
         }
       });
     },

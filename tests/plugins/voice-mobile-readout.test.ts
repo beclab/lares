@@ -377,6 +377,15 @@ test("stopping playback is a cancellation, not a dropped listen connection", asy
   await assert.rejects(pending, (error: Error) => error.message === "voice_cancelled");
 });
 
+test("a socket that closes after done still finishes audio already accepted", async () => {
+  let socket: ReturnType<typeof fakeSocket>;
+  const pending = playAudioStream({ text: "我是一个可爱的小猫咪", request: ticket, socket: () => (socket = fakeSocket()) });
+  await flush();
+  socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "done" }) }));
+  socket.close();
+  assert.equal(await pending, true);
+});
+
 test("a socket that closes on its own is still voice_disconnected", async () => {
   let socket: ReturnType<typeof fakeSocket>;
   const pending = playAudioStream({ text: "你好", request: ticket, socket: () => (socket = fakeSocket()) });

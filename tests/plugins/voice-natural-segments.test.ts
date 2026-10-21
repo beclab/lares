@@ -56,6 +56,17 @@ test("lists cannot merge across nesting, paragraphs, headings or code", () => {
   assert.ok(!parts.some(p => p.includes("新列表") && p.includes("最后列表")));
 });
 
+test("repeated Chinese punctuation is not its own sentence, and an abbreviation survives a Chinese boundary", () => {
+  assert.deepEqual(speechSegments("。。。"), []);
+  assert.deepEqual(speechSegments("好。。"), ["好。"]);
+  assert.deepEqual(speechSegments("第一句。。第二句。"), ["第一句。", "第二句。"]);
+  assert.deepEqual(speechSegments("真的吗？？下一句。"), ["真的吗？", "下一句。"]);
+  assert.deepEqual(speechSegments("版本是 3.14。Mr. Smith 到了。"), ["版本是 3.14。", "Mr. Smith 到了。"]);
+  const s = createSpeechSegmenter({ policy });
+  assert.deepEqual(s.push("版本是 3.14。Mr."), ["版本是 3.14。"]);
+  assert.deepEqual(s.push(" Smith 到了。"), ["Mr. Smith 到了。"]);
+});
+
 test("reset discards pending speech and protects decimal/time/URL/English abbreviations", () => {
   const s = createSpeechSegmenter({ policy });
   s.push("1. 旧\n2. 待定"); s.reset();
