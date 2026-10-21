@@ -358,7 +358,8 @@ export function apply(ctx) {
   ctx.effect(() => {
     const unified = createLaresRealtimeGateway({ service: voiceHost, config: readConfig, ...createRouterAudio(readConfig), keys: voiceKeys, hostOwner: routerEndUser(),
       hostAudio: openRealtimeHostAudio, busyDefault: () => busyEnterDefault(ctx),
-      onError: (cause, scope) => writeReport({ scope: "voice", event: "realtime-error", voiceId: scope.id, code: cause?.code || cause?.message || "voice_failed" }) });
+      onError: (cause, scope) => writeReport({ scope: "voice", event: "realtime-error", voiceId: scope.id, code: cause?.code || cause?.message || "voice_failed" }),
+      onOpen: (fields) => writeReport({ scope: "voice", event: "realtime-open", ...fields }) });
     realtime = registerRealtime(ctx, voiceHost, unified);
     return () => { realtime.dispose(); unified.close(); };
   });

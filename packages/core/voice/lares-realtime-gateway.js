@@ -46,7 +46,7 @@ export function joinSpoken(parts) {
  * `lares-realtime-v1` (docs/realtime-protocol.md) on one endpoint. Bearer voice-key callers get a
  * scope owned by the socket; ticket sockets attach to the Lares client's open voice scope.
  */
-export function createLaresRealtimeGateway({ service, config, transcribe, synthesize, openTranscription, keys, hostOwner = "", hostAudio, busyDefault = () => "queue", bargeIn = () => process.env.LARES_VOICE_BARGE_IN === "1", segment = speechSegments, onError = () => {}, limit = 64 }) {
+export function createLaresRealtimeGateway({ service, config, transcribe, synthesize, openTranscription, keys, hostOwner = "", hostAudio, busyDefault = () => "queue", bargeIn = () => process.env.LARES_VOICE_BARGE_IN === "1", segment = speechSegments, onError = () => {}, onOpen = () => {}, limit = 64 }) {
   const server = new WebSocketServer({ noServer: true, maxPayload: 96 * 1024, perMessageDeflate: false, handleProtocols: (values) => values.has("lares-voice") ? "lares-voice" : false });
   const clients = new Map();
   const tickets = new Map();
@@ -483,6 +483,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       const dependencies = config();
       if ([dependencies.model, dependencies.chatModel, dependencies.ttsModel, dependencies.realtimeModel].some((id) => id === model || id?.endsWith(`/${model}`))) return refuse(socket, 503, "Service Unavailable");
       const scope = { id: randomUUID(), owner: hostOwner, authorizedBinding: { sessionId: key.sessionId, workspaceId: key.workspaceId }, device: "device", routerSessionId: routerSession(req.headers["x-session-id"]), voiceOverrides: {} };
+      try { onOpen({ voiceId: scope.id, keyId: key.id, model, routerSession: scope.routerSessionId, remote: req.socket?.remoteAddress }); } catch {}
       server.handleUpgrade(req, socket, head, (client) => run(client, { scope, model, preset, owned: true, sessionId: key.sessionId }));
     },
     close() { for (const close of clients.values()) close(); server.close(); tickets.clear(); },
