@@ -145,7 +145,7 @@ export default {
 .lares-sheet__foot {
   flex-shrink: 0;
   padding: 0 0 env(safe-area-inset-bottom, 0px);
-  background: var(--q-yellow-default);
+  background: var(--q-background-1);
 }
 
 @media (prefers-reduced-motion: reduce) {

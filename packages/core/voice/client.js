@@ -125,7 +125,11 @@ export async function saveVoiceSettings(patch) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify(patch),
   });
-  if (!res.ok) throw new Error(String(res.status));
+  if (!res.ok) {
+    const failed = await res.json().catch(() => null);
+    const code = failed?.error?.code;
+    throw Object.assign(new Error(code || String(res.status)), code ? { code } : {});
+  }
   const config = await res.json();
   configRevision++;
   confirmedConfig = config;
@@ -138,6 +142,13 @@ export async function saveVoiceSettings(patch) {
 /** Reading mode and the GPU slicing it needs; see core/voice/gpu-mode.js. */
 export async function loadGpuMode() {
   const res = await fetch(`${API}/gpu-mode`);
+  if (!res.ok) throw new Error(String(res.status));
+  return res.json();
+}
+
+/** Reading mode and whether this card can read while writing. */
+export async function loadReadingMode() {
+  const res = await fetch(`${API}/reading-mode`);
   if (!res.ok) throw new Error(String(res.status));
   return res.json();
 }

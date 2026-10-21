@@ -580,6 +580,7 @@ export default {
     });
     this.voiceSettingsUnsub = subscribeVoiceSettings((value) => {
       this.voiceDefaultMode = value.config.mobileMode; this.voiceSettings = markRaw(value);
+      this.voiceStreaming = value.config.streaming === true;
       const next = value.config.speak === true;
       if (this.voiceSpeak && !next) this.reader?.stop();
       this.voiceSpeak = next;
@@ -730,7 +731,7 @@ export default {
       this.running = snap.running;
       this.runningSince = snap.runningSince || 0;
       if (this.voiceCall) this.reader.stop();
-      const target = this.voiceSpeak && !this.voiceCall && !document.hidden ? speakable(utterance, true) : null;
+      const target = this.voiceSpeak && !this.voiceCall && !document.hidden ? speakable(utterance, this.voiceStreaming) : null;
       if (target) this.reader.follow({ ...target, sessionId: snap.sessionId, source: { sessionId: snap.sessionId, turn: target.turn, step: target.step, attemptId: target.attemptId }, key: `${snap.sessionId}:${target.key}` });
       this.failed = snap.failed;
       this.error = snap.error;
@@ -1351,7 +1352,7 @@ export default {
         onTranscript: continuous ? null : onTranscript,
         mode: () => resolveSubmitMode(this.running, false, true, this.busyEnter),
         playback: { get canPause() { return reader.canPause; }, get key() { return reader.key; }, pause: () => reader.pause(), resume: () => reader.resume(), stop: () => { reader.stop(); this.player.stop(); } },
-        onReply: (reply) => { const value = speakable(reply, device === "device"); if (value) reader.follow(value); },
+        onReply: (reply) => { const value = speakable(reply, config.streaming === true); if (value) reader.follow(value); },
       });
       return conversation;
     },

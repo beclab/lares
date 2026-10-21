@@ -100,6 +100,14 @@ function withoutEmoji(text) {
   });
 }
 
+// A longer unbroken identifier is not speech. Synthesizing it stalls the one
+// shared speech path, so this answer and the next one stay silent. Dots stay
+// outside the run so "First one." is still a sentence; a following short
+// extension (`name.jpg`) leaves with the run.
+function withoutUnsayable(text) {
+  return text.replace(/[A-Za-z0-9][A-Za-z0-9_~:/?#@!$&*+=%-]{31,}(?:\.[A-Za-z0-9]{1,8})?/g, "");
+}
+
 /** The assistant's spoken copy; never apply this to stored messages or raw TTS API input. */
 function prepareSource(text, done, structural = false) {
   let pending = false;
@@ -143,9 +151,10 @@ export function spokenLines(text, { done = true } = {}) {
       plain = plain.slice(0, lineStart) + end.slice(0, tail.index);
       pending = true;
     }
-    if (pending || inline.pending) plain += "\uFFFC";
   }
-  return withoutEmoji(plain).split("\n").map((line) => line.replace(/\s+/g, " ").trim());
+  plain = withoutUnsayable(withoutEmoji(plain));
+  if (!done && (pending || inline.pending)) plain += "\uFFFC";
+  return plain.split("\n").map((line) => line.replace(/\s+/g, " ").trim());
 }
 
 
@@ -183,8 +192,9 @@ export function spokenBlocks(text, { done = true } = {}) {
         const tail = [...graphemes.segment(plain.trimEnd())].at(-1);
         if (tail && (emojiRegex().test(tail.segment) || /[\uD800-\uDBFF]$/.test(tail.segment))) { plain = plain.slice(0, tail.index); opaque = true; }
       }
+      plain = withoutUnsayable(withoutEmoji(plain));
       if (!done && opaque) plain += "\uFFFC";
-      plain = withoutEmoji(plain).replace(/\s+/g, " ").trim();
+      plain = plain.replace(/\s+/g, " ").trim();
       const continuation = lists.length && paragraphs.has(items.at(-1));
       if (lists.length) paragraphs.add(items.at(-1));
       if (plain) result.push({ id, text: plain, closed,

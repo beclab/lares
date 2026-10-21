@@ -39,7 +39,7 @@ import {
   openRealtimeHostAudio,
 } from "@olares/lares-core/voice/service";
 import { bluetoothRequest, ensureBluetoothReady } from "@olares/lares-core/voice/link";
-import { gpuAppAction, gpuModePayload, saveSlicePlan, switchReadingMode } from "@olares/lares-core/voice/gpu-mode";
+import { gpuAppAction, gpuModePayload, readingModePayload, saveSlicePlan, speechGpu, streamingEnabled, switchReadingMode } from "@olares/lares-core/voice/gpu-mode";
 import { routerEndUser } from "@olares/lares-core/router/gateway";
 import { SPOKEN_PROMPT } from "@olares/lares-core/voice/agent-session";
 import { writeReport } from "@olares/lares-core/log/report";
@@ -93,6 +93,10 @@ async function handleSetConfig(req, res) {
 
 async function handleGetGpuMode(_req, res) {
   sendJson(res, 200, await gpuModePayload());
+}
+
+async function handleReadingMode(req, res) {
+  sendJson(res, 200, await readingModePayload());
 }
 
 async function handleSetGpuMode(req, res) {
@@ -302,6 +306,7 @@ const ROUTES = {
   "/config": { GET: handleGetConfig, POST: handleSetConfig },
   "/install": { POST: handleInstall },
   "/gpu-mode": { GET: handleGetGpuMode, POST: handleSetGpuMode },
+  "/reading-mode": { GET: handleReadingMode },
   "/gpu-mode/slices": { POST: handleSetSlicePlan },
   "/gpu-mode/app": { POST: handleGpuApp },
   "/speak": { POST: handleSpeak },
@@ -346,7 +351,18 @@ async function voiceHandler(req, res) {
  */
 let streams;
 export function apply(ctx) {
-  const replies = createReplyStreamRegistry({ inspect: id => ctx.sessionController.inspect(id), owner: () => routerEndUser() });
+  const replies = createReplyStreamRegistry({ inspect: id => ctx.sessionController.inspect(id), owner: () => routerEndUser(), streaming: () => streamingEnabled() });
+  ctx.effect(() => {
+    let stop = false;
+    const probe = async () => {
+      while (!stop) {
+        try { await speechGpu(); } catch { /* keep the last card; a time-sliced card stays ineligible */ }
+        await new Promise((resolve) => setTimeout(resolve, 30_000));
+      }
+    };
+    void probe();
+    return () => { stop = true; };
+  });
   ctx.on("agent/assistant-stream", ({ agent, frame }) => replies.frame(agent.id, frame));
   ctx.on("session/event", (session, event) => replies.event(session.id, event));
   ctx.on("api-session/removed", id => replies.remove(id));

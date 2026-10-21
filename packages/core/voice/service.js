@@ -158,6 +158,12 @@ export async function saveVoiceConfig(body) {
       throw new VoiceError("voice_model_unavailable", 400, "selected speech model is not available");
     }
   }
+  if (patch.streaming === true) {
+    const { speechGpu } = await import("./gpu-mode.js");
+    const gpu = await speechGpu();
+    if (!gpu) throw new VoiceError("voice_gpu_no_gpu", 409, "no NVIDIA GPU");
+    if (gpu.type !== "MemorySlice") throw new VoiceError("voice_streaming_time_slice", 409, gpu.type || "TimeSlice");
+  }
   if (patch.ttsVoiceByModel) {
     const current = readConfig().ttsVoiceByModel;
     const changed = Object.entries(patch.ttsVoiceByModel).filter(([model, voice]) => voice && current[model] !== voice);

@@ -111,6 +111,9 @@ export function createHostSettings(request) {
         };
       }, { force: Boolean(force) });
     },
+    async readingMode() {
+      return payload(await request("/api/lares/voice/reading-mode"), "/api/lares/voice/reading-mode");
+    },
     async saveVoice(patch, { diagnostics = true } = {}) {
       const config = payload(
         await request("/api/lares/voice/config", { method: "POST", body: patch }),

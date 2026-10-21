@@ -6,13 +6,17 @@ const STATUS = { voice_reply_invalid: 400, voice_reply_forbidden: 403 };
 const fault = code => new VoiceError(code, STATUS[code] ?? 409, code);
 const identity = source => JSON.stringify([source.sessionId, source.turn, source.step]);
 
-/** Only trusted Agent events may authorize live text; client input supplies an address, never text. */
-export function createReplyStreamRegistry({ inspect, owner, now = Date.now, segmenterFactory = () => createSpeechSegmenter({ now }) } = {}) {
+/**
+ * Trusted Agent text only; a client supplies an address, never the words.
+ * Read-while-writing releases each closed sentence as it arrives. Reading the
+ * finished answer waits until that text has settled. A tool call ends either readout.
+ */
+export function createReplyStreamRegistry({ inspect, owner, now = Date.now, segmenterFactory = () => createSpeechSegmenter({ now }), streaming = () => false } = {}) {
   const rows = new Map();
   const notify = row => { row.version = (row.version || 0) + 1; for (const wake of row.listeners) wake(); };
   const fail = (row, code) => { row.segmenter.reset(); row.ready = []; row.error = code; row.done = true; row.at = now(); notify(row); };
   const advance = row => {
-    if (!row.subscribers || row.error || !row.eligible && !row.done) return;
+    if (!row.subscribers || row.error || streaming() !== true && !row.done) return;
     try { row.ready.push(...row.segmenter.update(row.utterance?.text || "", { done: row.done })); }
     catch (error) { fail(row, error.message === "voice_reply_rewritten" ? error.message : "voice_reply_invalid"); }
   };
@@ -28,7 +32,7 @@ export function createReplyStreamRegistry({ inspect, owner, now = Date.now, segm
         }
         if (rows.size >= 128) return;
         rows.set(key, { sessionId, turn: frame.turn, step: frame.step, attemptId: frame.attemptId,
-          segmenter: segmenterFactory(), ready: [], eligible: frame.speechEligible === true, utterance: null, next: 0, done: false, error: null, at: now(), listeners: new Set(), subscribers: 0 });
+          segmenter: segmenterFactory(), ready: [], utterance: null, next: 0, done: false, error: null, at: now(), listeners: new Set(), subscribers: 0 });
         return;
       }
       for (const row of rows.values()) {

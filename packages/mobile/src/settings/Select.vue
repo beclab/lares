@@ -27,7 +27,7 @@
             class="lares-select__option"
             role="option"
             :aria-selected="item.id === value"
-            :disabled="disabled"
+            :disabled="disabled || item.disabled"
             @click="choose(item)"
           >
             <span>{{ item.label }}</span>
@@ -75,6 +75,7 @@ export default {
   },
   methods: {
     choose(item) {
+      if (this.disabled || item.disabled) return;
       this.open = false;
       this.$emit("select", item);
     },
@@ -175,6 +176,11 @@ export default {
 
 .lares-select__option:hover:not(:disabled) {
   background: var(--q-background-hover);
+}
+
+.lares-select__option:disabled {
+  cursor: default;
+  opacity: 0.45;
 }
 
 .lares-select__option[aria-selected="true"] span {

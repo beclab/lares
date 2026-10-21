@@ -44,35 +44,105 @@
     <section class="lares-agent__group">
       <h2>{{ tVoice("settings.title") }}</h2>
       <div class="lares-agent__list">
-        <LaresSettingRow
-          :label="tVoice('settings.stt.model')"
-          :value="voiceModelLabel"
-          chevron
-          boxed
-          :disabled="Boolean(pending)"
-          @click="openSheet('voiceModel')"
-        />
-        <LaresSettingRow
-          :label="tVoice('settings.language.title')"
-          :value="voiceLangLabel"
-          chevron
-          boxed
-          :disabled="Boolean(pending)"
-          @click="openSheet('voiceLang')"
-        />
+        <template v-if="isDesktop">
+          <label class="lares-agent__field">
+            <span>{{ tVoice('settings.stt.model') }}</span>
+            <LaresSelect
+              :value="voiceModelId"
+              :sections="voiceModelSections"
+              :disabled="busy || !voice"
+              @select="chooseVoiceModel"
+            />
+          </label>
+          <label class="lares-agent__field">
+            <span>{{ tVoice('settings.language.title') }}</span>
+            <LaresSelect
+              :value="voiceLangId"
+              :sections="voiceLanguageSections"
+              :disabled="busy || !voice"
+              @select="chooseVoiceLanguage"
+            />
+          </label>
+        </template>
+        <template v-else>
+          <LaresSettingRow
+            :label="tVoice('settings.stt.model')"
+            :value="voiceModelLabel"
+            chevron
+            boxed
+            :disabled="Boolean(pending)"
+            @click="openSheet('voiceModel')"
+          />
+          <LaresSettingRow
+            :label="tVoice('settings.language.title')"
+            :value="voiceLangLabel"
+            chevron
+            boxed
+            :disabled="Boolean(pending)"
+            @click="openSheet('voiceLang')"
+          />
+        </template>
       </div>
       <VoicePreferences :key="hostKey" ref="voicePreferences" :settings="settings" :tts-fetch="ttsFetch" :snapshot="voice" :device="device" :t="tVoice" :bind-before-leave="bindBeforeLeave" @change="voice = $event" />
-      <label class="lares-agent__hint">{{ tVoice('settings.mobileMode') }}
-        <select :value="voice?.config?.mobileMode || 'continuous'" @change="patchVoice('mobileMode', $event.target.value)">
-          <option value="single">{{ tVoice('settings.mode.single') }}</option>
-          <option value="continuous">{{ tVoice('settings.mode.continuous') }}</option>
-        </select>
-      </label>
-      <label class="lares-agent__hint">{{ tVoice('settings.device') }}
-        <select :value="voice?.config?.device || 'auto'" @change="patchVoice('device', $event.target.value)">
-          <option v-for="device in ['auto', 'device', 'headset']" :key="device" :value="device">{{ tVoice(`settings.device.${device}`) }}</option>
-        </select>
-      </label>
+      <h3>{{ tVoice("settings.conversation") }}</h3>
+      <div class="lares-agent__list">
+        <template v-if="isDesktop">
+          <label class="lares-agent__field">
+            <span>{{ tVoice('settings.mobileMode') }}</span>
+            <LaresSelect
+              :value="voice?.config?.mobileMode || 'continuous'"
+              :sections="mobileModeSections"
+              :disabled="busy || !voice"
+              @select="(item) => patchVoice('mobileMode', item.id)"
+            />
+          </label>
+          <label class="lares-agent__field">
+            <span>{{ tVoice('settings.device') }}</span>
+            <LaresSelect
+              :value="voice?.config?.device || 'auto'"
+              :sections="deviceSections"
+              :disabled="busy || !voice"
+              @select="(item) => patchVoice('device', item.id)"
+            />
+          </label>
+          <label class="lares-agent__field">
+            <span>{{ tVoice('settings.mode.title') }}</span>
+            <LaresSelect
+              :value="voice?.config?.streaming ? 'streaming' : 'turns'"
+              :sections="readingSections"
+              :disabled="busy || !voice || !reading"
+              @select="(item) => chooseReading(item.id)"
+            />
+          </label>
+        </template>
+        <template v-else>
+          <LaresSettingRow
+            :label="tVoice('settings.mobileMode')"
+            :value="voiceChoiceLabel('mobileMode')"
+            chevron
+            boxed
+            :disabled="Boolean(pending) || !voice"
+            @click="openSheet('voiceMobileMode')"
+          />
+          <LaresSettingRow
+            :label="tVoice('settings.device')"
+            :value="voiceChoiceLabel('device')"
+            chevron
+            boxed
+            :disabled="Boolean(pending) || !voice"
+            @click="openSheet('voiceDevice')"
+          />
+          <LaresSettingRow
+            :label="tVoice('settings.mode.title')"
+            :value="voiceChoiceLabel('reading')"
+            chevron
+            boxed
+            :disabled="Boolean(pending) || !voice || !reading"
+            @click="openSheet('voiceReading')"
+          />
+        </template>
+      </div>
+      <p class="lares-agent__hint">{{ readingHint }}</p>
       <p v-if="voiceError" class="lares-agent__hint" data-status="error">{{ voiceError }}</p>
       <VoiceKeys :key="`keys-${hostKey}`" :client="voiceKeys" :t="tVoice" />
     </section>
@@ -106,7 +176,7 @@
           :key="item.id"
           :label="item.label"
           :checked="item.id === sheetCurrent"
-          :disabled="busy"
+          :disabled="busy || item.disabled"
           @click="pick(item)"
         />
       </template>
@@ -182,6 +252,7 @@ export default {
       voiceError: "",
       searchError: "",
       conversationError: "",
+      reading: null,
     };
   },
   computed: {
@@ -247,13 +318,31 @@ export default {
       }
       return this.models.default?.model || "—";
     },
+    voiceModelId() {
+      return voiceMenuValue(this.voice?.config?.model);
+    },
+    voiceLangId() {
+      return voiceMenuValue(this.voice?.config?.language);
+    },
+    voiceModelSections() {
+      return [{ items: this.voiceModels }];
+    },
+    voiceLanguageSections() {
+      return [{ items: this.voiceLanguages }];
+    },
     voiceModelLabel() {
       if (!this.voice) return "—";
-      return itemLabel(this.voiceModels, voiceMenuValue(this.voice.config?.model));
+      return itemLabel(this.voiceModels, this.voiceModelId);
     },
     voiceLangLabel() {
       if (!this.voice) return "—";
-      return itemLabel(this.voiceLanguages, voiceMenuValue(this.voice.config?.language));
+      return itemLabel(this.voiceLanguages, this.voiceLangId);
+    },
+    readingHint() {
+      if (this.reading && !this.reading.allowed) return this.tVoice("settings.mode.hint");
+      const type = this.reading?.gpu?.type;
+      if (type) return this.tVoice("settings.mode.gpu", { type: this.tVoice(`settings.gpu.${type}`) });
+      return this.tVoice("settings.mode.hint");
     },
     searchMenuId() {
       return searchMenuValue(this.search);
@@ -283,10 +372,27 @@ export default {
         ],
       }];
     },
+    mobileModeSections() {
+      return [{ items: ["single", "continuous"].map((id) => ({ id, label: this.tVoice(`settings.mode.${id}`) })) }];
+    },
+    deviceSections() {
+      return [{ items: ["auto", "device", "headset"].map((id) => ({ id, label: this.tVoice(`settings.device.${id}`) })) }];
+    },
+    readingSections() {
+      return [{
+        items: [
+          { id: "turns", label: this.tVoice("settings.mode.turns") },
+          { id: "streaming", label: this.tVoice("settings.mode.streaming"), disabled: !this.reading?.allowed },
+        ],
+      }];
+    },
     sheetTitle() {
       if (this.panel === "model") return this.tModel("settings.title");
       if (this.panel === "voiceModel") return this.tVoice("settings.stt.model");
       if (this.panel === "voiceLang") return this.tVoice("settings.language.title");
+      if (this.panel === "voiceMobileMode") return this.tVoice("settings.mobileMode");
+      if (this.panel === "voiceDevice") return this.tVoice("settings.device");
+      if (this.panel === "voiceReading") return this.tVoice("settings.mode.title");
       if (this.panel === "search") return this.tSearch("settings.default");
       return "";
     },
@@ -301,6 +407,9 @@ export default {
       if (this.panel === "voiceLang") {
         return [{ items: this.voiceLanguages.map((item) => ({ id: item.id, label: item.label })) }];
       }
+      if (this.panel === "voiceMobileMode") return this.mobileModeSections;
+      if (this.panel === "voiceDevice") return this.deviceSections;
+      if (this.panel === "voiceReading") return this.readingSections;
       if (this.panel === "search") return this.searchSelectSections;
       return [];
     },
@@ -360,7 +469,16 @@ export default {
       if (!ready) return;
       this.panel = panel;
     },
+    chooseVoiceModel(item) { return this.patchVoice("model", voiceValueFromMenu(item.id)); },
+    chooseVoiceLanguage(item) { return this.patchVoice("language", voiceValueFromMenu(item.id)); },
+    voiceChoiceLabel(kind) {
+      if (!this.voice) return "—";
+      if (kind === "mobileMode") return this.tVoice(`settings.mode.${this.voice.config?.mobileMode || "continuous"}`);
+      if (kind === "device") return this.tVoice(`settings.device.${this.voice.config?.device || "auto"}`);
+      return this.tVoice(`settings.mode.${this.voice.config?.streaming ? "streaming" : "turns"}`);
+    },
     async pick(item, panel = this.panel) {
+      if (item.disabled) return;
       if (item.id === this.sheetCurrentFor(panel)) {
         this.panel = "";
         return;
@@ -369,12 +487,18 @@ export default {
       if (panel === "model") await this.chooseModel(item.model);
       if (panel === "voiceModel") await this.patchVoice("model", voiceValueFromMenu(item.id));
       if (panel === "voiceLang") await this.patchVoice("language", voiceValueFromMenu(item.id));
+      if (panel === "voiceMobileMode") await this.patchVoice("mobileMode", item.id);
+      if (panel === "voiceDevice") await this.patchVoice("device", item.id);
+      if (panel === "voiceReading") this.chooseReading(item.id);
       if (panel === "search") await this.chooseSearch(item.id);
     },
     sheetCurrentFor(panel) {
       if (panel === "model") return this.modelCurrent;
       if (panel === "voiceModel") return voiceMenuValue(this.voice?.config?.model);
       if (panel === "voiceLang") return voiceMenuValue(this.voice?.config?.language);
+      if (panel === "voiceMobileMode") return this.voice?.config?.mobileMode || "continuous";
+      if (panel === "voiceDevice") return this.voice?.config?.device || "auto";
+      if (panel === "voiceReading") return this.voice?.config?.streaming ? "streaming" : "turns";
       if (panel === "search") return searchMenuValue(this.search);
       return "";
     },
@@ -390,7 +514,10 @@ export default {
         this.voice = remembered.voice ?? this.voice;
         this.search = remembered.search ?? this.search;
         this.conversation = remembered.conversation ?? this.conversation;
-        if (this.models && this.voice && this.search && this.conversation) return;
+        if (this.models && this.voice && this.search && this.conversation) {
+          void this.loadReading();
+          return;
+        }
       }
       this.panel = "";
       this.loading = true;
@@ -413,6 +540,21 @@ export default {
       if (conversation.status === "fulfilled") this.conversation = conversation.value;
       else this.conversationError = conversation.reason instanceof Error ? conversation.reason.message : String(conversation.reason);
       this.loading = false;
+      void this.loadReading();
+    },
+    async loadReading() {
+      try {
+        this.reading = await this.settings.readingMode();
+      } catch {
+        this.reading = { streaming: false, allowed: false, gpu: null };
+      }
+    },
+    chooseReading(value) {
+      if (value === "streaming" && !this.reading?.allowed) {
+        this.voiceError = this.tVoice("error.voice_streaming_time_slice");
+        return;
+      }
+      void this.patchVoice("streaming", value === "streaming");
     },
     async chooseModel(model) {
       const selection = { provider: model.provider, model: model.id };
@@ -434,8 +576,10 @@ export default {
       this.voiceError = "";
       try {
         this.voice = await this.$refs.voicePreferences.patch({ [key]: value });
-      } catch {
-        this.voiceError = this.tVoice("settings.saveFailed");
+      } catch (err) {
+        const code = err?.code;
+        const text = code ? this.tVoice(`error.${code}`) : "";
+        this.voiceError = text && text !== `error.${code}` ? text : this.tVoice("settings.saveFailed");
       } finally {
         this.pending = "";
       }
@@ -547,11 +691,23 @@ export default {
   gap: 8px;
 }
 
-.lares-agent__group h2 {
+.lares-agent__group h2,
+.lares-agent__group h3 {
   margin: 0;
-  font-size: 18px;
   font-weight: 500;
+  color: var(--q-ink-1);
+}
+
+.lares-agent__group h2 {
+  font-size: 18px;
   line-height: 24px;
+}
+
+.lares-agent__group h3 {
+  margin-top: 8px;
+  color: var(--q-ink-3);
+  font-size: 14px;
+  line-height: 18px;
 }
 
 .lares-agent__list {
@@ -560,9 +716,20 @@ export default {
   gap: 12px;
 }
 
+.lares-agent__field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  color: var(--q-ink-1);
+  font-size: 15px;
+  line-height: 22px;
+}
+
 .lares-agent__hint {
   margin: 0;
   font-size: 15px;
+  line-height: 22px;
   color: var(--q-ink-3);
 }
 

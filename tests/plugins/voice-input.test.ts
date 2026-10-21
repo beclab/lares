@@ -62,7 +62,7 @@ test("voice settings map the auto sentinel to an empty stored value", () => {
   assert.equal(voiceValueFromMenu("auto"), "");
   assert.equal(voiceValueFromMenu("zh"), "zh");
   assert.deepEqual(STT_LANGUAGE_CHOICES.map((item) => item.id), ["zh", "en", "ja", "ko"]);
-  assert.deepEqual(EMPTY_VOICE_CONFIG, { preset: "assistant", dictationPreset: "raw", dictationProfiles: defaultDictationProfiles(), dictationShortcuts: { default: "", raw: "", clean: "", outline: "", summary: "" }, chatModel: "default-chat", instructions: "", voice: "", ttsVoiceByModel: {}, mode: "single", mobileMode: "continuous", endpointSilenceMs: 500, idleTimeoutMs: 300_000, recoveryTimeoutMs: 120_000, device: "auto", backend: "pipeline", transport: "unified", realtimeModel: "", model: "", ttsModel: "", language: "", speak: false, streaming: false });
+  assert.deepEqual(EMPTY_VOICE_CONFIG, { preset: "assistant", dictationPreset: "raw", dictationProfiles: defaultDictationProfiles(), dictationShortcuts: { default: "", raw: "", clean: "", outline: "", summary: "" }, chatModel: "default-chat", instructions: "", voice: "", ttsVoiceByModel: {}, mode: "single", mobileMode: "continuous", endpointSilenceMs: 500, idleTimeoutMs: 300_000, recoveryTimeoutMs: 120_000, device: "auto", backend: "pipeline", transport: "unified", realtimeModel: "", model: "", ttsModel: "", language: "", speak: false, streaming: true });
   assert.equal(voiceLanguageItems("Auto")[0].label, "Auto");
   assert.deepEqual(voiceModelItems(["whisper-a"], "Auto"), [
     { id: "auto", label: "Auto" },
@@ -185,9 +185,9 @@ test("GPU switch keeps each app's memory slice across a time-slice round trip", 
   try {
     const { gpuSwitchJob, switchReadingMode } = await import(`../../packages/core/voice/gpu-mode.js?rt=${Date.now()}`);
     const { readConfig } = await import(`../../packages/core/voice/config.js?rt=${Date.now()}`);
-    const off = await switchReadingMode(false, { spawnFn });
-    assert.equal(off.streaming, false);
+    await switchReadingMode(false, { spawnFn });
     assert.equal((await settle(gpuSwitchJob))?.phase, "done");
+    assert.equal(readConfig().streaming, false);
     assert.deepEqual(calls.filter((args) => args[1] === "stop").map((args) => args[2]), [
       "sglang", "audioqwen3tts06v3", "audioqwen3asr06v3",
     ]);
@@ -368,7 +368,8 @@ test("a memory-slice plan that cannot fit is refused before any app stops", asyn
     const calls: string[][] = [];
     const spawnFn = fakeCli((args) => card.reply(args) ?? {}, calls);
     const { gpuSwitchJob, switchReadingMode } = await import(`../../packages/core/voice/gpu-mode.js?over=${Date.now()}`);
-    const { readConfig } = await import(`../../packages/core/voice/config.js?over=${Date.now()}`);
+    const { readConfig, writeConfig } = await import(`../../packages/core/voice/config.js?over=${Date.now()}`);
+    writeConfig({ streaming: false });
     await switchReadingMode(true, { spawnFn });
     const job = await settleJob(gpuSwitchJob);
     assert.equal(job?.phase, "failed");
@@ -387,7 +388,8 @@ test("a refused GPU switch puts the stopped apps back and keeps the reading mode
       return card.reply(args) ?? {};
     }, calls);
     const { gpuSwitchJob, switchReadingMode } = await import(`../../packages/core/voice/gpu-mode.js?refused=${Date.now()}`);
-    const { readConfig } = await import(`../../packages/core/voice/config.js?refused=${Date.now()}`);
+    const { readConfig, writeConfig } = await import(`../../packages/core/voice/config.js?refused=${Date.now()}`);
+    writeConfig({ streaming: false });
     await switchReadingMode(true, { spawnFn });
     const job = await settleJob(gpuSwitchJob) as { phase: string; problem: { code: string }; restored: { app: string; ok: boolean }[] };
     assert.equal(job.phase, "failed");
@@ -420,6 +422,39 @@ test("GPU problems read as guidance in both languages", async () => {
     "语音识别没能启动（timeout）。请在 Olares 市场查看它的状态，再点重试",
   );
   assert.match(gpuProblemText(translate(EN), { code: "voice_gpu_new_thing", params: {}, detail: "oops" }), /^Couldn't switch the GPU mode \(oops\)/);
+});
+
+test("streaming readout reads a memory-sliced card when the pod CLI has no profile", async () => {
+  const { readingModePayload, supportTypeFromShareMode } = await import(`../../packages/core/voice/gpu-mode.js?cluster=${Date.now()}`);
+  assert.equal(supportTypeFromShareMode("1"), "MemorySlice");
+  assert.equal(supportTypeFromShareMode("0"), "Exclusive");
+  assert.equal(supportTypeFromShareMode(""), "TimeSlice");
+  const spawnFn = (() => ({
+    stdout: { on() {} },
+    stderr: { on(_event: string, listener: (chunk: string) => void) { listener("no Olares profile is configured: run `olares-cli profile login`"); } },
+    on(event: string, listener: (code?: number) => void) {
+      if (event === "close") listener(1);
+    },
+  })) as unknown as typeof import("node:child_process").spawn;
+  const kubeGet = async (path: string) => path.endsWith("/nodes")
+    ? {
+      items: [{
+        metadata: {
+          name: "olares",
+          annotations: {
+            "sharemode.gpu.bytetrade.io/GPU-1": "1",
+            "hami.io/node-nvidia-register": "GPU-1,30,24463,100,NVIDIA GeForce RTX 5090 Laptop GPU,0,true,0,hami-core:",
+          },
+        },
+      }],
+    }
+    : {
+      items: [{ spec: { appName: "audioqwen3tts06v3", uuid: "GPU-1", memory: "4096" } }],
+    };
+  const reading = await readingModePayload({ spawnFn, kubeGet });
+  assert.equal(reading.allowed, true);
+  assert.equal(reading.gpu?.type, "MemorySlice");
+  assert.equal(reading.problem, null);
 });
 
 test("chart status reads the live row across every market source", async () => {
@@ -654,7 +689,7 @@ test("readConfig / writeConfig round-trip through DSH_HOME", async () => {
     const { readConfig, validateConfigPatch, writeConfig } = await import(
       `../../packages/core/voice/config.js?cfg=${Date.now()}`
     );
-    assert.deepEqual(readConfig(), { preset: "assistant", dictationPreset: "raw", dictationProfiles: defaultDictationProfiles(), dictationShortcuts: { default: "", raw: "", clean: "", outline: "", summary: "" }, chatModel: "default-chat", instructions: "", voice: "", ttsVoiceByModel: {}, mode: "single", mobileMode: "continuous", endpointSilenceMs: 500, idleTimeoutMs: 300_000, recoveryTimeoutMs: 120_000, device: "auto", backend: "pipeline", transport: "unified", realtimeModel: "", model: "", ttsModel: "", language: "", speak: false, streaming: false });
+    assert.deepEqual(readConfig(), { preset: "assistant", dictationPreset: "raw", dictationProfiles: defaultDictationProfiles(), dictationShortcuts: { default: "", raw: "", clean: "", outline: "", summary: "" }, chatModel: "default-chat", instructions: "", voice: "", ttsVoiceByModel: {}, mode: "single", mobileMode: "continuous", endpointSilenceMs: 500, idleTimeoutMs: 300_000, recoveryTimeoutMs: 120_000, device: "auto", backend: "pipeline", transport: "unified", realtimeModel: "", model: "", ttsModel: "", language: "", speak: false, streaming: true });
     const saved = writeConfig({ model: "  whisper-x  ", language: "zh" });
     assert.equal(saved.model, "whisper-x");
     assert.equal(saved.language, "zh");
@@ -683,6 +718,30 @@ test("readConfig / writeConfig round-trip through DSH_HOME", async () => {
           err.code === "voice_config_invalid" && err.status === 400,
       );
     }
+  } finally {
+    if (prev === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = prev;
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("streaming stays off unless the card is memory-sliced", async () => {
+  const home = mkdtempSync(join(tmpdir(), "lares-voice-stream-"));
+  const prev = process.env.DSH_HOME;
+  process.env.DSH_HOME = home;
+  try {
+    const { writeConfig } = await import(`../../packages/core/voice/config.js?stream=${Date.now()}`);
+    const { noteSpeechGpu, streamingEnabled } = await import(`../../packages/core/voice/gpu-mode.js?stream=${Date.now()}`);
+    writeConfig({ streaming: true });
+    noteSpeechGpu(null);
+    assert.equal(streamingEnabled(), false);
+    noteSpeechGpu({ type: "TimeSlice" });
+    assert.equal(streamingEnabled(), false);
+    noteSpeechGpu({ type: "MemorySlice" });
+    assert.equal(streamingEnabled(), true);
+    writeConfig({ streaming: false });
+    assert.equal(streamingEnabled(), false);
+    noteSpeechGpu(null);
   } finally {
     if (prev === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = prev;

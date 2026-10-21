@@ -66,10 +66,10 @@ export function SpeechPlayer({ sessionId, conversation, suspended = false }) {
   const opened = useRef(new Set());
   const reader = useRef(null);
   reader.current ??= createReader();
-  // Playback is checked once per utterance; the answer keeps streaming meanwhile.
+  // Speak and read-while-writing are read once per utterance.
   const allowed = useRef({ key: null, speak: null, streaming: false, latest: null });
   const follow = (gate) => {
-    const target = gate.speak ? speakable(gate.latest, true) : null;
+    const target = gate.speak ? speakable(gate.latest, gate.streaming) : null;
     if (target) reader.current.follow(target);
   };
 

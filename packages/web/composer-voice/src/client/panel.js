@@ -44,7 +44,7 @@ export function createWebVoicePanel(onSession) {
         endpointSilenceMs: config.endpointSilenceMs, idleTimeoutMs: config.idleTimeoutMs, recoveryTimeoutMs: config.recoveryTimeoutMs,
         onTranscript: continuous ? null : onTranscript,
         transcribe, preparation, streamInput: (stream, callbacks) => createStreamingCapture(stream, { ...callbacks, request, headers: conversation.headers, model: config.model, language: config.language }),
-        playback: { get canPause() { return reader.canPause; }, get key() { return reader.key; }, pause: () => reader.pause(), resume: () => reader.resume(), stop() { reader.stop(); browser.stop(); } }, onReply: (reply) => { const value = speakable(reply, device === "device"); if (value) reader.follow(value); },
+        playback: { get canPause() { return reader.canPause; }, get key() { return reader.key; }, pause: () => reader.pause(), resume: () => reader.resume(), stop() { reader.stop(); browser.stop(); } }, onReply: (reply) => { const value = speakable(reply, config.streaming === true); if (value) reader.follow(value); },
       });
       return conversation;
     },

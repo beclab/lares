@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import https from "node:https";
 import { readJsonFile, writeJsonFile } from "../tools/json-file.js";
 import { dshPluginConfigPath } from "../workspace/home.js";
 import { VoiceError } from "../router/stt.js";
@@ -119,18 +121,41 @@ function speechDevice(nodes) {
     ?? null;
 }
 
+let seenGpu = undefined;
+
+/** Last card `speechGpu` observed. `undefined` means it has not been asked yet. */
+export function noteSpeechGpu(gpu) {
+  seenGpu = gpu ?? null;
+}
+
 /**
- * The NVIDIA card the speech models are bound to.
- * @returns {Promise<{ node: string, device: string, model: string, type: string, memory: number, available: string[], bindings: { app: string, memory: number }[] } | null>}
+ * Read-while-writing only while the saved mode asks for it and the card is
+ * memory-sliced. Time slicing cannot keep the language model and speech model
+ * resident together, so a saved streaming flag does not override that.
  */
-export async function speechGpu(options = {}) {
-  const result = await runOlaresCli(["settings", "compute", "list", "-o", "json"], options.spawnFn);
-  if (result.code !== 0 || !Array.isArray(result.json)) {
-    throw new GpuError(cliProblem(result, "voice_gpu_failed"));
+export function streamingEnabled() {
+  return readConfig().streaming === true && seenGpu?.type === "MemorySlice";
+}
+
+/** What the reading-mode control needs, without listing every GPU app. */
+export async function readingModePayload(options = {}) {
+  let gpu = null;
+  let problem = null;
+  try {
+    gpu = await speechGpu(options);
+  } catch (err) {
+    problem = problemOf(err);
   }
-  const device = speechDevice(result.json);
-  if (!device) return null;
   return {
+    streaming: readConfig().streaming === true,
+    allowed: gpu?.type === "MemorySlice",
+    gpu: gpu ? { type: gpu.type, model: gpu.model } : null,
+    problem,
+  };
+}
+
+function gpuFromDevice(device) {
+  const gpu = {
     node: String(device.nodeName ?? ""),
     device: String(device.id ?? ""),
     model: String(device.cardModel ?? ""),
@@ -142,6 +167,133 @@ export async function speechGpu(options = {}) {
       memory: Number(binding?.memory) || 0,
     })).filter((binding) => binding.app),
   };
+  noteSpeechGpu(gpu);
+  return gpu;
+}
+
+const SHARE_MODE_PREFIX = "sharemode.gpu.bytetrade.io/";
+const NVIDIA_REGISTER = "hami.io/node-nvidia-register";
+
+/**
+ * Node annotation `sharemode.gpu.bytetrade.io/<uuid>` uses the platform's
+ * legacy codes: 0 exclusive, 1 memory slice, anything else time slice.
+ */
+export function supportTypeFromShareMode(mode) {
+  if (mode === "0") return "Exclusive";
+  if (mode === "1") return "MemorySlice";
+  return "TimeSlice";
+}
+
+/**
+ * The card the speech models use, from the node's share-mode annotation and
+ * the GPUBinding objects. Memory in those objects is MiB.
+ * @returns {ReturnType<typeof gpuFromDevice> | null}
+ */
+export function gpuFromClusterState(nodeList, bindingList) {
+  const nodes = Array.isArray(nodeList?.items) ? nodeList.items : [];
+  const bindings = Array.isArray(bindingList?.items) ? bindingList.items : [];
+  const speechApps = new Set(Object.values(VOICE_CHARTS).map((chart) => chart.app));
+  const cards = [];
+  for (const node of nodes) {
+    const annotations = node?.metadata?.annotations ?? {};
+    const register = String(annotations[NVIDIA_REGISTER] ?? "");
+    const rows = register.split(":").map((row) => row.split(",")).filter((fields) => fields[0]);
+    for (const [key, value] of Object.entries(annotations)) {
+      if (!key.startsWith(SHARE_MODE_PREFIX)) continue;
+      const device = key.slice(SHARE_MODE_PREFIX.length);
+      if (!device) continue;
+      const card = rows.find((fields) => fields[0] === device);
+      const bound = bindings.filter((item) => item?.spec?.uuid === device);
+      cards.push({
+        node: String(node?.metadata?.name ?? ""),
+        device,
+        model: card?.[4] ? String(card[4]) : "",
+        type: supportTypeFromShareMode(String(value ?? "").trim()),
+        memory: card ? (Number(card[2]) || 0) * MIB : 0,
+        available: ["TimeSlice", "MemorySlice", "Exclusive"],
+        bindings: bound.map((item) => ({
+          app: String(item?.spec?.appName ?? ""),
+          memory: (Number(item?.spec?.memory) || 0) * MIB,
+        })).filter((binding) => binding.app),
+      });
+    }
+  }
+  const chosen = cards.find((card) => card.bindings.some((binding) => speechApps.has(binding.app))) ?? cards[0] ?? null;
+  if (!chosen) return null;
+  noteSpeechGpu(chosen);
+  return chosen;
+}
+
+function kubeGet(path) {
+  return new Promise((resolve, reject) => {
+    Promise.all([
+      readFile("/var/run/secrets/kubernetes.io/serviceaccount/token", "utf8"),
+      readFile("/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"),
+    ]).then(([token, ca]) => {
+      const req = https.request({
+        hostname: "kubernetes.default.svc",
+        path,
+        method: "GET",
+        ca,
+        headers: { Authorization: `Bearer ${token.trim()}` },
+        timeout: 8000,
+      }, (res) => {
+        let body = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk) => { body += chunk; });
+        res.on("end", () => {
+          if (res.statusCode !== 200) {
+            reject(new Error(`kubernetes ${path} returned ${res.statusCode}`));
+            return;
+          }
+          try {
+            resolve(JSON.parse(body));
+          } catch (err) {
+            reject(err);
+          }
+        });
+      });
+      req.on("error", reject);
+      req.on("timeout", () => req.destroy(new Error("kubernetes API timed out")));
+      req.end();
+    }).catch(reject);
+  });
+}
+
+async function speechGpuFromCluster(options) {
+  const get = options.kubeGet ?? kubeGet;
+  const [nodes, bindings] = await Promise.all([
+    get("/api/v1/nodes"),
+    get("/apis/gpu.bytetrade.io/v1alpha1/gpubindings"),
+  ]);
+  return gpuFromClusterState(nodes, bindings);
+}
+
+/**
+ * The NVIDIA card the speech models are bound to.
+ * The pod CLI profile is the first source. When that profile is not mounted,
+ * the node's share-mode annotation is the same fact the settings page shows.
+ * @returns {Promise<{ node: string, device: string, model: string, type: string, memory: number, available: string[], bindings: { app: string, memory: number }[] } | null>}
+ */
+export async function speechGpu(options = {}) {
+  const result = await runOlaresCli(["settings", "compute", "list", "-o", "json"], options.spawnFn);
+  if (result.code === 0 && Array.isArray(result.json)) {
+    const device = speechDevice(result.json);
+    if (!device) {
+      noteSpeechGpu(null);
+      return null;
+    }
+    return gpuFromDevice(device);
+  }
+  const problem = cliProblem(result, "voice_gpu_failed");
+  if (problem.code === "voice_gpu_login") {
+    try {
+      return await speechGpuFromCluster(options);
+    } catch {
+      /* The annotation is unreadable; the CLI failure is what we can report. */
+    }
+  }
+  throw new GpuError(problem);
 }
 
 /**

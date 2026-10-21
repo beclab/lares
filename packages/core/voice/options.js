@@ -24,7 +24,7 @@ export const VOICE_DEFAULTS = {
   language: "",
   speak: false,
   // Read answers while they are written. Needs the GPU in MemorySlice, see gpu-mode.js.
-  streaming: false,
+  streaming: true,
 };
 
 export const VOICE_PRESETS = Object.freeze(["dictation", "chat", "assistant", "direct"]);

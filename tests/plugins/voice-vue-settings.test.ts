@@ -30,7 +30,8 @@ test("real Vue preferences renders one selected preset and expanded configuratio
   const snapshot = { config: { dictationPreset: "clean", dictationProfiles: defaultDictationProfiles(), dictationShortcuts: { default: "", raw: "", clean: "", outline: "", summary: "" } }, chatModels: ["chat"] };
   for (const device of ["desktop", "mobile", "tablet"]) {
     const html = await renderToString(createSSRApp(Component, { settings: {}, ttsFetch: async () => Response.json({ voices: [] }), snapshot, device, t: (key: string) => key }));
-    for (const preset of ["raw", "clean", "outline", "summary"]) assert.ok(html.includes(`dictation.${preset}`));
+    assert.ok(html.includes("dictation.clean"));
+    assert.equal(html.includes("<select"), false);
     assert.equal(html.includes("<details"), false); assert.equal(html.includes("preferences.shortcuts"), device === "desktop");
     assert.ok(html.includes('rows="6"')); assert.ok(html.includes("preferences.dictationStyle"));
     assert.equal(html.includes("preferences.setDefault"), false); assert.equal(html.includes("preferences.editing"), false);

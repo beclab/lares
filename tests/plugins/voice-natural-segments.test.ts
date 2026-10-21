@@ -78,7 +78,7 @@ test("natural speech holds unresolved references and preserves tables and split 
 
 test("Host deadline flushes without new tokens; cancellation and failed attempts cannot flush late", async () => {
   const { createReplyStreamRegistry } = await import("../../packages/core/voice/reply-stream.js");
-  const registry = createReplyStreamRegistry({ inspect: async () => ({}), segmenterFactory: () => createSpeechSegmenter({ policy }) });
+  const registry = createReplyStreamRegistry({ inspect: async () => ({}), streaming: () => true, segmenterFactory: () => createSpeechSegmenter({ policy }) });
   const source = { sessionId: "timed", turn: 1, step: 0 };
   const start = (attemptId: string, eligible = true) => registry.frame("timed", { ...source, type: "start", attemptId, speechEligible: eligible });
   const chunk = (attemptId: string, text: string) => registry.frame("timed", { type: "chunk", attemptId, index: 0, chunk: { type: "text-delta", text } });
@@ -138,7 +138,7 @@ test("trusted websocket output sends grouped text to actual TTS request construc
     bodies.push(JSON.parse(init.body));
     return new Response(new Uint8Array(32), { headers: { "content-type": "audio/L16", "x-audio-sample-rate": "24000" } });
   });
-  const registry = createReplyStreamRegistry({ inspect: async () => ({}), segmenterFactory: () => createSpeechSegmenter({ policy }) });
+  const registry = createReplyStreamRegistry({ inspect: async () => ({}), streaming: () => true, segmenterFactory: () => createSpeechSegmenter({ policy }) });
   const gateway = createAudioStreamGateway({ replies: registry, config: () => ({ speak: true, ttsModel: "tts" }), models: async () => [{ id: "tts", supportsTts: true }] });
   const server = createServer(); server.on("upgrade", (req, socket, head) => gateway.upgrade(req, socket, head));
   server.listen(0, "127.0.0.1"); await once(server, "listening");
@@ -174,9 +174,48 @@ test("unclosed quotes remain provisional across paragraphs until final flush", (
   assert.deepEqual(s.finish(), ["还没闭合（内容", "下一段。"]);
 });
 
+test("long filenames stay out of speech and the next sentence is still spoken", () => {
+  const text = [
+    "您工作目录下有以下文件：",
+    "",
+    "**生成的图片文件：**",
+    "",
+    "- outputs/gen_0aecf7a708d78306efb45b2305e667ba-1.jpg",
+    "- outputs/gen_87950b7a90e48e61a1f3e43f558f3b67-1.jpg",
+    "- outputs/gen_29080713e3059ee500cf095d7b749069-1.jpg",
+    "",
+    "**小说项目：**",
+    "",
+    "- novel/chapters/01-灯堂.md",
+    "- novel/tools/count.py",
+    "- AGENTS.md",
+    "",
+    "需要查看某个文件的内容吗？",
+  ].join("\n");
+  const parts = speechSegments(text, { policy });
+  const spoken = parts.join("");
+  for (const kept of ["您工作目录下有以下文件", "生成的图片文件", "灯堂", "count.py", "AGENTS.md", "需要查看某个文件的内容吗"]) {
+    assert.ok(spoken.includes(kept), kept);
+  }
+  assert.equal(spoken.includes("0aecf7a708d78306efb45b2305e667ba"), false);
+  assert.equal(spoken.includes("87950b7a90e48e61a1f3e43f558f3b67"), false);
+  const whole = body(parts);
+  for (let size = 1; size <= 31; size++) {
+    const s = createSpeechSegmenter({ policy });
+    const out: string[] = [];
+    for (let at = 0; at < text.length; at += size) out.push(...s.push(text.slice(at, at + size)));
+    out.push(...s.finish());
+    assert.equal(body(out), whole, `chunk size ${size}`);
+  }
+  const mixed = "结果在 outputs/gen_0aecf7a708d78306efb45b2305e667ba-1.jpg 里。下一句正常回答。";
+  assert.deepEqual(speechSegments(mixed, { policy }), ["结果在 里。", "下一句正常回答。"]);
+  const following = createSpeechSegmenter({ policy });
+  assert.deepEqual(following.push("下一句正常回答。"), ["下一句正常回答。"]);
+});
+
 test("a replaced generation cannot flush its pending list into the new attempt", async () => {
   const { createReplyStreamRegistry } = await import("../../packages/core/voice/reply-stream.js");
-  const registry = createReplyStreamRegistry({ inspect: async () => ({}), segmenterFactory: () => createSpeechSegmenter({ policy }) });
+  const registry = createReplyStreamRegistry({ inspect: async () => ({}), streaming: () => true, segmenterFactory: () => createSpeechSegmenter({ policy }) });
   const source = { sessionId: "replace", turn: 1, step: 0 };
   const start = (attemptId: string) => registry.frame("replace", { ...source, type: "start", attemptId, speechEligible: true });
   try {

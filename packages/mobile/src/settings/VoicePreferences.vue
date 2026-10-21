@@ -1,32 +1,48 @@
 <template>
   <div v-if="view.value" class="lares-voice-preferences">
-    <label>{{ t('preferences.dictationStyle') }}
-      <select :value="view.value.config.dictationPreset" :disabled="guardView.selecting || Boolean(view.pending.dictationPreset)" @change="selectPreset($event)">
-        <option v-for="id in presets" :key="id" :value="id">{{ t(`dictation.${id}`) }}</option>
-      </select>
+    <label v-if="device === 'desktop'" class="lares-voice-preferences__field">
+      <span>{{ t('preferences.dictationStyle') }}</span>
+      <LaresSelect :value="view.value.config.dictationPreset" :sections="presetSections" :disabled="guardView.selecting || Boolean(view.pending.dictationPreset)" @select="choosePreset" />
     </label>
+    <LaresSettingRow
+      v-else
+      :label="t('preferences.dictationStyle')"
+      :value="t(`dictation.${view.value.config.dictationPreset}`)"
+      chevron
+      boxed
+      :disabled="guardView.selecting || Boolean(view.pending.dictationPreset)"
+      @click="sheet = 'preset'"
+    />
     <p v-if="view.errors.dictationPreset" role="alert">{{ t('settings.saveFailed') }}</p>
     <p v-if="view.value.config.dictationPreset === 'raw'">{{ t('dictation.noLlm') }}</p>
     <div v-else class="lares-voice-preferences__editor">
-      <label>{{ t('dictation.model') }}
-        <select :value="profile.model" :disabled="profilePending" @change="preferences.edit(view.value.config.dictationPreset, { model: $event.target.value })">
-          <option value="">{{ t('settings.model.none') }}</option>
-          <option v-for="item in models" :key="item.id" :value="item.id" :disabled="item.disabled">{{ item.label }}</option>
-        </select>
+      <label v-if="device === 'desktop'" class="lares-voice-preferences__field">
+        <span>{{ t('dictation.model') }}</span>
+        <LaresSelect :value="profile.model" :sections="modelSections" :disabled="profilePending" @select="chooseModel" />
       </label>
-      <label>{{ t('dictation.instructions') }}
+      <LaresSettingRow
+        v-else
+        :label="t('dictation.model')"
+        :value="modelLabel"
+        chevron
+        boxed
+        :disabled="profilePending"
+        @click="sheet = 'model'"
+      />
+      <label class="lares-voice-preferences__field">
+        <span>{{ t('dictation.instructions') }}</span>
         <textarea ref="instructions" :value="profile.instructions" :disabled="profilePending" rows="6" maxlength="8000" @input="preferences.edit(view.value.config.dictationPreset, { instructions: $event.target.value })" />
       </label>
       <div class="lares-voice-preferences__actions">
         <button type="button" :disabled="profilePending" @click="preferences.restore(view.value.config.dictationPreset)">{{ t('dictation.reset') }}</button>
         <template v-if="preferences.dirty(view.value.config.dictationPreset)">
           <button type="button" :disabled="profilePending" @click="preferences.discard([view.value.config.dictationPreset])">{{ t('preferences.cancel') }}</button>
-          <button type="button" :disabled="profilePending" @click="saveProfile">{{ t(profilePending ? 'preferences.saving' : 'preferences.save') }}</button>
+          <button type="button" class="is-primary" :disabled="profilePending" @click="saveProfile">{{ t(profilePending ? 'preferences.saving' : 'preferences.save') }}</button>
         </template>
       </div>
       <p v-if="view.errors[`profile:${view.value.config.dictationPreset}`]" role="alert">{{ t('settings.saveFailed') }}</p>
     </div>
-    <TtsSettings :preferences="preferences" :view="view" :t="t" :fetcher="ttsFetch" />
+    <TtsSettings :preferences="preferences" :view="view" :t="t" :fetcher="ttsFetch" :device="device" />
     <section v-if="device === 'desktop'" class="lares-voice-preferences__shortcuts">
       <h3>{{ t('preferences.shortcuts') }}</h3>
       <p>{{ t('preferences.shortcutScope') }}</p>
@@ -50,8 +66,18 @@
         <p v-if="guardView.error" role="alert">{{ t('settings.saveFailed') }}</p>
         <button type="button" :disabled="guardView.saving" @click="guard.answer('continue')">{{ t('preferences.continue') }}</button>
         <button type="button" :disabled="guardView.saving" @click="guard.answer('discard')">{{ t('preferences.discard') }}</button>
-        <button type="button" :disabled="guardView.saving" @click="guard.answer('save')">{{ t(guardView.saving ? 'preferences.saving' : 'preferences.save') }}</button>
+        <button type="button" class="is-primary" :disabled="guardView.saving" @click="guard.answer('save')">{{ t(guardView.saving ? 'preferences.saving' : 'preferences.save') }}</button>
       </div>
+    </LaresSheet>
+    <LaresSheet v-if="device !== 'desktop'" :open="Boolean(sheet)" :title="sheetTitle" @close="sheet = ''">
+      <LaresSettingRow
+        v-for="item in sheetItems"
+        :key="item.id || 'none'"
+        :label="item.label"
+        :checked="item.id === sheetCurrent"
+        :disabled="item.disabled || (sheet === 'preset' ? guardView.selecting : profilePending)"
+        @click="chooseSheet(item)"
+      />
     </LaresSheet>
   </div>
   <p v-else role="status">{{ t(view.loadError ? 'settings.loadFailed' : 'settings.loading') }}</p>
@@ -63,10 +89,12 @@ import { createVoicePreferences, createPreferencesGuard } from "@olares/lares-co
 import { createVoiceShortcutRecorder, formatVoiceShortcut } from "@olares/lares-core/voice/shortcuts";
 import { DICTATION_PRESETS } from "@olares/lares-core/voice/dictation";
 import LaresSheet from "./Sheet.vue";
+import LaresSettingRow from "./SettingRow.vue";
+import LaresSelect from "./Select.vue";
 import TtsSettings from "./TtsSettings.vue";
 
 export default {
-  components: { LaresSheet, TtsSettings },
+  components: { LaresSheet, LaresSettingRow, LaresSelect, TtsSettings },
   props: { ttsFetch: { type: Function, required: true }, settings: { type: Object, required: true }, snapshot: { type: Object, default: null }, device: { type: String, default: "mobile" }, t: { type: Function, required: true }, bindBeforeLeave: { type: Function, default: undefined } },
   expose: ["beforeLeave", "reload", "patch"],
   emits: ["change"],
@@ -76,10 +104,16 @@ export default {
     if (this.snapshot) preferences.accept(toRaw(this.snapshot));
     const guard = markRaw(createPreferencesGuard(preferences));
     const recorder = markRaw(createVoiceShortcutRecorder({ current: () => preferences.getSnapshot().value.config.dictationShortcuts, save: (id, key) => preferences.saveShortcut(id, key) }));
-    return { preferences, guard, recorder, view: preferences.getSnapshot(), guardView: guard.getSnapshot(), shortcut: recorder.getSnapshot(), bindings: markRaw({}), presets: DICTATION_PRESETS, shortcutIds: ["default", ...DICTATION_PRESETS] };
+    return { preferences, guard, recorder, view: preferences.getSnapshot(), guardView: guard.getSnapshot(), shortcut: recorder.getSnapshot(), bindings: markRaw({}), presets: DICTATION_PRESETS, shortcutIds: ["default", ...DICTATION_PRESETS], sheet: "" };
   },
   computed: {
     profile() { return this.view.value && this.view.value.config.dictationPreset !== "raw" ? this.preferences.profile(this.view.value.config.dictationPreset) : null; },
+    presetSections() { return [{ items: this.presets.map(id => ({ id, label: this.t(`dictation.${id}`) })) }]; },
+    modelSections() { return [{ items: [{ id: "", label: this.t("settings.model.none") }, ...this.models.map(item => ({ id: item.id, label: item.label, disabled: item.disabled }))] }]; },
+    modelLabel() { return this.modelSections[0].items.find(item => item.id === (this.profile?.model || ""))?.label || this.t("settings.model.none"); },
+    sheetTitle() { return this.t(this.sheet === "model" ? "dictation.model" : "preferences.dictationStyle"); },
+    sheetItems() { return this.sheet === "model" ? this.modelSections[0].items : this.presetSections[0].items; },
+    sheetCurrent() { return this.sheet === "model" ? (this.profile?.model || "") : this.view.value?.config.dictationPreset; },
     profilePending() { return this.guardView.selecting || Boolean(this.view.pending[`profile:${this.view.value.config.dictationPreset}`]); },
     models() {
       const available = this.view.value?.chatModels || [];
@@ -117,10 +151,14 @@ export default {
     beforeLeave() { return this.guard.request(); },
     async patch(partial) { if (!this.view.value) await this.preferences.load(); return this.preferences.patch(partial); },
     reload() { return this.preferences.load(true); },
-    async selectPreset(event) {
-      const id = event.target.value;
-      event.target.value = this.view.value.config.dictationPreset;
-      await this.guard.selectPreset(id).catch(() => {});
+    choosePreset(item) { void this.guard.selectPreset(item.id).catch(() => {}); },
+    chooseModel(item) { if (!item.disabled) this.preferences.edit(this.view.value.config.dictationPreset, { model: item.id }); },
+    chooseSheet(item) {
+      if (item.disabled) return;
+      const sheet = this.sheet;
+      this.sheet = "";
+      if (sheet === "model") this.chooseModel(item);
+      else this.choosePreset(item);
     },
     async saveProfile() { try { await this.preferences.saveProfile(this.view.value.config.dictationPreset); this.$refs.instructions?.focus(); } catch { /* The shared store retains the draft and error. */ } },
     shortcutTitle(id) { return this.t(id === "default" ? "dictation.shortcut" : `dictation.${id}`); },
@@ -135,19 +173,29 @@ export default {
 </script>
 
 <style scoped>
-.lares-voice-preferences { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.lares-voice-preferences h3 { margin: 8px 0 0; font-size: 15px; font-weight: 500; }
-.lares-voice-preferences p { margin: 0; font-size: 13px; color: var(--q-ink-3); }
+.lares-voice-preferences { display: flex; flex-direction: column; gap: 12px; min-width: 0; color: var(--q-ink-1); font-size: 15px; line-height: 22px; }
+.lares-voice-preferences h3 { margin: 4px 0 0; color: var(--q-ink-3); font-size: 14px; font-weight: 500; line-height: 18px; }
+.lares-voice-preferences p { margin: 0; color: var(--q-ink-3); font-size: 15px; line-height: 22px; }
 .lares-voice-preferences [role="alert"] { color: var(--q-orange-default); }
-.lares-voice-preferences__row { display: flex; gap: 8px; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--q-separator); }
-.lares-voice-preferences__row > span { flex: 1; min-width: 0; }
+.lares-voice-preferences__field { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.lares-voice-preferences__field > span { color: var(--q-ink-2); }
+.lares-voice-preferences__row { display: flex; gap: 12px; align-items: center; justify-content: space-between; min-height: 56px; padding: 12px 0; border-bottom: 1px solid var(--q-separator); }
+.lares-voice-preferences__row > span { flex: 1; min-width: 0; font-size: 16px; line-height: 22px; }
 .lares-voice-preferences__actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.lares-voice-preferences button, .lares-voice-preferences select { font: inherit; color: inherit; background: var(--q-background-2, transparent); border: 1px solid var(--q-separator); border-radius: 8px; padding: 6px 8px; cursor: pointer; max-width: 100%; }
-.lares-voice-preferences button:disabled { opacity: .45; cursor: default; }
-.lares-voice-preferences button[data-recording="true"] { outline: 2px solid var(--q-blue-default, #3978f6); }
-.lares-voice-preferences button:focus-visible, .lares-voice-preferences textarea:focus-visible { outline: 2px solid var(--q-blue-default, #3978f6); outline-offset: 2px; }
-.lares-voice-preferences__editor, .lares-voice-preferences label { display: flex; flex-direction: column; gap: 10px; }
-.lares-voice-preferences textarea { box-sizing: border-box; width: 100%; min-height: 144px; padding: 10px; resize: vertical; color: inherit; background: transparent; border: 1px solid var(--q-separator); border-radius: 8px; font: inherit; line-height: 1.5; }
-.lares-voice-preferences__shortcuts, .lares-voice-preferences__question { display: flex; flex-direction: column; gap: 12px; }
-.lares-voice-preferences__question { padding: 12px 20px; }
+.lares-voice-preferences__actions button,
+.lares-voice-preferences__question button,
+.lares-voice-preferences__shortcuts button { min-height: 36px; border: 1px solid var(--q-separator); border-radius: 12px; padding: 0 14px; background: transparent; color: inherit; font: inherit; font-size: 15px; line-height: 20px; cursor: pointer; }
+.lares-voice-preferences__actions button:disabled,
+.lares-voice-preferences__question button:disabled,
+.lares-voice-preferences__shortcuts button:disabled { opacity: .45; cursor: default; }
+.lares-voice-preferences button.is-primary { border: 0; background: var(--q-blue-alpha); color: var(--q-blue-default); font-weight: 500; }
+.lares-voice-preferences button[data-recording="true"] { outline: 2px solid var(--q-blue-default); }
+.lares-voice-preferences__actions button:focus-visible,
+.lares-voice-preferences__question button:focus-visible,
+.lares-voice-preferences__shortcuts button:focus-visible,
+.lares-voice-preferences textarea:focus-visible { outline: 2px solid var(--q-blue-default); outline-offset: 2px; }
+.lares-voice-preferences__editor, .lares-voice-preferences__shortcuts, .lares-voice-preferences__question { display: flex; flex-direction: column; gap: 12px; }
+.lares-voice-preferences textarea { box-sizing: border-box; width: 100%; min-height: 144px; padding: 12px 16px; resize: vertical; color: inherit; background: transparent; border: 1px solid var(--q-separator); border-radius: 16px; font: inherit; font-size: 16px; line-height: 1.5; }
+.lares-voice-preferences__question { padding: 4px 20px 12px; }
+.lares-voice-preferences__question button { width: 100%; }
 </style>

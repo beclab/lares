@@ -92,7 +92,7 @@ test("trusted Host source emits stable zodiac segments before finalization, once
   const { once } = await import("node:events");
   const { WebSocket } = await import("ws");
   const source = { sessionId: "s", turn: 1, step: 0 };
-  const registry = createReplyStreamRegistry({ inspect: async () => ({}), owner: () => "alice" });
+  const registry = createReplyStreamRegistry({ inspect: async () => ({}), owner: () => "alice", streaming: () => true });
   registry.frame("s", { type: "start", ...source, attemptId: "s:attempt", speechEligible: true });
   let index = 0;
   const push = (text: string) => registry.frame("s", { type: "chunk", attemptId: "s:attempt", index: index++, chunk: { type: "text-delta", index: 0, text } });
@@ -117,6 +117,35 @@ test("trusted Host source emits stable zodiac segments before finalization, once
     assert.deepEqual(requests, ["中国的十二生肖是：", "鼠；", "牛；虎；兔；", "龙；蛇；马；", "羊；猴；鸡；", "狗；猪；"]);
     assert.deepEqual(segments, requests.map((_, index) => index));
   } finally { registry.close(); gateway.close(); await new Promise<void>(r => server.close(() => r())); }
+});
+
+test("read-while-writing speaks a closed sentence before settlement and stops when a tool call appears", async () => {
+  const { createReplyStreamRegistry } = await import("@olares/lares-core/voice/reply-stream");
+  const registry = createReplyStreamRegistry({ inspect: async () => ({}), streaming: () => true });
+  const source = { sessionId: "live", turn: 1, step: 0 };
+  registry.frame("live", { ...source, type: "start", attemptId: "a", speechEligible: false });
+  registry.frame("live", { type: "chunk", attemptId: "a", index: 0, chunk: { type: "text-delta", text: "先说完这句。后面还在写" } });
+  const stream = (await registry.bind({}, source))(new AbortController().signal);
+  assert.equal((await stream.next()).value.text, "先说完这句。");
+  const rest = stream.next();
+  registry.frame("live", { type: "chunk", attemptId: "a", index: 1, chunk: { type: "tool-call-delta" } });
+  await assert.rejects(rest, /voice_reply_untrusted/);
+  registry.close();
+});
+
+test("reading the finished answer waits for settlement even when the attempt has no tools", async () => {
+  const { createReplyStreamRegistry } = await import("@olares/lares-core/voice/reply-stream");
+  const registry = createReplyStreamRegistry({ inspect: async () => ({}), streaming: () => false });
+  const source = { sessionId: "settled", turn: 1, step: 0 };
+  registry.frame("settled", { ...source, type: "start", attemptId: "a", speechEligible: true });
+  registry.frame("settled", { type: "chunk", attemptId: "a", index: 0, chunk: { type: "text-delta", text: "Result. Next" } });
+  const stream = (await registry.bind({}, source))(new AbortController().signal);
+  let arrived = false; const first = stream.next().then(value => { arrived = true; return value; });
+  await tick(); assert.equal(arrived, false);
+  registry.event("settled", { type: "assistant/message", data: { turn: 1, step: 0, message: { content: [{ type: "text", text: "Result. Next" }] } } });
+  assert.equal((await first).value.text, "Result.");
+  await stream.return();
+  registry.close();
 });
 
 test("tool-capable attempts wait for successful text settlement; failed attempts release consumers", async () => {

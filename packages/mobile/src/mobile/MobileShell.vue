@@ -388,6 +388,7 @@ export default {
 
 .lares-shell__refresh {
   display: flex;
+  flex: none;
   align-items: center;
   justify-content: center;
   width: 100%;
