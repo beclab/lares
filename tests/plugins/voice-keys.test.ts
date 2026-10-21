@@ -17,7 +17,8 @@ test("voice keys store only hashes, verify by Bearer and take revocation without
     assert.equal(store.list()[0].hash, undefined);
     assert.equal(store.verify(`Bearer ${issued.key}`)?.sessionId, "session-1");
     assert.equal(store.verify(issued.key), null);
-    assert.equal(store.verify(`Bearer ${issued.key.slice(0, -1)}A`), null);
+    const flipped = issued.key.endsWith("A") ? "B" : "A";
+    assert.equal(store.verify(`Bearer ${issued.key.slice(0, -1)}${flipped}`), null);
     assert.equal(createVoiceKeyStore({ path }).revoke(issued.id), true);
     assert.equal(store.verify(`Bearer ${issued.key}`), null);
     assert.equal(store.revoke(issued.id), false);
