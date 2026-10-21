@@ -1318,7 +1318,7 @@ export default {
       const device = settings.config.device === "headset" ? "headset" : "device";
       onDevice(device);
       if (settings.config.backend === "realtime" && continuous) throw new Error("voice_manual_realtime_unavailable");
-      this.reader.stop(); this.player?.stop();
+      this.reader.stop(); this.player?.stop(); this.player?.unlock();
       if (config.transport !== "legacy") {
         return createUnifiedConversation({ request: (path, options) => this.runtime.voiceRequest(path, options), socket: (ticket) => this.runtime.voiceSocket(ticket),
           device: captureSource("mobile", config.device), readAloud: continuous && config.speak, preset: config.preset, presentationSession: true,
