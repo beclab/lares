@@ -1328,7 +1328,8 @@ export default {
         return createUnifiedConversation({ request: (path, options) => this.runtime.voiceRequest(path, options), socket: (ticket) => this.runtime.voiceSocket(ticket),
           device: captureSource("mobile", config.device), readAloud: continuous && config.speak, preset: config.preset, presentationSession: true,
           endpointSilenceMs: config.endpointSilenceMs, idleTimeoutMs: config.idleTimeoutMs, recoveryTimeoutMs: config.recoveryTimeoutMs,
-          onTranscript: continuous ? null : onTranscript, mode: () => resolveSubmitMode(this.running, false, true, this.busyEnter) });
+          onTranscript: continuous ? null : onTranscript, mode: () => resolveSubmitMode(this.running, false, true, this.busyEnter),
+          transcribe: (blob, signal) => this.runtime.transcribe(blob, config.language, signal, config.model) });
       }
       let conversation;
       const reader = createSentencePlayer({

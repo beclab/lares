@@ -26,12 +26,12 @@ export function browserRealtimeSocket(ticket) {
  * microphone streams PCM into the socket, the Host transcribes, submits and speaks, and the reply
  * audio plays from the socket instead of a separate synthesis stream.
  */
-export function createUnifiedConversation({ request, socket: openSocket = browserRealtimeSocket, onPhase, mode = () => "queue", device = "device", metric = () => {}, readAloud = true, preset, presentationSession = false, endpointSilenceMs, idleTimeoutMs, recoveryTimeoutMs, onText = () => {}, onTranscript = null, preparation, media, player: createPlayer = createPcmStreamPlayer, input: inputPort }) {
+export function createUnifiedConversation({ request, socket: openSocket = browserRealtimeSocket, onPhase, mode = () => "queue", device = "device", metric = () => {}, readAloud = true, preset, presentationSession = false, endpointSilenceMs, idleTimeoutMs, recoveryTimeoutMs, onText = () => {}, onTranscript = null, preparation, media, player: createPlayer = createPcmStreamPlayer, input: inputPort, transcribe = async () => { throw new Error("voice_unsupported"); } }) {
   const voiceId = mintRpcId();
   const headset = device === "headset";
   const headers = { "x-lares-voice-id": voiceId, "x-lares-voice-device": headset ? "headset" : "device" };
   let protocol = null, socketOpen = null, disposed = false, timer = null, lastSessionId = null, continuous = false;
-  let turn = null, reply = null, outputSerial = Promise.resolve(), confirmedReadAloud = readAloud;
+  let turn = null, reply = null, outputSerial = Promise.resolve(), confirmedReadAloud = readAloud, hostHeard = false;
   const call = async (path, body, signal) => {
     const res = await request(`/api/lares/voice${path}`, { method: body === undefined ? "GET" : "POST", headers, ...(body === undefined ? {} : { body }), signal });
     if (!res?.ok) throw new Error(res?.body?.error?.code || "voice_failed");
@@ -86,21 +86,35 @@ export function createUnifiedConversation({ request, socket: openSocket = browse
   const transcription = ({ onPartial }) => {
     if (!protocol) throw new Error("voice_disconnected");
     const current = take();
+    hostHeard = false;
     current.onPartial = onPartial;
+    // The promise exists for the whole take. An error while audio is still
+    // streaming has to reject it; waiting until finish() to attach reject left
+    // the composer on 转写中.
+    let settle;
+    const result = new Promise((resolve, reject) => {
+      settle = (error, text) => {
+        if (current.done) return;
+        current.done = true;
+        if (turn === current) turn = null;
+        if (error) reject(error); else resolve(text ?? "");
+      };
+      current.resolve = (text) => settle(null, text);
+      current.reject = (error) => settle(error);
+    });
+    void result.catch(() => {});
     return {
-      write(bytes) { if (turn === current && protocol) protocol.append(encodeBase64(bytes)); },
+      write(bytes) { if (!current.done && protocol) protocol.append(encodeBase64(bytes)); },
       finish() {
-        return new Promise((resolve, reject) => {
-          current.resolve = resolve; current.reject = reject;
-          if (!onTranscript) protocol.setBusyTurn(mode());
-          protocol.commit();
-        });
+        if (current.done) return result;
+        if (!onTranscript) protocol.setBusyTurn(mode());
+        protocol.commit();
+        return result;
       },
-      cancel() { if (turn === current) { turn = null; protocol?.discard(); } },
+      cancel() { if (!current.done) { protocol?.discard(); settle(null, ""); } },
     };
   };
-  const deviceInput = () => createDeviceInput({ media, preparation, onPhase, endpointSilenceMs,
-    transcribe: async () => { throw new Error("voice_unsupported"); },
+  const deviceInput = () => createDeviceInput({ media, preparation, onPhase, endpointSilenceMs, transcribe,
     streamInput: (stream, options) => createStreamingCapture(stream, { ...options, sampleRate: RATE, port: async () => transcription(options) }),
   });
   // Headset: the Host owns the microphone; the socket only opens and closes it.
@@ -128,7 +142,13 @@ export function createUnifiedConversation({ request, socket: openSocket = browse
       case "input_audio_buffer.speech_started": turn?.onSpeech?.(); break;
       case "input_audio_buffer.committed": turn?.onTranscribing?.(); break;
       case "conversation.item.input_audio_transcription.delta": if (turn?.onPartial) { turn.partial = `${turn.partial || ""}${event.delta}`; turn.onPartial(turn.partial); } break;
-      case "conversation.item.input_audio_transcription.completed": { const current = turn; turn = null; current?.resolve?.(event.transcript || ""); break; }
+      case "conversation.item.input_audio_transcription.completed": {
+        // The Host already submitted a non-empty transcript. An empty one did not,
+        // so a later blob fallback has to send the words itself.
+        hostHeard = Boolean(String(event.transcript || "").trim());
+        const current = turn; turn = null; current?.resolve?.(event.transcript || "");
+        break;
+      }
       case "response.created": playback.begin(event); break;
       case "response.output_item.added": if (reply) reply.itemId = event.item?.id || null; break;
       case "response.output_audio_transcript.delta":
@@ -171,7 +191,14 @@ export function createUnifiedConversation({ request, socket: openSocket = browse
       lazy: true,
       create: async () => null,
       // The Host submitted this turn when its audio was committed; only the lifecycle remains to observe.
-      async submit() { await poll(); },
+      async submit({ text } = {}) {
+        // Audio that never reached the socket still has a recording. The Host did not
+        // see that take, so hand the transcript over as a typed turn instead of dropping it.
+        const typed = Boolean(text) && !hostHeard;
+        hostHeard = false;
+        if (typed) protocol?.say(text);
+        await poll();
+      },
       cancel: () => call("/session/cancel", {}),
       running: async () => (await call("/session")).running === true,
     },

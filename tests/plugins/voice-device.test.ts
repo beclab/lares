@@ -221,6 +221,76 @@ test("a denied microphone is shown as a permission error", async () => {
   box.cap.dispose();
 });
 
+test("an empty stream result still sends the recording", async () => {
+  const seen: Blob[] = [];
+  const sent: string[] = [];
+  let clock = 0;
+  const cap = createVoiceCapture({
+    transcribe: async (blob) => {
+      seen.push(blob);
+      return "记下了";
+    },
+    streamInput: () => ({ finish: async () => "", cancel() {} }),
+    submit: (text: string) => sent.push(text),
+    now: () => clock,
+    media: { mediaDevices: { getUserMedia: async () => ({ getTracks: () => [] }) }, MediaRecorder: class {
+      state = "inactive";
+      mimeType = "audio/webm";
+      ondataavailable: ((event: { data: Blob }) => void) | null = null;
+      onstop: (() => void) | null = null;
+      static isTypeSupported() { return true; }
+      start() { this.state = "recording"; }
+      requestData() {}
+      stop() {
+        this.state = "inactive";
+        this.ondataavailable?.({ data: new Blob([new Uint8Array(4096)]) });
+        this.onstop?.();
+      }
+    } },
+  });
+  await cap.start();
+  clock = 1000;
+  cap.stop(false);
+  await delay(80);
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].size, 4096);
+  assert.deepEqual(sent, ["记下了"]);
+  cap.dispose();
+});
+
+test("a recorder that never stops still transcribes the chunks it already gave", async () => {
+  const seen: Blob[] = [];
+  class Recorder {
+    state = "inactive";
+    mimeType = "audio/webm";
+    ondataavailable: ((event: { data: Blob }) => void) | null = null;
+    onstop: (() => void) | null = null;
+    static isTypeSupported() { return true; }
+    start() {
+      this.state = "recording";
+      this.ondataavailable?.({ data: new Blob([new Uint8Array(4096)]) });
+    }
+    requestData() {}
+    stop() { /* WebView dropped onstop */ }
+  }
+  let clock = 0;
+  const sent: string[] = [];
+  const cap = createVoiceCapture({
+    transcribe: async (blob) => { seen.push(blob); return "还在"; },
+    submit: (text: string) => sent.push(text),
+    now: () => clock,
+    media: { mediaDevices: { getUserMedia: async () => ({ getTracks: () => [] }) }, MediaRecorder: Recorder },
+  });
+  await cap.start();
+  clock = 1000;
+  cap.stop(false);
+  assert.equal(cap.phase, "transcribing");
+  await delay(1100);
+  assert.equal(seen.length, 1);
+  assert.deepEqual(sent, ["还在"]);
+  cap.dispose();
+});
+
 test("silence from the recognizer is an error, not an empty send", async () => {
   const box = harness({ transcribe: async () => "" });
   await box.cap.start();

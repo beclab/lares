@@ -125,6 +125,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       if (truncate) truncateTo(current, played.get(current.itemId) ?? 0);
     };
     const playOut = async (current, audio) => {
+      if (current.abort.signal.aborted || current.done || closed) return;
       if (headset) {
         if (!current.devicePlaying) { current.devicePlaying = true; send({ type: "lares.device.playback", playing: true }); }
         hostOutput = hostOutput.then(() => current.abort.signal.aborted ? undefined : port?.write(audio));
@@ -210,7 +211,14 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
     };
     const userItem = (id, content) => send({ type: "conversation.item.done", item: { id, object: "realtime.item", type: "message", role: "user", status: "completed", content: [content] } });
     const commit = async ({ endpointed = false } = {}) => {
-      if (!bytes) return;
+      // A commit with no samples still has a client waiting in transcribing.
+      // Returning here never completes that take, so the composer stays on 转写中.
+      if (!bytes) {
+        const id = itemId || `item_${randomUUID()}`;
+        reset();
+        send({ type: "conversation.item.input_audio_transcription.completed", item_id: id, content_index: 0, transcript: "" });
+        return;
+      }
       // Server VAD keeps listening while a turn is processed; the next endpoint waits for it.
       if (busy && endpointed) { pendingCommit = true; return; }
       if (busy) fail("turn_busy");
@@ -382,6 +390,9 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
           speak(lastSpoken.text, lastSpoken.origin, lastSpoken.key, 0);
           return;
         case "response.cancel":
+          // The client has stopped listening. A reply that already finished must
+          // not keep the next utterance behind waiting_for_playback.
+          awaitingPlayback = false;
           if (busy && turn) generation++;
           cancel("cancelled");
           return;

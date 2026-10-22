@@ -161,8 +161,19 @@ export function createVoiceCapture({
     emit("transcribing", { elapsed: took, error: "" });
     abort = new AbortController();
     try {
-      const text = String(await (streaming ? streaming.finish() : transcribe(blob, abort.signal)) ?? "").trim();
-      streaming = null;
+      let text = "";
+      if (streaming) {
+        const port = streaming;
+        streaming = null;
+        try {
+          text = String(await port.finish() ?? "").trim();
+        } catch (err) {
+          if (dead || abort.signal.aborted || cancel) return;
+          text = "";
+        }
+      }
+      // The socket can finish with nothing while the recording still has the words.
+      if (!text) text = String(await transcribe(blob, abort.signal) ?? "").trim();
       if (dead || cancel) return;
       if (!text) {
         trace("no-input", {});
@@ -204,6 +215,15 @@ export function createVoiceCapture({
       recorder.stop();
     } catch {
       scheduleFinish();
+      return;
+    }
+    // Some WebViews never fire onstop. The button already switched the UI to
+    // transcribing, so finish with the chunks collected so far instead of waiting.
+    if (!finishTimer) {
+      finishTimer = setTimeout(() => {
+        finishTimer = 0;
+        void finish();
+      }, 1000);
     }
   };
 

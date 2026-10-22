@@ -144,7 +144,7 @@ export async function startTranscriptionStream(options) {
 export async function createStreamingCapture(stream, options) {
   const port = await (options.port ? options.port(options) : startTranscriptionStream(options));
   if (!port) return null;
-  let context, source, node, failure, flushed;
+  let context, source, node, failure, flushed, captured = 0;
   const release = () => {
     source?.disconnect(); source = null;
     node?.disconnect(); if (node) node.port.onmessage = null; node = null;
@@ -162,7 +162,11 @@ export async function createStreamingCapture(stream, options) {
     node = new AudioWorkletNode(context, "lares-pcm-capture", { numberOfOutputs: 1, outputChannelCount: [1] });
     node.port.onmessage = ({ data }) => {
       if (data.type === "flushed") { flushed?.(); return; }
-      try { port.write(convert(data.samples)); } catch (cause) { failure = cause; port.cancel(); }
+      try {
+        const pcm = convert(data.samples);
+        if (pcm?.length) captured += pcm.length;
+        port.write(pcm);
+      } catch (cause) { failure = cause; port.cancel(); }
     };
     source.connect(node); node.connect(context.destination);
     return {
@@ -172,6 +176,9 @@ export async function createStreamingCapture(stream, options) {
           // No capture messages may follow the ASR commit, even while finalization waits.
           release();
           if (failure) throw failure;
+          // No PCM reached the socket. Committing it makes the Host drop the take
+          // without a transcript, and the composer stays on 转写中.
+          if (!captured) { port.cancel(); return ""; }
           return await port.finish();
         } catch (cause) { port.cancel(); throw cause; }
         finally { release(); }

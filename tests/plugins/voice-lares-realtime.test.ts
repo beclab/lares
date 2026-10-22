@@ -109,6 +109,20 @@ test("lares-realtime-v1 dictation is a transcription session without responses",
   } finally { client.terminate(); await fixture.stop(); }
 });
 
+test("lares-realtime-v1 completes a commit that carried no audio", async () => {
+  const fixture = await serve();
+  const client = connect(fixture.port, "voice-dictation");
+  try {
+    const events = await until(client, (event) => event.type === "conversation.item.input_audio_transcription.completed", (event) => {
+      if (event.type === "session.created") client.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
+    });
+    const done = events.find((event) => event.type === "conversation.item.input_audio_transcription.completed");
+    assert.equal(done.transcript, "");
+    assert.equal(fixture.calls.transcribed.length, 0);
+    assert.equal(fixture.calls.prompts.length, 0);
+  } finally { client.terminate(); await fixture.stop(); }
+});
+
 test("lares-realtime-v1 holds input until playback is acknowledged once the client acknowledges", async () => {
   const fixture = await serve();
   const client = connect(fixture.port, "voice-chat");

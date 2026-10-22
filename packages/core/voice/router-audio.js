@@ -56,7 +56,21 @@ export function createRouterAudio(config) {
       let chain = opened;
       return {
         write(pcm) { chain = chain.then(() => { if (socket.readyState === 1) socket.send(Buffer.from(convert(pcmSamples(pcm)))); }); chain.catch(() => {}); },
-        async finish() { await chain; socket.send(JSON.stringify({ type: "finish" })); try { return await final; } finally { socket.close(); } },
+        async finish() {
+          // Close the socket from a timer so a silent upstream cannot pin `final`:
+          // the close handler is what rejects it, and that close used to wait on `final`.
+          let timer;
+          try {
+            await chain;
+            if (socket.readyState !== 1) return null;
+            socket.send(JSON.stringify({ type: "finish" }));
+            timer = setTimeout(() => socket.close(), 12000);
+            return await final;
+          } finally {
+            clearTimeout(timer);
+            if (socket.readyState === 1) socket.close();
+          }
+        },
         cancel() { socket.terminate(); },
       };
     },
