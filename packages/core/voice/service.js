@@ -317,9 +317,17 @@ export async function speakFromConfig(text, options = {}) {
   const deadline = readout.segmenter.deadline;
   if (deadline !== null) {
     await new Promise((resolve, reject) => {
+      // setTimeout can fire before Date.now() reaches the segmenter deadline.
+      // Flushing early drops the pending list item and reports zero sentences.
+      let timer;
       const cleanup = () => { clearTimeout(timer); readout.signal.removeEventListener("abort", cancel); };
       const cancel = () => { cleanup(); reject(cancelledSpeech()); };
-      const timer = setTimeout(() => { cleanup(); resolve(); }, Math.max(0, deadline - Date.now()));
+      const tick = () => {
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) { cleanup(); resolve(); return; }
+        timer = setTimeout(tick, remaining);
+      };
+      timer = setTimeout(tick, Math.max(0, deadline - Date.now()));
       readout.signal.addEventListener("abort", cancel, { once: true });
       if (readout.signal.aborted) cancel();
     });
