@@ -7,14 +7,14 @@ metadata:
   title: Lares
   description: Chat on Olares, wired to Router
   icon: https://app.cdn.olares.com/appstore/lares/icon_new.png
-  version: 0.26.59
+  version: 0.26.60
   categories:
     - agents
   tags:
     - framework
     - personal-assistant
 spec:
-  versionName: "0.26.59"
+  versionName: "0.26.60"
   runAsUser: true
   fullDescription: |
     Lares is a chat app on Olares.
@@ -41,7 +41,7 @@ spec:
     - The streaming switch follows the GPU share mode read from the cluster.
     - Readout skips filenames and other text that should not be spoken.
 
-    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.59)
+    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.60)
   developer: luolong
   submitter: Olares
   locale:

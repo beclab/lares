@@ -28,4 +28,4 @@ spec:
     - The streaming switch follows the GPU share mode read from the cluster.
     - Readout skips filenames and other text that should not be spoken.
 
-    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.59)
+    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.60)

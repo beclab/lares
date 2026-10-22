@@ -24,4 +24,4 @@ spec:
     - 読み上げ方式は、クラスタから読んだ GPU の分割モードに従います。
     - 読み上げはファイル名など、読むべきでないテキストを飛ばします。
 
-    [リリースノート](https://github.com/beclab/lares/releases/tag/v0.26.59)
+    [リリースノート](https://github.com/beclab/lares/releases/tag/v0.26.60)

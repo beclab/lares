@@ -24,4 +24,4 @@ spec:
     - Der Schalter folgt dem GPU-Freigabemodus, den die App aus dem Cluster liest.
     - Die Ausgabe überspringt Dateinamen und anderen Text, der nicht gesprochen werden soll.
 
-    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.59)
+    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.60)

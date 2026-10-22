@@ -24,4 +24,4 @@ spec:
     - L’interruttore segue la modalità di condivisione GPU letta dal cluster.
     - La lettura salta i nomi dei file e altro testo che non va pronunciato.
 
-    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.59)
+    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.60)

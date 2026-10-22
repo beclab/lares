@@ -24,4 +24,4 @@ spec:
     - El interruptor sigue el modo de uso de la GPU leído del clúster.
     - La lectura omite nombres de archivo y otro texto que no debe pronunciarse.
 
-    [Notas de la versión](https://github.com/beclab/lares/releases/tag/v0.26.59)
+    [Notas de la versión](https://github.com/beclab/lares/releases/tag/v0.26.60)
