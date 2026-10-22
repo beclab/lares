@@ -12,7 +12,10 @@ export function ttsSettingsModel(value) {
 /** Framework-neutral settings lifecycle; model switches invalidate both audio and directory results. */
 export function createTtsSettings({ preferences, list = fetchTtsVoices, preview, activity = voiceActivity }) {
   const initialModel = ttsSettingsModel(preferences.getSnapshot().value);
-  let state = { model: initialModel, voices: [], selected: ttsVoiceForModel(preferences.getSnapshot().value?.config || {}, initialModel) || "", loading: Boolean(initialModel), error: null, saving: false, playing: false, previewError: null, blocked: activity.getSnapshot(), unavailable: false };
+  let state = { model: initialModel, voices: [], selected: ttsVoiceForModel(preferences.getSnapshot().value?.config || {}, initialModel) || "", loading: Boolean(initialModel), error: null, stale: false, saving: false, playing: false, previewError: null, blocked: activity.getSnapshot(), unavailable: false };
+  // A transient failure keeps the last directory this page loaded for the model
+  // instead of turning a working voice picker into an error screen.
+  const cached = new Map();
   const listeners = new Set();
   let generation = 0, listing = null, playing = null, disposed = false;
   const emit = patch => { if (disposed) return; state = { ...state, ...patch }; for (const listener of listeners) listener(); };
@@ -25,16 +28,20 @@ export function createTtsSettings({ preferences, list = fetchTtsVoices, preview,
   const load = async () => {
     const token = ++generation; listing?.abort(); stop();
     const model = ttsSettingsModel(preferences.getSnapshot().value);
-    emit({ model, voices: [], loading: Boolean(model), error: null, unavailable: false, previewError: null });
+    emit({ model, voices: [], loading: Boolean(model), error: null, stale: false, unavailable: false, previewError: null });
     updateSelection();
     if (!model) return;
     const abort = listing = new AbortController();
     try {
-      const voices = await list(model, { signal: AbortSignal.any([abort.signal, AbortSignal.timeout(10000)]) });
+      const voices = await list(model, { signal: AbortSignal.any([abort.signal, AbortSignal.timeout(30_000)]) });
       if (token !== generation || disposed) return;
-      emit({ voices, loading: false }); updateSelection();
+      cached.set(model, voices);
+      emit({ voices, loading: false, error: null, stale: false }); updateSelection();
     } catch (error) {
-      if (token === generation && !disposed && !abort.signal.aborted) emit({ loading: false, error: "tts_voices_failed" });
+      if (token !== generation || disposed || abort.signal.aborted) return;
+      const previous = cached.get(model);
+      if (previous) { emit({ voices: previous, loading: false, error: null, stale: true }); updateSelection(); }
+      else emit({ loading: false, error: "tts_voices_failed", stale: false });
     }
   };
   let wasLoading = preferences.getSnapshot().loading, catalog = JSON.stringify(preferences.getSnapshot().value?.ttsModels || []);

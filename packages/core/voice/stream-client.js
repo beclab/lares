@@ -30,13 +30,34 @@ function streamMetric(options, event) {
   });
 }
 
+/**
+ * What a phone-side failure needs next to the frames: a WebView can keep
+ * reporting a running context while the app is hidden or the OS muted it, so
+ * the page and platform state travel with the metric.
+ */
+function clientFacts() {
+  const nav = globalThis.navigator || {};
+  return {
+    visibility: String(globalThis.document?.visibilityState || "unknown").slice(0, 16),
+    hidden: globalThis.document?.hidden === true,
+    platform: String(nav.userAgentData?.platform || nav.platform || "").slice(0, 40),
+    ua: String(nav.userAgent || "").slice(0, 180),
+  };
+}
+
 export async function playAudioStream(options) {
   const started = Date.now();
   const connection = await openAudioStream({ ...options, operation: "tts" });
   if (!connection) throw new Error("voice_stream_failed");
   const file = createBrowserPlayer();
   let progressNoted = false, progressBlocked = false;
+  // A phone that suspends the WebView stops the worklet without closing the
+  // socket, so the host waits for frames that will never come. Report that gap
+  // with the page/context state instead of leaving the next test guessing.
+  let lastProgressAt = Date.now(), gapReported = false, gapAt = 0, formatNoted = false;
   const player = createPcmStreamPlayer({ onProgress: (frames) => {
+    lastProgressAt = Date.now();
+    if (gapReported) { gapReported = false; streamMetric(options, { stage: "playback_gap_end", frames, gapMs: Date.now() - gapAt, ...clientFacts(), context: player.contextState() }); }
     if (connection.readyState !== 1) {
       if (!progressBlocked) { progressBlocked = true; streamMetric(options, { stage: "playback_progress_blocked", readyState: connection.readyState, frames }); }
       return;
@@ -50,6 +71,17 @@ export async function playAudioStream(options) {
   },
     onMetric: (event) => { if (event.stage === "playback_started") options.onStatus?.("playing"); streamMetric(options, { ...event, durationMs: Date.now() - started }); } });
   let chain = Promise.resolve(), complete = false, ending = false, firstReceived = false, ready = false, paused = false, segmentIndex = -1;
+  const gapWatch = setInterval(() => {
+    if (!ready || paused || complete || gapReported || Date.now() - lastProgressAt < 4000) return;
+    gapReported = true;
+    gapAt = lastProgressAt;
+    streamMetric(options, { stage: "playback_gap", gapMs: Date.now() - lastProgressAt, frames: player.playedFrames(), ...clientFacts(), context: player.contextState(), sampleRate: player.sampleRate() });
+  }, 1000);
+  gapWatch.unref?.();
+  const noteVisibility = () => {
+    if (ready && !complete) streamMetric(options, { stage: "playback_visibility", frames: player.playedFrames(), paused, ...clientFacts(), context: player.contextState() });
+  };
+  if (typeof document !== "undefined" && document.addEventListener) document.addEventListener("visibilitychange", noteVisibility);
   options.controls?.({
     get canPause() { return ready; },
     pause() { if (!ready || paused) return; paused = true; player.pause(); file.pause(); if (connection.readyState === 1) connection.send(JSON.stringify({ type: "pause" })); },
@@ -82,7 +114,10 @@ export async function playAudioStream(options) {
             segmentIndex = event.index;
           }
           else if (event.type === "segment.end") options.onSegment?.(event);
-          else if (event.type === "format") { await player.start(event); ready = true; if (paused) player.pause(); }
+          else if (event.type === "format") {
+            await player.start(event); ready = true; lastProgressAt = Date.now(); if (paused) player.pause();
+            if (!formatNoted) { formatNoted = true; streamMetric(options, { stage: "playback_client", sampleRate: event.sampleRate, context: player.contextState(), ...clientFacts() }); }
+          }
           else if (event.type === "file") { ready = true; options.onStatus?.("playing"); await file.play(wavBlob(event.audio)); if (connection.readyState === 1) connection.send(JSON.stringify({ type: "file.done" })); }
           else if (event.type === "error") throw new Error(event.code || "voice_stream_failed");
           else if (event.type === "done") { await player.finish(); complete = true; resolve(); }
@@ -97,7 +132,11 @@ export async function playAudioStream(options) {
       if (options.signal?.aborted) cancelled();
     });
     return true;
-  } finally { player.stop(); file.stop(); connection.close(); }
+  } finally {
+    clearInterval(gapWatch);
+    if (typeof document !== "undefined" && document.removeEventListener) document.removeEventListener("visibilitychange", noteVisibility);
+    player.stop(); file.stop(); connection.close();
+  }
 }
 
 /** A single final ASR result; partials never submit a task or replace the draft. */

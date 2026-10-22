@@ -10,7 +10,7 @@ import { routerGatewayUrl, routerAuthHeaders } from "../router/gateway.js";
 const fault = (code, status = 409) => new VoiceError(code, status, code);
 
 /** Single-use HTTP grants bind raw audio sockets to the authenticated Host scope. */
-export function createAudioStreamGateway({ config, models, replies, synthesize = synthesizeStream, env = process.env, metric = () => {}, playbackStallMs = 45_000 }) {
+export function createAudioStreamGateway({ config, models, replies, synthesize = synthesizeStream, env = process.env, metric = () => {}, playbackStallMs = 45_000, pauseHoldMs = 120_000, lifetimeMs = 300_000 }) {
   const tickets = new Map(), clients = new Set();
   const synthesis = createSynthesisRuns({ synthesize, metric });
   const server = new WebSocketServer({ noServer: true, maxPayload: 96 * 1024, perMessageDeflate: false,
@@ -66,7 +66,7 @@ export function createAudioStreamGateway({ config, models, replies, synthesize =
           if (grant.operation === "tts" && code !== "voice_cancelled") metric({ stage: "playback_stop", voiceId: grant.scope.id, code, sentFrames, playedFrames });
           send({ type: "error", code }); close();
         };
-        const lifetime = setTimeout(() => error(fault("voice_timeout")), 180000);
+        const lifetime = setTimeout(() => error(fault("voice_timeout")), lifetimeMs);
         client.on("close", close); client.on("error", close);
         client.on("message", (raw, binary) => {
           try {
@@ -149,7 +149,10 @@ export function createAudioStreamGateway({ config, models, replies, synthesize =
                     // while without the client being gone. Wait for it to come
                     // back instead of ending the answer after ten seconds.
                     await new Promise((resolve, reject) => {
-                      const limit = pausedAt ? Math.max(1, 10_000 - (Date.now() - pausedAt)) : playbackStallMs;
+                      // A locked screen or a device switch is a pause, not a
+                      // lost client: hold the answer long enough for the page
+                      // to come back before failing it.
+                      const limit = pausedAt ? Math.max(1, pauseHoldMs - (Date.now() - pausedAt)) : playbackStallMs;
                       const timer = setTimeout(() => { waiter = null; reject(fault(pausedAt ? "voice_interruption_timeout" : "voice_audio_backpressure")); }, limit);
                       waiter = () => { clearTimeout(timer); resolve(); };
                     });

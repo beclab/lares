@@ -248,8 +248,25 @@ A device switch, a locked screen or a system audio interruption can stop playout
 without the client leaving. The Client resumes an interrupted AudioContext on
 `statechange` and when the page becomes visible again; the Host treats a shorter
 stall as a pause and keeps the answer (45 seconds for the stream path, 30
-seconds for the realtime path). Only a longer stall fails that reply, with a
-visible playback error rather than a silent stop.
+seconds for the realtime path). A page that goes away mid-answer now tells the
+Host it is pausing (`pause`/`resume` on the stream socket) instead of stopping
+the readout; the Host holds a paused answer for up to two minutes, so a lock
+screen or an app switch comes back to the same reply instead of a reply that was
+marked as read. Only a longer pause or stall fails that reply, with a visible
+playback error rather than a silent stop.
+
+A phone that turns its screen off suspends the WebView even while the page is
+playing: the AudioContext is interrupted and the socket is torn down before the
+next progress tick arrives. While a readout is preparing or playing, the mobile
+and web clients therefore hold the Screen Wake Lock (where the platform offers
+it) and drop it when the answer ends, so a long answer does not depend on the
+device's screen timeout. The lock is a hint: a WebView without the API keeps
+playing exactly as before.
+
+`playback_client`, `playback_gap` and `playback_visibility` metrics carry the
+user agent, page visibility and AudioContext state next to the played frames, so
+a report of "it stopped on the phone" names the platform and whether the page
+was hidden when the worklet stopped reporting.
 
 The Host may retire a VoiceSession scope after two minutes without HTTP traffic
 only when it no longer owns a live realtime socket or the device lease; a paused

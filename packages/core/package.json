@@ -115,6 +115,7 @@
     "./voice/stream-client": "./voice/stream-client.js",
     "./voice/pcm-player": "./voice/pcm-player.js",
     "./voice/pcm-worklet": "./voice/pcm-worklet.js",
+    "./voice/wake-lock": "./voice/wake-lock.js",
     "./voice/config": "./voice/config.js",
     "./voice/languages": "./voice/languages.js",
     "./voice/service": "./voice/service.js",

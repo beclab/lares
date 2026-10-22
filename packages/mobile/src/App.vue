@@ -127,6 +127,7 @@ import { createVoiceConversation } from "@olares/lares-core/voice/conversation";
 import { createUnifiedConversation } from "@olares/lares-core/voice/unified-conversation";
 import { createAnswerPlayer } from "./chat/playback.js";
 import { createReplySpeaker, createSentencePlayer, readoutState, speakable } from "@olares/lares-core/voice/speech";
+import { createScreenWakeLock } from "@olares/lares-core/voice/wake-lock";
 import { prepareBrowserCapture } from "@olares/lares-core/voice/browser-capture";
 import { playAudioStream, createStreamingCapture } from "@olares/lares-core/voice/stream-client";
 import { voiceHeaders, wavBlob } from "@olares/lares-core/voice/client";
@@ -561,6 +562,9 @@ export default {
     this.intake = new FileIntake((file, sessionId, options) => this.runtime.upload(file, options, sessionId));
     this.imageUploadControllers = new Map();
     this.player = createAnswerPlayer();
+    // A locked screen suspends the WebView and cuts a long answer short; hold
+    // the screen for as long as a readout is actually playing.
+    this.readoutWake = createScreenWakeLock();
     this.voicePanel = createVoicePanel({
       armOutput: () => this.player?.unlock(),
       create: (options) => this.createMobileVoiceConversation(options),
@@ -607,6 +611,7 @@ export default {
       halt: () => this.player?.stop(),
       silence: (source) => void this.runtime.interruptSpeech?.(source),
       fail: (err) => this.showSpeakProblem(err),
+      onState: (active) => this.setReadoutAwake(active),
     });
 
     this.bindIntake(this.sessionId);
@@ -624,12 +629,30 @@ export default {
     this.conversationUnsub = subscribeConversationSettings((section) => {
       this.busyEnter = section.busyEnter;
     });
+    this.voiceReadoutPaused = false;
     this.voiceVisibilityHandler = () => {
-      if (document.hidden) { this.reader.stop(); void this.voicePanel.pause().catch(() => {}); }
+      if (document.hidden) {
+        // A locked screen or an app switch is a pause, not the end of the
+        // answer: stopping here marks the utterance read and it never resumes.
+        if (this.reader.canPause && this.reader.pause()) this.voiceReadoutPaused = true;
+        void this.voicePanel.pause().catch(() => {});
+        return;
+      }
+      if (this.readoutActive) void this.readoutWake?.hold();
+      if (this.voiceReadoutPaused) { this.voiceReadoutPaused = false; this.reader.resume(); }
+    };
+    this.voicePageHideHandler = () => {
+      if (this.reader.canPause && this.reader.pause()) this.voiceReadoutPaused = true;
+      void this.voicePanel.pause().catch(() => {});
+    };
+    this.voicePageShowHandler = () => {
+      if (this.voiceReadoutPaused) { this.voiceReadoutPaused = false; this.reader.resume(); }
     };
     this.voiceOfflineHandler = () => { this.reader.stop(); void this.voicePanel.pause().catch(() => {}); };
     window.addEventListener("offline", this.voiceOfflineHandler);
     document.addEventListener("visibilitychange", this.voiceVisibilityHandler);
+    window.addEventListener("pagehide", this.voicePageHideHandler);
+    window.addEventListener("pageshow", this.voicePageShowHandler);
     window.addEventListener("keydown", this.onVoiceShortcut, true);
     this.voiceClock = setInterval(() => {
       if (this.voicePhase === "recording") this.voiceElapsed += 1;
@@ -647,6 +670,9 @@ export default {
   beforeUnmount() {
     window.removeEventListener("offline", this.voiceOfflineHandler);
     document.removeEventListener("visibilitychange", this.voiceVisibilityHandler);
+    window.removeEventListener("pagehide", this.voicePageHideHandler);
+    window.removeEventListener("pageshow", this.voicePageShowHandler);
+    this.readoutWake?.release();
     window.removeEventListener("keydown", this.onVoiceShortcut, true);
     clearInterval(this.voiceClock);
     this.captureLog();
@@ -1340,7 +1366,7 @@ export default {
         send: (value) => conversation.speak(value),
         play: (sentence) => sentence.bluetooth === "played" ? Promise.resolve() : this.player.play(wavBlob(sentence.audio)),
         halt: () => this.player.stop(), silence: () => {},
-        onState: (playing) => conversation?.playbackState(playing),
+        onState: (playing) => { conversation?.playbackState(playing); this.setReadoutAwake(playing); },
         onOutput: (value) => readoutState.publish(value?.status === "error" ? null : value),
         fail: (error) => { void conversation.controller.disconnect(error?.code || error?.message || "voice_playback_failed"); },
       });
@@ -1367,6 +1393,11 @@ export default {
         onRecords: (rows) => { if (this.sessionId === sessionId) this.voiceRecords = rows; },
         onError: (error) => { this.voiceError = error.message; },
       });
+    },
+    setReadoutAwake(active) {
+      this.readoutActive = Boolean(active);
+      if (this.readoutActive) void this.readoutWake?.hold();
+      else this.readoutWake?.release();
     },
     showSpeakProblem(err) {
       this.speakNotice = speakProblemText(this.t, err);

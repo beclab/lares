@@ -135,6 +135,9 @@ export function createPcmStreamPlayer({ onProgress = () => {}, onMetric = () => 
     pause() { paused = true; node?.port.postMessage({ type: "pause" }); },
     resume() { paused = false; node?.port.postMessage({ type: "resume" }); },
     get paused() { return paused; },
+    /** The browser's own view; a phone can report "running" while the OS has muted it. */
+    contextState: () => context?.state || "missing",
+    sampleRate: () => context?.sampleRate || 0,
     playedFrames: () => played,
     stop,
   };
