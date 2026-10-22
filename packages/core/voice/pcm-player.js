@@ -29,6 +29,38 @@ export function primePlaybackContext(Context = globalThis.AudioContext || global
 
 export function createPcmStreamPlayer({ onProgress = () => {}, onMetric = () => {}, context: Context = globalThis.AudioContext || globalThis.webkitAudioContext } = {}) {
   let context, node, resolve, reject, played = 0, generation = 0, pendingByte = null, failed = null, paused = false, owned = false;
+  /**
+   * The page shares one primed context. iOS interrupts it (a call, the lock
+   * screen) and it never resumes on its own, so a reply that starts after that
+   * gets a fresh context instead of a silent failure.
+   */
+  const openContext = async (shared) => {
+    if (shared) {
+      try {
+        await ensureWorklet(shared);
+        await shared.resume?.();
+        if (!shared.state || shared.state === "running") {
+          owned = false; context = shared;
+          return { opened: shared, shared: true };
+        }
+      } catch { /* replaced below */ }
+      worklets.delete(shared);
+      if (primed === shared) primed = null;
+    }
+    const fresh = new Context();
+    owned = true;
+    try {
+      await ensureWorklet(fresh);
+      await fresh.resume?.();
+      if (fresh.state && fresh.state !== "running") throw new Error("voice_playback_failed");
+    } catch (error) {
+      owned = false;
+      if (fresh.state !== "closed") void fresh.close?.().catch(() => {});
+      throw error;
+    }
+    context = fresh;
+    return { opened: fresh, shared: false };
+  };
   const stop = () => {
     generation++; paused = false; node?.disconnect(); if (node) node.port.onmessage = null; node = null;
     const closing = owned ? context : null;
@@ -42,17 +74,14 @@ export function createPcmStreamPlayer({ onProgress = () => {}, onMetric = () => 
       if (!Context || channels !== 1 || encoding !== "pcm_s16le" || !Number.isInteger(sampleRate) || sampleRate < 8000 || sampleRate > 192000) throw new Error("voice_audio_format");
       const epoch = generation;
       const shared = primed && primed.state !== "closed" ? primed : null;
-      owned = !shared;
-      context = shared || new Context(); const opened = context;
+      let opened;
       try {
-        await ensureWorklet(opened);
-        await opened.resume?.();
+        ({ opened } = await openContext(shared));
         if (epoch !== generation) throw new Error("voice_cancelled");
-        if (opened.state && opened.state !== "running") throw new Error("voice_playback_failed");
-        onMetric({ stage: "playback_context", state: opened.state || "unknown", shared: Boolean(shared) });
+        onMetric({ stage: "playback_context", state: opened.state || "unknown", shared: Boolean(shared && opened === shared) });
       } catch (error) {
-        onMetric({ stage: "playback_context", state: opened.state || "missing", shared: Boolean(shared), code: error?.message || "voice_playback_failed" });
-        if (owned && opened.state !== "closed") void opened.close?.().catch(() => {});
+        onMetric({ stage: "playback_context", state: context?.state || "missing", shared: Boolean(shared), code: error?.message || "voice_playback_failed" });
+        if (owned && context && context.state !== "closed") void context.close?.().catch(() => {});
         owned = false; context = null;
         throw error;
       }

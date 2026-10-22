@@ -93,6 +93,10 @@
           </button>
         </figure>
       </div>
+      <div v-if="playbackChrome" class="lares-composer__playback" role="status">
+        <span>{{ t(playbackChrome.status) }}</span>
+        <button type="button" @click="stopPlayback">{{ t(playbackChrome.stopLabel) }}</button>
+      </div>
       <div class="lares-composer__line" :data-expanded="expanded ? 'true' : 'false'">
         <button
           type="button"
@@ -170,7 +174,8 @@
 
 <script>
 import { messageFromCode } from "@olares/lares-core/i18n/t";
-import { voiceCallFailure } from "@olares/lares-core/voice/presentation";
+import { voiceCallFailure, voicePlaybackChrome } from "@olares/lares-core/voice/presentation";
+import { readoutState } from "@olares/lares-core/voice/speech";
 import LaresVoiceInput from "./VoiceInput.vue";
 import {
   REFERENCE_DEBOUNCE_MS,
@@ -214,6 +219,8 @@ export default {
   ],
   data() {
     return {
+      readout: null,
+      readoutUnsub: null,
       inputMultiline: false,
       inputWidth: 0,
       inputResizeObserver: null,
@@ -252,6 +259,9 @@ export default {
     callFailure() {
       return this.voiceView?.inputActive ? voiceCallFailure(this.voiceView) : null;
     },
+    playbackChrome() {
+      return voicePlaybackChrome(this.voiceView, this.readout);
+    },
     callFailureText() {
       return this.callFailure ? messageFromCode(this.t, this.callFailure.code, "error.voice_failed") : "";
     },
@@ -269,6 +279,8 @@ export default {
     },
   },
   mounted() {
+    this.readout = readoutState.getSnapshot();
+    this.readoutUnsub = readoutState.subscribe(() => { this.readout = readoutState.getSnapshot(); });
     this.autosize();
     this.inputResizeObserver = new ResizeObserver(([entry]) => {
       const width = entry.contentRect.width;
@@ -279,11 +291,16 @@ export default {
     this.inputResizeObserver.observe(this.$refs.input);
   },
   beforeUnmount() {
+    this.readoutUnsub?.();
     this.inputResizeObserver?.disconnect();
     window.clearTimeout(this.referenceTimer);
     window.removeEventListener("pointerdown", this.onTokenPointer, true);
   },
   methods: {
+    stopPlayback() {
+      if (this.playbackChrome?.stop === "readout") this.readout?.stop?.();
+      else this.$emit("voice-action", { action: "stopPlayback" });
+    },
     onInput(event) {
       const value = event.target.value;
       this.$emit("update:draft", value);
@@ -701,6 +718,34 @@ export default {
   stroke: currentColor;
   stroke-width: 2;
   stroke-linecap: round;
+}
+
+.lares-composer__playback {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 4px 8px;
+  color: var(--q-ink-2);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.lares-composer__playback button {
+  flex: none;
+  min-height: 32px;
+  padding: 4px 12px;
+  border: 1px solid var(--q-separator);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--q-ink-1);
+  font: inherit;
+  font-size: 13px;
+}
+
+.lares-composer__playback button:focus-visible {
+  outline: 2px solid var(--q-blue-default, #3377ff);
+  outline-offset: 2px;
 }
 
 .lares-composer__line {

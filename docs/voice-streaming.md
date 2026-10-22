@@ -41,7 +41,8 @@ output device and reports consumed source frames. Host scheduling limits pending
 audio to approximately two seconds, with bounded transport and render buffers.
 It starts the first confirmed sentence immediately, then synthesizes later
 sentences while earlier audio plays. Non-streaming models retain explicit WAV
-file playback. After output begins, errors do not replay or reroute the answer.
+file playback. After output begins, errors do not replay or reroute the answer. A consumer that
+disconnects mid-reply cancels its synthesis instead of reading the rest of it.
 
 ASR uses 16 kHz mono PCM and partial/final messages. Capture and playback nodes,
 streams, sockets, pending operations and output generations are cancelled on

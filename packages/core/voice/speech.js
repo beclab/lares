@@ -192,7 +192,13 @@ export function createSentencePlayer({ send, play, halt, silence, fail = () => {
   let lastKey = null;
   let silencedKey = null;
   const consumed = new Set();
-  const mark = (set, key) => { if (key != null) set.add(key); };
+  // One page reads many turns; keep the names bounded without re-reading any.
+  const REMEMBERED = 256;
+  const mark = (_set, key) => {
+    if (key == null) return;
+    consumed.add(key);
+    if (consumed.size > REMEMBERED) consumed.delete(consumed.values().next().value);
+  };
 
   const emitOutput = value => {
     if (value || readoutState.getSnapshot()?.key === lastKey || onOutput !== readoutState.publish) onOutput(value);

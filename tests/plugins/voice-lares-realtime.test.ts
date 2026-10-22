@@ -295,3 +295,143 @@ test("lares-realtime-v1 barge-in only with the flag and echo cancellation; silen
     assert.equal(fixture.calls.prompts.at(-1).text, "stop please");
   } finally { client.terminate(); await fixture.stop(); }
 });
+
+test("lares-realtime-v1 speaks the reply that landed during playback once the client finishes it", async () => {
+  let utterance: any = null;
+  const fixture = await serve({}, {
+    async prompt(_scope: any, body: any) {
+      utterance = { key: body.requestId, text: "first answer", silent: false };
+      return { utterance };
+    },
+    state() { return { utterance, running: false }; },
+  });
+  const client = connect(fixture.port, "voice-chat");
+  try {
+    let stage = 0;
+    let acked = false;
+    let spokeEarly = false;
+    const events = await until(client, (event, seen) => event.type === "response.done" && seen.filter((value) => value.type === "response.done").length === 2, (event) => {
+      if (event.type === "session.created") {
+        client.send(JSON.stringify({ type: "lares.playback.progress", item_id: null, played_ms: 0 }));
+        client.send(JSON.stringify({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text: "hi" }] } }));
+      }
+      if (event.type === "response.output_audio_transcript.delta" && event.delta === "second answer" && !acked) spokeEarly = true;
+      if (event.type === "response.done" && stage === 0) {
+        stage = 1;
+        utterance = { key: "task:later", text: "second answer", silent: false };
+        setTimeout(() => {
+          acked = true;
+          client.send(JSON.stringify({ type: "lares.playback.completed", item_id: "item" }));
+        }, 400);
+      }
+    });
+    assert.equal(spokeEarly, false);
+    assert.deepEqual(events.filter((event) => event.type === "response.output_audio_transcript.delta").map((event) => event.delta), ["first answer", "second answer"]);
+  } finally { client.terminate(); await fixture.stop(); }
+});
+
+test("lares-realtime-v1 keeps the call open while a long reply drains", async () => {
+  const fixture = await serve({ synthesize: async () => Buffer.alloc(1_200_000) });
+  const client = connect(fixture.port, "voice-chat");
+  try {
+    const events = await until(client, (event) => event.type === "response.done", (event) => {
+      if (event.type === "session.created") client.send(JSON.stringify({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text: "hi" }] } }));
+    });
+    assert.equal(client.readyState, WebSocket.OPEN);
+    assert.equal(events.find((event) => event.type === "response.done").response.status, "completed");
+    assert.ok(events.some((event) => event.type === "response.output_audio.delta"));
+  } finally { client.terminate(); await fixture.stop(); }
+});
+
+test("a take committed while the previous one is transcribing is queued, not rejected", async () => {
+  let releaseTranscribe: () => void = () => {};
+  const gate = new Promise<void>((resolve) => { releaseTranscribe = resolve; });
+  const fixture = await serve({
+    transcribe: async () => { await gate; return "queued words"; },
+  });
+  const client = connect(fixture.port, "voice-chat");
+  const errors: string[] = [];
+  const completed: string[] = [];
+  client.on("message", (raw) => {
+    const event = JSON.parse(raw.toString());
+    if (event.type === "error") errors.push(event.error?.code);
+    if (event.type === "conversation.item.input_audio_transcription.completed") completed.push(event.transcript);
+  });
+  try {
+    await new Promise<void>((resolve) => client.once("open", resolve));
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    const audio = Buffer.alloc(4800, 1).toString("base64");
+    client.send(JSON.stringify({ type: "input_audio_buffer.append", audio }));
+    client.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    // The microphone is shared: this second take arrives while the first ASR runs.
+    client.send(JSON.stringify({ type: "input_audio_buffer.append", audio }));
+    client.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    assert.deepEqual(errors, []);
+    releaseTranscribe();
+    for (let i = 0; i < 100 && completed.length < 2; i += 1) await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.deepEqual(errors, []);
+    assert.equal(completed.length, 2);
+    assert.equal(fixture.calls.prompts.length, 2);
+  } finally { client.terminate(); await fixture.stop(); }
+});
+
+test("a lost playback acknowledgement cannot wedge the half-duplex gate", async () => {
+  const fixture = await serve({ playbackAckGraceMs: 60, synthesize: async () => Buffer.alloc(4800) });
+  const client = connect(fixture.port, "voice-chat");
+  const seen: string[] = [];
+  client.on("message", (raw) => {
+    const event = JSON.parse(raw.toString());
+    seen.push(event.type + (event.error ? `:${event.error.code}` : ""));
+  });
+  try {
+    await new Promise<void>((resolve) => client.once("open", resolve));
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    client.send(JSON.stringify({ type: "lares.playback.progress", item_id: null, played_ms: 0 }));
+    client.send(JSON.stringify({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] } }));
+    for (let i = 0; i < 100 && !seen.includes("response.done"); i += 1) await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.ok(seen.includes("response.done"));
+    // No acknowledgement arrives after the audio; the watchdog must release the gate.
+    for (let i = 0; i < 100 && !seen.includes("lares.playback.timeout"); i += 1) await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.ok(seen.includes("lares.playback.timeout"), seen.join(","));
+    client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: Buffer.alloc(4800, 1).toString("base64") }));
+    client.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
+    for (let i = 0; i < 100 && !seen.includes("input_audio_buffer.committed"); i += 1) await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.ok(seen.includes("input_audio_buffer.committed"), seen.join(","));
+    assert.equal(seen.some((value) => value === "error:waiting_for_playback"), false);
+  } finally { client.terminate(); await fixture.stop(); }
+});
+
+test("a long reply is paced by the client's playout progress instead of filling its buffer", async () => {
+  const fixture = await serve({ synthesize: async () => Buffer.alloc(240_000) });
+  const client = connect(fixture.port, "voice-chat");
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  const events: any[] = [];
+  let itemId = null;
+  let deltas = 0;
+  client.on("message", (raw) => {
+    const event = JSON.parse(raw.toString());
+    events.push(event);
+    if (event.type === "response.output_item.added") itemId = event.item?.id || null;
+    if (event.type === "response.output_audio.delta") deltas += 1;
+  });
+  try {
+    await new Promise<void>((resolve) => client.once("open", resolve));
+    await sleep(60);
+    client.send(JSON.stringify({ type: "lares.playback.progress", item_id: null, played_ms: 0 }));
+    client.send(JSON.stringify({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text: "long answer" }] } }));
+    for (let i = 0; i < 100 && deltas === 0; i += 1) await sleep(20);
+    await sleep(250);
+    assert.ok(deltas > 0);
+    // About two seconds of audio, not the whole answer.
+    assert.ok(deltas <= 6, `sent ${deltas} chunks before any playout`);
+    assert.equal(events.some((event) => event.type === "response.done"), false);
+    for (let played = 500; played <= 5000 && !events.some((event) => event.type === "response.done"); played += 500) {
+      client.send(JSON.stringify({ type: "lares.playback.progress", item_id: itemId, played_ms: played }));
+      await sleep(80);
+    }
+    for (let i = 0; i < 100 && !events.some((event) => event.type === "response.done"); i += 1) await sleep(20);
+    assert.ok(events.some((event) => event.type === "response.done"));
+  } finally { client.terminate(); await fixture.stop(); }
+});

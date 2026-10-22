@@ -68,7 +68,7 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
       const restoredRequests = [...new Set(history.records.map((row) => row.taskId).filter(Boolean))].map((requestId) => ({ requestId }));
       scope.session = createVoiceAgentSession(api, { sessionId: boundSessionId,
         preset: scope.authorizedBinding?.agentPreset || env.LARES_VOICE_AGENT_PRESET || undefined, workspaceId: scope.authorizedBinding?.workspaceId || env.LARES_VOICE_WORKSPACE_ID || undefined, restoredRequests,
-        onChange: () => { if (scope.active) service.state(scope); },
+        onChange: () => service.advance(scope),
         metric: (fields) => metric({ voiceId: scope.id, ...fields }),
       });
       await scope.session.open();
@@ -146,9 +146,14 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
       scope.voiceRequests.set(body.requestId, operation);
       return operation;
     },
-    state(scope) {
+    /**
+     * Turns a durable task's completion into one pending spoken utterance.
+     * Called from session events, never from a read: a GET that loses its
+     * response must not consume the result it was about to return.
+     */
+    advance(scope) {
+      if (!scope.active || !scope.voiceState) return;
       const state = scope.session?.snapshot() || {};
-      if (!scope.voiceState) return { ...state, contextId: scope.contextId, active: scope.active === true };
       // Completion is keyed by durable request/turn, never by the session's aggregate idle flag.
       for (const task of state.tasks || []) {
         if (!["completed", "failed", "cancelled"].includes(task.status) || scope.deliveredTasks.has(task.requestId)) continue;
@@ -157,15 +162,26 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
         scope.voiceResults ??= [];
         scope.voiceResults.push(task);
       }
-      if (scope.voiceConfig.preset === "direct") return { ...state, contextId: scope.contextId, active: scope.active === true };
+      if (scope.voiceConfig.preset === "direct" || scope.voiceState.running) return;
       // Pending business work does not block the next speech turn.
-      if (scope.active && !scope.voiceState.running && scope.voiceResults?.length && !scope.voiceInputActive) {
-        const task = scope.voiceResults.shift();
-        scope.dialogue.observeTask(task);
-        const text = task.status === "completed" ? task.text : `Task ${task.status}: ${task.error || ""}`;
-        scope.voiceState.utterance = { key: `task:${task.requestId}`, turn: ++scope.voiceState.version, step: 0, text, done: true, silent: false };
-        append(scope, "assistant", text, `result:${task.requestId}`, task.requestId, { taskTurn: task.turn });
-      }
+      if (!scope.voiceResults?.length || scope.voiceInputActive) return;
+      const task = scope.voiceResults.shift();
+      scope.dialogue.observeTask(task);
+      const text = task.status === "completed" ? task.text : `Task ${task.status}: ${task.error || ""}`;
+      scope.voiceState.utterance = { key: `task:${task.requestId}`, turn: ++scope.voiceState.version, step: 0, text, done: true, silent: false };
+      append(scope, "assistant", text, `result:${task.requestId}`, task.requestId, { taskTurn: task.turn });
+    },
+    /**
+     * A queued task result moves into the sticky `utterance` field before the
+     * snapshot is returned. The move is idempotent and the utterance survives
+     * the read, so a lost response cannot consume the result; HTTP polls and
+     * the socket observe the same snapshot.
+     */
+    state(scope) {
+      service.advance(scope);
+      const state = scope.session?.snapshot() || {};
+      if (!scope.voiceState) return { ...state, contextId: scope.contextId, active: scope.active === true };
+      if (scope.voiceConfig.preset === "direct") return { ...state, contextId: scope.contextId, active: scope.active === true };
       return { ...state, ...scope.voiceState, contextId: scope.contextId, active: scope.active === true, backgroundRunning: state.running, summaryError: scope.summaryError || null, preset: scope.voiceConfig.preset };
     },
     async remove(sessionId) {

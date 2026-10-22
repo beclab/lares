@@ -49,11 +49,18 @@ export function createAudioStreamGateway({ config, models, replies, synthesize =
         clients.add(client);
         const abort = new AbortController();
         let upstream = null, sentFrames = 0, playedFrames = 0, rate = 0, waiter = null, outputFormat = null;
-        let fileDone = null, pausedAt = 0, closing = false;
+        let fileDone = null, pausedAt = 0, closing = false, ttsKey = null;
         let received = 0, committed = false, outputStarted = false;
         const started = Date.now();
         const send = (value) => { if (client.readyState === 1) client.send(JSON.stringify(value)); };
-        const close = () => { if (closing) return; closing = true; abort.abort(); waiter?.(); fileDone?.(); clearTimeout(lifetime); upstream?.terminate(); clients.delete(client); client.close(); };
+        const close = () => {
+          if (closing) return;
+          closing = true; abort.abort(); waiter?.(); fileDone?.(); clearTimeout(lifetime); upstream?.terminate();
+          // A consumer that disappeared stops its synthesis instead of leaving
+          // the whole answer to be rendered with nobody listening.
+          if (ttsKey) synthesis.release(ttsKey);
+          clients.delete(client); client.close();
+        };
         const error = (cause) => {
           const code = cause?.code || "voice_stream_failed";
           if (grant.operation === "tts" && code !== "voice_cancelled") metric({ stage: "playback_stop", voiceId: grant.scope.id, code, sentFrames, playedFrames });
@@ -104,6 +111,7 @@ export function createAudioStreamGateway({ config, models, replies, synthesize =
           upstream.on("close", () => { send({ type: "eof" }); close(); });
         } else {
           const key = grant.replySource ? utteranceKey(grant.replySource) : `text:${grant.text}`;
+          ttsKey = key;
           const run = synthesis.attach(key, (signal) => grant.reply ? grant.reply(signal) : (async function* text() {
             const parts = speechSegments(grant.text, { done: true });
             for (let index = 0; index < parts.length; index += 1) yield { text: parts[index], index };

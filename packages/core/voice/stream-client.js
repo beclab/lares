@@ -105,6 +105,9 @@ export async function startTranscriptionStream(options) {
   const connection = await openAudioStream({ ...options, operation: "stt" });
   if (!connection) return null;
   let final = null, finished = false, completed = false, failed = false, finishAt = 0, resolve, reject;
+  // The Host owns the ASR request; this bound only stops this client waiting.
+  // Falling back to the recorded blob is what keeps the take usable.
+  const FINAL_TIMEOUT_MS = 60_000;
   const result = new Promise((yes, no) => { resolve = yes; reject = no; });
   void result.catch(() => {});
   let readyResolve, readyReject;
@@ -134,8 +137,18 @@ export async function startTranscriptionStream(options) {
   if (options.signal?.aborted) fail(new Error("voice_cancelled"));
   await ready;
   return {
+    // A committed take is final on the Host; a late or empty result must not be
+    // re-sent as a recording. This socket only transcribes, so replaying is safe.
+    get committed() { return finished; },
+    get replayable() { return true; },
     write(bytes) { if (finished || connection.readyState !== 1 || connection.bufferedAmount > 256 * 1024) throw new Error("voice_audio_backpressure"); connection.send(bytes); },
-    async finish() { finishAt = Date.now(); finished = true; connection.send(JSON.stringify({ type: "finish" })); try { return await result; } finally { connection.close(); } },
+    async finish() {
+      finishAt = Date.now(); finished = true; connection.send(JSON.stringify({ type: "finish" }));
+      let timer;
+      const timeout = new Promise((_, no) => { timer = setTimeout(() => no(new Error("voice_asr_timeout")), FINAL_TIMEOUT_MS); });
+      try { return await Promise.race([result, timeout]); }
+      finally { clearTimeout(timer); connection.close(); }
+    },
     cancel() { fail(new Error("voice_cancelled")); },
   };
 }
@@ -170,6 +183,8 @@ export async function createStreamingCapture(stream, options) {
     };
     source.connect(node); node.connect(context.destination);
     return {
+      get committed() { return port.committed === true; },
+      get replayable() { return port.replayable !== false; },
       async finish() {
         try {
           await new Promise((resolve, reject) => { const timer = setTimeout(() => reject(new Error("voice_timeout")), 2000); flushed = () => { clearTimeout(timer); resolve(); }; node.port.postMessage({ type: "flush" }); });

@@ -242,3 +242,25 @@ test("a missing capture flush closes the ASR stream before reporting timeout", a
     capture.cancel(); assert.equal(closes, 1);
   } finally { capture.cancel(); }
 });
+
+test("a dropped consumer stops synthesizing the rest of the answer", async () => {
+  const started: string[] = [];
+  let releaseFirst: () => void = () => {};
+  const h = await fixture(async (request: any, chunk: any) => {
+    started.push(request.text);
+    request.onFormat({ sampleRate: 24000, channels: 1, encoding: "pcm_s16le" });
+    if (started.length === 1) await new Promise<void>((resolve) => { releaseFirst = resolve; });
+    await chunk(Buffer.alloc(480));
+    return { streamed: true };
+  });
+  try {
+    const grant = await h.gateway.ticket(h.scope, { operation: "tts", text: "First one. Second one." });
+    const ws = await h.open(grant.ticket);
+    for (let i = 0; started.length < 1 && i < 100; i += 1) await tick();
+    assert.deepEqual(started, ["First one."]);
+    ws.close(); await once(ws, "close");
+    releaseFirst();
+    await tick(); await tick();
+    assert.deepEqual(started, ["First one."]);
+  } finally { await h.close(); }
+});

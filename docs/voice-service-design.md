@@ -212,13 +212,41 @@ Track each request and associated dsh turn; session idle alone is never completi
 
 ## Protocol and safety
 
-Expose create/close, audio input, commit/discard turn, pause/resume input, stop output, playout acknowledgement and typed events. Exactly one endpointing authority controls a connection. Reuse VAD and configurable pause thresholds initially; retain a semantic detector port. Detect interruptions independently of end-of-turn. Truncate conversational output only at acknowledged playout, never at bytes merely received.
+Expose create/close, audio input, commit/discard turn, pause/resume input, stop output, playout acknowledgement and typed events. Exactly one endpointing authority controls a connection: Silero VAD when its runtime is already loaded, an adaptive energy endpoint (room floor estimated per take) otherwise, never both for the same take. Configurable pause thresholds remain. Detect interruptions independently of end-of-turn. Truncate conversational output only at acknowledged playout, never at bytes merely received.
 
 Retain bounded queues, host exclusive leases and capability-based half-duplex behavior. Automatic barge-in remains disabled until actual echo tests pass. No stream may accumulate unbounded buffered audio. The composite protocol requires explicit playout-completed acknowledgement before accepting more half-duplex input; response generation completion alone is insufficient.
 
 Router exposure initially implements an advertised Realtime WebSocket subset plus capabilities. The target wire format for Router and Lares clients alike is [`lares-realtime-v1`](realtime-protocol.md). WebRTC, SIP and arbitrary client tools are excluded. Applications without an authenticated user grant may use authorized dictation/chat but cannot delegate to a personal Lares session. An app ID or client-supplied user/session ID does not establish end-user authority. Scoped records, resume handles and grants must reject cross-user access.
 
 Attribute composite service usage separately from child model usage; do not fabricate native token counts or count the same cost twice. Gate unvalidated models and transports. Failure must remain explicit, with no silent downgrade/re-execution.
+
+## Contention, cancellation and timeouts
+
+The microphone and the speaker share one link, so two turns can contend for it
+without either being broken. The Host queues a commit that arrives while the
+previous take is still being transcribed and buffers the audio that belongs to
+it; that case is no longer a `turn_busy` error. Errors that only lose one take
+(`turn_busy`, `waiting_for_playback`, `voice_audio_backpressure`,
+`voice_stream_state`, `audio_limit_exceeded`, `voice_asr_timeout`) drop that take
+and keep the VoiceSession open; the composer returns to listening. Every other
+error stays an explicit failure.
+
+The Client cancels a take as soon as a reply starts rendering, because the Host
+rejects microphone frames during playback. The Host releases a missing
+`playback.completed` acknowledgement after 60 seconds without progress, so a
+client that disappears mid-reply cannot wedge the half-duplex gate for the rest
+of the connection. The Client bounds its wait for a committed transcript:
+dictation and STT-only takes then fall back to the recorded audio, while a
+conversation take whose commit already became a Host turn is not uploaded twice.
+A transcript that arrives after that bound is ignored.
+
+Audio that never reached the speaker is a visible playback error, never a silent
+one. Each answer is synthesized once for all observers; the last observer
+leaving cancels the run.
+
+The Host may retire a VoiceSession scope after two minutes without HTTP traffic
+only when it no longer owns a live realtime socket or the device lease; a paused
+call is retired by its own recovery timer.
 
 ## Acceptance
 
@@ -242,7 +270,7 @@ Mobile dictation records immediately in the composer, showing available micropho
 
 ### Live gesture feedback and preview lifecycle
 
-Pointer down captures the initiating pointer. Moving upward 60px arms cancellation; returning below 40px disarms it. The hint appears above the composer only during a hold; text, icon and color indicate cancellation without moving the main action or message list. Release submits or cancels once. A second pointer anywhere, pointer loss, window focus loss, backgrounding and session changes cancel unsubmitted input. Release during permission/device preparation invalidates the pending capture. Cancellation never completes ASR or creates/submits an Agent task.
+Pointer down captures the initiating pointer. Moving upward 60px arms cancellation; returning below 40px disarms it. The hint appears above the composer only during a hold; text, icon and color indicate cancellation without moving the main action or message list. Release submits or cancels once. A second pointer anywhere, pointer loss, window focus loss, backgrounding and session changes cancel unsubmitted input. Release while the microphone is still being prepared ends the take that was just started; a take below the minimum length reports `voice_too_short` instead of being retried silently. Cancellation never completes ASR or creates/submits an Agent task.
 
 Focused Space holds/releases; Enter and assistive activation toggle start/finish. Escape first cancels an active take while retaining voice input; a second Escape returns to text. Repeated keys and late pointer events cannot double-submit. Timer and meter updates stay outside polite live announcements. Focus returns to the voice entry when the preview closes. The preview has no drag-to-dismiss gesture that could conflict with cancellation.
 
@@ -354,9 +382,10 @@ output terminates speech. No additional LLM call or tool removal is used.
 
 The existing stream ticket accepts an optional `source` address instead of fixed
 `text`. The Host inspects the session and verifies the scope owner before binding
-it. Fixed-text callers remain supported. A reply source can be claimed once,
-including across PC and Vue tabs, so multiple observers cannot synthesize the
-same answer in parallel. Stop and failure do not relinquish that claim for an
+it. Fixed-text callers remain supported. A reply source is synthesized once and
+fanned out to every observer, including across PC and Vue tabs, so multiple
+observers never synthesize the same answer in parallel. A consumer that
+disappears cancels that synthesis instead of draining the rest of the answer. Stop and failure do not relinquish that claim for an
 automatic replay. The registry is bounded and expired output fails explicitly.
 
 Stable Markdown-cleaned segments feed the existing single synthesis pipeline;
@@ -370,10 +399,13 @@ isolated words; text/request correctness and audible correctness are separate.
 PCM and file players expose pause/resume without resetting their unread position.
 A paused worklet renders silence without consuming frames. The socket accepts
 bounded `pause`/`resume` control and retains the existing audio backpressure caps.
-Cancellation invalidates local output immediately and propagates upstream.
+Cancellation invalidates local output immediately and propagates upstream; a consumer that disconnects mid-reply cancels that synthesis instead of reading the rest of the answer.
 
 Automatic acoustic interruption requires continuous conversation, explicit
 `bargeIn` and `echoTested` input capabilities, and a pause-capable current output.
+The Client reads none of the Host's advertised `barge_in` capability yet, so
+enabling it on the Host alone leaves local playback unpaused; ship both sides
+together.
 No shipped device is newly certified by this implementation. The browser adapter
 accepts explicit verified capability injection; defaults remain half duplex.
 After 500 ms continuous voice activity, the shared controller pauses audio while

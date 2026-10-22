@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createSentencePlayer, readoutState } from "../../packages/core/voice/speech.js";
 import { playAudioStream, startTranscriptionStream } from "../../packages/core/voice/stream-client.js";
-import { voiceCallFailure, voiceIndicatorPresentation, voiceInputPresentation, voicePanelPresentation } from "../../packages/core/voice/presentation.js";
+import { voiceCallFailure, voiceIndicatorPresentation, voiceInputPresentation, voicePanelPresentation, voicePlaybackChrome } from "../../packages/core/voice/presentation.js";
 import { createVoiceConversation } from "../../packages/core/voice/conversation.js";
 
 const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -512,6 +512,14 @@ test("recovery and idle endings are quiet; hold stays the way back", () => {
     assert.equal(voicePanelPresentation(view).error, null);
     assert.equal(voiceInputPresentation(view).label, "dictation.hold");
   }
+});
+
+test("playback keeps a status and a close control after the hold button is gone", () => {
+  const speaking = { visible: false, mode: "continuous", snapshot: { connection: "open", playback: "playing", agent: "idle" } };
+  assert.deepEqual(voicePlaybackChrome(speaking, null), { status: "dictation.speaking", stop: "call", stopLabel: "panel.close" });
+  assert.deepEqual(voicePlaybackChrome({ visible: true, mode: "continuous", snapshot: { connection: "open", playback: "idle" } }, null), null);
+  assert.deepEqual(voicePlaybackChrome(null, { status: "playing", sessionId: "s" }), { status: "readout.playing", stop: "readout", stopLabel: "panel.close" });
+  assert.deepEqual(voicePlaybackChrome(null, { status: "error" }), { status: "readout.error", stop: "readout", stopLabel: "readout.dismiss" });
 });
 
 test("a healthy call and a dictation error are not call-failure banners", () => {

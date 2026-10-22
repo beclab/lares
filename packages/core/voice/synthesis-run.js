@@ -79,7 +79,10 @@ export function createSynthesisRuns({ synthesize, metric = () => {} }) {
   }
 
   return {
-    /** `open` is used only for the first subscriber of `key`. */
+    /**
+     * `open` is used only for the first subscriber of `key`; every other observer
+     * of the same answer shares that one synthesis.
+     */
     attach(key, open, request) {
       let run = runs.get(key);
       if (!run) {
@@ -88,6 +91,13 @@ export function createSynthesisRuns({ synthesize, metric = () => {} }) {
         run.finished.finally(() => { if (runs.get(key) === run) runs.delete(key); });
       }
       return run;
+    },
+    /** Dropping the last consumer stops synthesis instead of draining the whole answer. */
+    release(key) {
+      const run = key && runs.get(key);
+      if (!run) return;
+      run.cancel();
+      if (runs.get(key) === run) runs.delete(key);
     },
     cancel(key) { if (key) runs.get(key)?.cancel(); },
     close() { for (const run of runs.values()) run.cancel(); runs.clear(); },

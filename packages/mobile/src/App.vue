@@ -730,8 +730,11 @@ export default {
       this.items = snap.items;
       this.running = snap.running;
       this.runningSince = snap.runningSince || 0;
-      if (this.voiceCall) this.reader.stop();
-      const target = this.voiceSpeak && !this.voiceCall && !document.hidden ? speakable(utterance, this.voiceStreaming) : null;
+      // A paused call is not speaking. Only an open call owns the reply;
+      // leaving it set after the keyboard returns is how later answers stay silent.
+      const voiceSpeaking = this.voiceCall?.connection === "open";
+      if (voiceSpeaking) this.reader.stop();
+      const target = this.voiceSpeak && !voiceSpeaking && !document.hidden ? speakable(utterance, this.voiceStreaming) : null;
       if (target) this.reader.follow({ ...target, sessionId: snap.sessionId, source: { sessionId: snap.sessionId, turn: target.turn, step: target.step, attemptId: target.attemptId }, key: `${snap.sessionId}:${target.key}` });
       this.failed = snap.failed;
       this.error = snap.error;
@@ -1546,11 +1549,9 @@ export default {
       const text = this.draft.trim();
       if (!this.canSend) return;
       this.player?.unlock();
-      const continuous = this.voicePanelState?.mode === "continuous";
-      if (this.voiceSpeak && continuous) {
-        try { await this.voicePanel.openReadout(); }
-        catch (error) { this.voiceError = error?.code || error?.message || "voice_failed"; }
-      } else if (this.voiceCall?.connection === "open") await this.voicePanel.pause();
+      // A typed reply is the chat's. An open voice call would keep the reader
+      // quiet and then not speak this text, so pause it and let the reader take the answer.
+      if (this.voiceCall?.connection === "open") await this.voicePanel.pause();
       this.reader.stop();
       const sessionId = this.sessionId;
       const images = this.draftImages.filter((row) => draftImageStatus(row) === "ready");

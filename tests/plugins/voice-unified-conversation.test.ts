@@ -62,14 +62,19 @@ test("unified conversation plays reply audio, acknowledges it and truncates on s
   f.socket.emit({ type: "response.created", response: { id: "r1" } });
   f.socket.emit({ type: "response.output_item.added", item: { id: "item-1" } });
   f.socket.emit({ type: "response.output_audio.delta", delta: audio });
+  f.socket.bufferedAmount = 2 * 1024 * 1024;
   f.socket.emit({ type: "response.done", response: { id: "r1", status: "completed" } });
   await tick();
   assert.deepEqual(f.player.events.slice(f.player.events.indexOf("start")), ["start", "write:4800", "finish"]);
   assert.deepEqual(f.socket.sent.find((event: any) => event.type === "lares.playback.completed"), { type: "lares.playback.completed", item_id: "item-1" });
+  f.socket.bufferedAmount = 0;
   f.socket.emit({ type: "response.created", response: { id: "r2" } });
   f.socket.emit({ type: "response.output_item.added", item: { id: "item-2" } });
   f.socket.emit({ type: "response.output_audio.delta", delta: audio });
   await tick();
+  f.socket.readyState = 3;
+  f.progress(24 * 60);
+  f.socket.readyState = 1;
   f.progress(24 * 120);
   await f.conversation.controller.stopPlayback();
   assert.ok(f.socket.sent.some((event: any) => event.type === "response.cancel"));
@@ -89,4 +94,103 @@ test("unified dictation uses a transcription session and hands the transcript to
   f.socket.emit({ type: "conversation.item.input_audio_transcription.completed", item_id: "i1", transcript: "take note" });
   await tick(); await tick();
   assert.deepEqual(transcripts, ["take note"]);
+});
+
+test("a transient socket error settles the take but keeps the call open", async () => {
+  const f = fixture({ device: "headset", readAloud: false, preset: "direct" });
+  await f.conversation.start({ continuous: true, manual: true });
+  const controller = f.conversation.controller;
+  void controller.listen();
+  await tick();
+  assert.equal(controller.getSnapshot().capture, "recording");
+  f.socket.emit({ type: "error", error: { code: "turn_busy" } });
+  await tick(); await tick();
+  const snap = controller.getSnapshot();
+  assert.equal(snap.capture, "idle");
+  assert.equal(snap.connection, "open");
+  assert.equal(snap.error, null);
+  await f.conversation.stop();
+});
+
+test("an unlisted socket error still settles the take instead of staying transcribing", async () => {
+  const f = fixture({ device: "headset", readAloud: false, preset: "direct" });
+  await f.conversation.start({ continuous: true, manual: true });
+  const controller = f.conversation.controller;
+  void controller.listen();
+  await tick();
+  f.socket.emit({ type: "error", error: { code: "upstream_failed" } });
+  await tick(); await tick();
+  const snap = controller.getSnapshot();
+  assert.equal(snap.capture, "idle");
+  assert.equal(snap.connection, "paused");
+  assert.equal(snap.error, "upstream_failed");
+  await controller.disconnect();
+});
+
+test("audio from a feed that was turned off is cancelled, never played", async () => {
+  const f = fixture({ device: "device", readAloud: true, input: { capabilities: {}, capture: () => new Promise(() => {}), stop() {}, cancel() {} } });
+  await f.conversation.start({ continuous: false });
+  try {
+    await f.conversation.setReadAloud(false);
+    f.socket.emit({ type: "response.created", response: { id: "r1" } });
+    f.socket.emit({ type: "response.output_item.added", item: { id: "item-1" } });
+    f.socket.emit({ type: "response.output_audio.delta", delta: Buffer.alloc(4800).toString("base64") });
+    await tick();
+    assert.equal(f.player.events.includes("start"), false);
+    assert.equal(f.player.events.some((value: string) => value.startsWith("write")), false);
+    assert.ok(f.socket.sent.some((event: any) => event.type === "response.cancel"));
+  } finally { await f.conversation.stop(); }
+});
+
+test("a stale reply finishing does not mark the newer reply as not playing", async () => {
+  const socket = fakeSocket();
+  const pending: Array<() => void> = [];
+  const player: any = { start: async () => {}, write: () => {}, finish: () => new Promise<void>((resolve) => pending.push(resolve)), stop() {}, pause() {}, resume() {} };
+  const conversation = createUnifiedConversation({
+    request: async (path: string, init: any) => {
+      if (path.endsWith("/realtime/ticket")) return { ok: true, body: { ticket: "t1" } };
+      if (path.endsWith("/session") && init.method === "GET") return { ok: true, body: { running: false, active: true, sessionId: "dsh-1" } };
+      return { ok: true, body: {} };
+    },
+    socket: () => { queueMicrotask(() => socket.emit({ type: "session.created", session: {} })); return socket; },
+    player: () => player,
+    device: "device",
+    readAloud: true,
+    input: { capabilities: {}, capture: () => new Promise(() => {}), stop() {}, cancel() {} },
+  });
+  await conversation.start({ continuous: false });
+  try {
+    const delta = Buffer.alloc(4800).toString("base64");
+    socket.emit({ type: "response.created", response: { id: "r1" } });
+    socket.emit({ type: "response.output_item.added", item: { id: "item-1" } });
+    socket.emit({ type: "response.output_audio.delta", delta });
+    socket.emit({ type: "response.done", response: { id: "r1" } });
+    await tick();
+    // A second reply starts while the first one is still finishing its audio.
+    socket.emit({ type: "response.created", response: { id: "r2" } });
+    socket.emit({ type: "response.output_item.added", item: { id: "item-2" } });
+    socket.emit({ type: "response.output_audio.delta", delta });
+    await tick();
+    pending.splice(0).forEach((resolve) => resolve());
+    await tick(); await tick();
+    assert.equal(conversation.controller.getSnapshot().playback, "playing");
+  } finally { await conversation.stop(); }
+});
+
+test("a transcript that never arrives releases the take without closing the call", async () => {
+  const f = fixture({ device: "headset", readAloud: false, preset: "direct", commitTimeoutMs: 20 });
+  await f.conversation.start({ continuous: true, manual: true });
+  try {
+    const controller = f.conversation.controller;
+    void controller.listen();
+    await tick();
+    assert.equal(controller.getSnapshot().capture, "recording");
+    // Release commits the take; the Host never answers with a transcript.
+    controller.stopRecording();
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    const snap = controller.getSnapshot();
+    assert.equal(snap.capture, "idle");
+    assert.equal(snap.connection, "open");
+    assert.equal(snap.error, null);
+  } finally { await f.conversation.stop(); }
 });

@@ -224,7 +224,9 @@
     "./router/default-selection": {
       "types": "./router/default-selection.d.ts",
       "default": "./router/default-selection.js"
-    }
+    },
+    "./voice/vad": "./voice/vad.js",
+    "./voice/errors": "./voice/errors.js"
   },
   "dependencies": {
     "emoji-regex": "11.0.0",
