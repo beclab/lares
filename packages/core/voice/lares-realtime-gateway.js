@@ -20,6 +20,9 @@ const BARGE_IN_LIMIT_MS = 10_000;
 // AudioWorklet keeps a bounded queue; sending a whole answer at network speed
 // overflowed it and dropped audio.
 const PLAY_AHEAD_MS = 2_000;
+// A temporarily interrupted AudioContext (device switch, lock screen) must not
+// end a reply; only a client that stays silent this long is treated as stuck.
+const PLAYOUT_STALL_MS = 30_000;
 const TICKET_MS = 30_000;
 // Usage lives in the child ASR/LLM/TTS requests; the OpenAI shape stays parseable (Router ADR-83).
 const ZERO_USAGE = Object.freeze({ total_tokens: 0, input_tokens: 0, output_tokens: 0, input_token_details: { text_tokens: 0, audio_tokens: 0, cached_tokens: 0 }, output_token_details: { text_tokens: 0, audio_tokens: 0 } });
@@ -179,7 +182,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
           if (current.abort.signal.aborted || current.done || closed || client.readyState !== 1) return;
           const heard = played.get(current.itemId) ?? 0;
           if (heard > lastPlayed) { lastPlayed = heard; playedAt = Date.now(); }
-          if (Date.now() - playedAt > 10_000) throw new Error("voice_audio_backpressure");
+          if (Date.now() - playedAt > PLAYOUT_STALL_MS) throw new Error("voice_audio_backpressure");
           await new Promise((resolve) => setTimeout(resolve, 20));
         }
         if (current.abort.signal.aborted || current.done || closed || client.readyState !== 1) return;

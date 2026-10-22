@@ -175,7 +175,6 @@
 <script>
 import { messageFromCode } from "@olares/lares-core/i18n/t";
 import { voiceCallFailure, voicePlaybackChrome } from "@olares/lares-core/voice/presentation";
-import { readoutState } from "@olares/lares-core/voice/speech";
 import LaresVoiceInput from "./VoiceInput.vue";
 import {
   REFERENCE_DEBOUNCE_MS,
@@ -219,8 +218,6 @@ export default {
   ],
   data() {
     return {
-      readout: null,
-      readoutUnsub: null,
       inputMultiline: false,
       inputWidth: 0,
       inputResizeObserver: null,
@@ -260,7 +257,7 @@ export default {
       return this.voiceView?.inputActive ? voiceCallFailure(this.voiceView) : null;
     },
     playbackChrome() {
-      return voicePlaybackChrome(this.voiceView, this.readout);
+      return voicePlaybackChrome(this.voiceView);
     },
     callFailureText() {
       return this.callFailure ? messageFromCode(this.t, this.callFailure.code, "error.voice_failed") : "";
@@ -279,8 +276,6 @@ export default {
     },
   },
   mounted() {
-    this.readout = readoutState.getSnapshot();
-    this.readoutUnsub = readoutState.subscribe(() => { this.readout = readoutState.getSnapshot(); });
     this.autosize();
     this.inputResizeObserver = new ResizeObserver(([entry]) => {
       const width = entry.contentRect.width;
@@ -291,15 +286,13 @@ export default {
     this.inputResizeObserver.observe(this.$refs.input);
   },
   beforeUnmount() {
-    this.readoutUnsub?.();
     this.inputResizeObserver?.disconnect();
     window.clearTimeout(this.referenceTimer);
     window.removeEventListener("pointerdown", this.onTokenPointer, true);
   },
   methods: {
     stopPlayback() {
-      if (this.playbackChrome?.stop === "readout") this.readout?.stop?.();
-      else this.$emit("voice-action", { action: "stopPlayback" });
+      this.$emit("voice-action", { action: "stopPlayback" });
     },
     onInput(event) {
       const value = event.target.value;

@@ -264,3 +264,36 @@ test("a dropped consumer stops synthesizing the rest of the answer", async () =>
     assert.deepEqual(started, ["First one."]);
   } finally { await h.close(); }
 });
+
+test("a playout stall shorter than the limit resumes the same answer", async () => {
+  const h = await fixture(async (request: any, chunk: any) => {
+    request.onFormat({ sampleRate: 24000, channels: 1, encoding: "pcm_s16le" });
+    await chunk(Buffer.alloc(24000 * 2 * 6));
+    return { streamed: true };
+  });
+  const grant = await h.gateway.ticket(h.scope, { operation: "tts", text: "One long answer." });
+  const ws = await h.open(grant.ticket);
+  const seen: any[] = [];
+  let received = 0;
+  ws.on("message", (data, binary) => {
+    if (binary) { received += data.length / 2; return; }
+    seen.push(JSON.parse(String(data)));
+  });
+  let reported = 0;
+  let paused = false;
+  let timer: any = null;
+  try {
+    await new Promise<void>((resolve) => ws.once("open", resolve));
+    const report = () => {
+      // Stay half a second behind what arrived, like real playback.
+      const frames = Math.max(0, Math.floor(received - 12000));
+      if (!paused && frames > reported) { reported = frames; ws.send(JSON.stringify({ type: "progress", frames })); }
+    };
+    timer = setInterval(report, 100);
+    // A device switch stops playout for a moment; the answer must survive it.
+    setTimeout(() => { paused = true; setTimeout(() => { paused = false; }, 300); }, 400);
+    for (let i = 0; i < 200 && !seen.some((event) => event.type === "done"); i += 1) await tick();
+    assert.ok(seen.some((event) => event.type === "done"), JSON.stringify(seen.slice(-4)));
+    assert.equal(seen.some((event) => event.type === "error"), false);
+  } finally { clearInterval(timer); ws.close(); await h.close(); }
+});

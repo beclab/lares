@@ -180,3 +180,36 @@ test("an interrupted primed context is replaced instead of silencing the reply",
     else (globalThis as any).AudioWorkletNode = original;
   }
 });
+
+test("an interrupted playback context resumes on statechange and on visibility", async () => {
+  const { createPcmStreamPlayer, primePlaybackContext } = await import("@olares/lares-core/voice/pcm-player");
+  const original = (globalThis as any).AudioWorkletNode;
+  class Context extends EventTarget {
+    state = "running";
+    destination = {};
+    audioWorklet = { addModule: async () => {} };
+    resumes = 0;
+    async resume() { this.resumes += 1; if (this.state !== "closed") this.state = "running"; }
+    async close() { this.state = "closed"; }
+  }
+  class Node {
+    port = { onmessage: null as any, postMessage() {} };
+    connect() {}
+    disconnect() {}
+  }
+  (globalThis as any).AudioWorkletNode = Node;
+  const primed = primePlaybackContext(Context as any) as Context;
+  const player = createPcmStreamPlayer({ context: Context as any });
+  try {
+    await player.start({ sampleRate: 24000, channels: 1, encoding: "pcm_s16le" });
+    const before = primed.resumes;
+    primed.state = "suspended";
+    primed.dispatchEvent(new Event("statechange"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.ok(primed.resumes > before);
+  } finally {
+    player.stop();
+    if (original === undefined) delete (globalThis as any).AudioWorkletNode;
+    else (globalThis as any).AudioWorkletNode = original;
+  }
+});

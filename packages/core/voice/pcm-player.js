@@ -3,6 +3,21 @@ import { pcmSamples } from "./realtime-audio.js";
 
 let primed = null;
 const worklets = new WeakMap();
+let watchingVisibility = false;
+
+/** iOS/macOS suspend the page's context on a call, the lock screen or a device switch. */
+function resumeIfInterrupted(context) {
+  if (!context || context.state === "closed" || context.state === "running") return;
+  void context.resume?.().catch(() => {});
+}
+
+function watchVisibility() {
+  if (watchingVisibility || typeof document === "undefined" || !document.addEventListener) return;
+  watchingVisibility = true;
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") resumeIfInterrupted(primed);
+  });
+}
 
 function ensureWorklet(ctx) {
   const pending = worklets.get(ctx);
@@ -35,7 +50,9 @@ export function createPcmStreamPlayer({ onProgress = () => {}, onMetric = () => 
    * gets a fresh context instead of a silent failure.
    */
   const openContext = async (shared) => {
+    watchVisibility();
     if (shared) {
+      shared.addEventListener?.("statechange", () => resumeIfInterrupted(shared));
       try {
         await ensureWorklet(shared);
         await shared.resume?.();
@@ -49,6 +66,7 @@ export function createPcmStreamPlayer({ onProgress = () => {}, onMetric = () => 
     }
     const fresh = new Context();
     owned = true;
+    fresh.addEventListener?.("statechange", () => resumeIfInterrupted(fresh));
     try {
       await ensureWorklet(fresh);
       await fresh.resume?.();

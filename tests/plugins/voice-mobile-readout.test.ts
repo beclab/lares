@@ -514,12 +514,11 @@ test("recovery and idle endings are quiet; hold stays the way back", () => {
   }
 });
 
-test("playback keeps a status and a close control after the hold button is gone", () => {
+test("call playback keeps a status and a close control after the hold button is gone", () => {
   const speaking = { visible: false, mode: "continuous", snapshot: { connection: "open", playback: "playing", agent: "idle" } };
-  assert.deepEqual(voicePlaybackChrome(speaking, null), { status: "dictation.speaking", stop: "call", stopLabel: "panel.close" });
-  assert.deepEqual(voicePlaybackChrome({ visible: true, mode: "continuous", snapshot: { connection: "open", playback: "idle" } }, null), null);
-  assert.deepEqual(voicePlaybackChrome(null, { status: "playing", sessionId: "s" }), { status: "readout.playing", stop: "readout", stopLabel: "panel.close" });
-  assert.deepEqual(voicePlaybackChrome(null, { status: "error" }), { status: "readout.error", stop: "readout", stopLabel: "readout.dismiss" });
+  assert.deepEqual(voicePlaybackChrome(speaking), { status: "dictation.speaking", stop: "call", stopLabel: "panel.close" });
+  assert.equal(voicePlaybackChrome({ visible: true, mode: "continuous", snapshot: { connection: "open", playback: "idle" } }), null);
+  assert.equal(voicePlaybackChrome(null), null);
 });
 
 test("a healthy call and a dictation error are not call-failure banners", () => {

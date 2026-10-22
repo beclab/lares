@@ -10,7 +10,7 @@ import { routerGatewayUrl, routerAuthHeaders } from "../router/gateway.js";
 const fault = (code, status = 409) => new VoiceError(code, status, code);
 
 /** Single-use HTTP grants bind raw audio sockets to the authenticated Host scope. */
-export function createAudioStreamGateway({ config, models, replies, synthesize = synthesizeStream, env = process.env, metric = () => {} }) {
+export function createAudioStreamGateway({ config, models, replies, synthesize = synthesizeStream, env = process.env, metric = () => {}, playbackStallMs = 45_000 }) {
   const tickets = new Map(), clients = new Set();
   const synthesis = createSynthesisRuns({ synthesize, metric });
   const server = new WebSocketServer({ noServer: true, maxPayload: 96 * 1024, perMessageDeflate: false,
@@ -145,7 +145,14 @@ export function createAudioStreamGateway({ config, models, replies, synthesize =
                 for (let offset = 0; offset < event.chunk.length; offset += 16384) {
                   while (pausedAt || sentFrames - playedFrames > rate * 2 || client.bufferedAmount > 128 * 1024) {
                     if (!reportedWait) { reportedWait = true; metric({ stage: "playback_wait", voiceId: grant.scope.id, sentFrames, playedFrames, paused: Boolean(pausedAt) }); }
-                    await new Promise((resolve, reject) => { const timer = setTimeout(() => { waiter = null; reject(fault(pausedAt ? "voice_interruption_timeout" : "voice_audio_backpressure")); }, pausedAt ? Math.max(1, 10000 - (Date.now() - pausedAt)) : 10000); waiter = () => { clearTimeout(timer); resolve(); }; });
+                    // A device switch or a locked screen can stop playout for a
+                    // while without the client being gone. Wait for it to come
+                    // back instead of ending the answer after ten seconds.
+                    await new Promise((resolve, reject) => {
+                      const limit = pausedAt ? Math.max(1, 10_000 - (Date.now() - pausedAt)) : playbackStallMs;
+                      const timer = setTimeout(() => { waiter = null; reject(fault(pausedAt ? "voice_interruption_timeout" : "voice_audio_backpressure")); }, limit);
+                      waiter = () => { clearTimeout(timer); resolve(); };
+                    });
                     if (abort.signal.aborted || client.readyState !== 1) throw fault("voice_cancelled");
                   }
                   if (client.readyState !== 1) throw fault("voice_cancelled");

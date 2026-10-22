@@ -244,6 +244,13 @@ Audio that never reached the speaker is a visible playback error, never a silent
 one. Each answer is synthesized once for all observers; the last observer
 leaving cancels the run.
 
+A device switch, a locked screen or a system audio interruption can stop playout
+without the client leaving. The Client resumes an interrupted AudioContext on
+`statechange` and when the page becomes visible again; the Host treats a shorter
+stall as a pause and keeps the answer (45 seconds for the stream path, 30
+seconds for the realtime path). Only a longer stall fails that reply, with a
+visible playback error rather than a silent stop.
+
 The Host may retire a VoiceSession scope after two minutes without HTTP traffic
 only when it no longer owns a live realtime socket or the device lease; a paused
 call is retired by its own recovery timer.

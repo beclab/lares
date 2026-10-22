@@ -39,17 +39,14 @@ export function voiceCallFailure(view) {
 }
 
 /**
- * Playback stays visible at the composer until it ends.
- * A hidden readout call and a chat reader both use this one strip:
- * status plus the control that stops it. The hold button is not that strip.
+ * A voice call that is still playing keeps one strip at the composer until it
+ * ends: status plus the control that stops it. The hold button is not that
+ * strip. A chat readout stays on the assistant row that is being read.
  */
-export function voicePlaybackChrome(view, readout) {
+export function voicePlaybackChrome(view) {
   const playback = view?.snapshot?.playback;
-  if (playback && playback !== "idle") {
-    return { status: voicePanelPresentation(view).status, stop: "call", stopLabel: "panel.close" };
-  }
-  if (!readout) return null;
-  return { status: `readout.${readout.status}`, stop: "readout", stopLabel: readout.status === "error" ? "readout.dismiss" : "panel.close" };
+  if (!playback || playback === "idle") return null;
+  return { status: voicePanelPresentation(view).status, stop: "call", stopLabel: "panel.close" };
 }
 
 /** Shared inline labels; clients own focus, positioning and the timer tick. */
