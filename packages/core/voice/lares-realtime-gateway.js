@@ -3,6 +3,7 @@ import { WebSocketServer } from "ws";
 import { validateConfigPatch } from "./config.js";
 import { createSpeechEndpoint, frameRms } from "./endpoint.js";
 import { pcmSamples } from "./realtime-audio.js";
+import { createPlayoutClock, PLAYOUT_LEAD_MS, SOCKET_FUSE_BYTES } from "./playout-clock.js";
 import { speechSegments } from "./script.js";
 import { bindRouterSession } from "../router/session-alias.js";
 
@@ -16,13 +17,6 @@ const SPEECH_RMS = 0.004;
 // and a suspected interruption that never resolves stops the reply.
 const BARGE_IN_MS = 500;
 const BARGE_IN_LIMIT_MS = 10_000;
-// How far ahead of the client's actual playout the Host may send. The client's
-// AudioWorklet keeps a bounded queue; sending a whole answer at network speed
-// overflowed it and dropped audio.
-const PLAY_AHEAD_MS = 2_000;
-// A temporarily interrupted AudioContext (device switch, lock screen) must not
-// end a reply; only a client that stays silent this long is treated as stuck.
-const PLAYOUT_STALL_MS = 30_000;
 const TICKET_MS = 30_000;
 // Usage lives in the child ASR/LLM/TTS requests; the OpenAI shape stays parseable (Router ADR-83).
 const ZERO_USAGE = Object.freeze({ total_tokens: 0, input_tokens: 0, output_tokens: 0, input_token_details: { text_tokens: 0, audio_tokens: 0, cached_tokens: 0 }, output_token_details: { text_tokens: 0, audio_tokens: 0 } });
@@ -44,6 +38,9 @@ const ticketOf = (req) => String(req.headers["sec-websocket-protocol"] || "").sp
 const CJK_END = /[　-〿㐀-鿿＀-￯]$/;
 const CJK_START = /^[　-〿㐀-鿿＀-￯]/;
 const separator = (before, after) => !before || CJK_END.test(before) || CJK_START.test(after) ? "" : " ";
+// `done === false` is a live partial. A finished utterance sets done, and a caller
+// that never reports it (tests, a one-shot reply) is spoken as-is.
+const speakableUtterance = (utterance) => Boolean(utterance?.text) && utterance.done !== false && !utterance.silent;
 /** Spoken segments are cleaned clauses; rejoin them without inventing spaces inside CJK text. */
 export function joinSpoken(parts) {
   return parts.reduce((text, part) => `${text}${separator(text, part)}${part}`, "");
@@ -161,29 +158,23 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
         return hostOutput;
       }
       if (acknowledges) { awaitingPlayback = true; watchAck(); }
-      // A long reply is several seconds of PCM. Dumping it in one burst fills the
-      // socket and used to close the call, which cut the readout off and made the
-      // client's next progress tick throw voice_disconnected. Wait for the buffer
-      // the way the speech stream does; a stuck client fails this reply only.
-      const OUTPUT_BUFFER = 128 * 1024;
+      // A client that announces playback acknowledgement used to stop after two
+      // seconds unless later ticks kept arriving. Those ticks are observations.
+      // The reply keeps moving with the clock; the socket fuse is only for a
+      // client that has stopped reading.
+      if (!current.clock) current.clock = createPlayoutClock({ leadMs: PLAYOUT_LEAD_MS });
+      const clock = current.clock;
       let sentAt = Date.now();
-      let lastPlayed = played.get(current.itemId) ?? 0;
-      let playedAt = Date.now();
       for (let offset = 0; offset < audio.length; offset += CHUNK_BYTES) {
-        while (client.bufferedAmount > OUTPUT_BUFFER) {
+        clock.start();
+        clock.heard(played.get(current.itemId) ?? 0);
+        while ((acknowledges && clock.blocked(current.outputMs)) || client.bufferedAmount > SOCKET_FUSE_BYTES) {
           if (current.abort.signal.aborted || current.done || closed || client.readyState !== 1) return;
-          if (Date.now() - sentAt > 10_000) throw new Error("voice_audio_backpressure");
-          await new Promise((resolve) => setTimeout(resolve, 20));
-        }
-        // Playout credit: never get more than two seconds ahead of what the
-        // client has actually rendered. Progress advances in real time, so a
-        // long answer waits here instead of filling the worklet queue.
-        while (acknowledges && current.outputMs - lastPlayed > PLAY_AHEAD_MS) {
-          if (current.abort.signal.aborted || current.done || closed || client.readyState !== 1) return;
-          const heard = played.get(current.itemId) ?? 0;
-          if (heard > lastPlayed) { lastPlayed = heard; playedAt = Date.now(); }
-          if (Date.now() - playedAt > PLAYOUT_STALL_MS) throw new Error("voice_audio_backpressure");
-          await new Promise((resolve) => setTimeout(resolve, 20));
+          clock.heard(played.get(current.itemId) ?? 0);
+          if (client.bufferedAmount > SOCKET_FUSE_BYTES && Date.now() - sentAt > 10_000) throw new Error("voice_audio_backpressure");
+          if (!((acknowledges && clock.blocked(current.outputMs)) || client.bufferedAmount > SOCKET_FUSE_BYTES)) break;
+          const delay = client.bufferedAmount > SOCKET_FUSE_BYTES ? 20 : Math.max(20, Math.min(200, clock.wait(current.outputMs)));
+          await new Promise((resolve) => setTimeout(resolve, delay));
         }
         if (current.abort.signal.aborted || current.done || closed || client.readyState !== 1) return;
         const chunk = audio.subarray(offset, offset + CHUNK_BYTES);
@@ -208,22 +199,48 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       }
       const sentences = segment(text).filter((value) => value.trim());
       scope.outputAbort = current.abort;
+      // Fetch the next sentence while this one is still feeding the player.
+      // Waiting until the buffer has drained before asking for more audio
+      // opens a gap, and filling that gap in one burst overflows the client.
+      const list = sentences.length ? sentences : [text];
+      let feeding = Promise.resolve();
+      let feedError = null;
+      let previous = "";
+      const failFeed = (cause) => { feedError ??= cause; };
       try {
-        for (const sentence of sentences.length ? sentences : [text]) {
+        for (const sentence of list) {
+          if (feedError) break;
           if (current.suspended && await current.suspended.wait === "stop") return;
           if (current.abort.signal.aborted || closed) return;
-          send({ type: "response.output_audio_transcript.delta", ...part, delta: `${separator(current.sentences.at(-1)?.text, sentence)}${sentence}` });
-          const audio = await synthesize(sentence, scope, (pcm) => playOut(current, pcm));
+          const lead = separator(previous, sentence);
+          previous = `${previous}${lead}${sentence}`;
+          send({ type: "response.output_audio_transcript.delta", ...part, delta: `${lead}${sentence}` });
+          const parts = [];
+          const audio = await synthesize(sentence, scope, (pcm) => { parts.push(pcm); });
           if (current.abort.signal.aborted || closed) return;
-          if (audio) await playOut(current, audio);
-          current.sentences.push({ text: sentence, endMs: current.outputMs });
+          const spoken = sentence;
+          feeding = feeding.then(async () => {
+            if (feedError || current.abort.signal.aborted || closed) return;
+            for (const pcm of parts) {
+              if (current.abort.signal.aborted || closed) return;
+              await playOut(current, pcm);
+            }
+            if (audio && !current.abort.signal.aborted && !closed) await playOut(current, audio);
+            if (current.abort.signal.aborted || closed) return;
+            current.sentences.push({ text: spoken, endMs: current.outputMs });
+          }).catch(failFeed);
         }
+        await feeding;
+        if (feedError) throw feedError;
+        if (current.abort.signal.aborted || closed) return;
         if (headset) {
           await hostOutput; await port?.finish();
           send({ type: "lares.device.playback", playing: false });
         }
       } catch (cause) {
         if (current.abort.signal.aborted || closed) return;
+        current.abort.abort();
+        await feeding.catch(() => {});
         finish(current, "failed");
         throw cause;
       }
@@ -260,7 +277,9 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
         if (!turn.accepted) await service.withdraw?.(scope, requestId).catch(() => {});
         return;
       }
-      if (state.utterance?.text && !state.utterance.silent) { lastReply = state.utterance.key; speak(state.utterance.text, "turn", state.utterance.key, input); }
+      // A snapshot taken while the answer is still streaming only has the first
+      // sentence. Speaking that and remembering the key drops the rest.
+      if (speakableUtterance(state.utterance)) { lastReply = state.utterance.key; speak(state.utterance.text, "turn", state.utterance.key, input); }
     };
     const userItem = (id, content) => send({ type: "conversation.item.done", item: { id, object: "realtime.item", type: "message", role: "user", status: "completed", content: [content] } });
     const commit = async () => {
@@ -512,7 +531,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
         observeTasks();
         if (busy || speaking || awaitingPlayback || response) return;
         const state = service.state(scope);
-        if (!state.utterance?.text || state.utterance.key === lastReply || state.utterance.silent) return;
+        if (!speakableUtterance(state.utterance) || state.utterance.key === lastReply) return;
         lastReply = state.utterance.key;
         speak(state.utterance.text, String(state.utterance.key).startsWith("task:") ? "task" : "turn", state.utterance.key, 0);
       } catch { close(); }

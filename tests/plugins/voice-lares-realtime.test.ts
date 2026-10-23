@@ -330,6 +330,54 @@ test("lares-realtime-v1 speaks the reply that landed during playback once the cl
   } finally { client.terminate(); await fixture.stop(); }
 });
 
+test("the next sentence is synthesized while the previous one is still being fed", async () => {
+  const starts: number[] = [];
+  let release: () => void = () => {};
+  const started = new Promise<void>((resolve) => { release = resolve; });
+  const fixture = await serve({
+    segment: () => ["第一句。", "第二句。"],
+    synthesize: async () => {
+      starts.push(Date.now());
+      if (starts.length === 2) release();
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      return Buffer.alloc(24000 * 2 * 4);
+    },
+  });
+  const client = connect(fixture.port, "voice-chat");
+  try {
+    await until(client, (event) => event.type === "session.created");
+    client.send(JSON.stringify({ type: "lares.playback.progress", item_id: null, played_ms: 0 }));
+    client.send(JSON.stringify({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text: "两句" }] } }));
+    await Promise.race([
+      started,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("second sentence did not start")), 1500)),
+    ]);
+    assert.equal(starts.length, 2);
+    assert.ok(starts[1] - starts[0] < 1000, `second sentence waited ${starts[1] - starts[0]}ms`);
+  } finally { client.terminate(); await fixture.stop(); }
+});
+
+test("lares-realtime-v1 reads a streaming reply once it has finished, not from its first sentence", async () => {
+  const partial = "太阳系是一个以太阳为中心的行星系统。";
+  const full = `${partial}它还包括八颗行星、卫星和小天体。`;
+  let utterance: any = { key: "7:1", text: partial, done: false, silent: false };
+  const spoken: string[] = [];
+  const fixture = await serve({
+    synthesize: async (text: string) => { spoken.push(text); return Buffer.alloc(2400); },
+  }, {
+    state() { return { utterance }; },
+  });
+  const client = connect(fixture.port, "voice-chat");
+  try {
+    await until(client, (event) => event.type === "session.created");
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    assert.deepEqual(spoken, []);
+    utterance = { ...utterance, text: full, done: true };
+    await until(client, (event) => event.type === "response.output_audio_transcript.done");
+    assert.deepEqual(spoken, [full]);
+  } finally { client.terminate(); await fixture.stop(); }
+});
+
 test("lares-realtime-v1 keeps the call open while a long reply drains", async () => {
   const fixture = await serve({ synthesize: async () => Buffer.alloc(1_200_000) });
   const client = connect(fixture.port, "voice-chat");

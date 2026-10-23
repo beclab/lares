@@ -81,7 +81,10 @@
           <span>{{ speechLabel }}</span>
           <button type="button" class="lares-message-stop" @click="readout.stop()">{{ t(readout.status === 'error' ? 'readout.dismiss' : 'readout.stop') }}</button>
         </div>
-        <button v-if="!row.pending && !readout && isSpeaking(row)" type="button" class="lares-message-stop" @click="$emit('stop-speaking')">{{ t('input.stopSpeaking') }}</button>
+        <div v-else-if="ownsPlayback(row)" role="status" class="lares-message-readout">
+          <span>{{ t(playbackChrome.status) }}</span>
+          <button type="button" class="lares-message-stop" @click="$emit('stop-speaking')">{{ t(playbackChrome.stopLabel) }}</button>
+        </div>
         <LaresMessageActions
           v-if="!row.pending"
           :text="row.text"
@@ -111,6 +114,7 @@
 
 <script>
 import { readoutState } from "@olares/lares-core/voice/speech";
+import { voicePlaybackChrome } from "@olares/lares-core/voice/presentation";
 import { partitionPreviews } from "@olares/lares-core/files/preview-groups";
 import { parseAskUserQuestions } from "@olares/lares-core/larepass/questions";
 import { hidesRunningClock, processFoldLabel, transcriptBlocks } from "@olares/lares-core/larepass/process-fold";
@@ -159,6 +163,7 @@ export default {
   },
   computed: {
     speechLabel() { return this.t(`readout.${this.readout?.status}`); },
+    playbackChrome() { return voicePlaybackChrome(this.voiceView); },
     runningText() {
       return runningLabel(this.runningSince, this.t, this.now);
     },
@@ -197,11 +202,12 @@ export default {
       const latest = this.items.findLast(item => item.type === "assistant" && item.turn === this.readout.turn);
       return latest && (row.id || row.key) === (latest.id || latest.key);
     },
-    isSpeaking(row) {
-      const snapshot = this.voiceView?.snapshot;
-      if (snapshot?.playback !== "playing") return false;
-      const latest = this.items.findLast(item => item.type === "assistant" && (item.voiceId || item.voicePlayback?.voiceId) === snapshot.voiceId);
-      return latest && (row.id || row.key) === (latest.id || latest.key);
+    ownsPlayback(row) {
+      if (!this.playbackChrome || row.type !== "assistant") return false;
+      const voiceId = this.voiceView?.snapshot?.voiceId;
+      const matched = voiceId && this.items.findLast((item) => item.type === "assistant" && (item.voiceId || item.voicePlayback?.voiceId) === voiceId);
+      const target = matched || this.items.findLast((item) => item.type === "assistant");
+      return Boolean(target) && (row.id || row.key) === (target.id || target.key);
     },
     syncClock() {
       clearInterval(this.clock);

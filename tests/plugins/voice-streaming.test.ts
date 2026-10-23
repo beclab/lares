@@ -18,6 +18,66 @@ async function fixture(synthesize: any, options: Record<string, unknown> = {}) {
   return { scope, gateway, open, close: async () => { gateway.close(); await new Promise<void>((resolve) => server.close(() => resolve())); } };
 }
 
+test("a reply keeps going when playout acks stop", async () => {
+  const total = 24000 * 2 * 4;
+  const h = await fixture(async (request: any, chunk: any) => {
+    request.onFormat({ sampleRate: 24000, channels: 1, encoding: "pcm_s16le" });
+    await chunk(Buffer.alloc(total));
+    return { streamed: true };
+  });
+  const started = Date.now();
+  try {
+    const grant = await h.gateway.ticket(h.scope, { operation: "tts", text: "一段比较长的回复。" });
+    const ws = await h.open(grant.ticket);
+    let bytes = 0, done = false, code = "";
+    ws.on("message", (data, binary) => {
+      if (binary) { bytes += data.length; return; }
+      const frame = JSON.parse(String(data));
+      if (frame.type === "error") code = frame.code;
+      if (frame.type === "done") done = true;
+    });
+    await once(ws, "open");
+    const opened = Date.now();
+    while (bytes === 0 && Date.now() - opened < 2000) await new Promise((resolve) => setTimeout(resolve, 20));
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.equal(code, "");
+    assert.ok(bytes > 0 && bytes < total, `unpaced dump of ${bytes}`);
+    while (!done && !code && Date.now() - started < 7000) await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal(code, "");
+    assert.equal(done, true);
+    assert.equal(bytes, total);
+  } finally { await h.close(); }
+});
+
+test("acking rendered frames releases the rest of a long answer", async () => {
+  const total = 24000 * 2 * 6;
+  const h = await fixture(async (request: any, chunk: any) => {
+    request.onFormat({ sampleRate: 24000, channels: 1, encoding: "pcm_s16le" });
+    await chunk(Buffer.alloc(total));
+    return { streamed: true };
+  });
+  try {
+    const grant = await h.gateway.ticket(h.scope, { operation: "tts", text: "一段比较长的回复。" });
+    const ws = await h.open(grant.ticket);
+    let bytes = 0; let done = false;
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("long answer did not finish")), 4000);
+      ws.on("message", (data, binary) => {
+        if (binary) {
+          bytes += data.length;
+          ws.send(JSON.stringify({ type: "progress", frames: bytes / 2 }));
+          return;
+        }
+        const frame = JSON.parse(String(data));
+        if (frame.type === "error") { clearTimeout(timer); reject(new Error(frame.code)); }
+        if (frame.type === "done") { done = true; clearTimeout(timer); resolve(); }
+      });
+    });
+    assert.equal(done, true);
+    assert.equal(bytes, total);
+  } finally { await h.close(); }
+});
+
 test("the playback socket stays open after done until the client closes it", async () => {
   const h = await fixture(async (request: any, chunk: any) => {
     request.onFormat({ sampleRate: 24000, channels: 1, encoding: "pcm_s16le" });

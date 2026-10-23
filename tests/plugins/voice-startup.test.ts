@@ -112,7 +112,7 @@ for (const action of ["close", "bind", "discard", "pause"] as const) {
       },
     });
     const opening = panel.open({ configSnapshot: { device: "device" } });
-    assert.equal(mic.opens, 1); assert.equal(panel.getSnapshot().visible, true);
+    assert.equal(mic.opens, 1); assert.equal(panel.getSnapshot().visible, false); assert.equal(panel.getSnapshot().inputActive, false);
     await flush(); assert.equal(loads, 0); assert.equal(mic.starts, 0); assert.equal(panel.getSnapshot().startedAt, null);
     await panel.open({ configSnapshot: { device: "device" } }); assert.equal(mic.opens, 1);
     const cancelled = action === "bind" ? panel.bind("another") : panel[action]();
@@ -120,6 +120,53 @@ for (const action of ["close", "bind", "discard", "pause"] as const) {
     remote.resolve(); await opening; await cancelled; assert.equal(mic.starts, 0); await panel.dispose();
   });
 }
+
+test("voice input stays on text until the microphone opens, and a denial never enters it", async () => {
+  const mic = microphone();
+  const granted = createVoicePanel({
+    prepareInput: () => prepareBrowserCapture({ media: mic.media }),
+    loadConfig: async () => { throw new Error("no settings"); },
+    complete: () => {},
+    create: async () => { throw new Error("no call"); },
+  });
+  const opening = granted.open({ mode: "continuous", configSnapshot: { device: "device" } });
+  await flush();
+  assert.equal(mic.opens, 1); assert.equal(granted.getSnapshot().inputActive, false);
+  mic.grant.resolve(mic.stream); await opening;
+  assert.equal(granted.getSnapshot().inputActive, true); assert.equal(mic.opens, 1);
+  await granted.dispose();
+
+  let deniedOpens = 0;
+  const denied = createVoicePanel({
+    prepareInput: () => prepareBrowserCapture({ media: { mediaDevices: { getUserMedia() { deniedOpens++; return Promise.reject(Object.assign(new Error("denied"), { name: "NotAllowedError" })); } }, MediaRecorder: mic.media.MediaRecorder } }),
+    loadConfig: async () => { throw new Error("no settings"); },
+    complete: () => {},
+    create: async () => { throw new Error("no call"); },
+  });
+  await denied.open({ mode: "continuous", configSnapshot: { device: "device" } });
+  assert.equal(deniedOpens, 1); assert.equal(denied.getSnapshot().visible, false); assert.equal(denied.getSnapshot().inputActive, false);
+  assert.equal(denied.getSnapshot().error, "voice_permission_denied");
+  await denied.dispose();
+});
+
+test("later holds reuse the microphone opened for the voice session", async () => {
+  const mic = microphone();
+  const preparation = prepareBrowserCapture({ media: mic.media });
+  mic.grant.resolve(mic.stream);
+  await preparation.opened();
+  const input = createDeviceInput({ preparation, media: mic.media, transcribe: async () => "hi" });
+  const first = input.capture({ continuous: true, manual: true });
+  await flush();
+  input.cancel();
+  await first;
+  const second = input.capture({ continuous: true, manual: true });
+  await flush();
+  input.cancel();
+  await second;
+  assert.equal(mic.opens, 1); assert.equal(mic.stops, 0);
+  preparation.cancel();
+  assert.equal(mic.stops, 1);
+});
 
 test("light capability loading ignores blocked diagnostics and retains last good capability on failure", async () => {
   const original = globalThis.fetch; const paths: string[] = []; let failed = false;
