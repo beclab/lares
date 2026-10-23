@@ -19,9 +19,8 @@ spec:
 
     Pour effectuer des recherches sur le web, configurez et activez les outils dans Router. Pour utiliser la recherche web, sélectionnez également un service de recherche par défaut dans les paramètres de Lares. Les outils qui servent uniquement à lire des pages web sont appelés lorsque vous demandez à Lares de lire une URL précise.
   upgradeDescription: |
-    La lecture vocale peut parler pendant que la réponse s’écrit encore lorsque le GPU est en découpage mémoire. Le découpage temporel lit après la réponse terminée.
+    La liste des modèles de conversation d’Olares Router s’enregistre à nouveau. La route ne stocke plus les options d’affinité de session que l’importateur de réglages refuse, donc le fournisseur conserve son api.
 
-    - L’interrupteur suit le mode de partage GPU lu depuis le cluster.
-    - La lecture ignore les noms de fichiers et les autres textes qui ne doivent pas être prononcés.
+    - Un modèle local que le catalogue installé ne décrit pas peut être choisi et actualisé.
 
-    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.60)
+    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.61)
