@@ -304,6 +304,57 @@ test("silence from the recognizer is an error, not an empty send", async () => {
 });
 
 
+test("a manual hold in a call does not auto-stop, and silence ends only that take", async () => {
+  const { createDeviceInput } = await import("@olares/lares-core/voice/device-input");
+  let endpoints = 0;
+  let opened = () => {};
+  const ready = new Promise<void>((resolve) => { opened = resolve; });
+  class Recorder {
+    state = "inactive";
+    mimeType = "audio/webm";
+    onstop: (() => void) | null = null;
+    static isTypeSupported() { return true; }
+    start() { this.state = "recording"; }
+    stop() { this.state = "inactive"; this.onstop?.(); }
+    requestData() {}
+  }
+  const input = createDeviceInput({
+    media: { mediaDevices: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) }, MediaRecorder: Recorder },
+    transcribe: async () => "",
+    endpoint: () => { endpoints += 1; return { stop() {} }; },
+    onPhase: (phase: string) => { if (phase === "recording") opened(); },
+  });
+  const pending = input.capture({ continuous: true, manual: true });
+  await ready;
+  assert.equal(endpoints, 0);
+  input.stop();
+  assert.equal(await pending, "");
+});
+
+test("dictation silence is still a failed take", async () => {
+  const { createDeviceInput } = await import("@olares/lares-core/voice/device-input");
+  let opened = () => {};
+  const ready = new Promise<void>((resolve) => { opened = resolve; });
+  class Recorder {
+    state = "inactive";
+    mimeType = "audio/webm";
+    onstop: (() => void) | null = null;
+    static isTypeSupported() { return true; }
+    start() { this.state = "recording"; }
+    stop() { this.state = "inactive"; this.onstop?.(); }
+    requestData() {}
+  }
+  const input = createDeviceInput({
+    media: { mediaDevices: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) }, MediaRecorder: Recorder },
+    transcribe: async () => "",
+    onPhase: (phase: string) => { if (phase === "recording") opened(); },
+  });
+  const pending = input.capture({ continuous: false });
+  await ready;
+  input.stop();
+  await assert.rejects(pending, (error: Error) => error.message === "voice_too_short");
+});
+
 test("single recordings wait for manual stop while continuous turns use endpointing", async () => {
   const { createDeviceInput } = await import("@olares/lares-core/voice/device-input");
   for (const continuous of [false, true]) {
@@ -329,4 +380,34 @@ test("single recordings wait for manual stop while continuous turns use endpoint
     try { assert.equal(endpoints, continuous ? 1 : 0); }
     finally { input.cancel(); await pending; }
   }
+});
+
+test("a committed take is not transcribed a second time from its recording", async () => {
+  const { createVoiceCapture } = await import("@olares/lares-core/voice/browser-capture");
+  let uploads = 0;
+  let phase = "idle";
+  class Recorder {
+    state = "inactive";
+    mimeType = "audio/webm";
+    ondataavailable: ((event: { data: Blob }) => void) | null = null;
+    onstop: (() => void) | null = null;
+    static isTypeSupported() { return true; }
+    start() { this.state = "recording"; this.ondataavailable?.({ data: new Blob([new Uint8Array(2048)]) }); }
+    stop() { this.state = "inactive"; this.ondataavailable?.({ data: new Blob([new Uint8Array(2048)]) }); this.onstop?.(); }
+    requestData() {}
+  }
+  const capture = createVoiceCapture({
+    media: { mediaDevices: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) }, MediaRecorder: Recorder },
+    transcribe: async () => { uploads += 1; return "uploaded"; },
+    streamInput: () => ({ committed: true, replayable: false, async finish() { throw new Error("voice_asr_timeout"); }, cancel() {} }),
+    onPhase: (next: string) => { phase = next; },
+  });
+  await capture.start();
+  for (let i = 0; i < 100 && phase !== "recording"; i += 1) await new Promise((resolve) => setTimeout(resolve, 10));
+  await new Promise((resolve) => setTimeout(resolve, 750));
+  capture.stop();
+  for (let i = 0; i < 100 && phase !== "error"; i += 1) await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(uploads, 0);
+  assert.equal(phase, "error");
+  capture.dispose();
 });

@@ -10,9 +10,9 @@ import { createSentencePlayer } from "@olares/lares-core/voice/speech";
 import { PCM_PLAYER_WORKLET } from "@olares/lares-core/voice/pcm-worklet";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 10));
-async function fixture(synthesize: any) {
+async function fixture(synthesize: any, options: Record<string, unknown> = {}) {
   const scope = { id: "test-stream-client", owner: "alice", device: "device", active: true, readAloud: true, duplex: createDuplexCoordinator() };
-  const gateway = createAudioStreamGateway({ config: () => ({ speak: false, ttsModel: "tts" }), models: async () => [{ id: "tts", supportsTts: true }], synthesize });
+  const gateway = createAudioStreamGateway({ config: () => ({ speak: false, ttsModel: "tts" }), models: async () => [{ id: "tts", supportsTts: true }], synthesize, ...options });
   const server = createServer(); server.on("upgrade", (req, socket, head) => gateway.upgrade(req, socket, head)); server.listen(0, "127.0.0.1"); await once(server, "listening");
   const open = async (ticket: string) => { const ws = new WebSocket(`ws://127.0.0.1:${(server.address() as any).port}`, ["lares-voice", `lares-ticket.${ticket}`]); return ws; };
   return { scope, gateway, open, close: async () => { gateway.close(); await new Promise<void>((resolve) => server.close(() => resolve())); } };
@@ -241,4 +241,109 @@ test("a missing capture flush closes the ASR stream before reporting timeout", a
     assert.equal(closes, 1); assert.equal(disconnects, 2);
     capture.cancel(); assert.equal(closes, 1);
   } finally { capture.cancel(); }
+});
+
+test("a dropped consumer stops synthesizing the rest of the answer", async () => {
+  const started: string[] = [];
+  let releaseFirst: () => void = () => {};
+  const h = await fixture(async (request: any, chunk: any) => {
+    started.push(request.text);
+    request.onFormat({ sampleRate: 24000, channels: 1, encoding: "pcm_s16le" });
+    if (started.length === 1) await new Promise<void>((resolve) => { releaseFirst = resolve; });
+    await chunk(Buffer.alloc(480));
+    return { streamed: true };
+  });
+  try {
+    const grant = await h.gateway.ticket(h.scope, { operation: "tts", text: "First one. Second one." });
+    const ws = await h.open(grant.ticket);
+    for (let i = 0; started.length < 1 && i < 100; i += 1) await tick();
+    assert.deepEqual(started, ["First one."]);
+    ws.close(); await once(ws, "close");
+    releaseFirst();
+    await tick(); await tick();
+    assert.deepEqual(started, ["First one."]);
+  } finally { await h.close(); }
+});
+
+test("a playout stall shorter than the limit resumes the same answer", async () => {
+  const h = await fixture(async (request: any, chunk: any) => {
+    request.onFormat({ sampleRate: 24000, channels: 1, encoding: "pcm_s16le" });
+    await chunk(Buffer.alloc(24000 * 2 * 6));
+    return { streamed: true };
+  });
+  const grant = await h.gateway.ticket(h.scope, { operation: "tts", text: "One long answer." });
+  const ws = await h.open(grant.ticket);
+  const seen: any[] = [];
+  let received = 0;
+  ws.on("message", (data, binary) => {
+    if (binary) { received += data.length / 2; return; }
+    seen.push(JSON.parse(String(data)));
+  });
+  let reported = 0;
+  let paused = false;
+  let timer: any = null;
+  try {
+    await new Promise<void>((resolve) => ws.once("open", resolve));
+    const report = () => {
+      // Stay half a second behind what arrived, like real playback.
+      const frames = Math.max(0, Math.floor(received - 12000));
+      if (!paused && frames > reported) { reported = frames; ws.send(JSON.stringify({ type: "progress", frames })); }
+    };
+    timer = setInterval(report, 100);
+    // A device switch stops playout for a moment; the answer must survive it.
+    setTimeout(() => { paused = true; setTimeout(() => { paused = false; }, 300); }, 400);
+    for (let i = 0; i < 200 && !seen.some((event) => event.type === "done"); i += 1) await tick();
+    assert.ok(seen.some((event) => event.type === "done"), JSON.stringify(seen.slice(-4)));
+    assert.equal(seen.some((event) => event.type === "error"), false);
+  } finally { clearInterval(timer); ws.close(); await h.close(); }
+});
+
+test("a paused page resumes the same answer instead of ending it", async () => {
+  const h = await fixture(async (request: any, chunk: any) => {
+    request.onFormat({ sampleRate: 24000, channels: 1, encoding: "pcm_s16le" });
+    await chunk(Buffer.alloc(24000 * 2 * 4));
+    return { streamed: true };
+  }, { pauseHoldMs: 2_000 });
+  const grant = await h.gateway.ticket(h.scope, { operation: "tts", text: "One long answer." });
+  const ws = await h.open(grant.ticket);
+  const seen: any[] = [];
+  let received = 0, reported = 0, paused = false, timer: any = null;
+  ws.on("message", (data, binary) => { if (binary) { received += data.length / 2; return; } seen.push(JSON.parse(String(data))); });
+  try {
+    await new Promise<void>((resolve) => ws.once("open", resolve));
+    timer = setInterval(() => {
+      const frames = Math.max(0, Math.floor(received - 12000));
+      if (!paused && frames > reported) { reported = frames; ws.send(JSON.stringify({ type: "progress", frames })); }
+    }, 50);
+    // The page goes away and comes back: the client pauses the stream, so the
+    // host holds the rest instead of treating the silence as a dead consumer.
+    await tick();
+    paused = true;
+    ws.send(JSON.stringify({ type: "pause" }));
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    paused = false;
+    ws.send(JSON.stringify({ type: "resume" }));
+    for (let i = 0; i < 300 && !seen.some((event) => event.type === "done"); i += 1) await tick();
+    assert.ok(seen.some((event) => event.type === "done"), JSON.stringify(seen.slice(-4)));
+    assert.equal(seen.some((event) => event.type === "error"), false);
+  } finally { clearInterval(timer); ws.close(); await h.close(); }
+});
+
+test("a page that stays paused past the hold fails that reply instead of hanging", async () => {
+  const h = await fixture(async (request: any, chunk: any) => {
+    request.onFormat({ sampleRate: 24000, channels: 1, encoding: "pcm_s16le" });
+    await chunk(Buffer.alloc(24000 * 2 * 4));
+    return { streamed: true };
+  }, { pauseHoldMs: 250 });
+  const grant = await h.gateway.ticket(h.scope, { operation: "tts", text: "One long answer." });
+  const ws = await h.open(grant.ticket);
+  const seen: any[] = [];
+  ws.on("message", (data, binary) => { if (!binary) seen.push(JSON.parse(String(data))); });
+  try {
+    await new Promise<void>((resolve) => ws.once("open", resolve));
+    ws.send(JSON.stringify({ type: "pause" }));
+    for (let i = 0; i < 200 && !seen.some((event) => event.type === "error"); i += 1) await tick();
+    const error = seen.find((event) => event.type === "error");
+    assert.equal(error?.code, "voice_interruption_timeout");
+  } finally { ws.close(); await h.close(); }
 });

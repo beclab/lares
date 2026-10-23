@@ -154,3 +154,33 @@ test("the real shared panel blocks audition while open and releases activity on 
   } finally { await panel.dispose(); }
   assert.equal(voiceActivity.getSnapshot(), false);
 });
+
+test("a transient voices failure is retried before it becomes an error", async () => {
+  let calls = 0;
+  const rows = await fetchTtsVoices("provider/tts", {
+    retryDelays: [1],
+    fetcher: async () => {
+      calls += 1;
+      return calls === 1 ? Response.json({ error: "busy" }, { status: 503 }) : Response.json({ voices: ["aiden"] });
+    },
+  });
+  assert.equal(calls, 2);
+  assert.deepEqual(rows, [{ id: "aiden", label: "aiden" }]);
+});
+
+test("a failed refresh keeps the last voice list instead of blanking the picker", async () => {
+  let fail = false;
+  const h = await harness({ list: async () => { if (fail) throw new Error("offline"); return [{ id: "speaker", label: "Speaker" }]; } });
+  try {
+    assert.deepEqual(h.controller.getSnapshot().voices, [{ id: "speaker", label: "Speaker" }]);
+    fail = true;
+    await h.controller.load();
+    const state = h.controller.getSnapshot();
+    assert.deepEqual(state.voices, [{ id: "speaker", label: "Speaker" }]);
+    assert.equal(state.error, null);
+    assert.equal(state.stale, true);
+    fail = false;
+    await h.controller.load();
+    assert.equal(h.controller.getSnapshot().stale, false);
+  } finally { h.controller.dispose(); }
+});

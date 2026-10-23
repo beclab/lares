@@ -11,7 +11,7 @@ import { createServer } from "node:http";
 import test from "node:test";
 import { WebSocket } from "ws";
 import { createVoicePanel } from "@olares/lares-core/voice/panel";
-import { voicePanelPresentation } from "@olares/lares-core/voice/presentation";
+import { voiceCallFailure, voicePanelPresentation } from "@olares/lares-core/voice/presentation";
 import { createLaresRealtimeGateway } from "@olares/lares-core/voice/lares-realtime-gateway";
 import { createUnifiedConversation } from "@olares/lares-core/voice/unified-conversation";
 
@@ -424,8 +424,12 @@ test("silence does not stick, and the next question still runs", async () => {
     phone.controls.feed = false;
     await phone.say("", { feed: false });
     await phone.until(() => phone.panel.getSnapshot().snapshot?.capture === "idle", "没说话");
+    const missed = phone.panel.getSnapshot();
+    assert.equal(missed.snapshot?.connection, "open");
+    assert.equal(missed.snapshot?.error, null);
+    assert.equal(voiceCallFailure(missed), null);
     assert.equal(phone.prompts.length, 0);
-    assert.notEqual(voicePanelPresentation(phone.panel.getSnapshot()).phase, "transcribing");
+    assert.notEqual(voicePanelPresentation(missed).phase, "transcribing");
     phone.controls.feed = true;
     await phone.spoken("查一下桌面上的会议纪要");
     assert.deepEqual(phone.tools, ["file"]);
@@ -437,7 +441,11 @@ test("a tap that is too short does not stick, and the next question still runs",
   try {
     await phone.open();
     await phone.say("帮我搜索仓库里的语音测试", { waitMs: 0, feed: false });
-    await phone.until(() => phone.panel.getSnapshot().snapshot?.error === "voice_too_short", "太短");
+    await phone.until(() => {
+      const snap = phone.panel.getSnapshot().snapshot;
+      return snap?.capture === "idle" && snap.connection === "open" && !snap.error;
+    }, "太短");
+    assert.equal(voiceCallFailure(phone.panel.getSnapshot()), null);
     assert.equal(phone.prompts.length, 0);
     assert.notEqual(voicePanelPresentation(phone.panel.getSnapshot()).phase, "transcribing");
     await phone.spoken("帮我搜索仓库里的语音测试");

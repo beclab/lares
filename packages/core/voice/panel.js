@@ -1,6 +1,18 @@
 import { setVoiceActivity } from "./activity.js";
 import { DICTATION_PRESETS } from "./dictation.js";
 
+/** Some mobile webviews lack AbortSignal.any/timeout; the caller signal still cancels. */
+function budgetedSignal(signal, ms) {
+  const signals = [signal];
+  if (typeof AbortSignal?.timeout === "function") {
+    try { signals.push(AbortSignal.timeout(ms)); } catch { /* caller signal only */ }
+  }
+  if (signals.length > 1 && typeof AbortSignal.any === "function") {
+    try { return AbortSignal.any(signals); } catch { /* caller signal only */ }
+  }
+  return signal;
+}
+
 /** The panel owns drafts and turn policy; adapters only supply settings, audio and insertion ports. */
 export function createVoicePanel({ create, complete, loadConfig = async () => ({}), process = async ({ text }) => text, onSession = () => {}, manualTurns = true, inlineDictation = false, prepareInput = () => null, armOutput = () => {} }) {
   let state = { visible: false, inputActive: false, previewVisible: false, mode: "single", sessionId: null, raw: "", draft: "", edited: false, preset: "raw", stage: "idle", snapshot: null, busy: false, error: null, readAloudError: null, device: "", levels: [], startedAt: null, elapsedMs: 0, holding: false, cancelArmed: false };
@@ -39,7 +51,7 @@ export function createVoicePanel({ create, complete, loadConfig = async () => ({
     if (!DICTATION_PRESETS.includes(preset)) throw new Error("voice_config_invalid");
     cancelProcessing(); const abort = processing = new AbortController(); const token = generation;
     emit({ preset, stage: "processing", error: null });
-    const signal = AbortSignal.any([abort.signal, AbortSignal.timeout(45_000)]);
+    const signal = budgetedSignal(abort.signal, 45_000);
     let interrupted;
     const cancellation = new Promise((_, reject) => { interrupted = () => reject(signal.reason); signal.addEventListener("abort", interrupted, { once: true }); });
     try {

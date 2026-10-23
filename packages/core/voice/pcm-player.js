@@ -3,6 +3,21 @@ import { pcmSamples } from "./realtime-audio.js";
 
 let primed = null;
 const worklets = new WeakMap();
+let watchingVisibility = false;
+
+/** iOS/macOS suspend the page's context on a call, the lock screen or a device switch. */
+function resumeIfInterrupted(context) {
+  if (!context || context.state === "closed" || context.state === "running") return;
+  void context.resume?.().catch(() => {});
+}
+
+function watchVisibility() {
+  if (watchingVisibility || typeof document === "undefined" || !document.addEventListener) return;
+  watchingVisibility = true;
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") resumeIfInterrupted(primed);
+  });
+}
 
 function ensureWorklet(ctx) {
   const pending = worklets.get(ctx);
@@ -29,6 +44,41 @@ export function primePlaybackContext(Context = globalThis.AudioContext || global
 
 export function createPcmStreamPlayer({ onProgress = () => {}, onMetric = () => {}, context: Context = globalThis.AudioContext || globalThis.webkitAudioContext } = {}) {
   let context, node, resolve, reject, played = 0, generation = 0, pendingByte = null, failed = null, paused = false, owned = false;
+  /**
+   * The page shares one primed context. iOS interrupts it (a call, the lock
+   * screen) and it never resumes on its own, so a reply that starts after that
+   * gets a fresh context instead of a silent failure.
+   */
+  const openContext = async (shared) => {
+    watchVisibility();
+    if (shared) {
+      shared.addEventListener?.("statechange", () => resumeIfInterrupted(shared));
+      try {
+        await ensureWorklet(shared);
+        await shared.resume?.();
+        if (!shared.state || shared.state === "running") {
+          owned = false; context = shared;
+          return { opened: shared, shared: true };
+        }
+      } catch { /* replaced below */ }
+      worklets.delete(shared);
+      if (primed === shared) primed = null;
+    }
+    const fresh = new Context();
+    owned = true;
+    fresh.addEventListener?.("statechange", () => resumeIfInterrupted(fresh));
+    try {
+      await ensureWorklet(fresh);
+      await fresh.resume?.();
+      if (fresh.state && fresh.state !== "running") throw new Error("voice_playback_failed");
+    } catch (error) {
+      owned = false;
+      if (fresh.state !== "closed") void fresh.close?.().catch(() => {});
+      throw error;
+    }
+    context = fresh;
+    return { opened: fresh, shared: false };
+  };
   const stop = () => {
     generation++; paused = false; node?.disconnect(); if (node) node.port.onmessage = null; node = null;
     const closing = owned ? context : null;
@@ -42,17 +92,14 @@ export function createPcmStreamPlayer({ onProgress = () => {}, onMetric = () => 
       if (!Context || channels !== 1 || encoding !== "pcm_s16le" || !Number.isInteger(sampleRate) || sampleRate < 8000 || sampleRate > 192000) throw new Error("voice_audio_format");
       const epoch = generation;
       const shared = primed && primed.state !== "closed" ? primed : null;
-      owned = !shared;
-      context = shared || new Context(); const opened = context;
+      let opened;
       try {
-        await ensureWorklet(opened);
-        await opened.resume?.();
+        ({ opened } = await openContext(shared));
         if (epoch !== generation) throw new Error("voice_cancelled");
-        if (opened.state && opened.state !== "running") throw new Error("voice_playback_failed");
-        onMetric({ stage: "playback_context", state: opened.state || "unknown", shared: Boolean(shared) });
+        onMetric({ stage: "playback_context", state: opened.state || "unknown", shared: Boolean(shared && opened === shared) });
       } catch (error) {
-        onMetric({ stage: "playback_context", state: opened.state || "missing", shared: Boolean(shared), code: error?.message || "voice_playback_failed" });
-        if (owned && opened.state !== "closed") void opened.close?.().catch(() => {});
+        onMetric({ stage: "playback_context", state: context?.state || "missing", shared: Boolean(shared), code: error?.message || "voice_playback_failed" });
+        if (owned && context && context.state !== "closed") void context.close?.().catch(() => {});
         owned = false; context = null;
         throw error;
       }
@@ -88,6 +135,9 @@ export function createPcmStreamPlayer({ onProgress = () => {}, onMetric = () => 
     pause() { paused = true; node?.port.postMessage({ type: "pause" }); },
     resume() { paused = false; node?.port.postMessage({ type: "resume" }); },
     get paused() { return paused; },
+    /** The browser's own view; a phone can report "running" while the OS has muted it. */
+    contextState: () => context?.state || "missing",
+    sampleRate: () => context?.sampleRate || 0,
     playedFrames: () => played,
     stop,
   };

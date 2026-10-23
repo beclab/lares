@@ -65,6 +65,7 @@ export function SpeechPlayer({ sessionId, conversation, suspended = false }) {
   );
   const opened = useRef(new Set());
   const reader = useRef(null);
+  const paused = useRef(false);
   reader.current ??= createReader();
   // Speak and read-while-writing are read once per utterance.
   const allowed = useRef({ key: null, speak: null, streaming: false, latest: null });
@@ -82,8 +83,13 @@ export function SpeechPlayer({ sessionId, conversation, suspended = false }) {
     if (value.config?.speak !== true) { reader.current.stop(); allowed.current.speak = false; }
   }), []);
   useEffect(() => {
-    const stop = () => reader.current.stop();
-    const hidden = () => { if (document.hidden) stop(); };
+    const stop = () => { paused.current = false; reader.current.stop(); };
+    // A hidden page suspends its AudioContext; pausing keeps the answer instead
+    // of marking it read, and the resume runs when the page is back.
+    const hidden = () => {
+      if (!document.hidden) { if (paused.current) { paused.current = false; reader.current.resume(); } return; }
+      if (reader.current.canPause && reader.current.pause()) paused.current = true;
+    };
     const escape = event => { if (event.key === "Escape" && !event.defaultPrevented && !event.target?.closest?.("[data-voice-shortcut-recorder]")) stop(); };
     document.addEventListener("visibilitychange", hidden); globalThis.addEventListener("offline", stop); globalThis.addEventListener("keydown", escape);
     return () => { document.removeEventListener("visibilitychange", hidden); globalThis.removeEventListener("offline", stop); globalThis.removeEventListener("keydown", escape); };

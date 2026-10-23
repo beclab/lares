@@ -162,18 +162,25 @@ export function createVoiceCapture({
     abort = new AbortController();
     try {
       let text = "";
+      let committed = false, replayable = true;
       if (streaming) {
         const port = streaming;
         streaming = null;
+        committed = port.committed === true;
+        replayable = port.replayable !== false;
         try {
           text = String(await port.finish() ?? "").trim();
         } catch (err) {
           if (dead || abort.signal.aborted || cancel) return;
           text = "";
         }
+        // finish() is the commit; the Host transcribed this audio and returned
+        // nothing. Uploading the blob again would submit the same take twice.
+        committed ||= port.committed === true;
+        replayable = port.replayable !== false;
       }
       // The socket can finish with nothing while the recording still has the words.
-      if (!text) text = String(await transcribe(blob, abort.signal) ?? "").trim();
+      if (!text && (!committed || replayable)) text = String(await transcribe(blob, abort.signal) ?? "").trim();
       if (dead || cancel) return;
       if (!text) {
         trace("no-input", {});

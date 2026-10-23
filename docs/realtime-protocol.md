@@ -191,6 +191,7 @@ protection are imprecise.
 | `lares.task.cancel` | Client → server | `task_id` | HTTP `/session/cancel` |
 | `lares.device.input.pause` / `.resume` | Client → server | None | `lares.input.pause` / `.resume` |
 | `lares.device.playback` | Server → client | `playing` | `lares.playback` |
+| `lares.playback.timeout` | Server → client | — | Playback acknowledgement watchdog expired |
 
 Other current `lares.*` events become standard events: `lares.ready` →
 `session.created`, `lares.error` → `error`, `lares.output` → `session.update`
@@ -236,13 +237,17 @@ Turn rules:
    ends the turn.
 2. server_vad mode: silence longer than `silence_duration_ms` commits
    automatically and emits `speech_stopped` and `committed`.
-3. Only one user turn is processed at a time. A new commit during processing
-   returns `turn_busy`.
+3. Only one user turn is processed at a time. A commit that arrives while the
+   previous take is still being transcribed or submitted is queued and
+   processed next; its audio is buffered meanwhile. `turn_busy` only reports a
+   full queue (typed messages) rather than ordinary microphone contention.
 
 **Half-duplex (`barge_in: false`)**: during reply playback the server rejects
-`append` (`waiting_for_playback`) until `lares.playback.completed`. Only the
-client can interrupt: stop local playback → `response.cancel` →
-`conversation.item.truncate`.
+`append` (`waiting_for_playback`) until `lares.playback.completed`. A reply that
+receives no acknowledgement and no progress for 60 s releases the gate and emits
+the diagnostic `lares.playback.timeout`, so a vanished client cannot leave the
+connection wedged. Only the client can interrupt: stop local playback →
+`response.cancel` → `conversation.item.truncate`.
 
 **Full-duplex (`barge_in: true`, later)**: `append` is accepted during
 playback. When server_vad hears the user, the server emits `speech_started`,

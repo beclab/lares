@@ -3,10 +3,14 @@ import { createDeviceInput } from "./device-input.js";
 import { createPcmStreamPlayer } from "./pcm-player.js";
 import { createVoiceProtocolClient } from "./protocol-client.js";
 import { createStreamingCapture } from "./stream-client.js";
+import { isTransientVoiceError, transientVoiceError } from "./errors.js";
 import { mintRpcId } from "../larepass/rpc.js";
 
 const RATE = 24000;
 const PROGRESS_MS = 250;
+// A commit is final on the Host. If its transcript never comes back the
+// composer must stop waiting instead of sitting on 转写中 for minutes.
+const COMMIT_TIMEOUT_MS = 60_000;
 
 export function encodeBase64(bytes) {
   let text = "";
@@ -26,7 +30,7 @@ export function browserRealtimeSocket(ticket) {
  * microphone streams PCM into the socket, the Host transcribes, submits and speaks, and the reply
  * audio plays from the socket instead of a separate synthesis stream.
  */
-export function createUnifiedConversation({ request, socket: openSocket = browserRealtimeSocket, onPhase, mode = () => "queue", device = "device", metric = () => {}, readAloud = true, preset, presentationSession = false, endpointSilenceMs, idleTimeoutMs, recoveryTimeoutMs, onText = () => {}, onTranscript = null, preparation, media, player: createPlayer = createPcmStreamPlayer, input: inputPort, transcribe = async () => { throw new Error("voice_unsupported"); } }) {
+export function createUnifiedConversation({ request, socket: openSocket = browserRealtimeSocket, onPhase, mode = () => "queue", device = "device", metric = () => {}, readAloud = true, preset, presentationSession = false, endpointSilenceMs, idleTimeoutMs, recoveryTimeoutMs, commitTimeoutMs = COMMIT_TIMEOUT_MS, onText = () => {}, onTranscript = null, preparation, media, player: createPlayer = createPcmStreamPlayer, input: inputPort, transcribe = async () => { throw new Error("voice_unsupported"); } }) {
   const voiceId = mintRpcId();
   const headset = device === "headset";
   const headers = { "x-lares-voice-id": voiceId, "x-lares-voice-device": headset ? "headset" : "device" };
@@ -47,11 +51,18 @@ export function createUnifiedConversation({ request, socket: openSocket = browse
   } });
   const playback = {
     begin(event) {
-      reply = { id: event.response?.id, itemId: null, text: "", audio: false, playedMs: 0, chain: Promise.resolve() };
+      reply = { id: event.response?.id, itemId: null, text: "", audio: false, playedMs: 0, chain: Promise.resolve(), muted: false };
     },
     write(delta) {
       const current = reply;
       if (!current) return;
+      // Read-aloud was turned off locally but the Host still has audio on
+      // (a lost output update). Converge by cancelling that reply instead of
+      // playing something the user asked not to hear.
+      if (readAloud !== true) {
+        if (!current.muted) { current.muted = true; protocol?.stopOutput(); controller.observePlayback(false); }
+        return;
+      }
       if (!current.audio) { current.audio = true; current.chain = current.chain.then(() => player.start({ sampleRate: RATE, channels: 1, encoding: "pcm_s16le" })); controller.observePlayback(true); }
       current.chain = current.chain.then(() => { if (reply === current) player.write(decodeBase64(delta)); });
       current.chain.catch(() => {});
@@ -59,13 +70,27 @@ export function createUnifiedConversation({ request, socket: openSocket = browse
     async done() {
       const current = reply;
       if (!current) return;
-      if (current.audio) {
-        try { await current.chain; await player.finish(); } catch {}
-        if (reply !== current) return;
-        protocol?.playbackCompleted(current.itemId);
+      let failure = null;
+      try {
+        if (current.audio) {
+          try { await current.chain; await player.finish(); } catch (cause) { failure = cause; }
+          if (reply !== current) return;
+          if (failure) {
+            // Audio that never reached the speaker is a real, visible failure;
+            // release the Host gate too instead of leaving the call muted.
+            protocol?.stopOutput();
+            controller.notePlaybackError(failure.code || failure.message || "voice_playback_failed");
+            return;
+          }
+          protocol?.playbackCompleted(current.itemId);
+        }
+      } finally {
+        // Only this reply may clear playback: a newer reply already owns it.
+        if (reply === current) {
+          reply = null;
+          controller.observePlayback(false);
+        }
       }
-      if (reply === current) reply = null;
-      controller.observePlayback(false);
     },
     async stop() {
       const current = reply;
@@ -91,11 +116,12 @@ export function createUnifiedConversation({ request, socket: openSocket = browse
     // The promise exists for the whole take. An error while audio is still
     // streaming has to reject it; waiting until finish() to attach reject left
     // the composer on 转写中.
-    let settle;
+    let settle, timer = null, committed = false;
     const result = new Promise((resolve, reject) => {
       settle = (error, text) => {
         if (current.done) return;
         current.done = true;
+        if (timer) { clearTimeout(timer); timer = null; }
         if (turn === current) turn = null;
         if (error) reject(error); else resolve(text ?? "");
       };
@@ -105,10 +131,25 @@ export function createUnifiedConversation({ request, socket: openSocket = browse
     void result.catch(() => {});
     return {
       write(bytes) { if (!current.done && protocol) protocol.append(encodeBase64(bytes)); },
+      get committed() { return committed; },
+      // The Host submits a conversation turn on commit, so its recording must
+      // not be uploaded again. Dictation only returns text and stays replayable.
+      get replayable() { return Boolean(onTranscript); },
       finish() {
         if (current.done) return result;
         if (!onTranscript) protocol.setBusyTurn(mode());
         protocol.commit();
+        committed = true;
+        if (!timer) {
+          timer = setTimeout(() => {
+            timer = null;
+            if (current.done) return;
+            // The commit is final on the Host; this client just stops waiting so
+            // the composer returns to listening. A late transcript is ignored.
+            current.reject?.(transientVoiceError("voice_asr_timeout"));
+          }, commitTimeoutMs);
+          timer.unref?.();
+        }
         return result;
       },
       cancel() { if (!current.done) { protocol?.discard(); settle(null, ""); } },
@@ -123,16 +164,30 @@ export function createUnifiedConversation({ request, socket: openSocket = browse
     capture({ signal, onReady, onSpeech, onTranscribing }) {
       const current = take();
       current.onSpeech = onSpeech; current.onTranscribing = onTranscribing;
+      let timer = null;
+      const clear = () => { if (timer) { clearTimeout(timer); timer = null; } };
       return new Promise((resolve, reject) => {
-        current.resolve = (text) => { protocol?.deviceInput(false); resolve(text); };
-        current.reject = (error) => { protocol?.deviceInput(false); reject(error); };
-        signal.addEventListener("abort", () => { if (turn === current) { turn = null; protocol?.discard(); protocol?.deviceInput(false); resolve(""); } }, { once: true });
+        current.armCommit = () => {
+          if (timer || turn !== current) return;
+          // The Host owns the ASR request. Stop waiting if its transcript never
+          // comes back; the take settles without closing the call.
+          timer = setTimeout(() => {
+            timer = null;
+            if (turn !== current) return;
+            turn = null;
+            current.reject?.(transientVoiceError("voice_asr_timeout"));
+          }, commitTimeoutMs);
+          timer.unref?.();
+        };
+        current.resolve = (text) => { clear(); protocol?.deviceInput(false); resolve(text); };
+        current.reject = (error) => { clear(); protocol?.deviceInput(false); reject(error); };
+        signal.addEventListener("abort", () => { if (turn === current) { turn = null; clear(); protocol?.discard(); protocol?.deviceInput(false); resolve(""); } }, { once: true });
         if (!onTranscript) protocol.setBusyTurn(mode());
         protocol.deviceInput(true);
         onReady?.();
       });
     },
-    stop() { protocol?.commit(); },
+    stop() { const current = turn; current?.armCommit?.(); protocol?.commit(); },
     cancel() { const current = turn; turn = null; protocol?.discard(); protocol?.deviceInput(false); current?.resolve?.(""); },
   });
   const input = inputPort ?? (headset ? hostInput() : deviceInput());
@@ -158,7 +213,14 @@ export function createUnifiedConversation({ request, socket: openSocket = browse
       case "lares.device.playback": controller.observePlayback(event.playing === true); break;
       case "error": {
         const code = event.error?.code || "voice_failed";
-        if (turn && ["unsupported_audio_format", "audio_limit_exceeded", "turn_busy", "waiting_for_playback", "upstream_failed"].includes(code)) { const current = turn; turn = null; current.reject?.(new Error(code)); }
+        // Any error with a take open belongs to that take. Settling it here is
+        // what keeps the composer off 转写中; transient contention drops only
+        // the take, not the call.
+        if (turn) {
+          const current = turn;
+          turn = null;
+          current.reject?.(isTransientVoiceError(code) ? transientVoiceError(code) : Object.assign(new Error(code), { code }));
+        }
         if (code === "session_expired") void controller.disconnect("voice_idle_timeout");
         break;
       }
@@ -206,17 +268,23 @@ export function createUnifiedConversation({ request, socket: openSocket = browse
   const poll = async () => {
     if (disposed || onTranscript) return;
     const state = await call("/session");
-    if (disposed || controller.getSnapshot().connection !== "open") return;
+    // A paused call still has a chat session. Stop watching only after it is closed,
+    // otherwise a dropped socket leaves the composer on "working" after the task ends.
+    if (disposed || controller.getSnapshot().connection === "closed") return;
     lastSessionId = state.sessionId;
     if (lastSessionId) controller.bindSession(lastSessionId);
     if (state.error && state.error !== "voice_cancelled") throw new Error(state.error);
-    controller.observeAgent(Boolean(state.running) || Boolean(reply), Boolean(reply?.audio));
+    // A finished reply is not a running agent: keeping it "running" left the
+    // panel on Working forever and blocked the next continuous turn.
+    controller.observeAgent(Boolean(state.running), Boolean(reply?.audio));
   };
   const watch = async () => {
-    if (disposed || controller.getSnapshot().connection !== "open") return;
+    if (disposed || controller.getSnapshot().connection === "closed") return;
     try { await poll(); }
-    catch (error) { await controller.disconnect(error.code || error.message || "voice_disconnected"); return; }
-    if (!disposed) timer = setTimeout(watch, 500);
+    catch (error) {
+      if (controller.getSnapshot().connection === "open") await controller.disconnect(error.code || error.message || "voice_disconnected");
+    }
+    if (!disposed && controller.getSnapshot().connection !== "closed") timer = setTimeout(watch, 500);
   };
   const stop = async () => {
     disposed = true; clearTimeout(timer);

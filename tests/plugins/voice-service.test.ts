@@ -136,3 +136,31 @@ test("instructions are refused outside the chat preset", async () => {
     await service.close(scope);
   } finally { h.close(); }
 });
+
+test("reading the voice state neither consumes nor duplicates the pending result", async () => {
+  const h = store();
+  const service = createVoiceHostService({ create: async () => ({ sessionId: "s1" }) }, {
+    records: h.records,
+    config: () => ({ preset: "assistant" }),
+    chat: async () => ({ role: "assistant", content: "ok" }),
+  });
+  const scope: any = { id: "client-one", owner: "alice" };
+  try {
+    await service.open(scope, {});
+    let task: any = { requestId: "r1", status: "running", text: "", error: null, turn: 1 };
+    scope.session = { snapshot: () => ({ running: false, sessionId: "s1", cursor: 3, tasks: [task] }), close: async () => {} };
+    service.advance(scope);
+    // Still running: nothing is spoken yet, but the view stays pure.
+    assert.equal(service.state(scope).utterance, null);
+    task = { ...task, status: "completed", text: "done" };
+    const first = service.state(scope);
+    const second = service.state(scope);
+    assert.equal(first.utterance?.key, "task:r1");
+    assert.deepEqual(second.utterance, first.utterance);
+    // Repeated reads never re-consume, and repeated events never duplicate the record.
+    service.advance(scope);
+    assert.deepEqual(service.state(scope).utterance, first.utterance);
+    assert.equal(scope.voiceResults.length, 0);
+    assert.equal(service.records(scope).records.filter((row: any) => row.role === "task").length, 1);
+  } finally { h.close(); }
+});

@@ -10,7 +10,7 @@ import { routerGatewayUrl, routerAuthHeaders } from "../router/gateway.js";
 const fault = (code, status = 409) => new VoiceError(code, status, code);
 
 /** Single-use HTTP grants bind raw audio sockets to the authenticated Host scope. */
-export function createAudioStreamGateway({ config, models, replies, synthesize = synthesizeStream, env = process.env, metric = () => {} }) {
+export function createAudioStreamGateway({ config, models, replies, synthesize = synthesizeStream, env = process.env, metric = () => {}, playbackStallMs = 45_000, pauseHoldMs = 120_000, lifetimeMs = 300_000 }) {
   const tickets = new Map(), clients = new Set();
   const synthesis = createSynthesisRuns({ synthesize, metric });
   const server = new WebSocketServer({ noServer: true, maxPayload: 96 * 1024, perMessageDeflate: false,
@@ -49,17 +49,24 @@ export function createAudioStreamGateway({ config, models, replies, synthesize =
         clients.add(client);
         const abort = new AbortController();
         let upstream = null, sentFrames = 0, playedFrames = 0, rate = 0, waiter = null, outputFormat = null;
-        let fileDone = null, pausedAt = 0, closing = false;
+        let fileDone = null, pausedAt = 0, closing = false, ttsKey = null;
         let received = 0, committed = false, outputStarted = false;
         const started = Date.now();
         const send = (value) => { if (client.readyState === 1) client.send(JSON.stringify(value)); };
-        const close = () => { if (closing) return; closing = true; abort.abort(); waiter?.(); fileDone?.(); clearTimeout(lifetime); upstream?.terminate(); clients.delete(client); client.close(); };
+        const close = () => {
+          if (closing) return;
+          closing = true; abort.abort(); waiter?.(); fileDone?.(); clearTimeout(lifetime); upstream?.terminate();
+          // A consumer that disappeared stops its synthesis instead of leaving
+          // the whole answer to be rendered with nobody listening.
+          if (ttsKey) synthesis.release(ttsKey);
+          clients.delete(client); client.close();
+        };
         const error = (cause) => {
           const code = cause?.code || "voice_stream_failed";
           if (grant.operation === "tts" && code !== "voice_cancelled") metric({ stage: "playback_stop", voiceId: grant.scope.id, code, sentFrames, playedFrames });
           send({ type: "error", code }); close();
         };
-        const lifetime = setTimeout(() => error(fault("voice_timeout")), 180000);
+        const lifetime = setTimeout(() => error(fault("voice_timeout")), lifetimeMs);
         client.on("close", close); client.on("error", close);
         client.on("message", (raw, binary) => {
           try {
@@ -104,6 +111,7 @@ export function createAudioStreamGateway({ config, models, replies, synthesize =
           upstream.on("close", () => { send({ type: "eof" }); close(); });
         } else {
           const key = grant.replySource ? utteranceKey(grant.replySource) : `text:${grant.text}`;
+          ttsKey = key;
           const run = synthesis.attach(key, (signal) => grant.reply ? grant.reply(signal) : (async function* text() {
             const parts = speechSegments(grant.text, { done: true });
             for (let index = 0; index < parts.length; index += 1) yield { text: parts[index], index };
@@ -137,7 +145,17 @@ export function createAudioStreamGateway({ config, models, replies, synthesize =
                 for (let offset = 0; offset < event.chunk.length; offset += 16384) {
                   while (pausedAt || sentFrames - playedFrames > rate * 2 || client.bufferedAmount > 128 * 1024) {
                     if (!reportedWait) { reportedWait = true; metric({ stage: "playback_wait", voiceId: grant.scope.id, sentFrames, playedFrames, paused: Boolean(pausedAt) }); }
-                    await new Promise((resolve, reject) => { const timer = setTimeout(() => { waiter = null; reject(fault(pausedAt ? "voice_interruption_timeout" : "voice_audio_backpressure")); }, pausedAt ? Math.max(1, 10000 - (Date.now() - pausedAt)) : 10000); waiter = () => { clearTimeout(timer); resolve(); }; });
+                    // A device switch or a locked screen can stop playout for a
+                    // while without the client being gone. Wait for it to come
+                    // back instead of ending the answer after ten seconds.
+                    await new Promise((resolve, reject) => {
+                      // A locked screen or a device switch is a pause, not a
+                      // lost client: hold the answer long enough for the page
+                      // to come back before failing it.
+                      const limit = pausedAt ? Math.max(1, pauseHoldMs - (Date.now() - pausedAt)) : playbackStallMs;
+                      const timer = setTimeout(() => { waiter = null; reject(fault(pausedAt ? "voice_interruption_timeout" : "voice_audio_backpressure")); }, limit);
+                      waiter = () => { clearTimeout(timer); resolve(); };
+                    });
                     if (abort.signal.aborted || client.readyState !== 1) throw fault("voice_cancelled");
                   }
                   if (client.readyState !== 1) throw fault("voice_cancelled");

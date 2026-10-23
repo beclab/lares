@@ -1,44 +1,16 @@
 import { createVoiceCapture } from "./browser-capture.js";
-import { createSpeechEndpoint, frameRms } from "./endpoint.js";
+import { createEnergyEndpoint, createInputMeter } from "./endpoint.js";
+import { createVoiceVadEndpoint, preloadVoiceVad } from "./vad.js";
 
-export function createEnergyEndpoint(stream, end, onSpeech = () => {}, onLevel = () => {}, options = {}) {
-  const AudioCtx = globalThis.AudioContext || globalThis.webkitAudioContext;
-  if (!AudioCtx) throw new Error("voice_unsupported");
-  const context = new AudioCtx();
-  const source = context.createMediaStreamSource(stream);
-  const processor = context.createScriptProcessor(2048, 1, 1);
-  const gain = context.createGain();
-  gain.gain.value = 0;
-  const endpoint = createSpeechEndpoint(options);
-  let heard = false, consecutiveMs = 0;
-  const silenceTimer = setTimeout(() => { if (!heard) end(false); }, 10_000);
-  processor.onaudioprocess = (event) => {
-    const samples = event.inputBuffer.getChannelData(0);
-    const rms = frameRms(samples);
-    onLevel(rms);
-    consecutiveMs = rms >= 0.004 ? consecutiveMs + samples.length * 1000 / context.sampleRate : 0;
-    if (consecutiveMs >= (options.interruptionMs || 0) && rms >= 0.004 && !heard) { heard = true; onSpeech(); }
-    if (endpoint.push(1, rms, samples.length * 1000 / context.sampleRate)) end(true);
-  };
-  source.connect(processor); processor.connect(gain); gain.connect(context.destination);
-  void context.resume();
-  return { stop() { clearTimeout(silenceTimer); processor.onaudioprocess = null; source.disconnect(); processor.disconnect(); gain.disconnect(); void context.close(); } };
+export { createEnergyEndpoint };
+
+/** Silero once it is loaded; the energy endpoint otherwise or on any VAD failure. */
+export function defaultEndpoint(stream, end, onSpeech, onLevel, options) {
+  return createVoiceVadEndpoint(stream, end, onSpeech, onLevel, options)
+    ?? createEnergyEndpoint(stream, end, onSpeech, onLevel, options);
 }
 
-function createInputMeter(stream, onLevel) {
-  const AudioCtx = globalThis.AudioContext || globalThis.webkitAudioContext;
-  if (!AudioCtx) return { stop() {} };
-  const context = new AudioCtx();
-  const source = context.createMediaStreamSource(stream);
-  const analyser = context.createAnalyser(); analyser.fftSize = 512;
-  source.connect(analyser);
-  const samples = new Float32Array(analyser.fftSize);
-  const timer = setInterval(() => { analyser.getFloatTimeDomainData(samples); onLevel(frameRms(samples)); }, 80);
-  void context.resume();
-  return { stop() { clearInterval(timer); source.disconnect(); analyser.disconnect(); void context.close(); } };
-}
-
-export function createDeviceInput({ transcribe, onPhase = () => {}, endpoint = createEnergyEndpoint, endpointSilenceMs = 500, media, preparation, streamInput, echoTested = false } = {}) {
+export function createDeviceInput({ transcribe, onPhase = () => {}, endpoint = defaultEndpoint, endpointSilenceMs = 500, media, preparation, streamInput, echoTested = false } = {}) {
   let recorder = null;
   let settle = null;
   let timer = null;
@@ -49,8 +21,13 @@ export function createDeviceInput({ transcribe, onPhase = () => {}, endpoint = c
   };
   return {
     capabilities: { duplex: true, bargeIn: echoTested === true, echoTested: echoTested === true, listenWhileWorking: true, audio: "encoded" },
-    capture({ signal, onTranscribing, onReady, onSpeech, onLevel = () => {}, continuous = false } = {}) {
+    capture({ signal, onTranscribing, onReady, onSpeech, onLevel = () => {}, continuous = false, manual = false } = {}) {
       cancel();
+      // Hands-free calls end themselves. A manual hold is still one take of the same call.
+      const automatic = continuous && !manual;
+      // Only automatic turns need a speech model. The first take may use energy
+      // endpointing; the model is warmed for the next one instead of delaying it.
+      if (automatic) void preloadVoiceVad();
       return new Promise((resolve, reject) => {
         let ready = false;
         settle = resolve;
@@ -58,11 +35,8 @@ export function createDeviceInput({ transcribe, onPhase = () => {}, endpoint = c
         const prepared = preparation; preparation = null;
         recorder = createVoiceCapture({ media, streamInput, preparation: prepared, transcribe, submit: done, onStream: (stream) => {
           for (const track of stream.getTracks()) track.addEventListener?.("ended", () => { settle = null; cancel(); reject(new Error("voice_device_lost")); }, { once: true });
-          if (!continuous) return createInputMeter(stream, onLevel);
-          return endpoint(stream, (heard = true) => { if (heard) recorder?.stop(); else {
-            if (continuous) { cancel(); done(""); }
-            else { settle = null; cancel(); reject(new Error("voice_no_input")); }
-          } }, onSpeech, onLevel, { silenceMs: endpointSilenceMs, interruptionMs: echoTested ? 500 : 0 });
+          if (!automatic) return createInputMeter(stream, onLevel);
+          return endpoint(stream, (heard = true) => { if (heard) recorder?.stop(); else { cancel(); done(""); } }, onSpeech, onLevel, { silenceMs: endpointSilenceMs, interruptionMs: echoTested ? 500 : 0 });
         }, onPhase(phase, extra) {
           onPhase(phase, extra);
           if (phase === "recording" && !ready) {
@@ -71,7 +45,7 @@ export function createDeviceInput({ transcribe, onPhase = () => {}, endpoint = c
           }
           if (phase === "transcribing") onTranscribing?.();
           if (phase === "error") {
-            if (continuous && (extra.recognizedEmpty || !echoTested && ["voice_no_input", "voice_too_short"].includes(extra.error))) { done(""); return; }
+            if (continuous && (extra.recognizedEmpty || ["voice_no_input", "voice_too_short"].includes(extra.error))) { done(""); return; }
             clearTimeout(timer); signal?.removeEventListener("abort", cancel); settle = null; reject(new Error(extra.error)); }
         } });
         signal?.addEventListener("abort", cancel, { once: true });

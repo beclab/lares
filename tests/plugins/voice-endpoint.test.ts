@@ -39,3 +39,40 @@ test("frame loudness is root mean square", () => {
   assert.equal(frameRms(Float32Array.from([0.5, -0.5, 0.5, -0.5])), 0.5);
   assert.equal(frameRms(new Float32Array(0)), 0);
 });
+
+function fakeAudio() {
+  let processor: any = null;
+  class AudioContext {
+    sampleRate = 16000;
+    destination = {};
+    createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
+    createScriptProcessor() { processor = { connect() {}, disconnect() {}, onaudioprocess: null }; return processor; }
+    createGain() { return { gain: { value: 0 }, connect() {}, disconnect() {} }; }
+    async resume() {}
+    async close() {}
+  }
+  return {
+    AudioContext,
+    feed(level: number) {
+      const samples = new Float32Array(2048);
+      for (let i = 0; i < samples.length; i += 1) samples[i] = i % 2 ? -level : level;
+      processor.onaudioprocess({ inputBuffer: { getChannelData: () => samples } });
+    },
+  };
+}
+
+test("a noisy room does not count as speech, and quiet speech still ends the take", async () => {
+  const { createEnergyEndpoint } = await import("@olares/lares-core/voice/device-input");
+  const audio = fakeAudio();
+  (globalThis as any).AudioContext = audio.AudioContext;
+  let ended = 0, spoke = 0;
+  const endpoint = createEnergyEndpoint({}, (heard: boolean) => { if (heard) ended += 1; }, () => { spoke += 1; }, () => {}, { silenceMs: 500 });
+  // 1% full-scale room noise: above the old fixed floor, below the estimated room floor.
+  for (let i = 0; i < 20; i += 1) audio.feed(0.01);
+  assert.equal(spoke, 0);
+  for (let i = 0; i < 5; i += 1) audio.feed(0.08);
+  assert.equal(spoke, 1);
+  for (let i = 0; i < 8; i += 1) audio.feed(0.01);
+  assert.equal(ended, 1);
+  endpoint.stop();
+});

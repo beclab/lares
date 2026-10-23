@@ -38,6 +38,17 @@ export function voiceCallFailure(view) {
   return { code: ui.error, action: recoverable ? "resume" : "restart" };
 }
 
+/**
+ * A voice call that is still playing keeps one strip at the composer until it
+ * ends: status plus the control that stops it. The hold button is not that
+ * strip. A chat readout stays on the assistant row that is being read.
+ */
+export function voicePlaybackChrome(view) {
+  const playback = view?.snapshot?.playback;
+  if (!playback || playback === "idle") return null;
+  return { status: voicePanelPresentation(view).status, stop: "call", stopLabel: "panel.close" };
+}
+
 /** Shared inline labels; clients own focus, positioning and the timer tick. */
 export function voiceInputPresentation(view, now = Date.now()) {
   const ui = voicePanelPresentation(view);

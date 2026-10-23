@@ -134,19 +134,24 @@ export function matchSpeechEvent(event) {
 export function createReplySpeaker() {
   let armed = false;
   let skipKey = null;
+  // The answer that was already on screen when a turn opened is history. A new
+  // turn can deliver its first text in the same snapshot that reports the turn,
+  // and that text must still be read: the old code skipped it by its own key.
+  let lastKey = null;
   return {
     /** @returns {Utterance | null} the utterance to follow now, or null */
     observe({ sessionChanged, wasRunning, running, utterance }) {
       if (sessionChanged) {
         armed = Boolean(running);
-        skipKey = utterance?.key ?? null;
+        skipKey = lastKey = utterance?.key ?? null;
         return null;
       }
       if (!wasRunning && running) {
         armed = true;
-        skipKey = utterance?.key ?? null;
+        skipKey = lastKey;
       }
       const follow = armed && utterance && utterance.key !== skipKey ? utterance : null;
+      if (utterance?.key) lastKey = utterance.key;
       if (!running) armed = false;
       return follow;
     },
@@ -192,7 +197,13 @@ export function createSentencePlayer({ send, play, halt, silence, fail = () => {
   let lastKey = null;
   let silencedKey = null;
   const consumed = new Set();
-  const mark = (set, key) => { if (key != null) set.add(key); };
+  // One page reads many turns; keep the names bounded without re-reading any.
+  const REMEMBERED = 256;
+  const mark = (_set, key) => {
+    if (key == null) return;
+    consumed.add(key);
+    if (consumed.size > REMEMBERED) consumed.delete(consumed.values().next().value);
+  };
 
   const emitOutput = value => {
     if (value || readoutState.getSnapshot()?.key === lastKey || onOutput !== readoutState.publish) onOutput(value);
@@ -318,6 +329,26 @@ export function createSentencePlayer({ send, play, halt, silence, fail = () => {
     get canPause() { return current?.controls?.canPause === true; },
     pause() { if (!current?.controls?.canPause) return false; current.controls.pause(); emitOutput({ key: current.key, status: "confirming" }); return true; },
     resume() { if (!current?.controls?.canPause) return false; current.controls.resume(); emitOutput({ key: current.key, status: "playing" }); return true; },
+    /**
+     * Stop the current audio without marking the answer read. A voice take
+     * that is cancelled must be able to bring the same answer back; a take
+     * that is submitted consumes it instead.
+     */
+    suspend() {
+      if (!current) return null;
+      const key = current.key;
+      const source = current.source;
+      // `follow` marks a key as read when it starts. A cancelled voice take
+      // must be able to follow the same key again, so undo that mark here.
+      if (key != null) consumed.delete(key);
+      stop();
+      silence(source);
+      return key;
+    },
+    /** Mark an answer read without playing it (a voice take owns it now). */
+    consume(key) {
+      mark(consumed, key);
+    },
     stop() {
       if (!current) return;
       mark(consumed, current.key);

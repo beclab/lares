@@ -16,6 +16,13 @@ const SPEECH_RMS = 0.004;
 // and a suspected interruption that never resolves stops the reply.
 const BARGE_IN_MS = 500;
 const BARGE_IN_LIMIT_MS = 10_000;
+// How far ahead of the client's actual playout the Host may send. The client's
+// AudioWorklet keeps a bounded queue; sending a whole answer at network speed
+// overflowed it and dropped audio.
+const PLAY_AHEAD_MS = 2_000;
+// A temporarily interrupted AudioContext (device switch, lock screen) must not
+// end a reply; only a client that stays silent this long is treated as stuck.
+const PLAYOUT_STALL_MS = 30_000;
 const TICKET_MS = 30_000;
 // Usage lives in the child ASR/LLM/TTS requests; the OpenAI shape stays parseable (Router ADR-83).
 const ZERO_USAGE = Object.freeze({ total_tokens: 0, input_tokens: 0, output_tokens: 0, input_token_details: { text_tokens: 0, audio_tokens: 0, cached_tokens: 0 }, output_token_details: { text_tokens: 0, audio_tokens: 0 } });
@@ -46,7 +53,7 @@ export function joinSpoken(parts) {
  * `lares-realtime-v1` (docs/realtime-protocol.md) on one endpoint. Bearer voice-key callers get a
  * scope owned by the socket; ticket sockets attach to the Lares client's open voice scope.
  */
-export function createLaresRealtimeGateway({ service, config, transcribe, synthesize, openTranscription, keys, hostOwner = "", hostAudio, busyDefault = () => "queue", bargeIn = () => process.env.LARES_VOICE_BARGE_IN === "1", segment = speechSegments, onError = () => {}, onOpen = () => {}, limit = 64 }) {
+export function createLaresRealtimeGateway({ service, config, transcribe, synthesize, openTranscription, keys, hostOwner = "", hostAudio, busyDefault = () => "queue", bargeIn = () => process.env.LARES_VOICE_BARGE_IN === "1", segment = speechSegments, onError = () => {}, onOpen = () => {}, limit = 64, playbackAckGraceMs = 60_000 }) {
   const server = new WebSocketServer({ noServer: true, maxPayload: 96 * 1024, perMessageDeflate: false, handleProtocols: (values) => values.has("lares-voice") ? "lares-voice" : false });
   const clients = new Map();
   const tickets = new Map();
@@ -61,14 +68,31 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
     let closed = false, busy = false, pendingCommit = false, configuring = false, alive = true, generation = 0, submittedTurns = 0;
     let response = null, awaitingPlayback = false, acknowledges = false, lastReply = null, lastSpoken = null, turn = null, port = null, unbind = () => {};
     let hostOutput = Promise.resolve();
+    let ackTimer = null;
     const tasks = new Map();
     const spoken = new Map();
     const played = new Map();
 
+    // A client that vanishes in the middle of a reply never acknowledges it.
+    // Without a watchdog the half-duplex gate stays closed for that connection
+    // and every later utterance fails with waiting_for_playback.
+    const PLAYBACK_ACK_GRACE_MS = playbackAckGraceMs;
+    const clearAckWatch = () => { if (ackTimer) { clearTimeout(ackTimer); ackTimer = null; } };
+    const watchAck = () => {
+      clearAckWatch();
+      if (!awaitingPlayback || closed) return;
+      ackTimer = setTimeout(() => {
+        ackTimer = null;
+        if (closed || !awaitingPlayback) return;
+        awaitingPlayback = false;
+        send({ type: "lares.playback.timeout" });
+      }, PLAYBACK_ACK_GRACE_MS);
+      ackTimer.unref?.();
+    };
+
     const bargeActive = () => type === "realtime" && !headset && echoCancellation && bargeIn() === true;
     const send = (event) => {
-      if (client.readyState !== 1) return;
-      if (client.bufferedAmount > 1024 * 1024) { close(); return; }
+      if (closed || client.readyState !== 1) return;
       client.send(JSON.stringify({ event_id: `event_${randomUUID()}`, ...event }));
     };
     const report = (cause, eventId) => {
@@ -98,6 +122,9 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
     };
     const finish = (current, status) => {
       if (response === current) response = null;
+      // Audio that never left the server will not be acknowledged. Holding the
+      // gate here is how a failed or empty reply silences every later one.
+      if (!current.outputMs) { awaitingPlayback = false; clearAckWatch(); }
       if (current.done) return;
       current.done = true;
       remember(current);
@@ -121,6 +148,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       current.suspended?.settle("stop");
       if (headset) { hostOutput = Promise.resolve(); void Promise.resolve(port?.interrupt()).catch(() => close()); send({ type: "lares.device.playback", playing: false }); }
       awaitingPlayback = false;
+      clearAckWatch();
       finish(current, status);
       if (truncate) truncateTo(current, played.get(current.itemId) ?? 0);
     };
@@ -132,11 +160,36 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
         current.outputMs += audio.length / BYTES_PER_MS;
         return hostOutput;
       }
-      if (acknowledges) awaitingPlayback = true;
+      if (acknowledges) { awaitingPlayback = true; watchAck(); }
+      // A long reply is several seconds of PCM. Dumping it in one burst fills the
+      // socket and used to close the call, which cut the readout off and made the
+      // client's next progress tick throw voice_disconnected. Wait for the buffer
+      // the way the speech stream does; a stuck client fails this reply only.
+      const OUTPUT_BUFFER = 128 * 1024;
+      let sentAt = Date.now();
+      let lastPlayed = played.get(current.itemId) ?? 0;
+      let playedAt = Date.now();
       for (let offset = 0; offset < audio.length; offset += CHUNK_BYTES) {
+        while (client.bufferedAmount > OUTPUT_BUFFER) {
+          if (current.abort.signal.aborted || current.done || closed || client.readyState !== 1) return;
+          if (Date.now() - sentAt > 10_000) throw new Error("voice_audio_backpressure");
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        // Playout credit: never get more than two seconds ahead of what the
+        // client has actually rendered. Progress advances in real time, so a
+        // long answer waits here instead of filling the worklet queue.
+        while (acknowledges && current.outputMs - lastPlayed > PLAY_AHEAD_MS) {
+          if (current.abort.signal.aborted || current.done || closed || client.readyState !== 1) return;
+          const heard = played.get(current.itemId) ?? 0;
+          if (heard > lastPlayed) { lastPlayed = heard; playedAt = Date.now(); }
+          if (Date.now() - playedAt > PLAYOUT_STALL_MS) throw new Error("voice_audio_backpressure");
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        if (current.abort.signal.aborted || current.done || closed || client.readyState !== 1) return;
         const chunk = audio.subarray(offset, offset + CHUNK_BYTES);
         current.outputMs += chunk.length / BYTES_PER_MS;
         send({ type: "response.output_audio.delta", response_id: current.id, item_id: current.itemId, output_index: 0, content_index: 0, delta: chunk.toString("base64") });
+        sentAt = Date.now();
       }
     };
     const respond = async (text, origin, key, input) => {
@@ -210,7 +263,8 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       if (state.utterance?.text && !state.utterance.silent) { lastReply = state.utterance.key; speak(state.utterance.text, "turn", state.utterance.key, input); }
     };
     const userItem = (id, content) => send({ type: "conversation.item.done", item: { id, object: "realtime.item", type: "message", role: "user", status: "completed", content: [content] } });
-    const commit = async ({ endpointed = false } = {}) => {
+    const commit = async () => {
+      if (closed) return;
       // A commit with no samples still has a client waiting in transcribing.
       // Returning here never completes that take, so the composer stays on 转写中.
       if (!bytes) {
@@ -219,9 +273,10 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
         send({ type: "conversation.item.input_audio_transcription.completed", item_id: id, content_index: 0, transcript: "" });
         return;
       }
-      // Server VAD keeps listening while a turn is processed; the next endpoint waits for it.
-      if (busy && endpointed) { pendingCommit = true; return; }
-      if (busy) fail("turn_busy");
+      // The previous turn is still being transcribed or submitted. The mic is
+      // shared and the client cannot know that, so queue this take instead of
+      // rejecting it; the composer would otherwise see a hard turn_busy.
+      if (busy) { pendingCommit = true; return; }
       const input = Buffer.concat(chunks), id = itemId || `item_${randomUUID()}`, ms = input.length / BYTES_PER_MS, opened = stream;
       stream = null; reset(); scope.voiceInputActive = false; busy = true;
       send({ type: "input_audio_buffer.committed", item_id: id, previous_item_id: null });
@@ -247,20 +302,33 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       } catch (cause) { if (!closed && epoch === generation) report(cause); }
       finally {
         busy = false;
-        if (pendingCommit) { pendingCommit = false; void commit({ endpointed: true }).catch(report); }
+        if (pendingCommit) { pendingCommit = false; void commit().catch(report); }
+        else drainTyped();
       }
+    };
+    // Typed text that arrives while a take is in flight waits its turn instead
+    // of being rejected: on a shared link the client cannot tell it is early.
+    const typedQueue = [];
+    const drainTyped = () => {
+      if (closed || busy || !typedQueue.length) return;
+      const next = typedQueue.shift();
+      void runTyped(next).catch(report);
+    };
+    const runTyped = async ({ id, text }) => {
+      if (closed) return;
+      busy = true;
+      userItem(id, { type: "input_text", text });
+      try { await submit(text, id, generation, 0); }
+      finally { busy = false; drainTyped(); }
     };
     const typed = async (event) => {
       if (type !== "realtime") fail("unsupported_parameter");
       const item = only(event.item, ["id", "type", "role", "content"]);
       const content = Array.isArray(item.content) && item.content.length === 1 ? only(item.content[0], ["type", "text"]) : fail("unsupported_parameter");
       if (item.type !== "message" || item.role !== "user" || content.type !== "input_text" || typeof content.text !== "string" || !content.text.trim() || content.text.length > 16000) fail("unsupported_parameter");
-      if (busy) fail("turn_busy");
-      busy = true;
       const id = typeof item.id === "string" && item.id ? item.id.slice(0, 128) : `item_${randomUUID()}`;
-      userItem(id, { type: "input_text", text: content.text });
-      try { await submit(content.text, id, generation, 0); }
-      finally { busy = false; }
+      if (busy) { if (typedQueue.length >= 8) fail("turn_busy"); typedQueue.push({ id, text: content.text }); return; }
+      await runTyped({ id, text: content.text });
     };
     const startStream = () => {
       const current = { queue: [], live: null, id: itemId };
@@ -278,7 +346,8 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
     };
     const append = (audio) => {
       if (awaitingPlayback && !bargeActive()) fail("waiting_for_playback");
-      if (busy && !automatic) fail("turn_busy");
+      // Audio that arrives while the previous take is being transcribed belongs
+      // to the next turn; keep it and let that commit queue behind the first one.
       if (typeof audio !== "string" || audio.length > 64000 || !/^[A-Za-z0-9+/]*={0,2}$/.test(audio)) fail("unsupported_audio_format");
       const chunk = Buffer.from(audio, "base64");
       if (chunk.length % 2) fail("unsupported_audio_format");
@@ -293,7 +362,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       if (automatic && bargeActive() && response && !response.suspended && speechMs >= BARGE_IN_MS) suspend(response);
       if (automatic && endpoint.push(1, rms, chunk.length / BYTES_PER_MS)) {
         send({ type: "input_audio_buffer.speech_stopped", audio_end_ms: Math.round(totalMs), item_id: itemId });
-        void commit({ endpointed: true }).catch(report);
+        void commit().catch(report);
       }
     };
     const suspend = (current) => {
@@ -393,14 +462,17 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
           // The client has stopped listening. A reply that already finished must
           // not keep the next utterance behind waiting_for_playback.
           awaitingPlayback = false;
+          clearAckWatch();
           if (busy && turn) generation++;
           cancel("cancelled");
           return;
         case "lares.playback.progress":
           acknowledges = true;
           if (typeof event.item_id === "string" && Number.isFinite(event.played_ms) && event.played_ms >= 0) played.set(event.item_id, event.played_ms);
+          // Progress is the client proving it is still rendering the reply.
+          watchAck();
           return;
-        case "lares.playback.completed": acknowledges = true; awaitingPlayback = false; return;
+        case "lares.playback.completed": acknowledges = true; awaitingPlayback = false; clearAckWatch(); return;
         case "lares.task.cancel": {
           if (typeof event.task_id !== "string" || !tasks.has(event.task_id)) fail("task_not_cancellable");
           if (await service.withdraw(scope, event.task_id) === "not_cancellable") fail("task_not_cancellable");
@@ -419,7 +491,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
 
     const close = () => {
       if (closed) return;
-      closed = true; response?.abort.abort(); generation++; reset(); clearInterval(heartbeat); clearInterval(results); clearTimeout(idle);
+      closed = true; response?.abort.abort(); generation++; reset(); clearAckWatch(); clearInterval(heartbeat); clearInterval(results); clearTimeout(idle);
       unbind(); clients.delete(client); client.close();
       void Promise.resolve(port?.stop()).catch(() => {});
       if (scope.realtimeSocket === client) scope.realtimeSocket = null;

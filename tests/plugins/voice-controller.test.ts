@@ -37,6 +37,25 @@ test("only a valid first transcript creates a session; acceptance leaves the age
   assert.equal(h.submitted[0].sessionId, "new");
   assert.equal(h.controller.getSnapshot().agent, "running");
 });
+test("a manual hold is one take of the open call, so silence does not pause it", async () => {
+  const seen: any[] = [];
+  let resolve: (text: string) => void = () => {};
+  const controller = createVoiceController({
+    input: { capabilities: { bargeIn: false }, capture: (options: any) => { seen.push({ continuous: options.continuous, manual: options.manual }); return new Promise<string>((r) => { resolve = r; }); }, cancel() {}, stop() {} },
+    output: { stop() {} },
+    agent: { create: async () => "s", submit: async () => {}, cancel() {}, running: async () => false },
+  });
+  await controller.start({ continuous: true, manual: true });
+  void controller.listen();
+  await flush();
+  assert.deepEqual(seen, [{ continuous: true, manual: true }]);
+  resolve("");
+  await flush();
+  const snap = controller.getSnapshot();
+  assert.equal(snap.connection, "open");
+  assert.equal(snap.capture, "idle");
+  assert.equal(snap.error, null);
+});
 test("stopping speech does not cancel an agent task", async () => {
   const h = harness();
   await h.controller.start({ sessionId: "bound" });
@@ -105,4 +124,76 @@ test("idle expiry releases voice without cancelling business work", async () => 
   assert.equal(controller.getSnapshot().connection, "closed");
   assert.equal(controller.getSnapshot().sessionId, "bound");
   assert.equal(expired, "voice_idle_timeout"); assert.equal(cancelled, 0);
+});
+
+test("a take dropped for transient contention keeps the call open", async () => {
+  let failTake: (error: Error) => void = () => {};
+  const controller = createVoiceController({
+    input: { capabilities: { listenWhileWorking: true }, capture: () => new Promise<string>((_resolve, reject) => { failTake = reject; }), cancel() {}, stop() {} },
+    output: { stop() {} },
+    agent: { create: async () => "s", submit: async () => {}, cancel() {}, running: async () => false },
+  });
+  await controller.start({ continuous: true });
+  await flush();
+  assert.equal(controller.getSnapshot().capture, "recording");
+  failTake(Object.assign(new Error("turn_busy"), { code: "turn_busy" }));
+  await flush(); await flush();
+  const snap = controller.getSnapshot();
+  assert.equal(snap.connection, "open");
+  assert.equal(snap.error, null);
+  // The dropped take is replaced by the next listening one; the call never pauses.
+  assert.equal(snap.capture, "recording");
+});
+
+test("a hard take error still pauses the call", async () => {
+  let failTake: (error: Error) => void = () => {};
+  const controller = createVoiceController({
+    input: { capabilities: { listenWhileWorking: true }, capture: () => new Promise<string>((_resolve, reject) => { failTake = reject; }), cancel() {}, stop() {} },
+    output: { stop() {} },
+    agent: { create: async () => "s", submit: async () => {}, cancel() {}, running: async () => false },
+    recoveryTimeoutMs: 60_000,
+  });
+  await controller.start({ continuous: true });
+  await flush();
+  failTake(Object.assign(new Error("voice_permission_denied"), { code: "voice_permission_denied" }));
+  await flush(); await flush();
+  const snap = controller.getSnapshot();
+  assert.equal(snap.connection, "paused");
+  assert.equal(snap.error, "voice_permission_denied");
+  await controller.disconnect();
+});
+
+test("rendered audio cancels a take that is still recording", async () => {
+  let aborted = 0;
+  const controller = createVoiceController({
+    input: { capabilities: { listenWhileWorking: true }, capture: ({ signal }: any) => new Promise<string>((resolve) => { signal.addEventListener("abort", () => { aborted++; resolve(""); }, { once: true }); }), cancel() {}, stop() {} },
+    output: { stop() {} },
+    agent: { create: async () => "s", submit: async () => {}, cancel() {}, running: async () => false },
+  });
+  await controller.start({ continuous: true });
+  await flush();
+  assert.equal(controller.getSnapshot().capture, "recording");
+  controller.observePlayback(true);
+  await flush(); await flush();
+  assert.ok(aborted >= 1);
+  assert.equal(controller.getSnapshot().capture, "idle");
+});
+
+test("a playback failure stays visible until a reply renders, not until listening", async () => {
+  const controller = createVoiceController({
+    input: { capabilities: { listenWhileWorking: true }, capture: () => new Promise<string>(() => {}), cancel() {}, stop() {} },
+    output: { stop() {} },
+    agent: { create: async () => "s", submit: async () => {}, cancel() {}, running: async () => false },
+  });
+  await controller.start({ continuous: true });
+  await flush();
+  controller.notePlaybackError("voice_playback_failed");
+  assert.equal(controller.getSnapshot().error, "voice_playback_failed");
+  controller.observePlayback(false);
+  await flush();
+  assert.equal(controller.getSnapshot().error, "voice_playback_failed");
+  controller.observePlayback(true);
+  assert.equal(controller.getSnapshot().error, null);
+  controller.observePlayback(false);
+  await controller.disconnect();
 });

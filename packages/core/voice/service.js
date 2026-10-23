@@ -59,8 +59,13 @@ export function voiceScope(id, owner = "", device = "headset") {
   if (!/^[a-zA-Z0-9_-]{8,128}$/.test(id)) throw new VoiceError("voice_session_invalid", 400, "invalid voice connection");
   const key = `${owner}:${id}`;
   for (const [other, scope] of scopes) {
-    if (Date.now() - scope.seen > 120_000 && !deviceLease.owns(scope)) {
+    // A socket that is still open is a connected client, even when it has made
+    // no HTTP call for two minutes. Its own recovery timer retires it; evicting
+    // it here would close the session under a call that is merely paused.
+    const liveSocket = scope.realtimeSocket && scope.realtimeSocket.readyState === 1;
+    if (Date.now() - scope.seen > 120_000 && !deviceLease.owns(scope) && !liveSocket) {
       scopes.delete(other);
+      scope.active = false;
       void scope.duplex.interrupt().catch(() => {});
       scope.capture?.stop(true);
       void scope.session?.close();
@@ -312,9 +317,17 @@ export async function speakFromConfig(text, options = {}) {
   const deadline = readout.segmenter.deadline;
   if (deadline !== null) {
     await new Promise((resolve, reject) => {
+      // setTimeout can fire before Date.now() reaches the segmenter deadline.
+      // Flushing early drops the pending list item and reports zero sentences.
+      let timer;
       const cleanup = () => { clearTimeout(timer); readout.signal.removeEventListener("abort", cancel); };
       const cancel = () => { cleanup(); reject(cancelledSpeech()); };
-      const timer = setTimeout(() => { cleanup(); resolve(); }, Math.max(0, deadline - Date.now()));
+      const tick = () => {
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) { cleanup(); resolve(); return; }
+        timer = setTimeout(tick, remaining);
+      };
+      timer = setTimeout(tick, Math.max(0, deadline - Date.now()));
       readout.signal.addEventListener("abort", cancel, { once: true });
       if (readout.signal.aborted) cancel();
     });
@@ -390,6 +403,9 @@ async function readAloud(readout, model, voice, lease, options) {
   let player;
   const abortPlayer = () => player?.abort?.();
   lease.signal.addEventListener("abort", abortPlayer);
+  // A keyed readout is consumed sentence by sentence; only the whole-answer
+  // call needs the full PCM copy.
+  const collect = !options.key;
   const pcm = [];
   let sentence = [];
   let streamed = false;
@@ -414,7 +430,7 @@ async function readAloud(readout, model, voice, lease, options) {
       readout.firstAudio = true;
       if (options.scope) writeReport({ scope: "voice", event: "metric", voiceId: options.scope.id, stage: "synthesis_first_audio", durationMs: Date.now() - readout.createdAt, queueDepth: readout.segments.length });
     }
-    pcm.push(chunk);
+    if (collect) pcm.push(chunk);
     sentence.push(chunk);
     if (!lease.active()) return;
     opening ??= openPlayback();

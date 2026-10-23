@@ -17,6 +17,10 @@
     <p v-if="view.errors.ttsModel" class="lares-tts__alert" role="alert">{{ t('settings.saveFailed') }}</p>
     <p v-if="!state.model" class="lares-tts__hint">{{ t('preferences.modelsMissing') }}</p>
     <p v-else-if="state.loading" class="lares-tts__hint" role="status">{{ t('tts.loading') }}</p>
+    <div v-if="state.stale" class="lares-tts__status" role="status">
+      <p>{{ t('tts.stale') }}</p>
+      <button type="button" @click="controller.load()">{{ t('dictation.retry') }}</button>
+    </div>
     <div v-else-if="state.error" class="lares-tts__status" role="alert">
       <p>{{ t('tts.loadFailed') }}</p>
       <button type="button" @click="controller.load()">{{ t('dictation.retry') }}</button>

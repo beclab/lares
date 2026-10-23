@@ -1,6 +1,6 @@
 {
   "name": "@olares/lares-core",
-  "version": "0.15.28",
+  "version": "0.15.32",
   "description": "Lares 共享业务核心：Router、workspace、文件/媒体、Olares 身份（无 UI、无平台壳）",
   "type": "module",
   "repository": {
@@ -115,6 +115,7 @@
     "./voice/stream-client": "./voice/stream-client.js",
     "./voice/pcm-player": "./voice/pcm-player.js",
     "./voice/pcm-worklet": "./voice/pcm-worklet.js",
+    "./voice/wake-lock": "./voice/wake-lock.js",
     "./voice/config": "./voice/config.js",
     "./voice/languages": "./voice/languages.js",
     "./voice/service": "./voice/service.js",
@@ -224,7 +225,9 @@
     "./router/default-selection": {
       "types": "./router/default-selection.d.ts",
       "default": "./router/default-selection.js"
-    }
+    },
+    "./voice/vad": "./voice/vad.js",
+    "./voice/errors": "./voice/errors.js"
   },
   "dependencies": {
     "emoji-regex": "11.0.0",
