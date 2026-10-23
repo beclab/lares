@@ -1,3 +1,4 @@
+import { browserAudioErrorCode } from "./browser-audio.js";
 import {
   formatElapsed,
   isRecordingTooShort,
@@ -19,7 +20,7 @@ const CHUNK_MS = 250;
 function micFailure(err) {
   const name = err?.name || "";
   if (name === "NotAllowedError" || name === "PermissionDeniedError") return "voice_permission_denied";
-  if (name === "SecurityError") return "voice_unsupported";
+  if (name === "SecurityError") return browserAudioErrorCode();
   return "voice_failed";
 }
 
@@ -38,7 +39,7 @@ export function prepareBrowserCapture({ media, onTrace = () => {}, now = Date.no
   const started = now();
   const devices = media?.mediaDevices ?? globalThis.navigator?.mediaDevices;
   const ready = (async () => {
-    if (!devices?.getUserMedia) throw new Error("voice_unsupported");
+    if (!devices?.getUserMedia) throw new Error(globalThis.isSecureContext === false ? browserAudioErrorCode() : "voice_unsupported");
     const pending = openDeviceMic(devices);
     try { onTrace("permission-request", { durationMs: now() - started }); } catch { /* Telemetry is optional. */ }
     const next = await pending;

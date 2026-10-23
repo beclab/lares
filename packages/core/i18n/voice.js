@@ -140,6 +140,8 @@ export const ZH = {
   "error.voice_interruption_timeout": "打断等待超时，已停止朗读",
   "error.turn_busy": "上一轮还在处理，请再说一次",
   "error.waiting_for_playback": "上一段回复还在播放，请稍后再说",
+  "error.voice_secure_context_required": "浏览器语音功能需要安全连接，请通过有效的 HTTPS 地址访问。文字聊天仍可使用",
+  "error.voice_audio_unsupported": "当前浏览器不支持所需的语音功能，请使用支持 AudioWorklet 的浏览器。文字聊天仍可使用",
   "error.voice_unsupported": "当前浏览器不支持录音",
   "error.voice_bluetooth_not_ready": "蓝牙麦克风还没连上，请重试",
   "error.voice_bluetooth_unavailable": "这台机器的蓝牙还没就绪。请确认机器有蓝牙并已打开，然后在 Olares 市场重启 Lares，重启时会重新安装蓝牙组件",
@@ -452,6 +454,8 @@ export const EN = {
   "error.voice_interruption_timeout": "Interruption timed out; playback stopped",
   "error.turn_busy": "The previous turn is still running, please speak again",
   "error.waiting_for_playback": "The previous answer is still playing, please wait",
+  "error.voice_secure_context_required": "Browser voice requires a secure connection. Open a valid HTTPS address; text chat is still available",
+  "error.voice_audio_unsupported": "This browser does not support the required voice features. Use a browser with AudioWorklet support; text chat is still available",
   "error.voice_unsupported": "This browser does not support recording",
   "error.voice_bluetooth_not_ready": "Bluetooth microphone is not ready, please retry",
   "error.voice_bluetooth_unavailable":
