@@ -1,6 +1,9 @@
 import { PCM_PLAYER_WORKLET } from "./pcm-worklet.js";
 import { pcmSamples } from "./realtime-audio.js";
 
+/** Unread audio the speaker may be holding. A longer reply waits here; it is not a failed call. */
+export const PLAYBACK_QUEUE_SECONDS = 4;
+
 let primed = null;
 const worklets = new WeakMap();
 let watchingVisibility = false;
@@ -43,7 +46,10 @@ export function primePlaybackContext(Context = globalThis.AudioContext || global
 }
 
 export function createPcmStreamPlayer({ onProgress = () => {}, onMetric = () => {}, context: Context = globalThis.AudioContext || globalThis.webkitAudioContext } = {}) {
-  let context, node, resolve, reject, played = 0, generation = 0, pendingByte = null, failed = null, paused = false, owned = false;
+  let context, node, resolve, reject, played = 0, accepted = 0, rate = 0, generation = 0, pendingByte = null, paused = false, owned = false;
+  let tail = Promise.resolve();
+  const waiters = new Set();
+  const wake = () => { for (const listen of [...waiters]) listen(); };
   /**
    * The page shares one primed context. iOS interrupts it (a call, the lock
    * screen) and it never resumes on its own, so a reply that starts after that
@@ -85,11 +91,14 @@ export function createPcmStreamPlayer({ onProgress = () => {}, onMetric = () => 
     owned = false;
     if (closing && closing.state !== "closed") void closing.close().catch(() => {});
     context = null; resolve?.(); resolve = reject = null; pendingByte = null;
+    wake();
+    tail = Promise.resolve();
   };
   return {
     async start({ sampleRate, channels, encoding }) {
-      stop(); failed = null; played = 0;
+      stop(); played = 0; accepted = 0;
       if (!Context || channels !== 1 || encoding !== "pcm_s16le" || !Number.isInteger(sampleRate) || sampleRate < 8000 || sampleRate > 192000) throw new Error("voice_audio_format");
+      rate = sampleRate;
       const epoch = generation;
       const shared = primed && primed.state !== "closed" ? primed : null;
       let opened;
@@ -109,27 +118,61 @@ export function createPcmStreamPlayer({ onProgress = () => {}, onMetric = () => 
       });
       node.port.onmessage = ({ data }) => {
         if (epoch !== generation) return;
-        if (data.type === "progress") { played = data.frames; onProgress(played); }
+        if (data.type === "progress") { played = data.frames; onProgress(played); wake(); }
         if (data.type === "started" || data.type === "underrun") onMetric({ stage: `playback_${data.type}` });
         if (data.type === "done") { resolve?.(); resolve = reject = null; }
-        if (data.type === "error") { failed = new Error("voice_audio_backpressure"); reject?.(failed); }
       };
       node.connect(opened.destination);
     },
     write(bytes) {
-      if (!node) throw new Error("voice_cancelled");
-      let chunk = bytes;
-      if (pendingByte !== null) { chunk = new Uint8Array(bytes.length + 1); chunk[0] = pendingByte; chunk.set(bytes, 1); pendingByte = null; }
-      if (chunk.length % 2) { pendingByte = chunk[chunk.length - 1]; chunk = chunk.subarray(0, -1); }
-      if (!chunk.length) return;
-      const samples = pcmSamples(chunk);
-      node.port.postMessage({ type: "audio", samples }, [samples.buffer]);
+      const epoch = generation;
+      const run = () => {
+        if (epoch !== generation || !node) throw new Error("voice_cancelled");
+        let chunk = bytes;
+        if (pendingByte !== null) { chunk = new Uint8Array(bytes.length + 1); chunk[0] = pendingByte; chunk.set(bytes, 1); pendingByte = null; }
+        if (chunk.length % 2) { pendingByte = chunk[chunk.length - 1]; chunk = chunk.subarray(0, -1); }
+        if (!chunk.length) return;
+        const source = pcmSamples(chunk);
+        const budget = rate * PLAYBACK_QUEUE_SECONDS;
+        let offset = 0;
+        const post = (from, count) => {
+          const samples = count === source.length && from === 0 ? source : source.slice(from, from + count);
+          accepted += samples.length;
+          node.port.postMessage({ type: "audio", samples }, [samples.buffer]);
+        };
+        const pump = () => {
+          while (offset < source.length) {
+            const room = budget - (accepted - played);
+            if (room <= 0) return false;
+            const count = Math.min(source.length - offset, room);
+            post(offset, count);
+            offset += count;
+          }
+          return true;
+        };
+        if (pump()) return;
+        // The rest of a long reply plays as the speaker catches up.
+        return new Promise((done, fail) => {
+          const listen = () => {
+            if (epoch !== generation || !node) { waiters.delete(listen); fail(new Error("voice_cancelled")); return; }
+            if (!pump()) return;
+            waiters.delete(listen);
+            done();
+          };
+          waiters.add(listen);
+        });
+      };
+      const pending = tail.then(run, run);
+      tail = pending.catch(() => {});
+      return pending;
     },
     finish() {
-      if (failed) return Promise.reject(failed);
-      if (!node) return Promise.resolve();
-      if (pendingByte !== null) return Promise.reject(new Error("voice_audio_format"));
-      return new Promise((done, fail) => { resolve = done; reject = fail; node.port.postMessage({ type: "finish" }); });
+      const epoch = generation;
+      return tail.catch(() => {}).then(() => {
+        if (epoch !== generation || !node) return;
+        if (pendingByte !== null) throw new Error("voice_audio_format");
+        return new Promise((done, fail) => { resolve = done; reject = fail; node.port.postMessage({ type: "finish" }); });
+      });
     },
     canPause: true,
     pause() { paused = true; node?.port.postMessage({ type: "pause" }); },

@@ -284,6 +284,23 @@ test("playout credit stops at audio already sent, so a synthesis gap cannot pre-
   assert.equal(clock.credit(5_000), held + 400);
 });
 
+test("a speaker that keeps reporting holds a long reply to the playback queue", () => {
+  let now = 1_000;
+  const clock = createPlayoutClock({ now: () => now });
+  clock.start();
+  now = 1_500;
+  clock.heard(500);
+  now = 11_500;
+  clock.heard(1_000);
+  // Ten seconds of wall time, one second heard. Credit stays one lead ahead of the speaker.
+  assert.equal(clock.credit(20_000), 3_000);
+  assert.equal(clock.blocked(5_000), false);
+  assert.equal(clock.blocked(5_001), true);
+  // Reports that stop arriving fall back to the wall clock, so the rest is not stuck.
+  now += 2_001;
+  assert.ok(clock.credit(20_000) > 3_000);
+});
+
 test("stage realtime stream: TTS that awaits each slice still finishes while the worklet acks", async () => {
   const result = await playRealtime(streamingSynthesize, "steady");
   assert.equal(result.code, "", JSON.stringify(result));

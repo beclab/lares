@@ -146,7 +146,7 @@ test("stream reader waits for committed text, stops one generation and never rep
   player.follow({ key: "one", text: "Actual result.", done: true }); await tick(); assert.equal(started.length, 1);
 });
 
-test("AudioWorklet reports consumed source frames and caps pending audio", () => {
+test("AudioWorklet reports consumed source frames and keeps a long buffer", () => {
   let Processor: any; const events: any[] = [];
   class Base { port = { onmessage: null, postMessage: (data: any) => events.push(data) }; }
   runInNewContext(PCM_PLAYER_WORKLET, { AudioWorkletProcessor: Base, sampleRate: 48000, registerProcessor: (_: string, value: any) => { Processor = value; } });
@@ -155,7 +155,9 @@ test("AudioWorklet reports consumed source frames and caps pending audio", () =>
   worker.port.onmessage({ data: { type: "finish" } });
   let processing = true; for (let i = 0; i < 10 && processing; i++) processing = worker.process([], [[new Float32Array(128)]]);
   assert.equal(processing, false); assert.equal(events.findLast((e) => e.type === "progress").frames, 160);
-  worker.port.onmessage({ data: { type: "audio", samples: new Float32Array(16000 * 5) } }); assert.equal(events.at(-1).type, "error");
+  worker.port.onmessage({ data: { type: "audio", samples: new Float32Array(16000 * 5) } });
+  assert.equal(events.some((event) => event.type === "error"), false);
+  assert.equal(worker.queued, 16000 * 5);
 });
 
 test("streaming ASR forwards partials but only completes after final and preserves caller identity", async () => {

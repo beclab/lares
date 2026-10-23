@@ -28,10 +28,11 @@
       </button>
     </li>
     <li
-      v-for="{ row, index } in shown(block)"
+      v-for="{ row, index, inProcess } in shown(block)"
       :key="row.id || row.key || index"
       class="lares-log__item"
       :data-type="row.type"
+      :data-process="inProcess ? 'true' : undefined"
       :data-pending="row.pending ? 'true' : 'false'"
     >
       <div v-if="row.type === 'user'" class="lares-msg" data-role="user">{{ row.text }}</div>
@@ -77,16 +78,16 @@
           <div class="lares-md" v-html="renderMarkdown(row.text)" />
           <p v-if="row.voiceSummary" class="lares-voice-summary">{{ row.voiceSummary }}</p>
         </template>
-        <div v-if="hasReadout(row)" role="status" class="lares-message-readout">
+        <div v-if="!inProcess && hasReadout(row)" role="status" class="lares-message-readout">
           <span>{{ speechLabel }}</span>
           <button type="button" class="lares-message-stop" @click="readout.stop()">{{ t(readout.status === 'error' ? 'readout.dismiss' : 'readout.stop') }}</button>
         </div>
-        <div v-else-if="ownsPlayback(row)" role="status" class="lares-message-readout">
+        <div v-else-if="!inProcess && ownsPlayback(row)" role="status" class="lares-message-readout">
           <span>{{ t(playbackChrome.status) }}</span>
           <button type="button" class="lares-message-stop" @click="$emit('stop-speaking')">{{ t(playbackChrome.stopLabel) }}</button>
         </div>
         <LaresMessageActions
-          v-if="!row.pending"
+          v-if="!inProcess && !row.pending"
           :text="row.text"
           :reaction="reactions[actionKey(index)] || ''"
           :metrics="row.metrics || null"
@@ -221,8 +222,9 @@ export default {
     renderMarkdown,
     thinkSummary,
     shown(block) {
-      if (block.kind === "fold") return this.processOpen(block) ? block.members : [];
-      return [block];
+      if (block.kind !== "fold") return [block];
+      if (!this.processOpen(block)) return [];
+      return block.members.map((member) => ({ ...member, inProcess: true }));
     },
     processOpen(block) {
       return !block.foldable || Boolean(this.openFolds[block.key]);
@@ -485,6 +487,11 @@ export default {
 .lares-log__item[data-type="assistant"],
 .lares-log__item[data-type="files"] {
   margin-top: 8px;
+}
+
+.lares-log__item[data-process="true"] {
+  margin-top: 0;
+  gap: 0;
 }
 
 .lares-msg[data-role="user"] {

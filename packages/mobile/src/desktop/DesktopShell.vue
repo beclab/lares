@@ -226,6 +226,7 @@ export default {
 .desktop-shell :deep(.lares-log > *) { box-sizing:border-box; width:var(--lares-column); padding-inline:var(--lares-gutter); }
 .desktop-shell :deep(.lares-log__item[data-type="user"]) { margin-top:18px; }
 .desktop-shell :deep(.lares-log__item[data-type="assistant"]) { margin-top:12px; }
+.desktop-shell :deep(.lares-log__item[data-process="true"]) { margin-top:0; }
 .desktop-shell :deep(.lares-msg[data-role="user"]) { max-width:68%; border-radius:16px; padding:10px 14px; }
 .desktop-shell :deep(.lares-md) { font-size:15px; line-height:1.65; }
 @media (max-width:760px) {
