@@ -49,6 +49,9 @@ test("scheduling stays on the schedule tool or the webhook, never a container lo
   assert.match(schedule, /`title` is always `晨报 · <id>`/);
   assert.match(schedule, /Never create a second reminder with the same title/);
   assert.match(schedule, /no caller authentication/);
+  // Lares hides the dsh Plugins page, so the skill must not send users there.
+  assert.doesNotMatch(schedule, /Settings → Plugins/);
+  assert.match(schedule, /cannot be archived until they are stopped/);
 });
 
 test("the example topics match the documented schema", () => {

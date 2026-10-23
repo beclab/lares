@@ -22,7 +22,11 @@ One reminder per topic:
 
 ## Without the schedule tool
 
-`schedule_create` missing means the experimental schedule plugin is off. Tell the user to enable **自动化任务 / Automation tasks** under Settings → Plugins (Official group) and start a new session, then come back. Do not substitute a shell loop or a container cron job.
+Lares mounts Schedule on every profile, so `schedule_create` missing means this Lares build predates it or the Host failed to load it. Say so and stop; do not substitute a shell loop or a container cron job.
+
+## Where the user sees it
+
+On the desktop web UI, **Automation tasks / 自动化任务** in the sidebar lists every reminder: edit its time or instruction, read its delivery records, delete it, or open its session. LarePass has no such page; there, the user asks in chat and you use `schedule_list` / `schedule_update` / `schedule_delete`. A session with active reminders cannot be archived until they are stopped — tell the user that when they set one up.
 
 ## A fresh session per run
 
