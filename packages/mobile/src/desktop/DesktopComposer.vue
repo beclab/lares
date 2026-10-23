@@ -139,23 +139,14 @@
     </div>
 
     <Transition name="lares-panel" mode="out-in">
-      <div v-if="state.approval" key="approval" class="desktop-composer__approval">
-        <div class="desktop-composer__approval-strip">
-          <span aria-hidden="true" />
-          {{ t("approval.waiting") }}
-        </div>
-        <div class="desktop-composer__approval-body">
-          {{ state.approval.reason || t("approval.escalation", { toolName: state.approval.toolName }) }}
-        </div>
-        <div class="desktop-composer__approval-actions">
-          <button type="button" :disabled="state.approvalBusy" @click="$emit('answer-approval', 'rejected')">
-            {{ t("approval.reject") }}
-          </button>
-          <button type="button" :disabled="state.approvalBusy" @click="$emit('answer-approval', 'allowed-once')">
-            {{ t("approval.allowOnce") }}
-          </button>
-        </div>
-      </div>
+      <LaresApprovalCard
+        v-if="state.approval"
+        key="approval"
+        :approval="state.approval"
+        :busy="state.approvalBusy"
+        :t="t"
+        @answer="$emit('answer-approval', $event)"
+      />
       <LaresDesktopQuestions
         v-else-if="state.question?.questions?.length"
         key="questions"
@@ -480,6 +471,7 @@ import { DEFAULT_WORKSPACE_TITLE } from "@olares/lares-core/workspace/constants"
 import { activeReferenceToken, insertReference } from "@olares/lares-core/larepass/references";
 import { draftImageStatus } from "@olares/lares-core/files/draft-images";
 import LaresVoiceInput from "../chat/VoiceInput.vue";
+import LaresApprovalCard from "../chat/ApprovalCard.vue";
 import LaresDesktopQueue from "./DesktopQueue.vue";
 import LaresDesktopQuestions from "./DesktopQuestions.vue";
 import LaresDesktopContextMeter from "./DesktopContextMeter.vue";
@@ -542,7 +534,7 @@ const PermissionIcon = {
 
 export default {
   name: "LaresDesktopComposer",
-  components: { LaresVoiceInput, LaresDesktopContextMeter, LaresDesktopGoal, LaresDesktopQuestions, LaresDesktopQueue, LaresDesktopTodos, LaresPcDialog, LaresPcPopover, LaresPcTooltip, ChevronIcon, CheckIcon, PlusIcon, PaperclipIcon, ArrowIcon, StopIcon, CloseIcon, MicIcon, PermissionIcon },
+  components: { LaresApprovalCard, LaresVoiceInput, LaresDesktopContextMeter, LaresDesktopGoal, LaresDesktopQuestions, LaresDesktopQueue, LaresDesktopTodos, LaresPcDialog, LaresPcPopover, LaresPcTooltip, ChevronIcon, CheckIcon, PlusIcon, PaperclipIcon, ArrowIcon, StopIcon, CloseIcon, MicIcon, PermissionIcon },
   props: {
     state: { type: Object, required: true },
     t: { type: Function, required: true },
@@ -959,14 +951,6 @@ export default {
 .desktop-composer__reference-item[data-selected="true"] { background:var(--q-background-hover); }
 .desktop-composer__reference-name { max-width:40%; flex:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .desktop-composer__reference-path { min-width:0; flex:1; overflow:hidden; color:var(--q-ink-3); text-overflow:ellipsis; white-space:nowrap; }
-.desktop-composer__approval { overflow:hidden; border:1px solid var(--q-separator); border-radius:14px; background:var(--q-background-2); box-shadow:0 1px 3px rgb(0 0 0 / 8%); }
-.desktop-composer__approval-strip { display:flex; height:30px; align-items:center; gap:7px; padding:0 12px; background:var(--q-background-3); color:var(--q-ink-3); font-size:12px; }
-.desktop-composer__approval-strip span { width:6px; height:6px; border-radius:50%; background:var(--q-orange-default); }
-.desktop-composer__approval-body { max-height:96px; overflow:auto; padding:14px 16px; color:var(--q-ink-1); font-size:14px; line-height:20px; }
-.desktop-composer__approval-actions { display:flex; justify-content:flex-end; gap:8px; padding:8px 12px 12px; }
-.desktop-composer__approval-actions button { height:32px; border:1px solid var(--q-separator); border-radius:7px; padding:0 13px; background:transparent; color:var(--q-ink-2); font:inherit; cursor:pointer; }
-.desktop-composer__approval-actions button:last-child { border-color:transparent; background:var(--q-blue-default); color:var(--q-ink-on-brand); }
-.desktop-composer__approval-actions button:disabled { opacity:.45; cursor:default; }
 .desktop-composer__attachments { display:flex; gap:8px; overflow-x:auto; padding:0 0 8px 2px; }
 .desktop-composer__attachments figure { position:relative; width:64px; height:64px; flex:0 0 64px; overflow:hidden; margin:0; border:1px solid var(--q-separator); border-radius:9px; background:var(--q-background-3); }
 .desktop-composer__attachments img { width:100%; height:100%; object-fit:cover; transition:opacity .22s ease; }

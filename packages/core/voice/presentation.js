@@ -39,9 +39,10 @@ export function voiceCallFailure(view) {
 }
 
 /**
- * A voice call that is still playing keeps one strip at the composer until it
- * ends: status plus the control that stops it. The hold button is not that
- * strip. A chat readout stays on the assistant row that is being read.
+ * A voice call that is still playing keeps one strip until it ends: status
+ * plus the control that stops it. The hold button is not that strip. Clients
+ * render it under the assistant reply that owns playback. A chat readout stays
+ * on that same reply and is not this strip.
  */
 export function voicePlaybackChrome(view) {
   const playback = view?.snapshot?.playback;

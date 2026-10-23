@@ -1,6 +1,6 @@
 {
   "name": "@olares/lares-core",
-  "version": "0.15.32",
+  "version": "0.15.36",
   "description": "Lares 共享业务核心：Router、workspace、文件/媒体、Olares 身份（无 UI、无平台壳）",
   "type": "module",
   "repository": {
@@ -176,6 +176,7 @@
     "./larepass/permissions": "./larepass/permissions.js",
     "./larepass/commands": "./larepass/commands.js",
     "./larepass/queue": "./larepass/queue.js",
+    "./larepass/approval": "./larepass/approval.js",
     "./larepass/references": "./larepass/references.js",
     "./larepass/submission-settings": "./larepass/submission-settings.js",
     "./larepass/turn-metrics": "./larepass/turn-metrics.js",

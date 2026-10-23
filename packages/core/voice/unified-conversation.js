@@ -64,7 +64,7 @@ export function createUnifiedConversation({ request, socket: openSocket = browse
         return;
       }
       if (!current.audio) { current.audio = true; current.chain = current.chain.then(() => player.start({ sampleRate: RATE, channels: 1, encoding: "pcm_s16le" })); controller.observePlayback(true); }
-      current.chain = current.chain.then(() => { if (reply === current) player.write(decodeBase64(delta)); });
+      current.chain = current.chain.then(() => { if (reply === current) return player.write(decodeBase64(delta)); });
       current.chain.catch(() => {});
     },
     async done() {

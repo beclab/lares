@@ -10,7 +10,6 @@ class LaresPcmPlayer extends AudioWorkletProcessor {
     this.paused = false; this.queued = 0; this.finished = false; this.started = false; this.starved = false;
     this.port.onmessage = ({ data }) => {
       if (data.type === 'audio') {
-        if (this.queued + data.samples.length > this.rate * 4) { this.port.postMessage({ type: 'error' }); return; }
         this.queue.push(data.samples); this.queued += data.samples.length;
       } else if (data.type === 'finish') this.finished = true;
       else if (data.type === 'pause') this.paused = true;

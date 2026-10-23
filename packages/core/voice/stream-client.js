@@ -126,7 +126,7 @@ export async function playAudioStream(options) {
       }
       if (!progressNoted) { progressNoted = true; streamMetric(options, { stage: "playback_progress_sent", frames }); }
     };
-    const writeAudio = (bytes) => {
+    const writeAudio = async (bytes) => {
       let chunk = bytes;
       if (skipBytes > 0) {
         const drop = Math.min(skipBytes, chunk.length);
@@ -136,7 +136,7 @@ export async function playAudioStream(options) {
         chunk = chunk.subarray(drop);
         if (!chunk.length) return;
       }
-      player.write(chunk);
+      await player.write(chunk);
     };
     const gapWatch = setInterval(() => {
       if (!ready || paused || complete || gapReported || Date.now() - lastProgressAt < 4000) return;
@@ -168,7 +168,7 @@ export async function playAudioStream(options) {
           }
           chain = chain.then(async () => {
             if (options.signal?.aborted) throw new Error("voice_cancelled");
-            if (typeof data !== "string") { writeAudio(new Uint8Array(data)); return; }
+            if (typeof data !== "string") { await writeAudio(new Uint8Array(data)); return; }
             if (event.type === "segment") {
               if (event.index !== segmentIndex + 1) throw new Error("voice_reply_sequence");
               segmentIndex = event.index;

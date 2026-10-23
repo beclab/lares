@@ -23,9 +23,8 @@ spec:
     2. 确认 Router 已安装。
     3. 打开 Lares 入口开始对话。
   upgradeDescription: |
-    显卡处于显存分片时，语音播报可以边写边读。时间分片仍在回复写完后再读。
+    Olares Router 的对话模型可以重新注册。线路不再保存设置导入器拒绝的会话亲和开关，因此 provider 会保留 api。
 
-    - 播报方式跟随从集群读到的显卡分片模式。
-    - 播报会跳过文件名和其他不该念出来的文本。
+    - 内置目录里没有的本地模型可以选中并刷新。
 
-    [版本说明](https://github.com/beclab/lares/releases/tag/v0.26.60)
+    [版本说明](https://github.com/beclab/lares/releases/tag/v0.26.61)
