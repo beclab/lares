@@ -92,6 +92,7 @@
       @hold-start="onHoldStart"
       @voice-action="onVoiceAction"
       @close-model="modelSheet = false"
+      @choose-permission="choosePermission"
       @choose-model="chooseModel"
       @close-effort="effortSheet = false"
       @choose-effort="chooseEffort"

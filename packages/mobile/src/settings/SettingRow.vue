@@ -6,7 +6,10 @@
     :disabled="disabled"
     @click="$emit('click')"
   >
-    <span class="lares-set-row__label">{{ label }}</span>
+    <span class="lares-set-row__copy">
+      <span class="lares-set-row__label">{{ label }}</span>
+      <span v-if="hint" class="lares-set-row__hint">{{ hint }}</span>
+    </span>
     <span class="lares-set-row__side">
       <span v-if="value" class="lares-set-row__value">{{ value }}</span>
       <svg v-if="chevron" class="lares-set-row__icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -29,6 +32,7 @@ export default {
   name: "LaresSettingRow",
   props: {
     label: { type: String, required: true },
+    hint: { type: String, default: "" },
     value: { type: String, default: "" },
     chevron: { type: Boolean, default: false },
     checked: { type: Boolean, default: false },
@@ -73,11 +77,25 @@ export default {
   background: var(--q-background-hover);
 }
 
-.lares-set-row__label {
+.lares-set-row__copy {
+  display: flex;
   min-width: 0;
   flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lares-set-row__label {
+  min-width: 0;
   font-size: 16px;
   line-height: 22px;
+  word-break: break-word;
+}
+
+.lares-set-row__hint {
+  color: var(--q-ink-3);
+  font-size: 13px;
+  line-height: 18px;
   word-break: break-word;
 }
 

@@ -459,7 +459,7 @@ export default {
   flex-direction: column;
   gap: 6px;
   flex-shrink: 0;
-  padding: 8px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+  padding: 8px 16px 12px;
 }
 
 .lares-composer--hero {
