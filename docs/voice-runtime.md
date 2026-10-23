@@ -789,3 +789,27 @@ the existing desktop settings RPC error remains. Automatic speech was not enable
 in each full UI, and real microphone/hardware pause/resume/phone/Bluetooth checks
 remain unexecuted. See ignored `tts-naturalness/default-enabled.json` for the
 actual scope, build/source hashes and the blind preference decision.
+
+
+### Optional browser audio prewarming (2026-10-23)
+
+Text submission may prewarm browser playback inside its user gesture, but that
+preparation is optional: missing AudioWorklet support, context construction or
+synchronous resume failures must not reject a text send. Actual PCM playback and
+capture validate the browser capabilities and report a localized secure-connection
+or unsupported-audio error. Worklet module URLs are revoked even when loading
+throws synchronously; a failed preload remains retryable on real playback.
+
+Validation: 49 focused audio/composer tests, typecheck and PC/Vue/Host builds
+passed. The final full suite passed 1056/1056. An initial Router session-affinity
+failure passed both in isolation and in the full rerun; its cause is unconfirmed.
+
+| Interface | UI acceptance | Reason |
+| --- | --- | --- |
+| Official dsh PC | Blocked | Existing local Host returns HTTP 503; configured LAN test profile is not currently logged in |
+| Vue mobile: chat and settings | Blocked | Same Host and identity prerequisites; no new build/viewport verified in-browser |
+| Vue desktop: chat and settings | Blocked | Same Host and identity prerequisites; no new build/viewport verified in-browser |
+
+No existing services, profiles or remote settings were changed. Real microphone,
+playback and physical-device checks remain unexecuted. Local acceptance details
+are in the ignored `__debug__/local-router/optional-audio-acceptance.json`.

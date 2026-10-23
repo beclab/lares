@@ -1,5 +1,6 @@
 import { PCM_PLAYER_WORKLET } from "./pcm-worklet.js";
 import { pcmSamples } from "./realtime-audio.js";
+import { browserAudioErrorCode, requireAudioWorklet } from "./browser-audio.js";
 
 /** Unread audio the speaker may be holding. A longer reply waits here; it is not a failed call. */
 export const PLAYBACK_QUEUE_SECONDS = 4;
@@ -25,9 +26,14 @@ function watchVisibility() {
 function ensureWorklet(ctx) {
   const pending = worklets.get(ctx);
   if (pending) return pending;
-  const url = URL.createObjectURL(new Blob([PCM_PLAYER_WORKLET], { type: "text/javascript" }));
+  const load = async () => {
+    requireAudioWorklet(ctx);
+    const url = URL.createObjectURL(new Blob([PCM_PLAYER_WORKLET], { type: "text/javascript" }));
+    try { await ctx.audioWorklet.addModule(url); }
+    finally { URL.revokeObjectURL(url); }
+  };
   let tracked;
-  tracked = Promise.resolve(ctx.audioWorklet.addModule(url)).finally(() => URL.revokeObjectURL(url)).catch((error) => {
+  tracked = load().catch((error) => {
     if (worklets.get(ctx) === tracked) worklets.delete(ctx);
     throw error;
   });
@@ -35,14 +41,23 @@ function ensureWorklet(ctx) {
   return tracked;
 }
 
-/** Create and resume the playback context inside the gesture that asked for sound. */
+/** Optional gesture prewarming must never block a text submission. Playback reports failures at start. */
 export function primePlaybackContext(Context = globalThis.AudioContext || globalThis.webkitAudioContext) {
-  if (!Context) return null;
-  if (!primed || primed.state === "closed") primed = new Context();
-  const resume = primed.resume?.();
-  if (resume && typeof resume.catch === "function") resume.catch(() => {});
-  ensureWorklet(primed).catch(() => {});
-  return primed;
+  if (!Context || globalThis.isSecureContext === false) return null;
+  try {
+    if (!primed || primed.state === "closed") primed = new Context();
+    requireAudioWorklet(primed);
+    const resume = primed.resume?.();
+    if (resume && typeof resume.catch === "function") resume.catch(() => {});
+    ensureWorklet(primed).catch(() => {});
+    return primed;
+  } catch {
+    const failed = primed;
+    primed = null;
+    worklets.delete(failed);
+    try { Promise.resolve(failed?.close?.()).catch(() => {}); } catch { /* Prewarming is optional. */ }
+    return null;
+  }
 }
 
 export function createPcmStreamPlayer({ onProgress = () => {}, onMetric = () => {}, context: Context = globalThis.AudioContext || globalThis.webkitAudioContext } = {}) {
@@ -97,7 +112,8 @@ export function createPcmStreamPlayer({ onProgress = () => {}, onMetric = () => 
   return {
     async start({ sampleRate, channels, encoding }) {
       stop(); played = 0; accepted = 0;
-      if (!Context || channels !== 1 || encoding !== "pcm_s16le" || !Number.isInteger(sampleRate) || sampleRate < 8000 || sampleRate > 192000) throw new Error("voice_audio_format");
+      if (!Context || globalThis.isSecureContext === false) throw new Error(browserAudioErrorCode());
+      if (channels !== 1 || encoding !== "pcm_s16le" || !Number.isInteger(sampleRate) || sampleRate < 8000 || sampleRate > 192000) throw new Error("voice_audio_format");
       rate = sampleRate;
       const epoch = generation;
       const shared = primed && primed.state !== "closed" ? primed : null;

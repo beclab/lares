@@ -4,6 +4,7 @@ import { createPcmResampler } from "./realtime-audio.js";
 import { createPcmStreamPlayer } from "./pcm-player.js";
 import { wavBlob } from "./client.js";
 import { createBrowserPlayer } from "./browser-playback.js";
+import { browserAudioErrorCode, requireAudioWorklet } from "./browser-audio.js";
 
 export function browserAudioSocket(ticket) {
   const url = new URL("/api/lares/voice/stream", globalThis.location.href); url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
@@ -287,7 +288,9 @@ export async function createStreamingCapture(stream, options) {
   };
   try {
     const Context = globalThis.AudioContext || globalThis.webkitAudioContext;
+    if (!Context || globalThis.isSecureContext === false) throw new Error(browserAudioErrorCode());
     context = new Context();
+    requireAudioWorklet(context);
     const url = URL.createObjectURL(new Blob([PCM_CAPTURE_WORKLET], { type: "text/javascript" }));
     try { await context.audioWorklet.addModule(url); await context.resume(); } finally { URL.revokeObjectURL(url); }
     if (options.signal?.aborted) throw new Error("voice_cancelled");
