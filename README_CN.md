@@ -68,7 +68,7 @@ manifest list。触发只有推 `v<Chart.yaml 版本>` 标签或手动 dispatch 
 
 `ha-*` 同样不入仓。设置 → 技能里下载 Home Assistant 包：安装 `@olares/hass-cli`，再跑
 `hass-cli skill list` / `skill show` 把嵌入二进制的技能写到
-`$LARES_DATA_DIR/skill-packs/ha`，启用后才同步进运行时 skills 目录。
+`$LARES_DATA_DIR/skill-packs/ha`，并启用该包，技能随即进入运行时 skills 目录。
 
 升级 olares 技能 = 改 `Dockerfile.base` 里 `@olares/cli` 的版本，再
 `scripts/build-image.sh --base`。启动时 `seedOlaresSkills` 把镜像里的源码技能与导出的

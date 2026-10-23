@@ -59,7 +59,7 @@ The authoritative version is `deploy/lares/Chart.yaml`. CI verifies that the ima
 
 `packages/skills/lares-*` contains skill source maintained in this repository and included in the image. `packages/skills/olares-*` is not committed. During the application image build, `olares-cli skills export packages/skills` exports those skills from the olares-cli binary in the base image. Skill commands must come from the same release as the binary; a manually copied snapshot cannot guarantee that.
 
-`ha-*` is also not committed. In **Settings → Skills**, Lares installs `@olares/hass-cli`, then runs `hass-cli skill list` and `skill show` to export the skills embedded in the binary to `$LARES_DATA_DIR/skill-packs/ha`. The skills are copied into the runtime skills directory only after they are enabled.
+`ha-*` is also not committed. In **Settings → Skills**, downloading Home Assistant installs `@olares/hass-cli`, runs `hass-cli skill list` and `skill show` to export the skills embedded in the binary to `$LARES_DATA_DIR/skill-packs/ha`, and enables the pack so those skills are in the runtime skills directory.
 
 To upgrade Olares skills, update the `@olares/cli` version in `Dockerfile.base`, then run `scripts/build-image.sh --base`. At startup, `seedOlaresSkills` copies both the source skills bundled in the image and the exported Olares skills into `$LARES_DATA_DIR/skills`, which dsh receives through `DSH_BUNDLED_SKILL_DIR`.
 

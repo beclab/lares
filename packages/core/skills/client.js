@@ -12,13 +12,17 @@ async function readPayload(res, path) {
   return payload;
 }
 
-async function postAction(path, id) {
+async function postJson(path, body) {
   const res = await fetch(`${API}${path}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ id }),
+    body: JSON.stringify(body),
   });
   return settings.remember(await readPayload(res, path));
+}
+
+async function postAction(path, id) {
+  return postJson(path, { id });
 }
 
 export function rememberedSkillPacks() {
@@ -39,4 +43,8 @@ export function enableSkillPack(id) {
 
 export function disableSkillPack(id) {
   return postAction("/disable", id);
+}
+
+export function saveSkillConnection(id, server, token) {
+  return postJson("/connection", { id, server, token });
 }

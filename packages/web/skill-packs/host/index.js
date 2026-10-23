@@ -1,5 +1,6 @@
 /** Official skill-pack settings Host routes under /api/lares/skills. */
 import { createRouteHandler, HttpError, readJsonObject, sendJson } from "@olares/lares-core/tools/http";
+import { connectionInput } from "@olares/lares-core/skills/connection";
 import { OFFICIAL_PACKS, packById } from "@olares/lares-core/skills/packs";
 import {
   defaultCatalogRoot,
@@ -7,7 +8,7 @@ import {
   enableOfficialPack,
   listOfficialPacks,
 } from "@olares/lares-core/skills/state";
-import { cliReadyMap, downloadPackSkills } from "./cli.js";
+import { cliReadyMap, downloadPackSkills, readCliConnection, saveCliConnection } from "./cli.js";
 
 export const name = "lares-skill-packs";
 export const inject = ["webServer"];
@@ -18,8 +19,12 @@ function dataDir() {
   return process.env.LARES_DATA_DIR?.trim() || "/data/lares";
 }
 
-function panel() {
-  return { packs: listOfficialPacks(dataDir(), cliReadyMap(OFFICIAL_PACKS)) };
+async function panel() {
+  const packs = listOfficialPacks(dataDir(), cliReadyMap(OFFICIAL_PACKS));
+  for (const pack of packs) {
+    pack.connection = await readCliConnection(packById(pack.id));
+  }
+  return { packs };
 }
 
 function packIdFromBody(body) {
@@ -28,29 +33,44 @@ function packIdFromBody(body) {
   return id;
 }
 
+/** Download installs the CLI, exports skills, and turns the pack on. */
+export async function fulfillPackDownload(pack, dir, catalogRoot, download = downloadPackSkills) {
+  await download(pack, dir);
+  enableOfficialPack(catalogRoot, dir, pack.id);
+}
+
 function routes() {
   return {
     "/": {
-      GET: (_req, res) => sendJson(res, 200, panel()),
+      GET: async (_req, res) => sendJson(res, 200, await panel()),
     },
     "/download": {
       POST: async (req, res) => {
         const pack = packById(packIdFromBody(await readJsonObject(req)));
         if (!pack) throw new HttpError("unknown_pack", 404, "unknown skill pack");
-        await downloadPackSkills(pack, dataDir());
-        sendJson(res, 200, panel());
+        await fulfillPackDownload(pack, dataDir(), defaultCatalogRoot());
+        sendJson(res, 200, await panel());
       },
     },
     "/enable": {
       POST: async (req, res) => {
         enableOfficialPack(defaultCatalogRoot(), dataDir(), packIdFromBody(await readJsonObject(req)));
-        sendJson(res, 200, panel());
+        sendJson(res, 200, await panel());
       },
     },
     "/disable": {
       POST: async (req, res) => {
         disableOfficialPack(defaultCatalogRoot(), dataDir(), packIdFromBody(await readJsonObject(req)));
-        sendJson(res, 200, panel());
+        sendJson(res, 200, await panel());
+      },
+    },
+    "/connection": {
+      POST: async (req, res) => {
+        const body = await readJsonObject(req);
+        const pack = packById(packIdFromBody(body));
+        if (!pack?.cli) throw new HttpError("unknown_pack", 404, "unknown skill pack");
+        await saveCliConnection(pack, connectionInput(body));
+        sendJson(res, 200, await panel());
       },
     },
   };
