@@ -130,13 +130,23 @@
             @answer="forwardAnswer"
           />
           <LaresDesktopQueue
+            tone="mobile"
             :items="state.queue"
             :running="state.running"
             :busy="state.queueBusy"
             :t="t"
             @action="(itemId, action) => $emit('queue-action', itemId, action)"
           />
+          <div v-if="state.approval" class="lares-mobile-shell__approval">
+            <LaresApprovalCard
+              :approval="state.approval"
+              :busy="state.approvalBusy"
+              :t="t"
+              @answer="$emit('answer-approval', $event)"
+            />
+          </div>
           <LaresComposer
+            v-else
             ref="composer"
             :draft="state.draft"
             :sending="state.sending"
@@ -231,6 +241,7 @@
 import LaresChatBar from "../chat/ChatBar.vue";
 import LaresHistoryPanel from "../chat/HistoryPanel.vue";
 import LaresTranscript from "../chat/Transcript.vue";
+import LaresApprovalCard from "../chat/ApprovalCard.vue";
 import LaresComposer from "../chat/Composer.vue";
 import LaresDesktopQueue from "../desktop/DesktopQueue.vue";
 import LaresPreview from "../preview/Preview.vue";
@@ -245,6 +256,7 @@ export default {
     LaresChatBar,
     LaresHistoryPanel,
     LaresTranscript,
+    LaresApprovalCard,
     LaresComposer,
     LaresDesktopQueue,
     LaresPreview,
@@ -266,7 +278,7 @@ export default {
   },
   emits: [
     "history", "create", "toggle-speak", "close-history", "pick-session", "retry", "open-file",
-    "answer", "update-draft", "send", "queue-action", "open-model", "open-effort", "files",
+    "answer", "answer-approval", "update-draft", "send", "queue-action", "open-model", "open-effort", "files",
     "voice", "voice-action", "hold-start", "hold-end", "close-model", "choose-model",
     "close-effort", "choose-effort", "close-preview",
     "open-commands", "open-references", "pick-command", "remove-image",
@@ -333,6 +345,11 @@ export default {
   min-height: 0;
   flex: 1;
   flex-direction: column;
+}
+
+.lares-mobile-shell__approval {
+  flex: none;
+  margin: 0 16px calc(12px + env(safe-area-inset-bottom, 0px));
 }
 
 .lares-shell__status,

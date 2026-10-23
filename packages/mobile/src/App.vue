@@ -102,6 +102,7 @@
       @pick-command="pickCommand"
       @toggle-speak="toggleSpeak"
       @dismiss-speak="speakNotice = ''"
+      @answer-approval="answerApproval"
     />
     <LaresVoicePanel v-if="voicePanelState" :view="voicePanelState" :t="t"
       @close="runVoicePanel('close')" @edit="voicePanel.edit($event)" @preset="voicePanel.selectPreset($event, true).catch(() => {})"
@@ -154,6 +155,7 @@ import {
   effortSwitchSelection,
 } from "@olares/lares-core/router/session-model";
 import { messageFromCode } from "@olares/lares-core/i18n/t";
+import { presentApproval } from "@olares/lares-core/larepass/approval";
 import { parseAskUserQuestions, singleSelectAnswer } from "@olares/lares-core/larepass/questions";
 import { applyCommand } from "@olares/lares-core/larepass/commands";
 import { permissionOption, presetDescription, presetLabel } from "@olares/lares-core/larepass/permissions";
@@ -785,7 +787,7 @@ export default {
       this.queue = snap.queue ?? [];
       this.question = snap.question || null;
       if (!this.question) this.questionBusy = false;
-      this.approval = snap.approval || null;
+      this.approval = presentApproval(snap.approval, snap.items, this.locale);
       if (!this.approval) this.approvalBusy = false;
       if (this.pendingUser && snap.items.some((row) => row.type === "user" && row.text === this.pendingUser)) {
         this.pendingUser = "";

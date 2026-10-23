@@ -263,14 +263,18 @@ test("the desktop composer exposes the host conversation controls", () => {
   assert.match(app, /draftBySession/);
 });
 
-test("the mobile composer exposes dsh queued submissions", () => {
+test("the mobile composer exposes dsh queued submissions and approvals", () => {
   const shell = readFileSync(new URL("../../packages/mobile/src/mobile/MobileShell.vue", import.meta.url), "utf8");
   const app = readFileSync(new URL("../../packages/mobile/src/App.vue", import.meta.url), "utf8");
 
-  assert.match(shell, /<LaresDesktopQueue/);
+  assert.match(shell, /<LaresDesktopQueue[\s\S]*tone="mobile"/);
   assert.match(shell, /:items="state\.queue"/);
   assert.match(shell, /@action="\(itemId, action\) => \$emit\('queue-action', itemId, action\)"/);
+  assert.match(shell, /<LaresApprovalCard/);
+  assert.match(shell, /@answer="\$emit\('answer-approval', \$event\)"/);
   assert.match(app, /<LaresMobileShell[\s\S]*@queue-action="updateQueue"/);
+  assert.match(app, /<LaresMobileShell[\s\S]*@answer-approval="answerApproval"/);
+  assert.match(app, /presentApproval\(snap\.approval, snap\.items, this\.locale\)/);
 });
 
 test("composer menus open upward and only flip when the space runs out", () => {
