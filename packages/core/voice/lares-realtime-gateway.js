@@ -199,48 +199,24 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       }
       const sentences = segment(text).filter((value) => value.trim());
       scope.outputAbort = current.abort;
-      // Fetch the next sentence while this one is still feeding the player.
-      // Waiting until the buffer has drained before asking for more audio
-      // opens a gap, and filling that gap in one burst overflows the client.
-      const list = sentences.length ? sentences : [text];
-      let feeding = Promise.resolve();
-      let feedError = null;
-      let previous = "";
-      const failFeed = (cause) => { feedError ??= cause; };
       try {
-        for (const sentence of list) {
-          if (feedError) break;
+        for (const sentence of sentences.length ? sentences : [text]) {
           if (current.suspended && await current.suspended.wait === "stop") return;
           if (current.abort.signal.aborted || closed) return;
-          const lead = separator(previous, sentence);
-          previous = `${previous}${lead}${sentence}`;
-          send({ type: "response.output_audio_transcript.delta", ...part, delta: `${lead}${sentence}` });
-          const parts = [];
-          const audio = await synthesize(sentence, scope, (pcm) => { parts.push(pcm); });
+          send({ type: "response.output_audio_transcript.delta", ...part, delta: `${separator(current.sentences.at(-1)?.text, sentence)}${sentence}` });
+          // A slice has to reach the player before synthesize continues, so a
+          // caller that pauses after the first slice can still be interrupted.
+          const audio = await synthesize(sentence, scope, (pcm) => playOut(current, pcm));
           if (current.abort.signal.aborted || closed) return;
-          const spoken = sentence;
-          feeding = feeding.then(async () => {
-            if (feedError || current.abort.signal.aborted || closed) return;
-            for (const pcm of parts) {
-              if (current.abort.signal.aborted || closed) return;
-              await playOut(current, pcm);
-            }
-            if (audio && !current.abort.signal.aborted && !closed) await playOut(current, audio);
-            if (current.abort.signal.aborted || closed) return;
-            current.sentences.push({ text: spoken, endMs: current.outputMs });
-          }).catch(failFeed);
+          if (audio) await playOut(current, audio);
+          current.sentences.push({ text: sentence, endMs: current.outputMs });
         }
-        await feeding;
-        if (feedError) throw feedError;
-        if (current.abort.signal.aborted || closed) return;
         if (headset) {
           await hostOutput; await port?.finish();
           send({ type: "lares.device.playback", playing: false });
         }
       } catch (cause) {
         if (current.abort.signal.aborted || closed) return;
-        current.abort.abort();
-        await feeding.catch(() => {});
         finish(current, "failed");
         throw cause;
       }

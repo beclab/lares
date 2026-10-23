@@ -330,7 +330,7 @@ test("lares-realtime-v1 speaks the reply that landed during playback once the cl
   } finally { client.terminate(); await fixture.stop(); }
 });
 
-test("the next sentence is synthesized while the previous one is still being fed", async () => {
+test("the next sentence starts after the current one has been fed, not before its audio exists", async () => {
   const starts: number[] = [];
   let release: () => void = () => {};
   const started = new Promise<void>((resolve) => { release = resolve; });
@@ -350,10 +350,10 @@ test("the next sentence is synthesized while the previous one is still being fed
     client.send(JSON.stringify({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text: "两句" }] } }));
     await Promise.race([
       started,
-      new Promise((_, reject) => setTimeout(() => reject(new Error("second sentence did not start")), 1500)),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("second sentence did not start")), 5000)),
     ]);
     assert.equal(starts.length, 2);
-    assert.ok(starts[1] - starts[0] < 1000, `second sentence waited ${starts[1] - starts[0]}ms`);
+    assert.ok(starts[1] - starts[0] >= 1000, `second sentence started after ${starts[1] - starts[0]}ms`);
   } finally { client.terminate(); await fixture.stop(); }
 });
 
