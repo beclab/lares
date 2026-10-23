@@ -411,6 +411,19 @@ test("a live turn follows its answer while it is written, through the turn end",
   ]), ["", "", "First", "First one.", "First one.", ""]);
 });
 
+test("a later reply is read even when its first text arrives with the turn start", () => {
+  // The first snapshot of turn 2 can already carry the new answer: the model
+  // streamed it between two polls. That text is not history and must be read.
+  assert.deepEqual(speakerRun([
+    { sessionChanged: true, running: false, utterance: null },
+    { running: true, utterance: null },
+    { running: true, utterance: utterance("1:0", "First answer.", true) },
+    { running: false, utterance: utterance("1:0", "First answer.", true) },
+    { running: true, utterance: { ...utterance("2:0", "Second answer."), turn: 2 } },
+    { running: true, utterance: { ...utterance("2:0", "Second answer.", true), turn: 2 } },
+  ]), ["", "", "First answer.", "First answer.", "Second answer.", "Second answer."]);
+});
+
 test("opening a session never reads an answer it did not watch being written", () => {
   assert.deepEqual(speakerRun([
     { sessionChanged: true, running: true, utterance: utterance("1:0", "Already half") },

@@ -255,6 +255,25 @@ screen or an app switch comes back to the same reply instead of a reply that was
 marked as read. Only a longer pause or stall fails that reply, with a visible
 playback error rather than a silent stop.
 
+A socket that is torn down rather than paused (the WebView is suspended, Wi-Fi
+switches to cellular, the proxy resets the connection) is retried up to three
+times. The client keeps the frames it has already rendered, asks for a new
+single-use ticket for the same answer, drops that prefix from the replayed
+stream while acknowledging it as it arrives, and continues at the drop point; a
+whole-file answer cannot be offset and replays. Reconnects are reported as
+`playback_reconnect`, and the final failure is the existing visible
+`playback_failed`. A readout that cannot identify its answer (`voice_reply_*`)
+is not retried.
+
+A voice take that starts while a chat answer is being read suspends that
+answer without marking it read. If the take is cancelled, empty or fails before
+it submits a turn, the same answer resumes where the listener left it; if the
+take submits, the transcript grows and the take owns the answer, so the chat
+readout must not replay it. This is why pressing the microphone during readout
+used to end the answer for good. The unified conversation also reports a
+finished reply as not running, so a completed answer leaves the panel's
+`Working` state and the next turn can listen again.
+
 A phone that turns its screen off suspends the WebView even while the page is
 playing: the AudioContext is interrupted and the socket is torn down before the
 next progress tick arrives. While a readout is preparing or playing, the mobile

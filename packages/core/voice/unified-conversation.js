@@ -274,7 +274,9 @@ export function createUnifiedConversation({ request, socket: openSocket = browse
     lastSessionId = state.sessionId;
     if (lastSessionId) controller.bindSession(lastSessionId);
     if (state.error && state.error !== "voice_cancelled") throw new Error(state.error);
-    controller.observeAgent(Boolean(state.running) || Boolean(reply), Boolean(reply?.audio));
+    // A finished reply is not a running agent: keeping it "running" left the
+    // panel on Working forever and blocked the next continuous turn.
+    controller.observeAgent(Boolean(state.running), Boolean(reply?.audio));
   };
   const watch = async () => {
     if (disposed || controller.getSnapshot().connection === "closed") return;

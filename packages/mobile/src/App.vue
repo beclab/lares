@@ -595,6 +595,8 @@ export default {
       const view = this.voicePanel.getSnapshot(); this.voicePanelState = view;
       this.voiceCall = view.snapshot?.connection === "closed" ? null : view.snapshot;
       this.voicePhase = view.snapshot?.capture || "idle"; this.voiceError = view.error || view.snapshot?.error || "";
+      // The call no longer owns the answer: a cancelled take gives it back.
+      if (this.voiceSuspended && view.snapshot?.connection !== "open") this.resumeSuspendedReadout();
     });
     this.replySpeaker = createReplySpeaker();
     this.reader = createSentencePlayer({
@@ -648,7 +650,7 @@ export default {
     this.voicePageShowHandler = () => {
       if (this.voiceReadoutPaused) { this.voiceReadoutPaused = false; this.reader.resume(); }
     };
-    this.voiceOfflineHandler = () => { this.reader.stop(); void this.voicePanel.pause().catch(() => {}); };
+    this.voiceOfflineHandler = () => { this.stopReadout(); void this.voicePanel.pause().catch(() => {}); };
     window.addEventListener("offline", this.voiceOfflineHandler);
     document.addEventListener("visibilitychange", this.voiceVisibilityHandler);
     window.addEventListener("pagehide", this.voicePageHideHandler);
@@ -663,7 +665,7 @@ export default {
     this.restoreLog();
   },
   deactivated() {
-    this.reader.stop();
+    this.stopReadout();
     void this.voicePanel?.pause().catch(() => {});
     this.captureLog();
   },
@@ -742,7 +744,7 @@ export default {
       }
       if (sessionChanged && snap.sessionId !== this.voiceAdoptingSession) {
         void this.voicePanel?.pause().catch(() => {});
-        this.reader.stop();
+        this.stopReadout();
         this.player?.stop();
       }
       if (sessionChanged) this.voiceAdoptingSession = null;
@@ -759,9 +761,12 @@ export default {
       // A paused call is not speaking. Only an open call owns the reply;
       // leaving it set after the keyboard returns is how later answers stay silent.
       const voiceSpeaking = this.voiceCall?.connection === "open";
-      if (voiceSpeaking) this.reader.stop();
+      if (voiceSpeaking) this.suspendReadout();
       const target = this.voiceSpeak && !voiceSpeaking && !document.hidden ? speakable(utterance, this.voiceStreaming) : null;
-      if (target) this.reader.follow({ ...target, sessionId: snap.sessionId, source: { sessionId: snap.sessionId, turn: target.turn, step: target.step, attemptId: target.attemptId }, key: `${snap.sessionId}:${target.key}` });
+      if (target) this.followReadout({ ...target, sessionId: snap.sessionId, source: { sessionId: snap.sessionId, turn: target.turn, step: target.step, attemptId: target.attemptId }, key: `${snap.sessionId}:${target.key}` });
+      // A cancelled voice take did not own the answer: play it again. A take
+      // that submitted a turn grew the transcript, so the call owns it.
+      if (!voiceSpeaking) this.resumeSuspendedReadout();
       this.failed = snap.failed;
       this.error = snap.error;
       this.sessions = snap.sessions ?? this.sessions;
@@ -1302,7 +1307,7 @@ export default {
     },
     async onVoiceShortcut(event) {
       if (this.chatDevice !== "desktop" || document.hidden || navigator.onLine === false || event.composedPath?.().some(node => node?.hasAttribute?.("data-voice-shortcut-recorder"))) return;
-      if (event.key === "Escape" && !event.defaultPrevented) { this.reader.stop(); void this.voicePanel.pause().catch(() => {}); return; }
+      if (event.key === "Escape" && !event.defaultPrevented) { this.stopReadout(); void this.voicePanel.pause().catch(() => {}); return; }
       const action = matchVoiceShortcut(event, this.voiceSettings?.config?.dictationShortcuts);
       if (!action || !laresVoiceAvailability(this.voiceSettings).dictation) return;
       event.preventDefault();
@@ -1352,7 +1357,7 @@ export default {
       const device = settings.config.device === "headset" ? "headset" : "device";
       onDevice(device);
       if (settings.config.backend === "realtime" && continuous) throw new Error("voice_manual_realtime_unavailable");
-      this.reader.stop(); this.player?.stop(); this.player?.unlock();
+      this.suspendReadout(); this.player?.stop(); this.player?.unlock();
       if (config.transport !== "legacy") {
         return createUnifiedConversation({ request: (path, options) => this.runtime.voiceRequest(path, options), socket: (ticket) => this.runtime.voiceSocket(ticket),
           device: captureSource("mobile", config.device), readAloud: continuous && config.speak, preset: config.preset, presentationSession: true,
@@ -1394,6 +1399,34 @@ export default {
         onError: (error) => { this.voiceError = error.message; },
       });
     },
+    followReadout(value) {
+      if (!value) return;
+      this.lastReadout = value;
+      this.reader.follow(value);
+    },
+    suspendReadout() {
+      const key = this.reader?.key;
+      if (!key) return;
+      if (this.lastReadout?.key === key) {
+        this.voiceSuspended = this.lastReadout;
+        this.voiceSuspendedItems = this.items?.length ?? 0;
+      }
+      this.reader.suspend?.();
+    },
+    resumeSuspendedReadout() {
+      const suspended = this.voiceSuspended;
+      if (!suspended) return;
+      this.voiceSuspended = null;
+      const taken = (this.items?.length ?? 0) > this.voiceSuspendedItems;
+      if (taken) this.reader.consume(suspended.key);
+      else if (suspended.sessionId === this.sessionId && this.voiceSpeak && !document.hidden) this.followReadout(suspended);
+    },
+    stopReadout() {
+      this.voiceSuspended = null;
+      this.voiceSuspendedItems = 0;
+      this.lastReadout = null;
+      this.reader.stop();
+    },
     setReadoutAwake(active) {
       this.readoutActive = Boolean(active);
       if (this.readoutActive) void this.readoutWake?.hold();
@@ -1415,7 +1448,7 @@ export default {
       this.voiceSpeak = next;
       this.speakBusy = true;
       if (!next) {
-        this.reader.stop();
+        this.stopReadout();
         this.player?.stop();
         void this.runtime.interruptSpeech?.();
       }
@@ -1580,10 +1613,10 @@ export default {
       const text = this.draft.trim();
       if (!this.canSend) return;
       this.player?.unlock();
-      // A typed reply is the chat's. An open voice call would keep the reader
-      // quiet and then not speak this text, so pause it and let the reader take the answer.
+      // A typed reply is the chat's. Stop the old readout before pausing the
+      // call, so the pause cannot hand a suspended answer back for a moment.
+      this.stopReadout();
       if (this.voiceCall?.connection === "open") await this.voicePanel.pause();
-      this.reader.stop();
       const sessionId = this.sessionId;
       const images = this.draftImages.filter((row) => draftImageStatus(row) === "ready");
       const wasRunning = this.running;

@@ -386,12 +386,104 @@ test("a socket that closes after done still finishes audio already accepted", as
   assert.equal(await pending, true);
 });
 
-test("a socket that closes on its own is still voice_disconnected", async () => {
+test("a socket that closes on its own is still voice_disconnected when retries are off", async () => {
   let socket: ReturnType<typeof fakeSocket>;
-  const pending = playAudioStream({ text: "你好", request: ticket, socket: () => (socket = fakeSocket()) });
+  const pending = playAudioStream({ text: "你好", request: ticket, socket: () => (socket = fakeSocket()), reconnectAttempts: 1 });
   await flush();
   socket.close();
   await assert.rejects(pending, (error: Error) => error.message === "voice_disconnected");
+});
+
+test("a suspended answer plays again after a cancelled voice take", async () => {
+  let plays = 0;
+  const ends: Array<() => void> = [];
+  const reader = createSentencePlayer({
+    send: async (request: any) => request.part === undefined ? { sentences: 1 } : { audio: "one" },
+    play: () => { plays += 1; return new Promise<void>((resolve) => { ends.push(resolve); }); },
+    halt: () => { for (const end of ends.splice(0)) end(); },
+    silence: () => {},
+  });
+  const utterance = { key: "s:1:1", turn: 1, step: 1, text: "One sentence.", done: true, source: { sessionId: "s", turn: 1, step: 1 } };
+  reader.follow(utterance);
+  await flush();
+  assert.equal(plays, 1);
+  // The mic was pressed: audio stops, but the answer is not marked read.
+  assert.equal(reader.suspend(), "s:1:1");
+  reader.follow(utterance);
+  await flush();
+  assert.equal(plays, 2, "a cancelled take brings the same answer back");
+  // The take was submitted instead: it owns the answer.
+  reader.suspend();
+  reader.consume("s:1:1");
+  reader.follow(utterance);
+  await flush();
+  assert.equal(plays, 2, "a submitted take does not replay the answer");
+});
+
+test("a dropped socket reconnects and resumes after the frames already played", async () => {
+  const originalContext = (globalThis as any).AudioContext;
+  const originalNode = (globalThis as any).AudioWorkletNode;
+  const received: number[] = [];
+  class Context {
+    state = "running"; destination = {}; sampleRate = 24000;
+    audioWorklet = { addModule: async () => {} };
+    async resume() {}
+    async close() { this.state = "closed"; }
+  }
+  class Node {
+    port: { onmessage: ((event: any) => void) | null; postMessage: (data: any) => void };
+    played = 0;
+    constructor() {
+      this.port = {
+        onmessage: null,
+        postMessage: (data: any) => {
+          if (data.type === "audio") {
+            received.push(...data.samples);
+            this.played += data.samples.length;
+            queueMicrotask(() => this.port.onmessage?.({ data: { type: "progress", frames: this.played } }));
+          }
+          if (data.type === "finish") queueMicrotask(() => this.port.onmessage?.({ data: { type: "done" } }));
+        },
+      };
+    }
+    connect() {}
+    disconnect() {}
+  }
+  (globalThis as any).AudioContext = Context;
+  (globalThis as any).AudioWorkletNode = Node;
+  const sockets: Array<ReturnType<typeof fakeSocket>> = [];
+  const bytes = (frames: number[]) => {
+    const buffer = Buffer.alloc(frames.length * 2);
+    frames.forEach((value, index) => buffer.writeInt16LE(value, index * 2));
+    return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+  };
+  const send = (socket: ReturnType<typeof fakeSocket>, value: unknown) => socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify(value) }));
+  const audio = (socket: ReturnType<typeof fakeSocket>, frames: number[]) => socket.dispatchEvent(new MessageEvent("message", { data: bytes(frames) }));
+  const format = { type: "format", sampleRate: 24000, channels: 1, encoding: "pcm_s16le" };
+  try {
+    const pending = playAudioStream({ text: "Hello.", request: ticket, reconnectDelayMs: 0, socket: () => { const socket = fakeSocket(); sockets.push(socket); return socket; } });
+    await flush();
+    send(sockets[0], format);
+    audio(sockets[0], [1, 2, 3, 4]); await flush();
+    audio(sockets[0], [5, 6, 7, 8]); await flush();
+    audio(sockets[0], [9, 10, 11, 12]); await flush();
+    sockets[0].close();
+    for (let i = 0; i < 20 && sockets.length < 2; i += 1) await new Promise((resolve) => setTimeout(resolve, 5));
+    assert.equal(sockets.length, 2, "a second socket takes over after the drop");
+    send(sockets[1], format);
+    // The host replays the answer from its first segment: the first 12 frames
+    // were already heard and must not be played twice.
+    audio(sockets[1], Array.from({ length: 12 }, (_, i) => i + 1)); await flush();
+    audio(sockets[1], Array.from({ length: 12 }, (_, i) => i + 13)); await flush();
+    send(sockets[1], { type: "done" });
+    assert.equal(await pending, true);
+    assert.deepEqual(received, Array.from({ length: 24 }, (_, i) => (i + 1) / 32768));
+  } finally {
+    if (originalContext === undefined) delete (globalThis as any).AudioContext;
+    else (globalThis as any).AudioContext = originalContext;
+    if (originalNode === undefined) delete (globalThis as any).AudioWorkletNode;
+    else (globalThis as any).AudioWorkletNode = originalNode;
+  }
 });
 
 test("an aborted transcription close is not voice_disconnected", async () => {
