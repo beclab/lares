@@ -1,5 +1,126 @@
 # Voice runtime
 
+## Device voice through Router: Reachy Mini on pptest03 (2026-10-24/25)
+
+Reachy Mini talks to Lares through Router, with its own tools (head, emotions,
+dance, camera) kept as device tools and Home Assistant left to the Agent through
+`ask_lares`. Releases 0.26.65–0.26.81 on `feat/ha-connection-leaked-tool-call`
+(PR 67) were tested on the robot at pptest03; the path is:
+
+```
+Reachy conversation app (OpenAI Realtime client)
+  -> reachymini realtime-gateway, compatible profile with the `lares` dialect (beclab/olares-reachymini#1)
+  -> Router composite realtime model lares-reachy/voice-assistant (provider type openai)
+  -> Lares /api/lares/voice/realtime on the internal webhook entrance (voice key with clientTools)
+  -> dialogue on default-chat (sglang Qwen3.5-9B) + ask_lares -> dsh Agent -> hass-cli
+     ASR Qwen3-ASR 0.6B (streaming), TTS Qwen3-TTS, Silero VAD in the Lares process
+```
+
+### What a device session does (0.26.81)
+
+| Concern | Behaviour | Since |
+| --- | --- | --- |
+| Listening mode | `server_vad` without playback reports is a device; push-to-talk and hands-free keep their own rules (`core/voice/listening.js`) | 0.26.74 |
+| Is someone speaking | Silero v5 per 32 ms frame in Lares (`core/voice/silero.js`, onnxruntime-web, weights from `@ricky0123/vad-web`); loudness and Router's VAD only when the model cannot load | 0.26.78 |
+| When a take ends | 500 ms without a voice; or 1 s after streaming ASR stops finding new words; a take whose voice stays under 250 ms is dropped after 500 ms with `input_audio_buffer.cleared`; 10 s at most | 0.26.78–0.26.81 |
+| Barge-in | Speech that stands out from the reply's echo for 500 ms and that Silero hears as a voice; its first ASR words (up to 1.5 s) are compared with what the device is saying (`core/voice/echo.js`); the reply's own words are echo, anything else stops the reply | 0.26.78 |
+| ASR load | One ASR request per session (the next take buffers until the previous is read); 503/429 retried after 0.4 s and 1.2 s; a device take ASR cannot read ends with `input_audio_transcription.failed` | 0.26.75 |
+| Dialogue | `reasoning_effort: "none"`; device rules send home control, lookups and schedules to `ask_lares`; language follows the latest user message; acknowledgment before the Agent starts, in a few words; one short sentence after a device result | 0.26.70–0.26.79 |
+| Diagnostics | One `device-take` voice metric per take (gate, length, how it ended, VAD answer, chunk RMS p50/p95/max); `device-echo` for a barge-in dropped as echo | 0.26.77 |
+
+### What we learned
+
+**Loudness cannot tell a room from a voice.** Reachy sends 10 ms chunks; its room
+measured median chunk RMS 0.016, p95 0.022, peaks to 0.05. Every learned energy
+floor (1.5x the empty take's average, then 1.2x its p95) still let about one chunk
+in twenty through, and a take only ends after 500 ms without a voiced chunk, so
+the robot opened a 6–10 s take back to back and held the ASR. A floor tuned to
+one room is wrong in the next; Silero scored that room at 0.003 and speech at
+1.00, at 0.26 ms a frame on a Mac and about 0.5 s to load in the image.
+
+**A speech model hears every voice.** People talking across the room kept the
+"turn on the light" take open for the 10 s limit, and the robot's own reply came
+back through its microphone as a person. Both are settled by words, not by
+audio: ASR found no new words in the chatter, and an echo says what the reply is
+saying.
+
+**ASR busy (503 in 0 ms) is Router's gate, not the engine.** The audio engine
+reported `max_concurrency: 1`; model-console copies that onto the model card;
+Router admits against it and at width 1 refuses instead of queueing
+(`softCap(1) = 1`). Streaming and batch transcription share the slot, and a
+stream holds it until its socket closes, so the tail of one take turned the next
+take, or a batch fallback, into a 503. Audio Engines v1.1.33 reads
+`ENGINE_MAX_CONCURRENCY`; the Qwen3-ASR charts set 3 (terminus-apps #4282,
+#4283).
+
+**Capacity and launch flags do not always propagate.** After the ASR engine pod
+was replaced, model-console's capacity reporter kept the old reading (it
+re-probes on a readiness dip or an in-place relaunch, neither of which happened)
+until the app was restarted; Router then kept its own copy until Router was
+restarted, because it reads the card when an app turns running. The same shape
+hid sglang 1.0.3's thinking-off flag: `ENGINE_ARGS` only seeds model-console's
+card on first boot and the card wins after that, so upgraded installs started
+with `default_chat_template_kwargs=None`. sglang 1.0.4 sets the flag in its
+launch wrapper (terminus-apps #4284). Without it a request with no
+`reasoning_effort` spent 3.9 s reasoning and returned nothing inside 400 tokens;
+with thinking off it answers in 0.2–0.6 s.
+
+**Prompt changes need the eval, and the eval is noisy.** Measured on the live
+model: a filler-word sentence in the device rules (not-done-followup 5/5 -> 1/5),
+a language hint on every turn (clarify-answer 9/10 -> 4/10) and the brevity rule
+inside the device rules (light-off 2/5) all hurt and were dropped. What held: the
+brevity rule in the trailing reminder, the hint only when the language is at
+risk, and short cues on the turn that needs them (after a device result:
+camera-brief-zh 5/10 -> 10/10, -en 2/10 -> 9/10; after delegating: ack-brief-en
+0/5 -> 5/5). The same code scored 4/5 and 1/5 on one scenario in back-to-back
+runs, so compare at least five runs in one sitting and judge only the scenarios
+whose code path changed.
+
+**Where "turn on the light" spent 24 s** (0.26.78, before the last fixes): 8 s
+keeping the take open over background talk, 1.5 s dialogue and acknowledgment,
+14 s in the Agent (ten model calls in a row through the generic hass-cli skill,
+the first one slowed by the camera turn on the same sglang), then the
+announcement queued behind the camera reply. 0.26.79 ends such takes on settled
+words; hass-cli 0.0.2 (0.26.81) gives everyday control a two-command path and is
+not yet measured on the robot.
+
+### Working on it
+
+- Eval: `node scripts/voice-eval/run.mjs --runs 5 [--only a,b] [--dialogue ../../packages/core/voice/dialogue.next.js]`
+  inside the Lares pod, so Router sees the same identity. It replays a device's
+  real flow, including the step after a device tool result and gesture-only
+  steps. Copy files into the pod as URL-safe base64 in 1200-character chunks
+  through `olares-cli cluster pod exec ... </dev/null`.
+- Test builds: `docker buildx build --builder desktop-linux --platform linux/amd64,linux/arm64`
+  (the QEMU builder crashed esbuild), `scripts/package-chart.sh`, then
+  `olares-cli market upload` and `market upgrade lares -s upload`. An app
+  installed from `market.test` cannot be upgraded from `upload` (HTTP 404); merge
+  its terminus-apps PR and upgrade from `market.test` once it lists the version
+  (about six minutes).
+- Logs: the robot's `reachymini` container (`role=user|assistant`, `Tool call
+  received`), Lares `[lares:voice]` metrics, and Router `http_request` lines
+  (latency and status per `/v1/audio/*` and `/v1/chat/completions` call).
+
+### Open
+
+- Agent latency for home control with hass-cli 0.0.2 has not been measured on the robot.
+- The eval's overall pass rate fell from about 91% to 80–85% after sglang 1.0.4;
+  not investigated.
+- The camera answer said the image was too blurry to tell; the robot camera's
+  frame quality was not checked.
+- model-console does not re-probe capacity when the engine pod is replaced, and
+  Router does not re-read a card that changes after the app turned running.
+- Router: the default-realtime category was repointed to
+  `lares-reachy/voice-assistant` automatically; Router's docs describe an
+  openai-compatible provider while its Realtime path requires type `openai`.
+- `olares-reachymini` main still says 0.1.6 while 0.1.7 is on Docker Hub and
+  pptest03; the next release there is 0.1.8. Its pod adds group 0 to
+  `supplementalGroups` to reach the ReSpeaker's USB nodes; a device-specific
+  group would be narrower.
+- PR 67 contains `f74b4bf`, the source half of the hands-free short-take fix,
+  pushed by another session under a "publish Lares 0.26.79" message; `b9e431d`
+  carries its tests and explanation.
+
 ## Voice finish and settings RPC closeout (2026-10-19)
 
 The shared panel synchronizes confirmed read-aloud preferences once per active

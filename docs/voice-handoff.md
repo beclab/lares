@@ -1,6 +1,26 @@
-# Lares voice session handoff — 2026-10-19
+# Lares voice session handoff — 2026-10-25
 
-## Latest continuation — 2026-10-19
+## Device voice (Reachy Mini through Router) — 2026-10-25
+
+Continue on `feat/ha-connection-leaked-tool-call` (PR 67). Lares 0.26.81 is
+running on pptest03; what it does, what was learned getting there and how to
+test it are in [voice-runtime](voice-runtime.md#device-voice-through-router-reachy-mini-on-pptest03-2026-102425).
+
+| On pptest03 | Version | Note |
+| --- | --- | --- |
+| Lares | 0.26.81 (upload source) | Silero device gate, echo word check, settled-words and short-take endpoints, hass-cli 0.0.2 |
+| reachymini | 0.1.7 (upload source) | `lares` dialect, ReSpeaker USB access; main says 0.1.6 |
+| Qwen3-ASR 0.6B | 1.0.2 (market.test) | engine v1.1.33, `ENGINE_MAX_CONCURRENCY=3`; the one in use |
+| Qwen3-ASR 1.7B | 1.0.30 (market.test) | stopped: no card with 12 Gi free |
+| sglang Qwen3.5-9B | 1.0.4 (market.test) | thinking off at launch |
+
+Next: measure "turn on the light" end to end on the robot with hass-cli 0.0.2,
+then the open items listed in voice-runtime. Full suite: 1126 pass; the two
+known failures (`actual dsh adapter sends Router identifiers…`, `actual session
+catalog waits for default initialization…`) predate this work.
+
+
+## Continuation — 2026-10-19
 
 This section supersedes the historical closeout below. Continue on
 `codex/voice-startup-latency`; current product revision is `c14e8bc`.

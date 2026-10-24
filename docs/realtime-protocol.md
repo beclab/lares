@@ -485,7 +485,8 @@ unwanted action.
 | `X-Session-Id` on ASR, TTS, dialogue and Agent model calls | Live; dsh sends its session id and the `/llm/v1` shim swaps in the Realtime one while a keyed session drives it |
 | Host headset mode on ticket sockets | Live |
 | Lares desktop and mobile clients (`core/voice/unified-conversation.js`) | Live by default; `transport: "legacy"` keeps the pipeline endpoints |
-| Full-duplex barge-in | Device mode: live, confirmed by Router's VAD. Lares clients: code present; off unless `LARES_VOICE_BARGE_IN=1` and the client reports echo cancellation |
+| Device speech detection | Live: Silero in Lares decides when a take starts and ends; settled ASR words and a 250 ms floor end the rest. Loudness and Router's VAD only when the model cannot load |
+| Full-duplex barge-in | Device mode: live, confirmed by Silero and by the first ASR words not being the reply's own. Lares clients: code present; off unless `LARES_VOICE_BARGE_IN=1` and the client reports echo cancellation |
 | Removal of the pipeline session endpoints | After device acceptance (step 5) |
 
 Deployment gate: Router reaches Lares only through the internal entrance on
