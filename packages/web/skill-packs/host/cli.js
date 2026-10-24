@@ -1,3 +1,5 @@
+import { googleBin, googleLauncher, installGoogle } from "@olares/lares-core/skills/google-install";
+import { googleStatus } from "@olares/lares-core/skills/google";
 import { spawn } from "node:child_process";
 import { accessSync, chmodSync, constants, existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -20,6 +22,7 @@ export function cliBinPath(pack) {
 }
 
 export function cliPresent(pack) {
+  if (pack?.connectionKind === "google") return existsSync(googleBin(process.env.LARES_DATA_DIR?.trim() || "/data/lares")) && existsSync(googleLauncher(process.env.LARES_DATA_DIR?.trim() || "/data/lares"));
   if (!pack?.cli?.bin) return true;
   return existsSync(cliBinPath(pack));
 }
@@ -177,6 +180,7 @@ async function exportPackSkills(pack, dataDir) {
 }
 
 export async function downloadPackSkills(pack, dataDir) {
+  if (pack.connectionKind === "google") return installGoogle(dataDir);
   await ensurePackCli(pack);
   try {
     return await exportPackSkills(pack, dataDir);
@@ -193,6 +197,7 @@ export async function downloadPackSkills(pack, dataDir) {
 const emptyConnection = { configured: false, server: "" };
 
 export async function readCliConnection(pack) {
+  if (pack?.connectionKind === "google") return googleStatus(process.env.LARES_DATA_DIR?.trim() || "/data/lares");
   if (!pack?.cli) return emptyConnection;
   const bin = cliBinPath(pack);
   if (!repairCliBin(bin)) return emptyConnection;

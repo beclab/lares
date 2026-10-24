@@ -183,6 +183,12 @@
     "./larepass/context-occupancy": "./larepass/context-occupancy.js",
     "./skills/packs": "./skills/packs.js",
     "./skills/connection": "./skills/connection.js",
+    "./skills/google": "./skills/google.js",
+    "./skills/google-install": {
+      "types": "./skills/google-install.d.ts",
+      "default": "./skills/google-install.js"
+    },
+    "./skills/process": "./skills/process.js",
     "./skills/state": {
       "types": "./skills/state.d.ts",
       "default": "./skills/state.js"
