@@ -451,8 +451,12 @@ test("a run is acknowledged before the Agent starts, and history keeps the real 
   dialogue.setClientTools([MOVE]);
   assert.equal((await dialogue.reply("开灯", "r9")).text, "好的，正在开灯。");
   assert.deepEqual(order, ["chat", "chat", "submit"]);
-  assert.equal(JSON.parse(requests[1].messages.at(-1).content).status, "pending");
+  // The pending run is what the acknowledgment answers; a device's cue to keep it short comes after it.
+  assert.equal(JSON.parse(requests[1].messages.at(-2).content).status, "pending");
+  assert.match(requests[1].messages.at(-1).content, /Lares has started on that/);
   await dialogue.reply("谢谢", "r10");
+  // The cue was for that call only.
+  assert.ok(!requests[2].messages.some((item: any) => /Lares has started on that/.test(String(item.content))));
   const kept = requests[2].messages.find((item: any) => item.role === "tool" && item.tool_call_id === "own");
   assert.equal(JSON.parse(kept.content).requestId, "r9:delegate");
 });

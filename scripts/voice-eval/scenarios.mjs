@@ -163,6 +163,18 @@ export const SCENARIOS = [
     expect: check([(run) => run.text.split(/\s+/).filter(Boolean).length <= 25, "reply longer than 25 words"], [(run) => !/\n\s*[-*]|\*\*/.test(run.text), "reply uses a list or markdown"]),
   },
   {
+    id: "ack-brief-zh",
+    issue: "The acknowledgment of a light request ran to two sentences and a joke",
+    say: "帮我开下灯",
+    expect: check([delegated, "light request not sent to ask_lares"], [(run) => run.text.trim().length > 0, "no acknowledgment"], [(run) => [...run.text.replace(/\s/g, "")].length <= 20, "acknowledgment longer than 20 characters"], [(run) => speaks(run, "zh"), "did not answer in Chinese"]),
+  },
+  {
+    id: "ack-brief-en",
+    issue: "The acknowledgment of a light request ran to two sentences and a joke",
+    say: "Turn off the light please.",
+    expect: check([delegated, "light request not sent to ask_lares"], [(run) => run.text.trim().length > 0, "no acknowledgment"], [(run) => run.text.split(/\s+/).filter(Boolean).length <= 12, "acknowledgment longer than 12 words"], [(run) => speaks(run, "en"), "did not answer in English"]),
+  },
+  {
     id: "camera-brief-zh",
     issue: "After looking through the camera the robot described the scene at length",
     say: "看看我手上拿的是什么",

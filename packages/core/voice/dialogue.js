@@ -10,6 +10,10 @@ const DEVICE_REMINDER = "Reply in the same language as the user's latest message
 // The device's result (a camera frame, a tool output) is the last thing a continuation reads, and
 // the persona's "one quick answer + one wink of humor" otherwise turns a look into a description.
 const CONTINUE = "Answer the user's request from the device result above in one short sentence, under 15 words or 30 Chinese characters, in the user's language. Say it in words even if you also call a device tool. No jokes, emoji, offers or questions.";
+// A device's acknowledgment is heard while the user waits for the result; it only has to say Lares
+// is on it. Left alone, the persona adds a wish and a joke, and its second sentence is still being
+// synthesised when the next turn begins.
+const ACKNOWLEDGE = "Lares has started on that. Tell the user so in a few words, under 10 words or 15 Chinese characters, in the user's language. No jokes, emoji, wishes or promises about the outcome.";
 const ANNOUNCE = "A delegated Lares task has just finished; its result is the latest task result above. Tell the user what matters in one or two short sentences unless you already did. Device tools may accompany the answer. If nothing needs saying, reply with an empty message.";
 const TOOL = { type: "function", function: { name: "ask_lares", description: "Hand a request to the user's Lares Agent, which acts and looks things up for them: controlling home devices such as lights, switches, climate and scenes; facts, weather, news and the user's files; calendar, schedules, reminders and messages; any other task that needs real action. Pass the request as task. It returns pending at once and the result is announced later; status reports tasks still running.", parameters: { type: "object", properties: { operation: { type: "string", enum: ["run", "status"] }, task: { type: "string", maxLength: 16000 } }, required: ["operation"], additionalProperties: false } } };
 const MAX_DEVICE_CALLS = 8;
@@ -220,7 +224,7 @@ export function createVoiceDialogue({ config, agent = false, owner, context = []
             next.push(outcome);
             // The model has not seen the task status yet; device calls from the same batch are already sent.
             for (const call of calls) next.push({ role: "tool", tool_call_id: call.call_id, content: SENT });
-            const follow = { messages: wire(next), model: config.chatModel, owner, signal, tools: device.length ? device : undefined, maxCalls, onDelta, reasoningEffort: "none" };
+            const follow = { messages: wire(device.length && operation === "run" ? [...next, { role: "system", content: ACKNOWLEDGE }] : next), model: config.chatModel, owner, signal, tools: device.length ? device : undefined, maxCalls, onDelta, reasoningEffort: "none" };
             answer = await chat(follow);
             // A small model sometimes asks for ask_lares again although it just ran. One more call that may
             // not use tools gets its words; anything it still calls is dropped instead of failing the turn.
