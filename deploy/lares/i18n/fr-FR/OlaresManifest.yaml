@@ -25,5 +25,6 @@ spec:
     - La saisie vocale démarre après une installation neuve.
     - Les tâches automatisées exécutent une consigne selon un horaire, et les bulletins du matin par thème sont enregistrés dans l’espace de travail.
     - Des appareils comme Reachy Mini peuvent utiliser leurs propres outils en conversation vocale avec une clé vocale qui autorise les outils d'appareil.
+    - Router atteint la voix de Lares par une entrée interne ; l'adresse de la page Lares se termine désormais par 0 dans sa première partie.
 
-    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.65)
+    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.66)

@@ -29,5 +29,6 @@ spec:
     - Voice input starts on a fresh install.
     - Automation tasks run a prompt on a schedule, and topic morning briefs are written to the workspace.
     - Devices such as Reachy Mini can use their own tools in voice conversations through a voice key that allows device tools.
+    - Router reaches Lares voice through an internal entrance; the Lares page address gains a trailing 0.
 
-    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.65)
+    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.66)

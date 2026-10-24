@@ -25,5 +25,6 @@ spec:
     - Die Spracheingabe startet nach einer Neuinstallation.
     - Automatisierte Aufgaben führen eine Anweisung nach Zeitplan aus, und Morgenberichte nach Thema werden im Arbeitsbereich abgelegt.
     - Geräte wie Reachy Mini können in Sprachgesprächen ihre eigenen Werkzeuge nutzen, wenn ihr Sprachschlüssel Geräte-Werkzeuge erlaubt.
+    - Router erreicht Lares Voice über einen internen Zugang; die Adresse der Lares-Seite endet nun im ersten Teil auf 0.
 
-    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.65)
+    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.66)

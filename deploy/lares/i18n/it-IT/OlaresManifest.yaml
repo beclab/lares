@@ -25,5 +25,6 @@ spec:
     - L'input vocale si avvia dopo una nuova installazione.
     - Le attività automatiche eseguono un'istruzione in base a una pianificazione, e i notiziari del mattino per argomento vengono salvati nell'area di lavoro.
     - Dispositivi come Reachy Mini possono usare i propri strumenti nelle conversazioni vocali con una chiave vocale che consente gli strumenti del dispositivo.
+    - Router raggiunge la voce di Lares tramite un ingresso interno; l'indirizzo della pagina Lares ora termina con 0 nella prima parte.
 
-    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.65)
+    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.66)

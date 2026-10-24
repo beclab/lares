@@ -25,5 +25,6 @@ spec:
     - La entrada de voz arranca tras una instalación nueva.
     - Las tareas automáticas ejecutan una instrucción según un horario, y los resúmenes matutinos por tema se guardan en el espacio de trabajo.
     - Dispositivos como Reachy Mini pueden usar sus propias herramientas en conversaciones de voz con una clave de voz que permite herramientas del dispositivo.
+    - Router llega a la voz de Lares por una entrada interna; la dirección de la página de Lares ahora termina en 0 en su primera parte.
 
-    [Notas de la versión](https://github.com/beclab/lares/releases/tag/v0.26.65)
+    [Notas de la versión](https://github.com/beclab/lares/releases/tag/v0.26.66)
