@@ -1,5 +1,7 @@
 import React from "react";
-import { Button, IconLoadingOutlineMedium } from "@deepseek-ai/dsh-client-ui-primitives";
+import { createPluginClient } from "@olares/lares-core/skills/client";
+import { GoogleConnection } from "./google.js";
+import { Button, IconLoadingOutlineMedium, Input } from "@deepseek-ai/dsh-client-ui-primitives";
 import { OFFICIAL_PACKS } from "@olares/lares-core/skills/packs";
 import { controlsCss } from "../../../shared/client/settings-controls.js";
 import { useLatest, useMountedRef } from "../../../shared/client/react-lifecycle.js";
@@ -9,6 +11,7 @@ import {
   enableSkillPack,
   loadSkillPacks,
   rememberedSkillPacks,
+  saveSkillConnection,
 } from "./api.js";
 import { useT } from "./locale.js";
 import localSettingsCss from "./styles/settings.css";
@@ -20,6 +23,7 @@ export const settingsCss = `${controlsCss}${localSettingsCss}`;
 
 /** Which packs exist is a build-time fact, so the cards never wait on the host. */
 const PACK_IDS = OFFICIAL_PACKS.map((pack) => pack.id);
+const CONFIGURABLE = new Set(OFFICIAL_PACKS.filter((pack) => pack.connectionKind === "token").map((pack) => pack.id));
 
 function packAction(status) {
   if (!status.downloaded) {
@@ -30,7 +34,102 @@ function packAction(status) {
     : { variant: "primary", idle: "settings.enable", pending: "settings.enabling", handler: "onEnable" };
 }
 
-function PackCard({ id, status, busy, t, ...handlers }) {
+function TokenForm({ id, status, busy, t, onSave }) {
+  const [open, setOpen] = useState(false);
+  const [server, setServer] = useState(status?.connection?.server ?? "");
+  const [token, setToken] = useState("");
+  const knownServer = status?.connection?.server ?? "";
+
+  useEffect(() => {
+    if (knownServer) setServer((current) => current || knownServer);
+  }, [knownServer]);
+
+  const saving = busy === `${id}:token`;
+  const save = () => {
+    if (saving || busy) return;
+    onSave(server, token).then((ok) => {
+      if (ok) {
+        setToken("");
+        setOpen(false);
+      }
+    });
+  };
+  const saveOnEnter = (event) => {
+    if (event.key === "Enter") save();
+  };
+  return h(
+    "div",
+    { className: "lares-skills-token" },
+    h(
+      "div",
+      { className: "lares-skills-token-bar" },
+      knownServer
+        ? h("p", { className: "lares-skills-connected" }, t("settings.connected", { server: knownServer }))
+        : h("p", { className: "lares-skills-hint" }, t("settings.tokenHint")),
+      h(
+        Button,
+        {
+          variant: "outline",
+          size: "sm",
+          disabled: Boolean(busy),
+          onClick: () => setOpen((current) => !current),
+        },
+        t(open ? "settings.tokenHide" : "settings.token"),
+      ),
+    ),
+    open
+      ? h(
+          "div",
+          { className: "lares-skills-token-form" },
+          h(
+            "label",
+            { className: "lares-skills-field" },
+            h("span", { className: "lares-skills-label" }, t("settings.server")),
+            h(Input, {
+              value: server,
+              disabled: saving,
+              placeholder: t("settings.serverPlaceholder"),
+              autoComplete: "off",
+              onChange: (event) => setServer(event.target.value),
+              onKeyDown: saveOnEnter,
+            }),
+          ),
+          h(
+            "label",
+            { className: "lares-skills-field" },
+            h("span", { className: "lares-skills-label" }, t("settings.tokenLabel")),
+            h(Input, {
+              type: "password",
+              value: token,
+              disabled: saving,
+              placeholder: t("settings.tokenPlaceholder"),
+              autoComplete: "off",
+              spellCheck: false,
+              onChange: (event) => setToken(event.target.value),
+              onKeyDown: saveOnEnter,
+            }),
+          ),
+          h(
+            "div",
+            { className: "lares-skills-token-actions" },
+            h(
+              Button,
+              {
+                variant: "primary",
+                size: "sm",
+                disabled: saving || Boolean(busy),
+                icon: saving ? h(IconLoadingOutlineMedium, { size: 14, className: "lares-skills-spin" }) : undefined,
+                onClick: save,
+              },
+              t(saving ? "settings.tokenSaving" : "settings.tokenSave"),
+            ),
+          ),
+        )
+      : null,
+  );
+}
+
+function PackCard({ id, status, busy, t, onGoogle, ...handlers }) {
   const pending = busy === id;
   const action = status ? packAction(status) : null;
   return h(
@@ -38,33 +137,41 @@ function PackCard({ id, status, busy, t, ...handlers }) {
     { className: "lares-skills-card" },
     h(
       "div",
-      { className: "lares-skills-copy" },
-      h("div", { className: "lares-skills-name" }, t(`pack.${id}.title`)),
-      h("p", { className: "lares-skills-intro" }, t(`pack.${id}.intro`)),
+      { className: "lares-skills-head" },
+      h(
+        "div",
+        { className: "lares-skills-copy" },
+        h("div", { className: "lares-skills-name" }, t(`pack.${id}.title`)),
+        h("p", { className: "lares-skills-intro" }, t(`pack.${id}.intro`)),
+      ),
+      h(
+        "div",
+        { className: "lares-skills-actions" },
+        // Only the control waits for the host: download / open / close depends on
+        // state the browser cannot know, everything left of it is static.
+        action
+          ? h(
+              Button,
+              {
+                variant: action.variant,
+                size: "sm",
+                disabled: Boolean(busy),
+                icon: pending ? h(IconLoadingOutlineMedium, { size: 14, className: "lares-skills-spin" }) : undefined,
+                onClick: handlers[action.handler],
+              },
+              t(pending ? action.pending : action.idle),
+            )
+          : h(IconLoadingOutlineMedium, {
+              className: "lares-skills-spin",
+              role: "status",
+              "aria-label": t("settings.initializing"),
+            }),
+      ),
     ),
-    h(
-      "div",
-      { className: "lares-skills-actions" },
-      // Only the control waits for the host: download / open / close depends on
-      // state the browser cannot know, everything left of it is static.
-      action
-        ? h(
-            Button,
-            {
-              variant: action.variant,
-              size: "sm",
-              disabled: Boolean(busy),
-              icon: pending ? h(IconLoadingOutlineMedium, { size: 14, className: "lares-skills-spin" }) : undefined,
-              onClick: handlers[action.handler],
-            },
-            t(pending ? action.pending : action.idle),
-          )
-        : h(IconLoadingOutlineMedium, {
-            className: "lares-skills-spin",
-            role: "status",
-            "aria-label": t("settings.initializing"),
-          }),
-    ),
+    id === "google-workspace" ? h(GoogleConnection, { status, busy, t, onAction: onGoogle }) : null,
+    CONFIGURABLE.has(id)
+      ? h(TokenForm, { id, status, busy, t, onSave: handlers.onSaveToken })
+      : null,
   );
 }
 
@@ -95,22 +202,32 @@ export function SkillsSettings() {
   }, []);
 
   const run = useCallback(
-    async (id, action) => {
+    async (id, action, errorKey = "settings.saveFailed") => {
       setBusy(id);
       setError("");
       try {
         const next = await action(id);
         if (mounted.current) setState(next);
+        return true;
       } catch (err) {
         if (mounted.current) {
-          setError(t("settings.saveFailed", { msg: err instanceof Error ? err.message : String(err) }));
+          setError(t(errorKey, { msg: err instanceof Error ? err.message : String(err) }));
         }
+        return false;
       } finally {
         if (mounted.current) setBusy("");
       }
     },
-    [t],
+    [mounted, t],
   );
+
+  const googleClient = createPluginClient();
+  const onGoogle = async (action, value) => {
+    let payload;
+    const ok = await run("google-workspace:auth", async () => { payload = await googleClient[action](value); return { packs: payload.packs }; }, "google.error");
+    if (!ok) { try { const next = await loadSkillPacks({ force: true }); if (mounted.current) setState(next); } catch {} }
+    return ok ? payload : null;
+  };
 
   const status = new Map((state?.packs ?? []).map((pack) => [pack.id, pack]));
 
@@ -128,9 +245,11 @@ export function SkillsSettings() {
           status: status.get(id) ?? null,
           busy,
           t,
+          onGoogle,
           onDownload: () => run(id, downloadSkillPack),
           onEnable: () => run(id, enableSkillPack),
           onDisable: () => run(id, disableSkillPack),
+          onSaveToken: (server, token) => run(`${id}:token`, () => saveSkillConnection(id, server, token), "settings.tokenFailed"),
         }),
       ),
     ),

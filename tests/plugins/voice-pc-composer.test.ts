@@ -154,3 +154,25 @@ test("a changed attachment list also invalidates a pending native send", async (
   shell.submit(); await flush(); shell.attachmentIds.push("new-file"); release(); await flush();
   assert.equal(shell.sent.length, 0);
 });
+
+
+test("native text send survives optional prewarming without AudioWorklet", async t => {
+  const { primePlaybackContext } = await import("@olares/lares-core/voice/pcm-player");
+  let closed = 0;
+  class Context {
+    state = "running";
+    async resume() {}
+    async close() { this.state = "closed"; closed++; }
+  }
+  const h = harness({ armOutput: () => primePlaybackContext(Context as any) });
+  const shell = submissionHarness();
+  shell.beforeSubmit.add(() => h.panel.arm());
+  for (const origin of ["click", "enter"]) {
+    shell.submit("queue", origin);
+    await flush();
+  }
+  assert.deepEqual(shell.sent, [["queue", "click"], ["queue", "enter"]]);
+  assert.deepEqual(shell.notices, []);
+  assert.equal(closed, 2);
+  await h.panel.dispose();
+});

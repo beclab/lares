@@ -1,11 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { connectionInput, connectionStatus, profileLoginArgs, scrubSecret } from "@olares/lares-core/skills/connection";
 import { parseSkillNames } from "@olares/lares-core/skills/packs";
 import { OFFICIAL_PACKS } from "@olares/lares-core/skills/packs";
-import { packInstallArgs } from "../../packages/web/skill-packs/host/cli.js";
+import { HttpError } from "@olares/lares-core/tools/http";
+import {
+  attemptInstall,
+  briefInstallError,
+  isTransientInstallError,
+  packInstallArgs,
+  repairCliBin,
+} from "../../packages/web/skill-packs/host/cli.js";
+import { fulfillPackDownload } from "../../packages/web/skill-packs/host/index.js";
 import {
   disableOfficialPack,
   enableOfficialPack,
@@ -44,6 +53,70 @@ test("hass-cli uses npm global-prefix layout so the executable lands in prefix/b
   assert.equal(args.at(-1), "@olares/hass-cli@0.0.1");
 });
 
+test("repairCliBin makes a mode-644 shim behind an existing symlink executable", () => {
+  withTree((root) => {
+    const shim = join(root, "hass-cli.js");
+    writeFileSync(shim, "#!/usr/bin/env node\n");
+    chmodSync(shim, 0o644);
+    const link = join(root, "hass-cli");
+    symlinkSync(shim, link);
+    assert.equal(repairCliBin(link), true);
+    assert.equal(statSync(shim).mode & 0o111, 0o111);
+    assert.equal(repairCliBin(join(root, "missing")), false);
+  });
+});
+
+test("install retries a transient github DNS failure and keeps the real error one line", async () => {
+  const npmLog = [
+    "npm error code 1",
+    "npm error [@olares/hass-cli] failed to download vendor binary. Tried:",
+    "npm error - https://github.com/beclab/hass-cli/releases/download/v0.0.1/hass-cli-v0.0.1_linux_amd64.tar.gz → getaddrinfo EAI_AGAIN github.com",
+  ].join("\n");
+  assert.equal(isTransientInstallError(new Error(npmLog)), true);
+  assert.match(briefInstallError(new Error(npmLog)), /EAI_AGAIN github.com$/);
+  assert.equal(briefInstallError(new Error(npmLog)).includes("npm error code 1"), false);
+
+  let calls = 0;
+  const value = await attemptInstall(async () => {
+    calls += 1;
+    if (calls < 3) throw new Error(npmLog);
+    return "ok";
+  }, { pause: async () => {} });
+  assert.equal(value, "ok");
+  assert.equal(calls, 3);
+
+  let once = 0;
+  await assert.rejects(
+    attemptInstall(async () => {
+      once += 1;
+      throw new Error("npm error code 1\nnpm error Invalid package");
+    }, { pause: async () => {} }),
+    /Invalid package/,
+  );
+  assert.equal(once, 1);
+});
+
+test("download enables the pack so the exported skills are usable", async () => {
+  const root = mkdtempSync(join(tmpdir(), "lares-skills-"));
+  try {
+    const catalog = join(root, "catalog");
+    const dataDir = join(root, "data");
+    mkdirSync(catalog, { recursive: true });
+    const pack = OFFICIAL_PACKS[0];
+    await fulfillPackDownload(pack, dataDir, catalog, async () => {
+      writeExportedSkills(packCacheDir(dataDir, pack.id), [{
+        name: "ha-shared",
+        body: "---\nname: ha-shared\n---\n",
+      }]);
+    });
+    assert.equal(listOfficialPacks(dataDir)[0].downloaded, true);
+    assert.equal(listOfficialPacks(dataDir)[0].enabled, true);
+    assert.match(readFileSync(join(dataDir, "skills", "ha-shared", "SKILL.md"), "utf8"), /ha-shared/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("seed copies always-on skills and skips HA until it is downloaded and enabled", () => {
   withTree((root) => {
     const catalog = join(root, "catalog");
@@ -79,4 +152,28 @@ test("enabling HA copies the downloaded cache into the runtime skills dir", () =
     assert.equal(listOfficialPacks(dataDir)[0].downloaded, true);
     assert.equal(listOfficialPacks(dataDir)[0].enabled, false);
   });
+});
+
+test("token entry keeps the secret off the command line and out of the status", () => {
+  const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.payload.signature";
+  const input = connectionInput({
+    server: "https://ha.example.com/",
+    token: `  ${token}  `,
+  });
+  assert.equal(input.server, "https://ha.example.com");
+  assert.equal(input.token, token);
+  const args = profileLoginArgs(input.server);
+  assert.equal(args.includes("--token-stdin"), true);
+  assert.equal(args.includes(token), false);
+
+  assert.deepEqual(connectionStatus("no profiles configured."), { configured: false, server: "" });
+  assert.deepEqual(
+    connectionStatus(JSON.stringify({ name: "lares", server: input.server, token: "should-not-leak", current: true })),
+    { configured: true, server: input.server },
+  );
+  assert.equal(scrubSecret(`failed ${token}`, token).includes(token), false);
+
+  assert.throws(() => connectionInput({ server: "ftp://ha.example.com", token }), HttpError);
+  assert.throws(() => connectionInput({ server: "https://user:secret@ha.example.com", token }), HttpError);
+  assert.throws(() => connectionInput({ server: "https://ha.example.com", token: "short" }), HttpError);
 });

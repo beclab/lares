@@ -19,9 +19,14 @@ spec:
 
     Per fare ricerche sul web, configura e abilita gli strumenti in Router. Per usare la ricerca web, seleziona anche un servizio di ricerca predefinito nelle impostazioni di Lares. Gli strumenti dedicati esclusivamente alla lettura delle pagine web vengono richiamati quando chiedi a Lares di leggere un URL specifico.
   upgradeDescription: |
-    La lettura vocale può parlare mentre la risposta è ancora in scrittura quando la GPU è in modalità slice di memoria. Lo slice temporale legge a risposta completata.
+    Le skill di Home Assistant si scaricano e si attivano nelle impostazioni. Il download installa lo strumento a riga di comando, esporta le skill e abilita il pacchetto. Indirizzo del server e token di lunga durata si salvano nella stessa pagina.
 
-    - L’interruttore segue la modalità di condivisione GPU letta dal cluster.
-    - La lettura salta i nomi dei file e altro testo che non va pronunciato.
+    - Una chiamata di strumento comparsa solo nel ragionamento viene eseguita nello stesso turno.
+    - L'input vocale si avvia dopo una nuova installazione.
+    - Le attività automatiche eseguono un'istruzione in base a una pianificazione, e i notiziari del mattino per argomento vengono salvati nell'area di lavoro.
+    - Dispositivi come Reachy Mini possono usare i propri strumenti nelle conversazioni vocali con una chiave vocale che consente gli strumenti del dispositivo.
+    - Router raggiunge la voce di Lares tramite un ingresso interno; l'indirizzo della pagina Lares ora termina con 0 nella prima parte.
+    - I dispositivi vocali senza segnalazione della riproduzione non sentono più le proprie risposte come un nuovo turno, e le risposte non aspettano più i riepiloghi della cronologia.
+    - Il rilevamento automatico dei turni chiude un turno anche in una stanza rumorosa invece di attendere il limite audio.
 
-    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.60)
+    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.68)

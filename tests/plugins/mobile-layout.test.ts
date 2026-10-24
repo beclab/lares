@@ -54,7 +54,7 @@ test("mobile new session uses a centered hero; model and effort live on the top 
   assert.match(composer, /retryReadAloud/);
   assert.doesNotMatch(bar, /\$emit\('create'\)/);
   assert.match(hero, /mobile-new-session__brand[\s\S]*flex:\s*1/);
-  assert.match(hero, /safe-area-inset-bottom/);
+  assert.doesNotMatch(hero, /safe-area-inset/);
   assert.match(mobile, /@model="\$emit\('open-model'\)"/);
   assert.match(mobile, /@effort="\$emit\('open-model'\)"/);
   assert.match(mobile, /state\.effortRows/);
@@ -167,6 +167,39 @@ test("the mobile composer offers @ references and slash commands from the host",
   assert.match(app, /<LaresMobileShell[\s\S]*@open-references="loadReferences"/);
 });
 
+test("the mobile model sheet switches the session permission preset", () => {
+  const shell = readFileSync(new URL("../../packages/mobile/src/mobile/MobileShell.vue", import.meta.url), "utf8");
+  const app = readFileSync(new URL("../../packages/mobile/src/App.vue", import.meta.url), "utf8");
+
+  assert.match(shell, /state\.permissionRows/);
+  assert.match(shell, /permission\.title/);
+  assert.match(shell, /danger-full-access/);
+  assert.match(shell, /access\.confirm\.acknowledge/);
+  assert.match(shell, /\$emit\("choose-permission", "danger-full-access"\)/);
+  assert.match(app, /<LaresMobileShell[\s\S]*@choose-permission="choosePermission"/);
+});
+
+test("in-flow mobile chrome fills the host slot; only the entrance and viewport overlays inset the screen", () => {
+  const bar = readFileSync(new URL("../../packages/mobile/src/chat/ChatBar.vue", import.meta.url), "utf8");
+  const composer = readFileSync(new URL("../../packages/mobile/src/chat/Composer.vue", import.meta.url), "utf8");
+  const hero = readFileSync(new URL("../../packages/mobile/src/mobile/MobileNewSession.vue", import.meta.url), "utf8");
+  const shell = readFileSync(new URL("../../packages/mobile/src/mobile/MobileShell.vue", import.meta.url), "utf8");
+  const directory = readFileSync(new URL("../../packages/mobile/src/mobile/MobileDirectorySheet.vue", import.meta.url), "utf8");
+  const entrance = readFileSync(new URL("../../packages/mobile/entrance/host.css", import.meta.url), "utf8");
+  const sheet = readFileSync(new URL("../../packages/mobile/src/settings/Sheet.vue", import.meta.url), "utf8");
+  const preview = readFileSync(new URL("../../packages/mobile/src/preview/Preview.vue", import.meta.url), "utf8");
+
+  for (const source of [bar, composer, hero, shell, directory]) {
+    assert.doesNotMatch(source, /safe-area-inset/);
+  }
+  assert.match(entrance, /box-sizing:\s*border-box/);
+  assert.match(entrance, /padding-top:\s*env\(safe-area-inset-top/);
+  assert.match(entrance, /padding-bottom:\s*env\(safe-area-inset-bottom/);
+  assert.match(sheet, /safe-area-inset-bottom/);
+  assert.match(preview, /safe-area-inset-top/);
+  assert.match(preview, /safe-area-inset-bottom/);
+});
+
 test("a session that moved on unwatched shows a dot", () => {
   const sidebar = readFileSync(new URL("../../packages/mobile/src/desktop/DesktopSidebar.vue", import.meta.url), "utf8");
   const app = readFileSync(new URL("../../packages/mobile/src/App.vue", import.meta.url), "utf8");
@@ -263,14 +296,18 @@ test("the desktop composer exposes the host conversation controls", () => {
   assert.match(app, /draftBySession/);
 });
 
-test("the mobile composer exposes dsh queued submissions", () => {
+test("the mobile composer exposes dsh queued submissions and approvals", () => {
   const shell = readFileSync(new URL("../../packages/mobile/src/mobile/MobileShell.vue", import.meta.url), "utf8");
   const app = readFileSync(new URL("../../packages/mobile/src/App.vue", import.meta.url), "utf8");
 
-  assert.match(shell, /<LaresDesktopQueue/);
+  assert.match(shell, /<LaresDesktopQueue[\s\S]*tone="mobile"/);
   assert.match(shell, /:items="state\.queue"/);
   assert.match(shell, /@action="\(itemId, action\) => \$emit\('queue-action', itemId, action\)"/);
+  assert.match(shell, /<LaresApprovalCard/);
+  assert.match(shell, /@answer="\$emit\('answer-approval', \$event\)"/);
   assert.match(app, /<LaresMobileShell[\s\S]*@queue-action="updateQueue"/);
+  assert.match(app, /<LaresMobileShell[\s\S]*@answer-approval="answerApproval"/);
+  assert.match(app, /presentApproval\(snap\.approval, snap\.items, this\.locale\)/);
 });
 
 test("composer menus open upward and only flip when the space runs out", () => {

@@ -40,7 +40,7 @@ test("chat preset cannot delegate even if its model emits a tool", async () => {
 test("assistant delegates a controlled task and describes pending without claiming completion", async () => {
   const submitted: any[] = [];
   let count = 0;
-  const dialogue = createVoiceDialogue({ config: { preset: "assistant" }, owner: "alice",
+  const dialogue = createVoiceDialogue({ config: { preset: "assistant" }, agent: true, owner: "alice",
     submit: async (...args: any[]) => { submitted.push(args); return { status: "pending", requestId: "task" }; },
     chat: async ({ messages }: any) => {
       if (++count === 1) return { role: "assistant", content: null, tool_calls: [{ id: "tool", function: { name: "ask_lares", arguments: '{"task":"check resources"}' } }] };
@@ -48,7 +48,7 @@ test("assistant delegates a controlled task and describes pending without claimi
       return { role: "assistant", content: "The check is still running." };
     },
   });
-  assert.equal(await dialogue.reply("check", "one"), "The check is still running.");
+  assert.deepEqual(await dialogue.reply("check", "one"), { text: "The check is still running.", calls: [] });
   assert.deepEqual(submitted, [["check resources", "one", "run"]]);
 });
 test("pure chat does not create or inspect a business session and repeated turns are deduplicated", async () => {
@@ -63,10 +63,13 @@ test("pure chat does not create or inspect a business session and repeated turns
     await service.open(scope, {});
     await service.prompt(scope, { text: "hi", requestId: "one" });
     await service.prompt(scope, { text: "hi", requestId: "one" });
-    assert.equal(creates, 0); assert.equal(replies, 2);
+    // One reply for the deduplicated turn; the history summary waits for a quiet spell.
+    assert.equal(creates, 0); assert.equal(replies, 1);
     assert.equal(service.state(scope).utterance.text, "hello");
     assert.equal(service.records(scope).records.length, 2);
     await service.clearRecords(scope);
+    // Closing writes the pending summary instead of dropping it.
+    assert.equal(replies, 2);
     assert.equal(service.records(scope).records.length, 0);
     await service.close(scope);
   } finally { h.close(); }
@@ -137,6 +140,26 @@ test("instructions are refused outside the chat preset", async () => {
   } finally { h.close(); }
 });
 
+test("a delegated task reaches the Agent as the user's own words with the dialogue's reading after them", async () => {
+  const h = store();
+  let count = 0;
+  const service = createVoiceHostService({ create: async () => ({ sessionId: "s1" }) }, {
+    records: h.records,
+    config: () => ({ preset: "assistant" }),
+    chat: async () => ++count === 1
+      ? { role: "assistant", content: null, tool_calls: [{ id: "tool", function: { name: "ask_lares", arguments: '{"operation":"run","task":"Check tomorrow\'s weather in Beijing"}' } }] }
+      : { role: "assistant", content: "Checking." },
+  });
+  const scope: any = { id: "client-one", owner: "alice" };
+  const submitted: string[] = [];
+  try {
+    await service.open(scope, {});
+    scope.session = { snapshot: () => ({ running: false, sessionId: "s1", cursor: 0, tasks: [] }), submit: async (text: string) => { submitted.push(text); return { sessionId: "s1" }; }, close: async () => {} };
+    await service.prompt(scope, { text: "Beijing", requestId: "one" });
+    assert.deepEqual(submitted, ["Beijing\n\n(Voice assistant's reading of this request: Check tomorrow's weather in Beijing)"]);
+  } finally { h.close(); }
+});
+
 test("reading the voice state neither consumes nor duplicates the pending result", async () => {
   const h = store();
   const service = createVoiceHostService({ create: async () => ({ sessionId: "s1" }) }, {
@@ -163,4 +186,134 @@ test("reading the voice state neither consumes nor duplicates the pending result
     assert.equal(scope.voiceResults.length, 0);
     assert.equal(service.records(scope).records.filter((row: any) => row.role === "task").length, 1);
   } finally { h.close(); }
+});
+
+const MOVE = { name: "move_head", description: "Move the head", parameters: { type: "object", properties: {} } };
+const call = (id: string, name: string, args = "{}") => ({ id, type: "function", function: { name, arguments: args } });
+
+test("device tools end the step, answer through outputs and give up unanswered calls before the next turn", async () => {
+  const requests: any[] = [];
+  const answers: any[] = [
+    { role: "assistant", content: "Sure.", tool_calls: [call("c1", "move_head")] },
+    { role: "assistant", content: "Done." },
+    { role: "assistant", content: null, tool_calls: [call("c2", "move_head")] },
+    { role: "assistant", content: "Hello again." },
+  ];
+  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", submit: async () => ({}), chat: async (request: any) => { requests.push(structuredClone(request)); return answers.shift(); } });
+  assert.ok(!requests.length);
+  dialogue.setClientTools([MOVE]);
+  assert.ok(dialogue.hasClientTools());
+  assert.deepEqual(await dialogue.reply("nod", "t1"), { text: "Sure.", calls: [{ call_id: "c1", name: "move_head", arguments: "{}" }] });
+  assert.deepEqual(requests[0].tools.map((tool: any) => tool.function.name), ["ask_lares", "move_head"]);
+  assert.equal(requests[0].maxCalls, 8);
+  assert.match(requests[0].messages[0].content, /declared its own tools/);
+  assert.equal(dialogue.toolOutput("c1", '{"ok":true}'), true);
+  assert.deepEqual(await dialogue.reply(null, "t2"), { text: "Done.", calls: [] });
+  assert.deepEqual(requests[1].messages.slice(-2).map((item: any) => [item.role, item.tool_call_id ?? null]), [["assistant", null], ["tool", "c1"]]);
+  await dialogue.reply("again", "t3");
+  // c2 never got an output: the next turn records that instead of leaving the pair open.
+  await dialogue.reply("hello", "t4");
+  const owed = requests[3].messages.find((item: any) => item.tool_call_id === "c2");
+  assert.match(owed.content, /no result/);
+  assert.equal(dialogue.toolOutput("c2", "late"), false);
+  assert.throws(() => dialogue.toolOutput("c9", "x"), { code: "voice_tool_unknown" });
+});
+
+test("continuations stop offering tools after three steps and a newer camera frame replaces the older one", async () => {
+  const requests: any[] = [];
+  const dialogue = createVoiceDialogue({ config: {}, owner: "alice", chat: async (request: any) => { requests.push(structuredClone(request)); return { role: "assistant", content: "ok" }; } });
+  dialogue.setClientTools([MOVE]);
+  dialogue.observe([{ type: "image_url", image_url: { url: "data:image/jpeg;base64,AAAA" } }]);
+  dialogue.observe([{ type: "image_url", image_url: { url: "data:image/jpeg;base64,BBBB" } }]);
+  for (let i = 0; i < 3; i++) await dialogue.reply(null, `c${i}`);
+  assert.deepEqual(requests.map((request: any) => request.toolChoice ?? "auto"), ["auto", "auto", "none"]);
+  const images = JSON.stringify(requests[0].messages);
+  assert.ok(images.includes("BBBB") && !images.includes("AAAA"));
+});
+
+test("a delegation batched with a device call still lets the dialogue speak about the delegation", async () => {
+  const requests: any[] = [];
+  const submitted: any[] = [];
+  const answers: any[] = [
+    { role: "assistant", content: null, tool_calls: [call("own", "ask_lares", '{"operation":"run","task":"turn on the light"}'), call("dev", "move_head")] },
+    { role: "assistant", content: "Turning it on." },
+  ];
+  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", submit: async (...args: any[]) => { submitted.push(args); return { status: "pending" }; }, chat: async (request: any) => { requests.push(structuredClone(request)); return answers.shift(); } });
+  dialogue.setClientTools([MOVE]);
+  assert.deepEqual(await dialogue.reply("light", "t1"), { text: "Turning it on.", calls: [{ call_id: "dev", name: "move_head", arguments: "{}" }] });
+  assert.deepEqual(submitted, [["turn on the light", "t1", "run"]]);
+  assert.deepEqual(requests[1].tools.map((tool: any) => tool.function.name), ["move_head"]);
+  // The device call was answered with a placeholder already, so its real output arrives late.
+  assert.equal(dialogue.toolOutput("dev", "{}"), false);
+});
+
+test("without device tools the dialogue prompt and tools stay exactly as before", async () => {
+  const requests: any[] = [];
+  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", chat: async (request: any) => { requests.push(request); return { role: "assistant", content: "ok" }; } });
+  await dialogue.reply("hi", "t1");
+  assert.doesNotMatch(requests[0].messages[0].content, /declared its own tools/);
+  assert.deepEqual(requests[0].tools.map((tool: any) => tool.function.name), ["ask_lares"]);
+  assert.equal(requests[0].maxCalls, 1);
+});
+
+test("a device session hears a finished task through the dialogue, which may act on it", async () => {
+  const h = store();
+  const requests: any[] = [];
+  const service = createVoiceHostService({ create: async () => ({ sessionId: "s1" }) }, {
+    records: h.records,
+    config: () => ({ preset: "assistant" }),
+    chat: async (request: any) => { requests.push(structuredClone(request)); return { role: "assistant", content: "It will rain.", tool_calls: [call("sad", "move_head")] }; },
+  });
+  const scope: any = { id: "client-one", owner: "alice", authorizedBinding: { clientTools: true } };
+  try {
+    await service.open(scope, {});
+    service.tools(scope, [MOVE]);
+    const task: any = { requestId: "r1", status: "completed", text: "Rain tomorrow.", error: null, turn: 1 };
+    scope.session = { snapshot: () => ({ running: false, sessionId: "s1", cursor: 3, tasks: [task] }), close: async () => {} };
+    service.advance(scope);
+    await scope.voiceSerial;
+    const { utterance } = service.state(scope);
+    assert.deepEqual([utterance.key, utterance.text, utterance.calls.map((item: any) => item.name)], ["task:r1", "It will rain.", ["move_head"]]);
+    assert.match(requests[0].messages.at(-1).content, /task has just finished/);
+    assert.ok(requests[0].messages.some((item: any) => /Rain tomorrow/.test(item.content)));
+    assert.ok(!service.records(scope).records.some((row: any) => row.text === "Rain tomorrow." && row.role === "assistant"));
+  } finally { h.close(); }
+});
+
+test("tools and caller instructions on the assistant need the device grant", async () => {
+  const h = store();
+  const service = createVoiceHostService({ create: async () => ({ sessionId: "s1" }) }, { records: h.records, config: () => ({ preset: "assistant" }), chat: async () => ({ role: "assistant", content: "ok" }) });
+  const plain: any = { id: "plain", owner: "alice" }, device: any = { id: "device", owner: "alice", authorizedBinding: { clientTools: true } };
+  try {
+    await service.open(plain, {}); await service.open(device, {});
+    assert.throws(() => service.tools(plain, [MOVE]), { code: "voice_tools_unsupported" });
+    assert.throws(() => service.instructions(plain, "x"), { code: "voice_instructions_unsupported" });
+    service.tools(device, [MOVE]);
+    service.instructions(device, "y".repeat(5000));
+  } finally { h.close(); }
+});
+
+test("the history summary waits until turns stop instead of following every one", async () => {
+  const h = store();
+  const calls: string[] = [];
+  const service = createVoiceHostService({}, { records: h.records, config: () => ({ preset: "chat" }), summaryIdleMs: 30,
+    chat: async ({ messages }: any) => { calls.push(/Summarize/.test(messages[0].content) ? "summary" : "reply"); return { role: "assistant", content: "ok" }; },
+  });
+  const scope: any = { id: "client-four", owner: "alice" };
+  try {
+    await service.open(scope, {});
+    for (const id of ["a", "b", "c"]) await service.prompt(scope, { text: id, requestId: id });
+    assert.deepEqual(calls, ["reply", "reply", "reply"]);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    await scope.summaryTask;
+    assert.deepEqual(calls, ["reply", "reply", "reply", "summary"]);
+    await service.close(scope);
+    assert.equal(calls.filter((call) => call === "summary").length, 1);
+  } finally { h.close(); }
+});
+
+test("a whitespace-only answer next to a device call is not spoken", async () => {
+  const dialogue = createVoiceDialogue({ config: {}, owner: "alice", chat: async () => ({ role: "assistant", content: "\n\n", tool_calls: [call("c1", "move_head")] }) });
+  dialogue.setClientTools([MOVE]);
+  assert.deepEqual(await dialogue.reply("nod", "t1"), { text: "", calls: [{ call_id: "c1", name: "move_head", arguments: "{}" }] });
 });

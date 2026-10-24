@@ -1,5 +1,5 @@
 <template>
-    <div v-if="rows.length" class="desktop-queue lares-queue-in">
+    <div v-if="rows.length" class="desktop-queue lares-queue-in" :data-tone="tone">
     <div class="desktop-queue__panel">
       <button
         v-if="rows.length > 1"
@@ -128,6 +128,7 @@ export default {
     items: { type: Array, default: () => [] },
     running: { type: Boolean, default: false },
     busy: { type: String, default: "" },
+    tone: { type: String, default: "" },
     t: { type: Function, required: true },
   },
   emits: ["action"],
@@ -198,4 +199,7 @@ export default {
 :deep(.desktop-queue__action:disabled) { opacity:.45; cursor:default; }
 .desktop-queue svg,
 :deep(.desktop-queue__action svg) { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.4; stroke-linecap:round; stroke-linejoin:round; }
+.desktop-queue[data-tone="mobile"] { width:auto; margin:0 16px 8px; padding:0; }
+.desktop-queue[data-tone="mobile"] .desktop-queue__panel { border-bottom:1px solid var(--q-separator); border-radius:14px; }
+.desktop-queue[data-tone="mobile"] :deep(.desktop-queue__action) { width:36px; height:36px; }
 </style>

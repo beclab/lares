@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 const patches = [
   { markerFile: "node_modules/@deepseek-ai/dsh-agent-loop/lib/index.js", marker: "speechEligible:", patch: "patches/dsh-trusted-speech-stream.patch" },
   { markerFile: "node_modules/@earendil-works/pi-ai/dist/api/simple-options.js", marker: "const routerContextHeadroom =", patch: "patches/pi-ai-router-context-headroom.patch" },
+  { markerFile: "node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js", marker: 'provider === "olares-router" ? "openrouter"', patch: "patches/pi-ai-router-session-affinity.patch" },
   { markerFile: "node_modules/@deepseek-ai/dsh-llm/lib/index.js", marker: 'config.provider === "olares-router" ? void 0 : reasoning.defaultEffort', patch: "patches/dsh-router-default-effort.patch" },
   { markerFile: "node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js", marker: "if (!await authorizedChatModel(selection)) return false;", patch: "patches/dsh-model-admission.patch" },
   { markerFile: "node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js", marker: "...routerReasoningInfo(provider, model", patch: "patches/dsh-router-reasoning.patch" },

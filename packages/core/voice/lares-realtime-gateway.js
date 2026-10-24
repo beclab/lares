@@ -1,29 +1,31 @@
 import { randomUUID } from "node:crypto";
 import { WebSocketServer } from "ws";
 import { validateConfigPatch } from "./config.js";
-import { createSpeechEndpoint, frameRms } from "./endpoint.js";
+import { createNoiseGate, createSpeechEndpoint, frameRms } from "./endpoint.js";
 import { pcmSamples } from "./realtime-audio.js";
+import { createPlayoutClock, PLAYOUT_LEAD_MS, SOCKET_FUSE_BYTES } from "./playout-clock.js";
 import { speechSegments } from "./script.js";
 import { bindRouterSession } from "../router/session-alias.js";
+import { REALTIME_MODEL_PRESETS, voiceCapabilities } from "./capabilities.js";
 
-const PRESETS = Object.freeze({ "voice-dictation": "dictation", "voice-chat": "chat", "voice-assistant": "assistant", "voice-direct": "direct" });
 const FORMAT = Object.freeze({ type: "audio/pcm", rate: 24000 });
 const BYTES_PER_MS = 48;
 const TURN_BYTES = 60_000 * BYTES_PER_MS;
+// Audio kept from just before speech starts, so the first syllable is not cut.
+const PREROLL_BYTES = 300 * BYTES_PER_MS;
 const CHUNK_BYTES = 500 * BYTES_PER_MS;
 const SPEECH_RMS = 0.004;
 // Interruption policy (docs/realtime-protocol.md): speech must last this long to suspect barge-in,
 // and a suspected interruption that never resolves stops the reply.
 const BARGE_IN_MS = 500;
 const BARGE_IN_LIMIT_MS = 10_000;
-// How far ahead of the client's actual playout the Host may send. The client's
-// AudioWorklet keeps a bounded queue; sending a whole answer at network speed
-// overflowed it and dropped audio.
-const PLAY_AHEAD_MS = 2_000;
-// A temporarily interrupted AudioContext (device switch, lock screen) must not
-// end a reply; only a client that stays silent this long is treated as stuck.
-const PLAYOUT_STALL_MS = 30_000;
+// Room echo outlasts the last sample a client was sent by roughly this much.
+const ECHO_TAIL_MS = 400;
 const TICKET_MS = 30_000;
+// A device's camera frame arrives as one data URL; everything else stays far below this.
+const MAX_FRAME = 512 * 1024;
+const IMAGE_URL = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/;
+const TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 // Usage lives in the child ASR/LLM/TTS requests; the OpenAI shape stays parseable (Router ADR-83).
 const ZERO_USAGE = Object.freeze({ total_tokens: 0, input_tokens: 0, output_tokens: 0, input_token_details: { text_tokens: 0, audio_tokens: 0, cached_tokens: 0 }, output_token_details: { text_tokens: 0, audio_tokens: 0 } });
 const TASK_STATUS = Object.freeze({ accepted: "pending", waiting: "pending", running: "running", completed: "completed", failed: "failed", cancelled: "cancelled" });
@@ -44,6 +46,22 @@ const ticketOf = (req) => String(req.headers["sec-websocket-protocol"] || "").sp
 const CJK_END = /[　-〿㐀-鿿＀-￯]$/;
 const CJK_START = /^[　-〿㐀-鿿＀-￯]/;
 const separator = (before, after) => !before || CJK_END.test(before) || CJK_START.test(after) ? "" : " ";
+// `done === false` is a live partial. A finished utterance sets done, and a caller
+// that never reports it (tests, a one-shot reply) is spoken as-is.
+const speakableUtterance = (utterance) => (Boolean(utterance?.text) || Boolean(utterance?.calls?.length)) && utterance.done !== false && !utterance.silent;
+/** Device tools in Realtime function shape; `ask_lares` stays the dialogue's own. */
+function clientTools(value) {
+  if (!Array.isArray(value) || value.length > 64 || JSON.stringify(value).length > 64_000) fail("unsupported_parameter");
+  const names = new Set();
+  return value.map((entry) => {
+    const tool = only(entry, ["type", "name", "description", "parameters"]);
+    if (tool.type !== "function" || typeof tool.name !== "string" || !TOOL_NAME.test(tool.name) || tool.name === "ask_lares" || names.has(tool.name)) fail("unsupported_parameter");
+    if (tool.description !== undefined && (typeof tool.description !== "string" || tool.description.length > 4000)) fail("unsupported_parameter");
+    if (tool.parameters !== undefined && (!tool.parameters || typeof tool.parameters !== "object" || Array.isArray(tool.parameters))) fail("unsupported_parameter");
+    names.add(tool.name);
+    return { name: tool.name, description: tool.description || "", parameters: tool.parameters };
+  });
+}
 /** Spoken segments are cleaned clauses; rejoin them without inventing spaces inside CJK text. */
 export function joinSpoken(parts) {
   return parts.reduce((text, part) => `${text}${separator(text, part)}${part}`, "");
@@ -54,12 +72,13 @@ export function joinSpoken(parts) {
  * scope owned by the socket; ticket sockets attach to the Lares client's open voice scope.
  */
 export function createLaresRealtimeGateway({ service, config, transcribe, synthesize, openTranscription, keys, hostOwner = "", hostAudio, busyDefault = () => "queue", bargeIn = () => process.env.LARES_VOICE_BARGE_IN === "1", segment = speechSegments, onError = () => {}, onOpen = () => {}, limit = 64, playbackAckGraceMs = 60_000 }) {
-  const server = new WebSocketServer({ noServer: true, maxPayload: 96 * 1024, perMessageDeflate: false, handleProtocols: (values) => values.has("lares-voice") ? "lares-voice" : false });
+  const server = new WebSocketServer({ noServer: true, maxPayload: MAX_FRAME, perMessageDeflate: false, handleProtocols: (values) => values.has("lares-voice") ? "lares-voice" : false });
   const clients = new Map();
   const tickets = new Map();
 
   function run(client, { scope, model, preset, owned, sessionId }) {
-    const type = preset === "dictation" ? "transcription" : "realtime";
+    const caps = voiceCapabilities(preset, { clientTools: owned && scope.authorizedBinding?.clientTools === true });
+    const { type } = caps;
     const headset = !owned && scope.device === "headset";
     scope.voiceOverrides ??= {};
     let chunks = [], bytes = 0, turnMs = 0, totalMs = 0, speaking = false, speechMs = 0, itemId = null, partial = "", stream = null;
@@ -69,6 +88,12 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
     let response = null, awaitingPlayback = false, acknowledges = false, lastReply = null, lastSpoken = null, turn = null, port = null, unbind = () => {};
     let hostOutput = Promise.resolve();
     let ackTimer = null;
+    // Device sessions follow OpenAI item semantics: items only add context and `response.create` asks for a reply.
+    let pendingText = null, pendingCreate = false, declared = [], toolChoice = "auto";
+    // A client that never acknowledges playback is assumed to play what it was sent in real time.
+    let playbackUntil = 0;
+    // The room's level persists across takes; a take only tells the gate when someone speaks.
+    const noiseGate = createNoiseGate();
     const tasks = new Map();
     const spoken = new Map();
     const played = new Map();
@@ -107,7 +132,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
         input: { format: FORMAT, turn_detection: automatic ? { type: "server_vad", silence_duration_ms: silenceMs } : null, ...(scope.voiceOverrides.language ? { transcription: { language: scope.voiceOverrides.language } } : {}) },
         ...(type === "realtime" ? { output: { format: FORMAT, ...(scope.voiceOverrides.voice ? { voice: scope.voiceOverrides.voice } : {}) } } : {}),
       },
-      lares: { capabilities: { ...REALTIME_CAPABILITIES, barge_in: bargeActive() }, context_id: scope.contextId, device: headset ? "headset" : "device" },
+      lares: { capabilities: { ...REALTIME_CAPABILITIES, barge_in: bargeActive(), client_tools: caps.clientTools }, context_id: scope.contextId, device: headset ? "headset" : "device" },
     });
     const reset = () => {
       chunks = []; bytes = 0; turnMs = 0; pendingCommit = false; speaking = false; speechMs = 0; itemId = null; partial = "";
@@ -127,12 +152,15 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       if (!current.outputMs) { awaitingPlayback = false; clearAckWatch(); }
       if (current.done) return;
       current.done = true;
-      remember(current);
-      const text = joinSpoken(current.sentences.map((sentence) => sentence.text));
-      const item = { id: current.itemId, object: "realtime.item", type: "message", role: "assistant", status: status === "completed" ? "completed" : "incomplete", content: [audioOutput ? { type: "output_audio", transcript: text } : { type: "output_text", text }] };
-      send({ type: "response.output_item.done", response_id: current.id, output_index: 0, item });
-      send({ type: "conversation.item.done", item });
-      send({ type: "response.done", response: { id: current.id, object: "realtime.response", status, output: [], usage: ZERO_USAGE, metadata: { lares: { origin: current.origin, usage: { billing: "child-models", input_audio_ms: Math.round(current.inputMs), output_audio_ms: Math.round(current.outputMs) } } } } });
+      if (current.message) {
+        remember(current);
+        const text = joinSpoken(current.sentences.map((sentence) => sentence.text));
+        const item = { id: current.itemId, object: "realtime.item", type: "message", role: "assistant", status: status === "completed" ? "completed" : "incomplete", content: [audioOutput ? { type: "output_audio", transcript: text } : { type: "output_text", text }] };
+        send({ type: "response.output_item.done", response_id: current.id, output_index: 0, item });
+        send({ type: "conversation.item.done", item });
+      }
+      send({ type: "response.done", response: { id: current.id, object: "realtime.response", status, output: current.calls, usage: ZERO_USAGE, metadata: { lares: { origin: current.origin, usage: { billing: "child-models", input_audio_ms: Math.round(current.inputMs), output_audio_ms: Math.round(current.outputMs) } } } } });
+      queueMicrotask(drainCreate);
     };
     const truncateTo = (current, audioEndMs) => {
       const heard = Math.max(0, Math.min(audioEndMs, current.outputMs));
@@ -161,44 +189,51 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
         return hostOutput;
       }
       if (acknowledges) { awaitingPlayback = true; watchAck(); }
-      // A long reply is several seconds of PCM. Dumping it in one burst fills the
-      // socket and used to close the call, which cut the readout off and made the
-      // client's next progress tick throw voice_disconnected. Wait for the buffer
-      // the way the speech stream does; a stuck client fails this reply only.
-      const OUTPUT_BUFFER = 128 * 1024;
+      // A client that announces playback acknowledgement used to stop after two
+      // seconds unless later ticks kept arriving. Those ticks are observations.
+      // The reply keeps moving with the clock; the socket fuse is only for a
+      // client that has stopped reading.
+      if (!current.clock) current.clock = createPlayoutClock({ leadMs: PLAYOUT_LEAD_MS });
+      const clock = current.clock;
       let sentAt = Date.now();
-      let lastPlayed = played.get(current.itemId) ?? 0;
-      let playedAt = Date.now();
       for (let offset = 0; offset < audio.length; offset += CHUNK_BYTES) {
-        while (client.bufferedAmount > OUTPUT_BUFFER) {
+        clock.start();
+        clock.heard(played.get(current.itemId) ?? 0);
+        while ((acknowledges && clock.blocked(current.outputMs)) || client.bufferedAmount > SOCKET_FUSE_BYTES) {
           if (current.abort.signal.aborted || current.done || closed || client.readyState !== 1) return;
-          if (Date.now() - sentAt > 10_000) throw new Error("voice_audio_backpressure");
-          await new Promise((resolve) => setTimeout(resolve, 20));
-        }
-        // Playout credit: never get more than two seconds ahead of what the
-        // client has actually rendered. Progress advances in real time, so a
-        // long answer waits here instead of filling the worklet queue.
-        while (acknowledges && current.outputMs - lastPlayed > PLAY_AHEAD_MS) {
-          if (current.abort.signal.aborted || current.done || closed || client.readyState !== 1) return;
-          const heard = played.get(current.itemId) ?? 0;
-          if (heard > lastPlayed) { lastPlayed = heard; playedAt = Date.now(); }
-          if (Date.now() - playedAt > PLAYOUT_STALL_MS) throw new Error("voice_audio_backpressure");
-          await new Promise((resolve) => setTimeout(resolve, 20));
+          clock.heard(played.get(current.itemId) ?? 0);
+          if (client.bufferedAmount > SOCKET_FUSE_BYTES && Date.now() - sentAt > 10_000) throw new Error("voice_audio_backpressure");
+          if (!((acknowledges && clock.blocked(current.outputMs)) || client.bufferedAmount > SOCKET_FUSE_BYTES)) break;
+          const delay = client.bufferedAmount > SOCKET_FUSE_BYTES ? 20 : Math.max(20, Math.min(200, clock.wait(current.outputMs)));
+          await new Promise((resolve) => setTimeout(resolve, delay));
         }
         if (current.abort.signal.aborted || current.done || closed || client.readyState !== 1) return;
         const chunk = audio.subarray(offset, offset + CHUNK_BYTES);
         current.outputMs += chunk.length / BYTES_PER_MS;
+        if (!acknowledges) playbackUntil = Math.max(playbackUntil, Date.now()) + chunk.length / BYTES_PER_MS;
         send({ type: "response.output_audio.delta", response_id: current.id, item_id: current.itemId, output_index: 0, content_index: 0, delta: chunk.toString("base64") });
         sentAt = Date.now();
       }
     };
-    const respond = async (text, origin, key, input) => {
+    const respond = async (text, origin, key, input, calls = []) => {
       if (response) cancel("cancelled");
-      const current = { id: `resp_${randomUUID()}`, itemId: `item_${randomUUID()}`, origin, key, inputMs: input, outputMs: 0, sentences: [], abort: new AbortController(), suspended: null, done: false };
-      response = current; lastSpoken = { text, origin, key };
+      const current = { id: `resp_${randomUUID()}`, itemId: `item_${randomUUID()}`, origin, key, inputMs: input, outputMs: 0, sentences: [], abort: new AbortController(), suspended: null, done: false, message: Boolean(text), calls: [] };
+      response = current;
+      if (current.message) lastSpoken = { text, origin, key };
       const part = { response_id: current.id, item_id: current.itemId, output_index: 0, content_index: 0 };
       send({ type: "response.created", response: { id: current.id, object: "realtime.response", status: "in_progress", output: [], metadata: { lares: { origin } } } });
-      send({ type: "response.output_item.added", response_id: current.id, output_index: 0, item: { id: current.itemId, object: "realtime.item", type: "message", role: "assistant", status: "in_progress", content: [] } });
+      if (current.message) send({ type: "response.output_item.added", response_id: current.id, output_index: 0, item: { id: current.itemId, object: "realtime.item", type: "message", role: "assistant", status: "in_progress", content: [] } });
+      // Calls go out before the speech so a gesture can accompany the words it belongs to.
+      calls.forEach((call, index) => {
+        const outputIndex = index + (current.message ? 1 : 0);
+        const item = { id: `item_${randomUUID()}`, object: "realtime.item", type: "function_call", status: "completed", name: call.name, call_id: call.call_id, arguments: call.arguments };
+        send({ type: "response.output_item.added", response_id: current.id, output_index: outputIndex, item: { ...item, status: "in_progress", arguments: "" } });
+        send({ type: "response.function_call_arguments.done", response_id: current.id, item_id: item.id, output_index: outputIndex, call_id: call.call_id, name: call.name, arguments: call.arguments });
+        send({ type: "response.output_item.done", response_id: current.id, output_index: outputIndex, item });
+        send({ type: "conversation.item.done", item });
+        current.calls.push(item);
+      });
+      if (!current.message) { finish(current, "completed"); return; }
       if (!audioOutput) {
         current.sentences = [{ text, endMs: 0 }];
         send({ type: "response.output_text.delta", ...part, delta: text });
@@ -213,6 +248,8 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
           if (current.suspended && await current.suspended.wait === "stop") return;
           if (current.abort.signal.aborted || closed) return;
           send({ type: "response.output_audio_transcript.delta", ...part, delta: `${separator(current.sentences.at(-1)?.text, sentence)}${sentence}` });
+          // A slice has to reach the player before synthesize continues, so a
+          // caller that pauses after the first slice can still be interrupted.
           const audio = await synthesize(sentence, scope, (pcm) => playOut(current, pcm));
           if (current.abort.signal.aborted || closed) return;
           if (audio) await playOut(current, audio);
@@ -232,7 +269,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       send({ type: "response.output_audio.done", ...part });
       finish(current, "completed");
     };
-    const speak = (text, origin, key, input) => { void respond(text, origin, key, input).catch((cause) => report(cause)); };
+    const speak = (text, origin, key, input, calls) => { void respond(text, origin, key, input, calls).catch((cause) => report(cause)); };
 
     // Turns.
     const observeTasks = () => {
@@ -252,7 +289,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       const running = scope.session?.snapshot().running === true;
       const mode = running ? busyTurn || busyDefault() : undefined;
       let state;
-      try { state = await service.prompt(scope, { text, requestId, ...(mode ? { mode } : {}) }); }
+      try { state = text === null ? await service.proceed(scope, { requestId }) : await service.prompt(scope, { text, requestId, ...(mode ? { mode } : {}) }); }
       finally { observeTasks(); }
       if (closed) return;
       if (epoch !== generation) {
@@ -260,7 +297,9 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
         if (!turn.accepted) await service.withdraw?.(scope, requestId).catch(() => {});
         return;
       }
-      if (state.utterance?.text && !state.utterance.silent) { lastReply = state.utterance.key; speak(state.utterance.text, "turn", state.utterance.key, input); }
+      // A snapshot taken while the answer is still streaming only has the first
+      // sentence. Speaking that and remembering the key drops the rest.
+      if (speakableUtterance(state.utterance)) { lastReply = state.utterance.key; speak(state.utterance.text, "turn", state.utterance.key, input, state.utterance.calls); }
     };
     const userItem = (id, content) => send({ type: "conversation.item.done", item: { id, object: "realtime.item", type: "message", role: "user", status: "completed", content: [content] } });
     const commit = async () => {
@@ -286,7 +325,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
         const live = opened && await opened.ready;
         if (live) text = await live.finish().catch(() => null);
         text ??= await transcribe(input, scope);
-        if (preset === "dictation" && owned) text = await service.clean(scope, text);
+        if (type === "transcription" && owned) text = await service.clean(scope, text);
         if (closed || epoch !== generation) return;
         if (response?.suspended) {
           // Barge-in resolves on the interrupting turn: silence resumes the reply, words stop it.
@@ -298,7 +337,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
         send({ type: "conversation.item.input_audio_transcription.completed", item_id: id, content_index: 0, transcript: text });
         if (!text.trim()) return;
         userItem(id, { type: "input_audio", transcript: text });
-        if (preset !== "dictation") await submit(text, id, epoch, ms);
+        if (type === "realtime") await submit(text, id, epoch, ms);
       } catch (cause) { if (!closed && epoch === generation) report(cause); }
       finally {
         busy = false;
@@ -310,9 +349,50 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
     // of being rejected: on a shared link the client cannot tell it is early.
     const typedQueue = [];
     const drainTyped = () => {
-      if (closed || busy || !typedQueue.length) return;
+      if (closed || busy) return;
+      if (!typedQueue.length) { drainCreate(); return; }
       const next = typedQueue.shift();
       void runTyped(next).catch(report);
+    };
+    const create = () => {
+      if (busy || response) { pendingCreate = true; return; }
+      if (pendingText !== null) { const text = pendingText; pendingText = null; void runTyped({ id: `item_${randomUUID()}`, text }).catch(report); return; }
+      void proceed().catch(report);
+    };
+    function drainCreate() { if (pendingCreate && !closed && !busy && !response) { pendingCreate = false; create(); } }
+    const proceed = async () => {
+      if (closed) return;
+      busy = true;
+      try { await submit(null, `resp_turn_${randomUUID()}`, generation, 0); }
+      finally { busy = false; drainTyped(); }
+    };
+    const deviceItem = (item) => {
+      if (item.type === "function_call_output") {
+        const output = only(item, ["id", "type", "call_id", "output"]);
+        if (typeof output.call_id !== "string" || !output.call_id || output.call_id.length > 128 || typeof output.output !== "string" || output.output.length > 16000) fail("unsupported_parameter");
+        try { service.toolOutput(scope, output.call_id, output.output); } catch (cause) { if (cause.code === "voice_tool_unknown") fail("unsupported_parameter"); throw cause; }
+        return;
+      }
+      only(item, ["id", "type", "role", "content"]);
+      if (item.type !== "message" || item.role !== "user" || !Array.isArray(item.content) || !item.content.length || item.content.length > 4) fail("unsupported_parameter");
+      const texts = [], images = [];
+      for (const value of item.content) {
+        if (value?.type === "input_text") {
+          const part = only(value, ["type", "text"]);
+          if (typeof part.text !== "string" || !part.text.trim() || part.text.length > 16000) fail("unsupported_parameter");
+          texts.push(part.text);
+        } else if (value?.type === "input_image") {
+          const part = only(value, ["type", "image_url", "detail"]);
+          if (typeof part.image_url !== "string" || part.image_url.length > MAX_FRAME - 1024 || !IMAGE_URL.test(part.image_url)) fail("unsupported_parameter");
+          images.push({ type: "image_url", image_url: { url: part.image_url } });
+        } else fail("unsupported_parameter");
+      }
+      if (images.length) service.observe(scope, images);
+      if (texts.length) {
+        const text = [pendingText, ...texts].filter(Boolean).join("\n");
+        if (text.length > 16000) fail("unsupported_parameter");
+        pendingText = text;
+      }
     };
     const runTyped = async ({ id, text }) => {
       if (closed) return;
@@ -323,6 +403,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
     };
     const typed = async (event) => {
       if (type !== "realtime") fail("unsupported_parameter");
+      if (caps.clientTools) return deviceItem(only(event.item, ["id", "type", "role", "content", "call_id", "output"]));
       const item = only(event.item, ["id", "type", "role", "content"]);
       const content = Array.isArray(item.content) && item.content.length === 1 ? only(item.content[0], ["type", "text"]) : fail("unsupported_parameter");
       if (item.type !== "message" || item.role !== "user" || content.type !== "input_text" || typeof content.text !== "string" || !content.text.trim() || content.text.length > 16000) fail("unsupported_parameter");
@@ -346,21 +427,44 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
     };
     const append = (audio) => {
       if (awaitingPlayback && !bargeActive()) fail("waiting_for_playback");
+      // Half duplex for a client without playback acknowledgements: while its speaker is still
+      // playing the reply, the microphone mostly hears that reply. Dropped quietly, because the
+      // client cannot tell when to stop sending.
+      if (!acknowledges && !headset && !bargeActive() && Date.now() < playbackUntil + ECHO_TAIL_MS) return;
       // Audio that arrives while the previous take is being transcribed belongs
       // to the next turn; keep it and let that commit queue behind the first one.
       if (typeof audio !== "string" || audio.length > 64000 || !/^[A-Za-z0-9+/]*={0,2}$/.test(audio)) fail("unsupported_audio_format");
       const chunk = Buffer.from(audio, "base64");
       if (chunk.length % 2) fail("unsupported_audio_format");
-      if (bytes + chunk.length > TURN_BYTES) fail("audio_limit_exceeded");
-      itemId ??= `item_${randomUUID()}`;
-      if (openTranscription && !stream) stream = startStream();
-      chunks.push(chunk); bytes += chunk.length; turnMs += chunk.length / BYTES_PER_MS; totalMs += chunk.length / BYTES_PER_MS;
-      stream?.write(chunk);
+      const ms = chunk.length / BYTES_PER_MS;
       const rms = frameRms(pcmSamples(chunk));
-      if (rms >= SPEECH_RMS) { touch(); speechMs += chunk.length / BYTES_PER_MS; } else speechMs = 0;
-      if (rms >= SPEECH_RMS && !speaking) { speaking = true; scope.voiceInputActive = true; send({ type: "input_audio_buffer.speech_started", audio_start_ms: Math.round(totalMs), item_id: itemId }); }
+      if (rms >= SPEECH_RMS) touch();
+      // server_vad hears the room all the time. Until someone speaks only a short pre-roll is
+      // kept, so steady noise neither fills the take nor streams to ASR, and only audio that
+      // clears the room's level counts as speech that can end.
+      const voiced = automatic ? noiseGate.voiced(rms, speaking) : rms >= SPEECH_RMS;
+      totalMs += ms;
+      if (automatic && !speaking && !voiced) {
+        chunks.push(chunk); bytes += chunk.length;
+        while (chunks.length > 1 && bytes - chunks[0].length >= PREROLL_BYTES) bytes -= chunks.shift().length;
+        turnMs = bytes / BYTES_PER_MS; speechMs = 0;
+        return;
+      }
+      if (bytes + chunk.length > TURN_BYTES) {
+        if (!automatic) fail("audio_limit_exceeded");
+        // A take that never fell quiet is closed rather than refusing everything after it.
+        send({ type: "input_audio_buffer.speech_stopped", audio_end_ms: Math.round(totalMs), item_id: itemId });
+        void commit().catch(report);
+        return;
+      }
+      itemId ??= `item_${randomUUID()}`;
+      if (openTranscription && !stream) { stream = startStream(); for (const kept of chunks) stream.write(kept); }
+      chunks.push(chunk); bytes += chunk.length; turnMs += ms;
+      stream?.write(chunk);
+      if (voiced) speechMs += ms; else speechMs = 0;
+      if (voiced && !speaking) { speaking = true; scope.voiceInputActive = true; send({ type: "input_audio_buffer.speech_started", audio_start_ms: Math.round(totalMs), item_id: itemId }); }
       if (automatic && bargeActive() && response && !response.suspended && speechMs >= BARGE_IN_MS) suspend(response);
-      if (automatic && endpoint.push(1, rms, chunk.length / BYTES_PER_MS)) {
+      if (automatic && endpoint.push(voiced ? 1 : 0, rms, ms)) {
         send({ type: "input_audio_buffer.speech_stopped", audio_end_ms: Math.round(totalMs), item_id: itemId });
         void commit().catch(report);
       }
@@ -373,10 +477,13 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
     };
 
     const configure = async (event) => {
-      const session = only(event.session, ["type", "model", "audio", "output_modalities", "instructions", "lares"]);
+      const session = only(event.session, ["type", "model", "audio", "output_modalities", "instructions", "lares", ...(caps.clientTools ? ["tools", "tool_choice"] : [])]);
       if ((session.type && session.type !== type) || (session.model && session.model !== model)) fail("unsupported_parameter");
       const next = { automatic, silenceMs, audioOutput, busyTurn, echoCancellation, overrides: { ...scope.voiceOverrides } };
       let contextId = null, instructions = null;
+      if (session.tool_choice !== undefined && !["auto", "none"].includes(session.tool_choice)) fail("unsupported_parameter");
+      const tools = session.tools === undefined ? declared : clientTools(session.tools);
+      const choice = session.tool_choice ?? toolChoice;
       if (session.audio !== undefined) {
         const audio = only(session.audio, type === "realtime" ? ["input", "output"] : ["input"]);
         if (audio.input !== undefined) {
@@ -408,7 +515,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
         next.audioOutput = session.output_modalities[0] === "audio";
       }
       if (session.instructions !== undefined) {
-        if (preset !== "chat" || typeof session.instructions !== "string" || session.instructions.length > 2000) fail("unsupported_parameter");
+        if (!caps.instructions || typeof session.instructions !== "string" || session.instructions.length > caps.instructionLimit) fail("unsupported_parameter");
         instructions = session.instructions;
       }
       if (session.lares !== undefined) {
@@ -432,6 +539,9 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
         finally { configuring = false; }
       }
       if (instructions !== null) service.instructions(scope, instructions);
+      // A reopened context starts a fresh dialogue, so declared tools are applied again.
+      if (caps.clientTools && (contextId || tools !== declared || choice !== toolChoice)) service.tools(scope, choice === "none" ? [] : tools);
+      declared = tools; toolChoice = choice;
       if (!owned && next.audioOutput !== audioOutput) scope.readAloud = next.audioOutput;
       ({ automatic, silenceMs, audioOutput, busyTurn, echoCancellation } = next);
       scope.voiceOverrides = next.overrides;
@@ -440,6 +550,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
     };
     const truncate = (event) => {
       const current = spoken.get(event.item_id) || (response?.itemId === event.item_id ? response : null);
+      playbackUntil = 0;
       if (!current || event.content_index !== 0 || !Number.isInteger(event.audio_end_ms) || event.audio_end_ms < 0) fail("unsupported_parameter");
       if (response === current) cancel("cancelled");
       truncateTo(current, event.audio_end_ms);
@@ -454,6 +565,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
         case "conversation.item.truncate": return truncate(event);
         case "response.create":
           if (event.response !== undefined && (typeof event.response !== "object" || event.response === null || Object.keys(event.response).length)) fail("unsupported_parameter");
+          if (caps.clientTools) { create(); return; }
           if (busy || response) fail("turn_busy");
           if (!lastSpoken) fail("unsupported_parameter");
           speak(lastSpoken.text, lastSpoken.origin, lastSpoken.key, 0);
@@ -461,7 +573,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
         case "response.cancel":
           // The client has stopped listening. A reply that already finished must
           // not keep the next utterance behind waiting_for_playback.
-          awaitingPlayback = false;
+          awaitingPlayback = false; playbackUntil = 0;
           clearAckWatch();
           if (busy && turn) generation++;
           cancel("cancelled");
@@ -512,9 +624,9 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
         observeTasks();
         if (busy || speaking || awaitingPlayback || response) return;
         const state = service.state(scope);
-        if (!state.utterance?.text || state.utterance.key === lastReply || state.utterance.silent) return;
+        if (!speakableUtterance(state.utterance) || state.utterance.key === lastReply) return;
         lastReply = state.utterance.key;
-        speak(state.utterance.text, String(state.utterance.key).startsWith("task:") ? "task" : "turn", state.utterance.key, 0);
+        speak(state.utterance.text, String(state.utterance.key).startsWith("task:") ? "task" : "turn", state.utterance.key, 0, state.utterance.calls);
       } catch { close(); }
     }, 250);
     client.on("pong", () => { alive = true; });
@@ -561,11 +673,11 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       const key = keys.verify(req.headers.authorization);
       if (!key) return refuse(socket, 401, "Unauthorized");
       const model = new URL(req.url, "http://voice.invalid").searchParams.get("model");
-      const preset = PRESETS[model];
+      const preset = REALTIME_MODEL_PRESETS[model];
       if (!preset || !key.models.includes(model)) return refuse(socket, 403, "Forbidden");
       const dependencies = config();
       if ([dependencies.model, dependencies.chatModel, dependencies.ttsModel, dependencies.realtimeModel].some((id) => id === model || id?.endsWith(`/${model}`))) return refuse(socket, 503, "Service Unavailable");
-      const scope = { id: randomUUID(), owner: hostOwner, authorizedBinding: { sessionId: key.sessionId, workspaceId: key.workspaceId }, device: "device", routerSessionId: routerSession(req.headers["x-session-id"]), voiceOverrides: {} };
+      const scope = { id: randomUUID(), owner: hostOwner, authorizedBinding: { sessionId: key.sessionId, workspaceId: key.workspaceId, clientTools: key.clientTools === true }, device: "device", routerSessionId: routerSession(req.headers["x-session-id"]), voiceOverrides: {} };
       try { onOpen({ voiceId: scope.id, keyId: key.id, model, routerSession: scope.routerSessionId, remote: req.socket?.remoteAddress }); } catch {}
       server.handleUpgrade(req, socket, head, (client) => run(client, { scope, model, preset, owned: true, sessionId: key.sessionId }));
     },

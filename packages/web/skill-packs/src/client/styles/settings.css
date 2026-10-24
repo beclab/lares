@@ -22,11 +22,17 @@
 
 .lares-skills-card {
   display: flex;
-  align-items: center;
-  gap: 24px;
+  flex-direction: column;
+  gap: 16px;
   padding: 20px 24px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 14px;
+}
+
+.lares-skills-head {
+  display: flex;
+  align-items: center;
+  gap: 24px;
 }
 
 .lares-skills-copy {
@@ -66,6 +72,61 @@
   animation: lares-skills-spin 0.8s linear infinite;
 }
 
+.lares-skills-token {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+.lares-skills-token-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.lares-skills-token-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.lares-skills-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lares-skills-label {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 22px;
+}
+
+.lares-skills-hint,
+.lares-skills-connected {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.lares-skills-connected {
+  color: var(--dsw-alias-label-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lares-skills-token-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 @keyframes lares-skills-spin {
   to {
     transform: rotate(360deg);
@@ -80,8 +141,20 @@
 
 @media (max-width: 560px) {
   .lares-skills-card {
-    align-items: flex-start;
     gap: 12px;
     padding: 16px;
   }
+
+  .lares-skills-head,
+  .lares-skills-token-bar {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
 }
+
+.lares-skills-google { display: grid; gap: 12px; border-top: 1px solid var(--dsw-alias-border-standard); padding-top: 16px; overflow-wrap: anywhere; }
+.lares-skills-google input { width: 100%; min-width: 0; padding: 8px; border: 1px solid var(--dsw-alias-border-standard); border-radius: 8px; background: transparent; color: inherit; }
+.lares-skills-google-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.lares-skills-google button { padding: 8px 12px; border: 1px solid var(--dsw-alias-border-standard); border-radius: 8px; cursor: pointer; }
+.lares-skills-google button:disabled { opacity: .5; cursor: default; }

@@ -2,7 +2,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFile
 import { join } from "node:path";
 import { HttpError } from "../tools/http.js";
 import { readJsonFile, writeJsonFile } from "../tools/json-file.js";
-import { ALWAYS_ON_PREFIXES, OFFICIAL_PACKS, packById, packForSkillDir } from "./packs.js";
+import { ALWAYS_ON_PREFIXES, OFFICIAL_PACKS, packById, packForSkillDir, skillBelongsToPack } from "./packs.js";
 
 export function packsStatePath(dataDir) {
   return join(dataDir, "skill-packs.json");
@@ -42,11 +42,12 @@ export function writeEnabledPacks(dataDir, enabled) {
 }
 
 export function cachedSkillDirs(dataDir, pack) {
-  return directoryNames(packCacheDir(dataDir, pack.id)).filter((name) => name.startsWith(pack.prefix));
+  return directoryNames(packCacheDir(dataDir, pack.id)).filter((name) => skillBelongsToPack(pack, name));
 }
 
 export function packDownloaded(dataDir, pack) {
-  return cachedSkillDirs(dataDir, pack).length > 0;
+  const names = cachedSkillDirs(dataDir, pack);
+  return pack.skills ? pack.skills.every((name) => names.includes(name)) : names.length > 0;
 }
 
 function shouldKeepRuntimeDir(name, enabledIds) {
@@ -105,7 +106,7 @@ export function listOfficialPacks(dataDir, cliReady = {}) {
   const enabled = readEnabledPacks(dataDir);
   return OFFICIAL_PACKS.map((pack) => {
     const cached = cachedSkillDirs(dataDir, pack);
-    const downloaded = cached.length > 0;
+    const downloaded = packDownloaded(dataDir, pack);
     const on = enabled.includes(pack.id);
     return {
       id: pack.id,
@@ -139,4 +140,4 @@ export function disableOfficialPack(catalogRoot, dataDir, id) {
   return pack;
 }
 
-export { packForSkillDir };
+export { packForSkillDir, skillBelongsToPack };

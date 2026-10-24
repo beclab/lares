@@ -7,14 +7,14 @@ metadata:
   title: Lares
   description: Chat on Olares, wired to Router
   icon: https://app.cdn.olares.com/appstore/lares/icon_new.png
-  version: 0.26.60
+  version: 0.26.68
   categories:
     - agents
   tags:
     - framework
     - personal-assistant
 spec:
-  versionName: "0.26.60"
+  versionName: "0.26.68"
   runAsUser: true
   fullDescription: |
     Lares is a chat app on Olares.
@@ -36,12 +36,17 @@ spec:
     2. Ensure Router is installed.
     3. Open the Lares entrance and start a chat.
   upgradeDescription: |
-    Voice readout can speak while the reply is still being written when the GPU is in memory-slice mode. Time slice still reads after the reply is finished.
+    Home Assistant skills download and turn on from Settings. The download installs the command-line tool, exports the skills, and enables the pack. The server address and long-lived token are saved on that page.
 
-    - The streaming switch follows the GPU share mode read from the cluster.
-    - Readout skips filenames and other text that should not be spoken.
+    - A tool call that only appeared in the reasoning runs in the same turn.
+    - Voice input starts on a fresh install.
+    - Automation tasks run a prompt on a schedule, and topic morning briefs are written to the workspace.
+    - Devices such as Reachy Mini can use their own tools in voice conversations through a voice key that allows device tools.
+    - Router reaches Lares voice through an internal entrance; the Lares page address gains a trailing 0.
+    - Voice devices without playback reports no longer hear their own replies as new turns, and replies are no longer queued behind history summaries.
+    - Automatic turn detection ends a turn in a noisy room instead of waiting until the audio limit.
 
-    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.60)
+    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.68)
   developer: luolong
   submitter: Olares
   locale:
@@ -84,10 +89,10 @@ entrances:
   #   title: Webhook
   #   authLevel: public
   #   invisible: true
-# Router and other in-cluster callers. A second app entrance would publish the
-# page at <appid>0 and leave the app-list host with no route. This shared
-# entrance stays off that list, so the page keeps the unsuffixed host.
-sharedEntrances:
+  # Router and other in-cluster callers. Olares publishes sharedEntrances only for
+  # shared and cluster-scoped apps, so on a per-user app the webhook has to be an
+  # app entrance; internal lets in-cluster callers in without a login. A second
+  # entrance moves the page to <appid>0 and this one to <appid>1.
   - name: webhook-internal
     host: lares-svc
     port: 8081

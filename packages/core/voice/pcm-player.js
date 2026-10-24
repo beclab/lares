@@ -1,5 +1,9 @@
 import { PCM_PLAYER_WORKLET } from "./pcm-worklet.js";
 import { pcmSamples } from "./realtime-audio.js";
+import { browserAudioErrorCode, requireAudioWorklet } from "./browser-audio.js";
+
+/** Unread audio the speaker may be holding. A longer reply waits here; it is not a failed call. */
+export const PLAYBACK_QUEUE_SECONDS = 4;
 
 let primed = null;
 const worklets = new WeakMap();
@@ -22,9 +26,14 @@ function watchVisibility() {
 function ensureWorklet(ctx) {
   const pending = worklets.get(ctx);
   if (pending) return pending;
-  const url = URL.createObjectURL(new Blob([PCM_PLAYER_WORKLET], { type: "text/javascript" }));
+  const load = async () => {
+    requireAudioWorklet(ctx);
+    const url = URL.createObjectURL(new Blob([PCM_PLAYER_WORKLET], { type: "text/javascript" }));
+    try { await ctx.audioWorklet.addModule(url); }
+    finally { URL.revokeObjectURL(url); }
+  };
   let tracked;
-  tracked = Promise.resolve(ctx.audioWorklet.addModule(url)).finally(() => URL.revokeObjectURL(url)).catch((error) => {
+  tracked = load().catch((error) => {
     if (worklets.get(ctx) === tracked) worklets.delete(ctx);
     throw error;
   });
@@ -32,18 +41,30 @@ function ensureWorklet(ctx) {
   return tracked;
 }
 
-/** Create and resume the playback context inside the gesture that asked for sound. */
+/** Optional gesture prewarming must never block a text submission. Playback reports failures at start. */
 export function primePlaybackContext(Context = globalThis.AudioContext || globalThis.webkitAudioContext) {
-  if (!Context) return null;
-  if (!primed || primed.state === "closed") primed = new Context();
-  const resume = primed.resume?.();
-  if (resume && typeof resume.catch === "function") resume.catch(() => {});
-  ensureWorklet(primed).catch(() => {});
-  return primed;
+  if (!Context || globalThis.isSecureContext === false) return null;
+  try {
+    if (!primed || primed.state === "closed") primed = new Context();
+    requireAudioWorklet(primed);
+    const resume = primed.resume?.();
+    if (resume && typeof resume.catch === "function") resume.catch(() => {});
+    ensureWorklet(primed).catch(() => {});
+    return primed;
+  } catch {
+    const failed = primed;
+    primed = null;
+    worklets.delete(failed);
+    try { Promise.resolve(failed?.close?.()).catch(() => {}); } catch { /* Prewarming is optional. */ }
+    return null;
+  }
 }
 
 export function createPcmStreamPlayer({ onProgress = () => {}, onMetric = () => {}, context: Context = globalThis.AudioContext || globalThis.webkitAudioContext } = {}) {
-  let context, node, resolve, reject, played = 0, generation = 0, pendingByte = null, failed = null, paused = false, owned = false;
+  let context, node, resolve, reject, played = 0, accepted = 0, rate = 0, generation = 0, pendingByte = null, paused = false, owned = false;
+  let tail = Promise.resolve();
+  const waiters = new Set();
+  const wake = () => { for (const listen of [...waiters]) listen(); };
   /**
    * The page shares one primed context. iOS interrupts it (a call, the lock
    * screen) and it never resumes on its own, so a reply that starts after that
@@ -85,11 +106,15 @@ export function createPcmStreamPlayer({ onProgress = () => {}, onMetric = () => 
     owned = false;
     if (closing && closing.state !== "closed") void closing.close().catch(() => {});
     context = null; resolve?.(); resolve = reject = null; pendingByte = null;
+    wake();
+    tail = Promise.resolve();
   };
   return {
     async start({ sampleRate, channels, encoding }) {
-      stop(); failed = null; played = 0;
-      if (!Context || channels !== 1 || encoding !== "pcm_s16le" || !Number.isInteger(sampleRate) || sampleRate < 8000 || sampleRate > 192000) throw new Error("voice_audio_format");
+      stop(); played = 0; accepted = 0;
+      if (!Context || globalThis.isSecureContext === false) throw new Error(browserAudioErrorCode());
+      if (channels !== 1 || encoding !== "pcm_s16le" || !Number.isInteger(sampleRate) || sampleRate < 8000 || sampleRate > 192000) throw new Error("voice_audio_format");
+      rate = sampleRate;
       const epoch = generation;
       const shared = primed && primed.state !== "closed" ? primed : null;
       let opened;
@@ -109,27 +134,61 @@ export function createPcmStreamPlayer({ onProgress = () => {}, onMetric = () => 
       });
       node.port.onmessage = ({ data }) => {
         if (epoch !== generation) return;
-        if (data.type === "progress") { played = data.frames; onProgress(played); }
+        if (data.type === "progress") { played = data.frames; onProgress(played); wake(); }
         if (data.type === "started" || data.type === "underrun") onMetric({ stage: `playback_${data.type}` });
         if (data.type === "done") { resolve?.(); resolve = reject = null; }
-        if (data.type === "error") { failed = new Error("voice_audio_backpressure"); reject?.(failed); }
       };
       node.connect(opened.destination);
     },
     write(bytes) {
-      if (!node) throw new Error("voice_cancelled");
-      let chunk = bytes;
-      if (pendingByte !== null) { chunk = new Uint8Array(bytes.length + 1); chunk[0] = pendingByte; chunk.set(bytes, 1); pendingByte = null; }
-      if (chunk.length % 2) { pendingByte = chunk[chunk.length - 1]; chunk = chunk.subarray(0, -1); }
-      if (!chunk.length) return;
-      const samples = pcmSamples(chunk);
-      node.port.postMessage({ type: "audio", samples }, [samples.buffer]);
+      const epoch = generation;
+      const run = () => {
+        if (epoch !== generation || !node) throw new Error("voice_cancelled");
+        let chunk = bytes;
+        if (pendingByte !== null) { chunk = new Uint8Array(bytes.length + 1); chunk[0] = pendingByte; chunk.set(bytes, 1); pendingByte = null; }
+        if (chunk.length % 2) { pendingByte = chunk[chunk.length - 1]; chunk = chunk.subarray(0, -1); }
+        if (!chunk.length) return;
+        const source = pcmSamples(chunk);
+        const budget = rate * PLAYBACK_QUEUE_SECONDS;
+        let offset = 0;
+        const post = (from, count) => {
+          const samples = count === source.length && from === 0 ? source : source.slice(from, from + count);
+          accepted += samples.length;
+          node.port.postMessage({ type: "audio", samples }, [samples.buffer]);
+        };
+        const pump = () => {
+          while (offset < source.length) {
+            const room = budget - (accepted - played);
+            if (room <= 0) return false;
+            const count = Math.min(source.length - offset, room);
+            post(offset, count);
+            offset += count;
+          }
+          return true;
+        };
+        if (pump()) return;
+        // The rest of a long reply plays as the speaker catches up.
+        return new Promise((done, fail) => {
+          const listen = () => {
+            if (epoch !== generation || !node) { waiters.delete(listen); fail(new Error("voice_cancelled")); return; }
+            if (!pump()) return;
+            waiters.delete(listen);
+            done();
+          };
+          waiters.add(listen);
+        });
+      };
+      const pending = tail.then(run, run);
+      tail = pending.catch(() => {});
+      return pending;
     },
     finish() {
-      if (failed) return Promise.reject(failed);
-      if (!node) return Promise.resolve();
-      if (pendingByte !== null) return Promise.reject(new Error("voice_audio_format"));
-      return new Promise((done, fail) => { resolve = done; reject = fail; node.port.postMessage({ type: "finish" }); });
+      const epoch = generation;
+      return tail.catch(() => {}).then(() => {
+        if (epoch !== generation || !node) return;
+        if (pendingByte !== null) throw new Error("voice_audio_format");
+        return new Promise((done, fail) => { resolve = done; reject = fail; node.port.postMessage({ type: "finish" }); });
+      });
     },
     canPause: true,
     pause() { paused = true; node?.port.postMessage({ type: "pause" }); },

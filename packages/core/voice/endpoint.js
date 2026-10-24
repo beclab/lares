@@ -64,6 +64,23 @@ export function createSpeechEndpoint(options = {}) {
 const MAX_NOISE_FLOOR = 0.02;
 
 /**
+ * Speech without a speech model is whatever clears the room by 2.5x. The floor
+ * follows the frames heard while nobody is speaking, so a fan or a motor does
+ * not count as a voice that never stops, and a quiet speaker still does.
+ */
+export function createNoiseGate() {
+  let noise = null;
+  return {
+    /** @returns {boolean} whether this frame is louder than the room */
+    voiced(rms, speaking) {
+      if (!speaking) noise = noise == null ? rms : noise * 0.9 + rms * 0.1;
+      const floor = Math.max(ENDPOINT.floor, Math.min(MAX_NOISE_FLOOR, (noise ?? ENDPOINT.floor / 2.5) * 2.5));
+      return rms >= floor;
+    },
+  };
+}
+
+/**
  * Endpointing without a speech model. The room's floor is estimated from the
  * frames before the speaker starts and only needs to be cleared by that much,
  * so a loud room does not keep every take open and a quiet speaker still ends
@@ -78,16 +95,15 @@ export function createEnergyEndpoint(stream, end, onSpeech = () => {}, onLevel =
   const gain = context.createGain();
   gain.gain.value = 0;
   const endpoint = createSpeechEndpoint(options);
-  let heard = false, consecutiveMs = 0, noise = null, spoke = false;
+  const gate = createNoiseGate();
+  let heard = false, consecutiveMs = 0, spoke = false;
   const silenceTimer = setTimeout(() => { if (!heard) end(false); }, 10_000);
   processor.onaudioprocess = (event) => {
     const samples = event.inputBuffer.getChannelData(0);
     const rms = frameRms(samples);
     const frameMs = samples.length * 1000 / context.sampleRate;
     onLevel(rms);
-    if (!spoke) noise = noise == null ? rms : noise * 0.9 + rms * 0.1;
-    const floor = Math.max(ENDPOINT.floor, Math.min(MAX_NOISE_FLOOR, (noise ?? ENDPOINT.floor / 2.5) * 2.5));
-    const human = rms >= floor;
+    const human = gate.voiced(rms, spoke);
     if (human) spoke = true;
     consecutiveMs = human ? consecutiveMs + frameMs : 0;
     if (consecutiveMs >= (options.interruptionMs || 0) && human && !heard) { heard = true; onSpeech(); }

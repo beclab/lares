@@ -19,9 +19,14 @@ spec:
 
     Pour effectuer des recherches sur le web, configurez et activez les outils dans Router. Pour utiliser la recherche web, sélectionnez également un service de recherche par défaut dans les paramètres de Lares. Les outils qui servent uniquement à lire des pages web sont appelés lorsque vous demandez à Lares de lire une URL précise.
   upgradeDescription: |
-    La lecture vocale peut parler pendant que la réponse s’écrit encore lorsque le GPU est en découpage mémoire. Le découpage temporel lit après la réponse terminée.
+    Les skills Home Assistant se téléchargent et s’activent dans les réglages. Le téléchargement installe l’outil en ligne de commande, exporte les skills et active le paquet. L’adresse du serveur et le jeton de longue durée s’enregistrent sur la même page.
 
-    - L’interrupteur suit le mode de partage GPU lu depuis le cluster.
-    - La lecture ignore les noms de fichiers et les autres textes qui ne doivent pas être prononcés.
+    - Un appel d’outil qui n’apparaissait que dans le raisonnement s’exécute dans le même tour.
+    - La saisie vocale démarre après une installation neuve.
+    - Les tâches automatisées exécutent une consigne selon un horaire, et les bulletins du matin par thème sont enregistrés dans l’espace de travail.
+    - Des appareils comme Reachy Mini peuvent utiliser leurs propres outils en conversation vocale avec une clé vocale qui autorise les outils d'appareil.
+    - Router atteint la voix de Lares par une entrée interne ; l'adresse de la page Lares se termine désormais par 0 dans sa première partie.
+    - Les appareils vocaux qui ne signalent pas la lecture n'entendent plus leurs propres réponses comme un nouveau tour, et les réponses n'attendent plus les résumés d'historique.
+    - La détection automatique des tours termine un tour dans une pièce bruyante au lieu d'attendre la limite audio.
 
-    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.60)
+    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.68)

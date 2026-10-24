@@ -5,7 +5,9 @@ import { WebSocket } from "ws";
 import { createLaresRealtimeGateway } from "@olares/lares-core/voice/lares-realtime-gateway";
 
 const KEY = "lvk_0123456789abcdef_" + "a".repeat(43);
-const keys = { verify: (header: any) => header === `Bearer ${KEY}` ? { id: "0123456789abcdef", name: "Router", models: ["voice-chat", "voice-dictation", "voice-assistant"], sessionId: null, workspaceId: null } : null };
+const DEVICE_KEY = "lvk_fedcba9876543210_" + "b".repeat(43);
+const keys = { verify: (header: any) => header === `Bearer ${KEY}` ? { id: "0123456789abcdef", name: "Router", models: ["voice-chat", "voice-dictation", "voice-assistant"], sessionId: null, workspaceId: null }
+  : header === `Bearer ${DEVICE_KEY}` ? { id: "fedcba9876543210", name: "Reachy", models: ["voice-assistant"], clientTools: true, sessionId: null, workspaceId: null } : null };
 
 async function serve(options: any = {}, overrides: any = {}) {
   const calls: any = { prompts: [], closes: 0, transcribed: [], synthesized: [], truncated: [], instructions: [], withdrawn: [] };
@@ -330,6 +332,54 @@ test("lares-realtime-v1 speaks the reply that landed during playback once the cl
   } finally { client.terminate(); await fixture.stop(); }
 });
 
+test("the next sentence starts after the current one has been fed, not before its audio exists", async () => {
+  const starts: number[] = [];
+  let release: () => void = () => {};
+  const started = new Promise<void>((resolve) => { release = resolve; });
+  const fixture = await serve({
+    segment: () => ["第一句。", "第二句。"],
+    synthesize: async () => {
+      starts.push(Date.now());
+      if (starts.length === 2) release();
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      return Buffer.alloc(24000 * 2 * 4);
+    },
+  });
+  const client = connect(fixture.port, "voice-chat");
+  try {
+    await until(client, (event) => event.type === "session.created");
+    client.send(JSON.stringify({ type: "lares.playback.progress", item_id: null, played_ms: 0 }));
+    client.send(JSON.stringify({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text: "两句" }] } }));
+    await Promise.race([
+      started,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("second sentence did not start")), 5000)),
+    ]);
+    assert.equal(starts.length, 2);
+    assert.ok(starts[1] - starts[0] >= 1000, `second sentence started after ${starts[1] - starts[0]}ms`);
+  } finally { client.terminate(); await fixture.stop(); }
+});
+
+test("lares-realtime-v1 reads a streaming reply once it has finished, not from its first sentence", async () => {
+  const partial = "太阳系是一个以太阳为中心的行星系统。";
+  const full = `${partial}它还包括八颗行星、卫星和小天体。`;
+  let utterance: any = { key: "7:1", text: partial, done: false, silent: false };
+  const spoken: string[] = [];
+  const fixture = await serve({
+    synthesize: async (text: string) => { spoken.push(text); return Buffer.alloc(2400); },
+  }, {
+    state() { return { utterance }; },
+  });
+  const client = connect(fixture.port, "voice-chat");
+  try {
+    await until(client, (event) => event.type === "session.created");
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    assert.deepEqual(spoken, []);
+    utterance = { ...utterance, text: full, done: true };
+    await until(client, (event) => event.type === "response.output_audio_transcript.done");
+    assert.deepEqual(spoken, [full]);
+  } finally { client.terminate(); await fixture.stop(); }
+});
+
 test("lares-realtime-v1 keeps the call open while a long reply drains", async () => {
   const fixture = await serve({ synthesize: async () => Buffer.alloc(1_200_000) });
   const client = connect(fixture.port, "voice-chat");
@@ -434,4 +484,106 @@ test("a long reply is paced by the client's playout progress instead of filling 
     for (let i = 0; i < 100 && !events.some((event) => event.type === "response.done"); i += 1) await sleep(20);
     assert.ok(events.some((event) => event.type === "response.done"));
   } finally { client.terminate(); await fixture.stop(); }
+});
+
+test("a device key declares its own tools, gets calls before the speech and continues only when it asks", async () => {
+  const seen: any = { tools: [], outputs: [], observed: [], proceeds: [] };
+  const fixture = await serve({}, {
+    tools(_scope: any, tools: any[]) { seen.tools.push(tools); },
+    toolOutput(_scope: any, callId: string, output: string) { if (callId !== "call_1") throw Object.assign(new Error("voice_tool_unknown"), { code: "voice_tool_unknown" }); seen.outputs.push([callId, output]); return true; },
+    observe(_scope: any, parts: any[]) { seen.observed.push(parts); },
+    async prompt(_scope: any, body: any) { fixture.calls.prompts.push(body); return { utterance: { key: body.requestId, text: "Sure.", calls: [{ call_id: "call_1", name: "move_head", arguments: '{"direction":"down"}' }], silent: false } }; },
+    async proceed(_scope: any, body: any) { seen.proceeds.push(body); return { utterance: { key: body.requestId, text: "It is a cup.", calls: [], silent: false } }; },
+  });
+  const client = new WebSocket(`ws://127.0.0.1:${fixture.port}/api/lares/voice/realtime?model=voice-assistant`, { headers: { authorization: `Bearer ${DEVICE_KEY}` } });
+  let dones = 0;
+  try {
+    const events = await until(client, (event) => event.type === "response.done" && ++dones === 2, (event) => {
+      if (event.type === "session.created") {
+        client.send(JSON.stringify({ type: "session.update", session: { type: "realtime", instructions: "x".repeat(3000), tools: [{ type: "function", name: "move_head", description: "Move the head", parameters: { type: "object", properties: {} } }], tool_choice: "auto" } }));
+        client.send(JSON.stringify({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text: "nod please" }] } }));
+        client.send(JSON.stringify({ type: "response.create" }));
+      }
+      if (event.type === "response.done" && dones === 0) {
+        client.send(JSON.stringify({ type: "conversation.item.create", event_id: "evt-stray", item: { type: "function_call_output", call_id: "call_9", output: "{}" } }));
+        client.send(JSON.stringify({ type: "conversation.item.create", item: { type: "function_call_output", call_id: "call_1", output: '{"status":"ok"}' } }));
+        client.send(JSON.stringify({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_image", image_url: "data:image/jpeg;base64,AAAA" }] } }));
+        client.send(JSON.stringify({ type: "response.create" }));
+      }
+    });
+    assert.equal(events.find((event) => event.type === "session.created").session.lares.capabilities.client_tools, true);
+    assert.deepEqual(seen.tools, [[{ name: "move_head", description: "Move the head", parameters: { type: "object", properties: {} } }]]);
+    assert.equal(fixture.calls.instructions[0].length, 3000);
+    assert.deepEqual(fixture.calls.prompts.map((body: any) => body.text), ["nod please"]);
+    const types = events.map((event) => event.type);
+    const call = events.find((event) => event.type === "response.function_call_arguments.done");
+    assert.deepEqual([call.call_id, call.name, call.arguments, call.output_index], ["call_1", "move_head", '{"direction":"down"}', 1]);
+    assert.ok(types.indexOf("response.function_call_arguments.done") < types.indexOf("response.output_audio.delta"));
+    const first = events.find((event) => event.type === "response.done");
+    assert.deepEqual(first.response.output.map((item: any) => [item.type, item.call_id]), [["function_call", "call_1"]]);
+    assert.equal(events.find((event) => event.type === "error").error.event_id, "evt-stray");
+    assert.deepEqual(seen.outputs, [["call_1", '{"status":"ok"}']]);
+    assert.deepEqual(seen.observed, [[{ type: "image_url", image_url: { url: "data:image/jpeg;base64,AAAA" } }]]);
+    assert.equal(seen.proceeds.length, 1);
+    assert.equal(events.filter((event) => event.type === "response.output_audio_transcript.done").at(-1).transcript, "It is a cup.");
+  } finally { client.close(); await fixture.stop(); }
+});
+
+test("a key without the device grant still cannot declare tools on the assistant", async () => {
+  const fixture = await serve();
+  const client = connect(fixture.port, "voice-assistant");
+  try {
+    const events = await until(client, (event) => event.type === "error", (event) => {
+      if (event.type === "session.created") client.send(JSON.stringify({ type: "session.update", session: { tools: [{ type: "function", name: "move_head" }] } }));
+    });
+    assert.equal(events.find((event) => event.type === "session.created").session.lares.capabilities.client_tools, false);
+    assert.equal(events.at(-1).error.code, "unsupported_parameter");
+  } finally { client.close(); await fixture.stop(); }
+});
+
+test("without playback acknowledgements the microphone stays closed while the reply plays", async () => {
+  // 24,000 bytes at 24 kHz PCM16 is 500 ms of reply audio.
+  const fixture = await serve({ synthesize: async () => Buffer.alloc(24000) });
+  const client = connect(fixture.port, "voice-chat");
+  const voice = Buffer.alloc(4800, 1).toString("base64");
+  let phase = 0;
+  try {
+    await until(client, (event) => event.type === "conversation.item.input_audio_transcription.completed" && ++phase === 2, (event) => {
+      if (event.type === "session.created") client.send(JSON.stringify({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text: "hi" }] } }));
+      if (event.type === "response.done") {
+        // Still inside the reply's playback: this take is dropped and commits empty.
+        client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: voice }));
+        client.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
+        setTimeout(() => {
+          client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: voice }));
+          client.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
+        }, 1000);
+      }
+    });
+    assert.equal(fixture.calls.transcribed.length, 1);
+  } finally { client.close(); await fixture.stop(); }
+});
+
+test("server_vad in a steady noisy room keeps no take open and still ends one when someone speaks", async () => {
+  const fixture = await serve();
+  const client = connect(fixture.port, "voice-chat");
+  // One second of PCM16 at 24 kHz with a square wave of the given amplitude.
+  const second = (amplitude: number) => { const pcm = Buffer.alloc(48000); for (let i = 0; i < 24000; i++) pcm.writeInt16LE(i % 2 ? amplitude : -amplitude, i * 2); return pcm.toString("base64"); };
+  const fan = second(300), voice = second(3000);
+  try {
+    const events = await until(client, (event) => event.type === "conversation.item.input_audio_transcription.completed", (event) => {
+      if (event.type === "session.created") client.send(JSON.stringify({ type: "session.update", session: { audio: { input: { turn_detection: { type: "server_vad" } } } } }));
+      if (event.type === "session.updated") {
+        // Longer than a whole take of steady noise: nothing may be refused or committed.
+        for (let i = 0; i < 65; i++) client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: fan }));
+        client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: voice }));
+        for (let i = 0; i < 2; i++) client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: fan }));
+      }
+    });
+    assert.equal(events.filter((event) => event.type === "error").length, 0);
+    assert.equal(events.filter((event) => event.type === "input_audio_buffer.speech_started").length, 1);
+    assert.equal(fixture.calls.transcribed.length, 1);
+    // The take holds the speech plus one pre-roll chunk and the quiet after it, not a minute of fan.
+    assert.ok(fixture.calls.transcribed[0].bytes <= 3 * 48000, String(fixture.calls.transcribed[0].bytes));
+  } finally { client.close(); await fixture.stop(); }
 });

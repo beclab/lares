@@ -2,10 +2,13 @@
 
 export const ALWAYS_ON_PREFIXES = ["olares-", "lares-"];
 
+export const GOOGLE_SKILLS = ["gog", "gog-gmail", "gog-calendar", "gog-drive", "gog-docs", "gog-sheets", "gog-slides"];
+
 export const OFFICIAL_PACKS = [
   {
     id: "ha",
     prefix: "ha-",
+    connectionKind: "token",
     optional: true,
     cli: {
       package: "@olares/hass-cli",
@@ -15,14 +18,19 @@ export const OFFICIAL_PACKS = [
       showArgs: (name) => ["skill", "show", name],
     },
   },
+  { id: "google-workspace", prefix: "gog-", skills: GOOGLE_SKILLS, optional: true, connectionKind: "google", cli: { bin: "gog", version: "0.46.0", source: "github" } },
 ];
+
+export function skillBelongsToPack(pack, name) {
+  return pack.skills ? pack.skills.includes(name) : name.startsWith(pack.prefix);
+}
 
 export function packById(id) {
   return OFFICIAL_PACKS.find((pack) => pack.id === id) ?? null;
 }
 
 export function packForSkillDir(name) {
-  return OFFICIAL_PACKS.find((pack) => name.startsWith(pack.prefix)) ?? null;
+  return OFFICIAL_PACKS.find((pack) => skillBelongsToPack(pack, name)) ?? null;
 }
 
 export function isAlwaysOnSkillDir(name) {

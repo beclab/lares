@@ -40,6 +40,24 @@ export function remoteEventsOpen(streamId) {
   return remoteStreamOpen(streamId, "$events");
 }
 
+/** String audit reason plus the localized display copy, when the host sent one. */
+function approvalFields(source) {
+  const displayReason = source?.displayReason && typeof source.displayReason === "object"
+    ? source.displayReason
+    : null;
+  const reason = typeof source?.reason === "string"
+    ? source.reason
+    : typeof source?.displayReason === "string"
+      ? source.displayReason
+      : "";
+  return {
+    toolName: source?.toolName,
+    callId: source?.callId,
+    reason,
+    ...(displayReason ? { displayReason } : {}),
+  };
+}
+
 /**
  * One `$events` item. A waterfall this client does not answer passes as
  * `next` so the Host is not left waiting on it; `agentId` is the session.
@@ -69,9 +87,7 @@ export function classifyRemoteEvent(value) {
       kind: "approval",
       eventId: value.eventId,
       sessionId,
-      toolName: request.toolName,
-      callId: request.callId,
-      reason: request.displayReason ?? request.reason,
+      ...approvalFields(request),
     };
   }
   return { kind: "pass", eventId: value.eventId };
@@ -305,9 +321,7 @@ export function classifyMuxEnvelope(envelope) {
       sessionId,
       rpcId,
       approvalId: frame.approvalId,
-      toolName: frame.toolName,
-      callId: frame.callId,
-      reason: frame.reason,
+      ...approvalFields(frame),
     };
   }
   if (frame.type === "approval/resolved") {

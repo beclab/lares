@@ -160,6 +160,7 @@ test("Lares profile refresh drops retired first-party bundles", () => {
     assert.deepEqual(manifest.dsh.profile.bundles, [
       "@deepseek-ai/dsh-base",
       "@deepseek-ai/dsh-web-app",
+      "@deepseek-ai/dsh-experimental-schedule-bundle",
       "community-bundle",
       "@lares/dsh-overlay",
     ]);

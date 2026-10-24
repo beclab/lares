@@ -1,3 +1,4 @@
+import { browserAudioErrorCode } from "./browser-audio.js";
 import {
   formatElapsed,
   isRecordingTooShort,
@@ -19,7 +20,7 @@ const CHUNK_MS = 250;
 function micFailure(err) {
   const name = err?.name || "";
   if (name === "NotAllowedError" || name === "PermissionDeniedError") return "voice_permission_denied";
-  if (name === "SecurityError") return "voice_unsupported";
+  if (name === "SecurityError") return browserAudioErrorCode();
   return "voice_failed";
 }
 
@@ -38,7 +39,7 @@ export function prepareBrowserCapture({ media, onTrace = () => {}, now = Date.no
   const started = now();
   const devices = media?.mediaDevices ?? globalThis.navigator?.mediaDevices;
   const ready = (async () => {
-    if (!devices?.getUserMedia) throw new Error("voice_unsupported");
+    if (!devices?.getUserMedia) throw new Error(globalThis.isSecureContext === false ? browserAudioErrorCode() : "voice_unsupported");
     const pending = openDeviceMic(devices);
     try { onTrace("permission-request", { durationMs: now() - started }); } catch { /* Telemetry is optional. */ }
     const next = await pending;
@@ -49,7 +50,22 @@ export function prepareBrowserCapture({ media, onTrace = () => {}, now = Date.no
   })();
   // Permission may fail while other initialization is still pending.
   void ready.catch(() => {});
+  const live = async () => {
+    let next;
+    try { next = await ready; }
+    catch (err) {
+      if (err instanceof Error && err.message.startsWith("voice_")) throw err;
+      throw new Error(micFailure(err));
+    }
+    if (consumed || cancelled || !next) throw new Error("voice_cancelled");
+    if (next.getTracks().every((track) => track.readyState === "ended")) throw new Error("voice_device_lost");
+    return next;
+  };
   return {
+    /** Resolves once the microphone is open. Does not take the stream. */
+    opened: live,
+    /** Another take of the same voice session. Does not open a second microphone. */
+    borrow: live,
     recording() {
       try { onTrace("ready", { durationMs: now() - started }); } catch { /* Telemetry is optional. */ }
     },
@@ -79,6 +95,7 @@ export function createVoiceCapture({
   now = Date.now,
   media,
   preparation,
+  retainStream = false,
 }) {
   const mediaDevices = media?.mediaDevices ?? globalThis.navigator?.mediaDevices;
   const Recorder = media?.MediaRecorder ?? globalThis.MediaRecorder;
@@ -122,7 +139,9 @@ export function createVoiceCapture({
   const release = () => {
     detector?.stop?.();
     detector = null;
-    stream?.getTracks().forEach((track) => track.stop());
+    // A session microphone stays open for the next hold. Only a take that
+    // opened its own stream stops the tracks when the take ends.
+    if (!retainStream) stream?.getTracks().forEach((track) => track.stop());
     stream = null;
     recorder = null;
   };
@@ -241,7 +260,7 @@ export function createVoiceCapture({
     async start() {
       if (dead || phase === "preparing" || phase === "recording" || phase === "transcribing") return;
       if (typeof Recorder === "undefined" || !mediaDevices?.getUserMedia) {
-        preparation?.cancel();
+        if (!retainStream) preparation?.cancel();
         fail("voice_unsupported");
         return;
       }
@@ -253,9 +272,9 @@ export function createVoiceCapture({
       emit("preparing", { elapsed: 0, error: "" });
       let next;
       try {
-        next = await (preparation ? preparation.consume() : openDeviceMic(mediaDevices));
+        next = await (retainStream ? preparation.borrow() : preparation ? preparation.consume() : openDeviceMic(mediaDevices));
       } catch (err) {
-        preparation?.cancel();
+        if (!retainStream) preparation?.cancel();
         const code = micFailure(err);
         trace("mic-fail", { code, name: err?.name || "" });
         if (!dead) fail(code);
@@ -351,7 +370,7 @@ export function createVoiceCapture({
       }
     },
     dispose() {
-      preparation?.cancel();
+      if (!retainStream) preparation?.cancel();
       inputAbort?.abort();
       dead = true;
       cancel = true;
