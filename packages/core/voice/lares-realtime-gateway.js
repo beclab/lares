@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { WebSocketServer } from "ws";
 import { validateConfigPatch } from "./config.js";
-import { createSpeechEndpoint, frameRms } from "./endpoint.js";
+import { createNoiseGate, createSpeechEndpoint, frameRms } from "./endpoint.js";
 import { pcmSamples } from "./realtime-audio.js";
 import { createPlayoutClock, PLAYOUT_LEAD_MS, SOCKET_FUSE_BYTES } from "./playout-clock.js";
 import { speechSegments } from "./script.js";
@@ -11,6 +11,8 @@ import { REALTIME_MODEL_PRESETS, voiceCapabilities } from "./capabilities.js";
 const FORMAT = Object.freeze({ type: "audio/pcm", rate: 24000 });
 const BYTES_PER_MS = 48;
 const TURN_BYTES = 60_000 * BYTES_PER_MS;
+// Audio kept from just before speech starts, so the first syllable is not cut.
+const PREROLL_BYTES = 300 * BYTES_PER_MS;
 const CHUNK_BYTES = 500 * BYTES_PER_MS;
 const SPEECH_RMS = 0.004;
 // Interruption policy (docs/realtime-protocol.md): speech must last this long to suspect barge-in,
@@ -90,6 +92,8 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
     let pendingText = null, pendingCreate = false, declared = [], toolChoice = "auto";
     // A client that never acknowledges playback is assumed to play what it was sent in real time.
     let playbackUntil = 0;
+    // The room's level persists across takes; a take only tells the gate when someone speaks.
+    const noiseGate = createNoiseGate();
     const tasks = new Map();
     const spoken = new Map();
     const played = new Map();
@@ -432,16 +436,35 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       if (typeof audio !== "string" || audio.length > 64000 || !/^[A-Za-z0-9+/]*={0,2}$/.test(audio)) fail("unsupported_audio_format");
       const chunk = Buffer.from(audio, "base64");
       if (chunk.length % 2) fail("unsupported_audio_format");
-      if (bytes + chunk.length > TURN_BYTES) fail("audio_limit_exceeded");
-      itemId ??= `item_${randomUUID()}`;
-      if (openTranscription && !stream) stream = startStream();
-      chunks.push(chunk); bytes += chunk.length; turnMs += chunk.length / BYTES_PER_MS; totalMs += chunk.length / BYTES_PER_MS;
-      stream?.write(chunk);
+      const ms = chunk.length / BYTES_PER_MS;
       const rms = frameRms(pcmSamples(chunk));
-      if (rms >= SPEECH_RMS) { touch(); speechMs += chunk.length / BYTES_PER_MS; } else speechMs = 0;
-      if (rms >= SPEECH_RMS && !speaking) { speaking = true; scope.voiceInputActive = true; send({ type: "input_audio_buffer.speech_started", audio_start_ms: Math.round(totalMs), item_id: itemId }); }
+      if (rms >= SPEECH_RMS) touch();
+      // server_vad hears the room all the time. Until someone speaks only a short pre-roll is
+      // kept, so steady noise neither fills the take nor streams to ASR, and only audio that
+      // clears the room's level counts as speech that can end.
+      const voiced = automatic ? noiseGate.voiced(rms, speaking) : rms >= SPEECH_RMS;
+      totalMs += ms;
+      if (automatic && !speaking && !voiced) {
+        chunks.push(chunk); bytes += chunk.length;
+        while (chunks.length > 1 && bytes - chunks[0].length >= PREROLL_BYTES) bytes -= chunks.shift().length;
+        turnMs = bytes / BYTES_PER_MS; speechMs = 0;
+        return;
+      }
+      if (bytes + chunk.length > TURN_BYTES) {
+        if (!automatic) fail("audio_limit_exceeded");
+        // A take that never fell quiet is closed rather than refusing everything after it.
+        send({ type: "input_audio_buffer.speech_stopped", audio_end_ms: Math.round(totalMs), item_id: itemId });
+        void commit().catch(report);
+        return;
+      }
+      itemId ??= `item_${randomUUID()}`;
+      if (openTranscription && !stream) { stream = startStream(); for (const kept of chunks) stream.write(kept); }
+      chunks.push(chunk); bytes += chunk.length; turnMs += ms;
+      stream?.write(chunk);
+      if (voiced) speechMs += ms; else speechMs = 0;
+      if (voiced && !speaking) { speaking = true; scope.voiceInputActive = true; send({ type: "input_audio_buffer.speech_started", audio_start_ms: Math.round(totalMs), item_id: itemId }); }
       if (automatic && bargeActive() && response && !response.suspended && speechMs >= BARGE_IN_MS) suspend(response);
-      if (automatic && endpoint.push(1, rms, chunk.length / BYTES_PER_MS)) {
+      if (automatic && endpoint.push(voiced ? 1 : 0, rms, ms)) {
         send({ type: "input_audio_buffer.speech_stopped", audio_end_ms: Math.round(totalMs), item_id: itemId });
         void commit().catch(report);
       }

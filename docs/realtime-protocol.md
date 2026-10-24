@@ -162,7 +162,7 @@ conversation.
 | Event | When | Difference |
 | --- | --- | --- |
 | `session.created`, `session.updated` | After connect / update | Also carry `lares.capabilities`, `lares.context_id` |
-| `input_audio_buffer.speech_started`, `speech_stopped` | server_vad detects start / end | Energy + VAD endpointing, not semantic_vad |
+| `input_audio_buffer.speech_started`, `speech_stopped` | server_vad detects start / end | Energy endpointing against the room's noise floor, not semantic_vad. Before speech only about 300 ms of pre-roll is kept, and a take that reaches 60 s is committed rather than refused |
 | `input_audio_buffer.committed`, `cleared` | After commit / clear | None |
 | `conversation.item.input_audio_transcription.delta` | Streaming ASR has partial results | Optional, depends on the ASR model |
 | `conversation.item.input_audio_transcription.completed` | Recognition done | Final result in transcription sessions; cleaned text when cleanup ran |

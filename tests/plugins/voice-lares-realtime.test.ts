@@ -563,3 +563,27 @@ test("without playback acknowledgements the microphone stays closed while the re
     assert.equal(fixture.calls.transcribed.length, 1);
   } finally { client.close(); await fixture.stop(); }
 });
+
+test("server_vad in a steady noisy room keeps no take open and still ends one when someone speaks", async () => {
+  const fixture = await serve();
+  const client = connect(fixture.port, "voice-chat");
+  // One second of PCM16 at 24 kHz with a square wave of the given amplitude.
+  const second = (amplitude: number) => { const pcm = Buffer.alloc(48000); for (let i = 0; i < 24000; i++) pcm.writeInt16LE(i % 2 ? amplitude : -amplitude, i * 2); return pcm.toString("base64"); };
+  const fan = second(300), voice = second(3000);
+  try {
+    const events = await until(client, (event) => event.type === "conversation.item.input_audio_transcription.completed", (event) => {
+      if (event.type === "session.created") client.send(JSON.stringify({ type: "session.update", session: { audio: { input: { turn_detection: { type: "server_vad" } } } } }));
+      if (event.type === "session.updated") {
+        // Longer than a whole take of steady noise: nothing may be refused or committed.
+        for (let i = 0; i < 65; i++) client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: fan }));
+        client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: voice }));
+        for (let i = 0; i < 2; i++) client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: fan }));
+      }
+    });
+    assert.equal(events.filter((event) => event.type === "error").length, 0);
+    assert.equal(events.filter((event) => event.type === "input_audio_buffer.speech_started").length, 1);
+    assert.equal(fixture.calls.transcribed.length, 1);
+    // The take holds the speech plus one pre-roll chunk and the quiet after it, not a minute of fan.
+    assert.ok(fixture.calls.transcribed[0].bytes <= 3 * 48000, String(fixture.calls.transcribed[0].bytes));
+  } finally { client.close(); await fixture.stop(); }
+});
