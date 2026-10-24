@@ -104,6 +104,27 @@ export const SCENARIOS = [
     expect: check([(run) => !run.error, "model call failed"], [(run) => speaks(run, "zh"), "did not answer in Chinese"]),
   },
   {
+    id: "filler-noise",
+    issue: "Background noise heard as \"嗯嗯。\" was delegated as a code search",
+    say: "嗯嗯。",
+    expect: check([(run) => !delegated(run) && !run.calls.length, "acted on a filler"]),
+  },
+  {
+    id: "language-switch",
+    issue: "After English turns a Chinese request was answered in English",
+    context: [{ role: "user", text: "Hello, please open the lights for me." }, { role: "assistant", text: "I've asked for the lights to turn on." }, { role: "user", text: "Thank you." }, { role: "assistant", text: "You're welcome! Anything else?" }],
+    say: "你能把灯关了吗？",
+    expect: check([delegated, "light request not sent to ask_lares"], [(run) => speaks(run, "zh"), "did not answer in Chinese"]),
+  },
+  {
+    id: "announce-language",
+    issue: "A task result was announced in English (\"Already light free\") to a Chinese request",
+    context: [{ role: "user", text: "Hello, please open the lights for me." }, { role: "assistant", text: "I've asked for the lights to turn on." }, { role: "user", text: "你能把灯关了吗？" }, { role: "assistant", text: "I'm shutting off the lights for you." }],
+    tasks: [{ requestId: "r1", status: "completed", text: "已为您关闭灯 \"Aqara lumi.light.agl003\"。当前状态：关。" }],
+    announce: true,
+    expect: check([(run) => language(run.text) === "zh", "announcement not in Chinese"], [(run) => !delegated(run), "announcement sent a new task"]),
+  },
+  {
     id: "weather-zh",
     issue: "The robot's weather tool failed on 北京; either path is fine if it is used sensibly",
     say: "北京明天天气怎么样",

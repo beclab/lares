@@ -616,3 +616,18 @@ test("Router VAD drops server_vad takes without speech from clients that send no
   const lares = await run(0, true);
   assert.deepEqual([lares.checks.length, lares.transcribed], [0, 1]);
 });
+
+test("a device take that never falls quiet is closed at ten seconds and left to VAD", async () => {
+  const fixture = await serve({ detectSpeech: async () => 1 });
+  const client = connect(fixture.port, "voice-chat");
+  const second = (amplitude: number) => { const pcm = Buffer.alloc(48000); for (let i = 0; i < 24000; i++) pcm.writeInt16LE(i % 2 ? amplitude : -amplitude, i * 2); return pcm.toString("base64"); };
+  try {
+    await until(client, (event) => event.type === "conversation.item.input_audio_transcription.completed", (event) => {
+      if (event.type === "session.created") client.send(JSON.stringify({ type: "session.update", session: { audio: { input: { turn_detection: { type: "server_vad" } } } } }));
+      // Speech-level audio that never pauses: the energy endpoint alone would wait for the 60 s limit.
+      if (event.type === "session.updated") for (let i = 0; i < 14; i++) client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: second(i === 0 ? 300 : 3000) }));
+    });
+    const seconds = fixture.calls.transcribed[0].bytes / 48000;
+    assert.ok(seconds >= 10 && seconds <= 11.5, String(seconds));
+  } finally { client.close(); await fixture.stop(); }
+});

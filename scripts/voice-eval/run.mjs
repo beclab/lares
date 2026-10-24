@@ -46,7 +46,9 @@ async function once(scenario, model) {
   for (const task of scenario.tasks || []) dialogue.observeTask(task);
   const started = performance.now();
   try {
-    const reply = await dialogue.reply(scenario.say, "eval", undefined, () => {});
+    const reply = scenario.announce
+      ? await dialogue.reply(null, "task:r1", undefined, undefined, { announce: true })
+      : await dialogue.reply(scenario.say, "eval", undefined, () => {});
     return { ...reply, delegations, ms: Math.round(performance.now() - started) };
   } catch (error) {
     return { text: "", calls: [], delegations, error: error.message, ms: Math.round(performance.now() - started) };

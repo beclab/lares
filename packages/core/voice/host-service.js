@@ -10,7 +10,7 @@ import { voiceCapabilities } from "./capabilities.js";
 const failure = (code, status) => Object.assign(new Error(code), { code, status });
 
 /** Presets and task policy stay in core; the Host supplies an authenticated scope. */
-export function createVoiceHostService(api, { env = process.env, metric = () => {}, records = createVoiceRecords(), config = readConfig, chat, summaryIdleMs = 15_000 } = {}) {
+export function createVoiceHostService(api, { env = process.env, metric = () => {}, records = createVoiceRecords(), config = readConfig, chat, summaryIdleMs = 60_000 } = {}) {
   const ownerOf = (scope) => scope.owner || "@local";
   const keyOf = (scope) => scope.session?.snapshot().sessionId || `voice:${scope.contextId || scope.id}`;
   const append = (scope, role, text, turnId, taskId = null, fields = {}) => records.append(ownerOf(scope), keyOf(scope), {

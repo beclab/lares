@@ -209,7 +209,9 @@ test("device tools end the step, answer through outputs and give up unanswered c
   assert.match(requests[0].messages[0].content, /Saying an action does not perform it/);
   assert.equal(dialogue.toolOutput("c1", '{"ok":true}'), true);
   assert.deepEqual(await dialogue.reply(null, "t2"), { text: "Done.", calls: [] });
-  assert.deepEqual(requests[1].messages.slice(-2).map((item: any) => [item.role, item.tool_call_id ?? null]), [["assistant", null], ["tool", "c1"]]);
+  // The per-turn language hint follows; the call and its output are just before it.
+  const turn = requests[1].messages.filter((item: any) => !/latest message is in/.test(String(item.content)));
+  assert.deepEqual(turn.slice(-2).map((item: any) => [item.role, item.tool_call_id ?? null]), [["assistant", null], ["tool", "c1"]]);
   await dialogue.reply("again", "t3");
   // c2 never got an output: the next turn records that instead of leaving the pair open.
   await dialogue.reply("hello", "t4");
@@ -408,4 +410,80 @@ test("past the step limit a call the model makes anyway is dropped and its words
   dialogue.setClientTools([MOVE]);
   for (let i = 0; i < 2; i++) await dialogue.reply(null, `c${i}`);
   assert.deepEqual(await dialogue.reply(null, "c2"), { text: "Done for now.", calls: [] });
+});
+
+test("a device turn names the language of the user's last words, also when announcing a task", async () => {
+  const requests: any[] = [];
+  const context = [{ role: "user", text: "Hello, please open the lights." }, { role: "assistant", text: "Done, lights on." }];
+  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", context, submit: async () => ({ status: "pending" }), chat: async (request: any) => { requests.push(structuredClone(request)); return { role: "assistant", content: "好的" }; } });
+  dialogue.setClientTools([MOVE]);
+  await dialogue.reply("你能把灯关了吗？", "t1");
+  const hint = (request: any) => request.messages.map((item: any) => String(item.content)).find((content: string) => /latest message is in/.test(content));
+  assert.match(hint(requests[0]), /in Chinese\. Reply in Chinese\./);
+  dialogue.observeTask({ requestId: "r1", status: "completed", text: "Light is off." });
+  await dialogue.reply(null, "task:r1", undefined, undefined, { announce: true });
+  assert.match(hint(requests.at(-1)), /in Chinese/);
+  // The hint is for one turn only and never stays in history.
+  await dialogue.reply("Thanks!", "t2");
+  assert.equal(requests.at(-1).messages.filter((item: any) => /latest message is in/.test(String(item.content))).length, 1);
+  assert.match(hint(requests.at(-1)), /in English/);
+});
+
+test("sessions without device tools get no language hint", async () => {
+  const requests: any[] = [];
+  const dialogue = createVoiceDialogue({ config: {}, owner: "alice", chat: async (request: any) => { requests.push(request); return { role: "assistant", content: "ok" }; } });
+  await dialogue.reply("你好", "t1");
+  assert.ok(!requests[0].messages.some((item: any) => /latest message is in/.test(String(item.content))));
+});
+
+test("a run is acknowledged before the Agent starts, and history keeps the real submission", async () => {
+  const order: string[] = [];
+  const requests: any[] = [];
+  const answers: any[] = [
+    { role: "assistant", content: null, tool_calls: [call("own", "ask_lares", '{"operation":"run","task":"turn on the light"}')] },
+    { role: "assistant", content: "好的，正在开灯。" },
+    { role: "assistant", content: "ok" },
+  ];
+  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice",
+    submit: async () => { order.push("submit"); return { status: "pending", requestId: "r9:delegate" }; },
+    chat: async (request: any) => { order.push("chat"); requests.push(structuredClone(request)); return answers.shift(); } });
+  dialogue.setClientTools([MOVE]);
+  assert.equal((await dialogue.reply("开灯", "r9")).text, "好的，正在开灯。");
+  assert.deepEqual(order, ["chat", "chat", "submit"]);
+  assert.equal(JSON.parse(requests[1].messages.at(-1).content).status, "pending");
+  await dialogue.reply("谢谢", "r10");
+  const kept = requests[2].messages.find((item: any) => item.role === "tool" && item.tool_call_id === "own");
+  assert.equal(JSON.parse(kept.content).requestId, "r9:delegate");
+});
+
+test("a status check still asks the Agent before the dialogue answers", async () => {
+  const order: string[] = [];
+  const answers: any[] = [
+    { role: "assistant", content: null, tool_calls: [call("own", "ask_lares", '{"operation":"status"}')] },
+    { role: "assistant", content: "还在处理。" },
+  ];
+  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice",
+    submit: async () => { order.push("submit"); return { running: true }; },
+    chat: async () => { order.push("chat"); return answers.shift(); } });
+  dialogue.setClientTools([MOVE]);
+  await dialogue.reply("好了吗", "t1");
+  assert.deepEqual(order, ["chat", "submit", "chat"]);
+});
+
+test("a filler on a device is answered without tools", async () => {
+  const requests: any[] = [];
+  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", chat: async (request: any) => { requests.push(request); return { role: "assistant", content: "嗯？" }; } });
+  dialogue.setClientTools([MOVE]);
+  for (const filler of ["嗯嗯。", "啊", "Uh...", "哦！"]) await dialogue.reply(filler, filler);
+  assert.ok(requests.every((request: any) => request.tools === undefined));
+  await dialogue.reply("点点头", "real");
+  assert.equal(requests.at(-1).tools.length, 2);
+});
+
+test("the history summary is short and runs without reasoning", async () => {
+  const requests: any[] = [];
+  const dialogue = createVoiceDialogue({ config: {}, owner: "alice", chat: async (request: any) => { requests.push(request); return { role: "assistant", content: "summary" }; } });
+  await dialogue.summarize();
+  assert.deepEqual([requests[0].maxTokens, requests[0].reasoningEffort], [800, "none"]);
+  assert.match(requests[0].messages[0].content, /Maximum 1200 characters/);
 });

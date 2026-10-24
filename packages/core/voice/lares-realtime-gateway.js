@@ -11,6 +11,9 @@ import { REALTIME_MODEL_PRESETS, voiceCapabilities } from "./capabilities.js";
 const FORMAT = Object.freeze({ type: "audio/pcm", rate: 24000 });
 const BYTES_PER_MS = 48;
 const TURN_BYTES = 60_000 * BYTES_PER_MS;
+// A device streams its room all the time. Past this a take is closed and left to Router's VAD,
+// so steady noise cannot hold off replies and task results while it waits to fall quiet.
+const DEVICE_TAKE_MS = 10_000;
 // Audio kept from just before speech starts, so the first syllable is not cut.
 const PREROLL_BYTES = 300 * BYTES_PER_MS;
 const CHUNK_BYTES = 500 * BYTES_PER_MS;
@@ -472,6 +475,11 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       if (voiced) speechMs += ms; else speechMs = 0;
       if (voiced && !speaking) { speaking = true; scope.voiceInputActive = true; send({ type: "input_audio_buffer.speech_started", audio_start_ms: Math.round(totalMs), item_id: itemId }); }
       if (automatic && bargeActive() && response && !response.suspended && speechMs >= BARGE_IN_MS) suspend(response);
+      if (automatic && !acknowledges && !headset && turnMs >= DEVICE_TAKE_MS) {
+        send({ type: "input_audio_buffer.speech_stopped", audio_end_ms: Math.round(totalMs), item_id: itemId });
+        void commit().catch(report);
+        return;
+      }
       if (automatic && endpoint.push(voiced ? 1 : 0, rms, ms)) {
         send({ type: "input_audio_buffer.speech_stopped", audio_end_ms: Math.round(totalMs), item_id: itemId });
         void commit().catch(report);
