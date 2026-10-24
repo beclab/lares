@@ -31,5 +31,6 @@ spec:
     - I dispositivi vocali che trasmettono di continuo il microfono saltano i turni in cui il rilevamento vocale di Router non sente parlato.
     - I dispositivi vocali affidano a Lares il controllo della casa, le ricerche e l'agenda e rispondono nella lingua dell'utente.
     - Una conversazione vocale continua dopo un'attività delegata anche con i modelli che richiedono il prompt di sistema per primo.
+    - Le risposte vocali non attendono il ragionamento del modello e iniziano in meno di un secondo; i dispositivi eseguono i gesti invece di descriverli.
 
-    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.71)
+    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.72)

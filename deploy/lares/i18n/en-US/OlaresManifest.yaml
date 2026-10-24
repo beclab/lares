@@ -35,5 +35,6 @@ spec:
     - Voice devices that stream their microphone skip turns in which Router's voice detection hears no speech.
     - Voice devices hand home control, lookups and schedules to Lares and answer in the user's language.
     - A voice conversation keeps working after a delegated task finishes on chat models that require the system prompt first.
+    - Voice replies run without model reasoning, so they start in under a second, and devices perform gestures instead of describing them.
 
-    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.71)
+    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.72)

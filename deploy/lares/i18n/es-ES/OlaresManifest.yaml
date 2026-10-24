@@ -31,5 +31,6 @@ spec:
     - Los dispositivos de voz que envían su micrófono sin parar omiten los turnos en los que la detección de voz de Router no oye habla.
     - Los dispositivos de voz pasan a Lares el control del hogar, las consultas y la agenda, y responden en el idioma del usuario.
     - Una conversación de voz sigue tras terminar una tarea delegada, también con modelos que exigen el prompt de sistema al principio.
+    - Las respuestas de voz no esperan el razonamiento del modelo y empiezan en menos de un segundo; los dispositivos hacen los gestos en lugar de describirlos.
 
-    [Notas de la versión](https://github.com/beclab/lares/releases/tag/v0.26.71)
+    [Notas de la versión](https://github.com/beclab/lares/releases/tag/v0.26.72)

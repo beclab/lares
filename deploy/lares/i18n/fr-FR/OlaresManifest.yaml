@@ -31,5 +31,6 @@ spec:
     - Les appareils vocaux qui diffusent leur micro en continu ignorent les tours où la détection vocale de Router n'entend aucune parole.
     - Les appareils vocaux confient le contrôle de la maison, les recherches et l'agenda à Lares et répondent dans la langue de l'utilisateur.
     - Une conversation vocale continue après une tâche déléguée, même avec les modèles qui exigent le prompt système en premier.
+    - Les réponses vocales se passent du raisonnement du modèle et commencent en moins d'une seconde ; les appareils font les gestes au lieu de les décrire.
 
-    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.71)
+    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.72)

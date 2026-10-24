@@ -31,5 +31,6 @@ spec:
     - Sprachgeräte, die ihr Mikrofon dauerhaft senden, überspringen Runden, in denen die Spracherkennung von Router keine Sprache hört.
     - Sprachgeräte geben Hausgerätesteuerung, Abfragen und Termine an Lares weiter und antworten in der Sprache des Nutzers.
     - Ein Sprachgespräch läuft nach einer erledigten Aufgabe weiter, auch mit Chatmodellen, die den Systemprompt zuerst verlangen.
+    - Sprachantworten laufen ohne Modell-Denkphase und beginnen in unter einer Sekunde; Geräte führen Gesten aus, statt sie zu beschreiben.
 
-    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.71)
+    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.72)
