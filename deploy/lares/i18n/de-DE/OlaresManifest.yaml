@@ -29,5 +29,6 @@ spec:
     - Sprachgeräte ohne Wiedergabemeldung hören ihre eigenen Antworten nicht mehr als neue Runde, und Antworten warten nicht mehr auf Verlaufszusammenfassungen.
     - Die automatische Sprecherkennung beendet eine Runde auch in lauter Umgebung, statt bis zur Audiogrenze zu warten.
     - Sprachgeräte, die ihr Mikrofon dauerhaft senden, überspringen Runden, in denen die Spracherkennung von Router keine Sprache hört.
+    - Sprachgeräte geben Hausgerätesteuerung, Abfragen und Termine an Lares weiter und antworten in der Sprache des Nutzers.
 
-    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.69)
+    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.70)

@@ -33,5 +33,6 @@ spec:
     - Voice devices without playback reports no longer hear their own replies as new turns, and replies are no longer queued behind history summaries.
     - Automatic turn detection ends a turn in a noisy room instead of waiting until the audio limit.
     - Voice devices that stream their microphone skip turns in which Router's voice detection hears no speech.
+    - Voice devices hand home control, lookups and schedules to Lares and answer in the user's language.
 
-    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.69)
+    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.70)

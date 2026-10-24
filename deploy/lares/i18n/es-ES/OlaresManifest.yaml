@@ -29,5 +29,6 @@ spec:
     - Los dispositivos de voz que no informan de la reproducción ya no oyen sus propias respuestas como un turno nuevo, y las respuestas ya no esperan a los resúmenes del historial.
     - La detección automática de turnos cierra un turno en una sala ruidosa en lugar de esperar al límite de audio.
     - Los dispositivos de voz que envían su micrófono sin parar omiten los turnos en los que la detección de voz de Router no oye habla.
+    - Los dispositivos de voz pasan a Lares el control del hogar, las consultas y la agenda, y responden en el idioma del usuario.
 
-    [Notas de la versión](https://github.com/beclab/lares/releases/tag/v0.26.69)
+    [Notas de la versión](https://github.com/beclab/lares/releases/tag/v0.26.70)
