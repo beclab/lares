@@ -88,7 +88,11 @@ async function performInstall(dir, { download = fetchArtifact, run = runProcess 
     const archive = join(stage, "binary.tgz");
     await writeFile(archive, bytes);
     await mkdir(join(stage, "bin"));
-    await run("tar", ["-xzf", archive, "-C", join(stage, "bin"), "gog"]);
+    const entries = (await run("tar", ["-tzf", archive])).split(/\r?\n/);
+    // Release archives use either "gog" (macOS) or "./gog" (Linux).
+    const binaries = entries.filter((entry) => entry === "gog" || entry === "./gog");
+    if (binaries.length !== 1) throw new Error("invalid gogcli binary archive");
+    await run("tar", ["-xzf", archive, "-C", join(stage, "bin"), binaries[0]]);
     await chmod(join(stage, "bin", "gog"), 0o755);
     const version = await run(join(stage, "bin", "gog"), ["--version"]);
     if (!version.includes(GOG_VERSION)) throw new Error("unexpected gogcli version");

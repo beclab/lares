@@ -85,3 +85,29 @@ The following are **blocked by missing dedicated test credentials**, not passed:
 - Complete a real Agent task that reads Google data through the launcher.
 
 No Google account was connected and no user Google data was read during this run.
+
+## Linux release-archive regression
+
+The deployed 0.26.67 installer failed on Linux with `tar: gog: Not found in
+archive`. The official v0.46.0 Linux amd64 archive lists `./gog`, whereas the
+macOS archive lists `gog`. Exact extraction of the latter spelling does not match
+the Linux member.
+
+The installer now lists the checksum-verified archive, accepts exactly one of
+those two binary members, and extracts its actual name. A regression exercises
+both layouts using real tar extraction, all seven skill directories, and launcher
+execution rather than mocking the extraction command.
+
+Validation after the fix:
+
+- Full suite with the pinned real gog binary: **1,087 passed, 0 failed, 0 skipped**.
+- Typecheck and PC/Vue/server production builds: passed.
+- Actual upstream Linux amd64 installation inside a disposable Node 22 Linux
+  container: checksum verification, seven skills, and launcher `--version` passed
+  (`v0.46.0`, commit `e0e3cb9c`). Source was mounted read-only and test data was
+  removed with the container.
+- The affected remote application reproduced the original extraction failure in
+  an isolated temporary directory. A subsequent fixed-code probe was rejected by
+  the server with HTTP 403; no remote code replacement, restart, or deployment
+  was performed. Installing through that application's UI still requires an
+  updated application image containing this fix.

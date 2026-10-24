@@ -52,6 +52,30 @@ test("release assets and checksums fail closed", () => {
   assert.throws(() => verifyGogChecksum(bytes, `${hash}  different.tgz`, "binary.tgz"));
 });
 
+test("installer extracts both macOS and Linux release archive layouts", async () => tree(async (dir) => {
+  const fixture = join(dir, "fixture");
+  const source = join(fixture, "gogcli-0.46.0");
+  const bin = join(fixture, "bin"); mkdirSync(bin, { recursive: true });
+  writeFileSync(join(bin, "gog"), "#!/bin/sh\necho v0.46.0\n", { mode: 0o755 });
+  for (const name of GOOGLE_SKILLS) {
+    const skill = join(source, ".agents/skills", name); mkdirSync(skill, { recursive: true });
+    writeFileSync(join(skill, "SKILL.md"), `---\nname: ${name}\n---\n`);
+  }
+  const skillsArchive = join(fixture, "skills.tgz");
+  await runProcess("tar", ["-czf", skillsArchive, "-C", fixture, "gogcli-0.46.0"]);
+  for (const [index, member] of ["gog", "."].entries()) {
+    const archive = join(fixture, `binary-${index}.tgz`);
+    await runProcess("tar", ["-czf", archive, "-C", bin, member]);
+    const bytes = readFileSync(archive);
+    const checksum = `${createHash("sha256").update(bytes).digest("hex")}  ${gogAsset()}`;
+    const installed = join(dir, `installed-${index}`);
+    await installGoogle(installed, { download: async (url: string) => url.includes("codeload.github.com")
+      ? readFileSync(skillsArchive) : url.endsWith("checksums.txt") ? Buffer.from(checksum) : bytes });
+    assert.match(await runProcess(googleLauncher(installed), ["--version"]), /v0\.46\.0/);
+    for (const name of GOOGLE_SKILLS) assert.ok(existsSync(join(packCacheDir(installed, "google-workspace"), name, "SKILL.md")));
+  }
+}));
+
 test("Google runtime includes the exact core gog skill and survives disable/re-enable", async () => tree((dir) => {
   const catalog = join(dir, "catalog"); mkdirSync(catalog);
   const cache = packCacheDir(dir, "google-workspace");
