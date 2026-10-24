@@ -7,14 +7,14 @@ metadata:
   title: Lares
   description: Chat on Olares, wired to Router
   icon: https://app.cdn.olares.com/appstore/lares/icon_new.png
-  version: 0.26.73
+  version: 0.26.74
   categories:
     - agents
   tags:
     - framework
     - personal-assistant
 spec:
-  versionName: "0.26.73"
+  versionName: "0.26.74"
   runAsUser: true
   fullDescription: |
     Lares is a chat app on Olares.
@@ -50,8 +50,9 @@ spec:
     - A voice conversation keeps working after a delegated task finishes on chat models that require the system prompt first.
     - Voice replies run without model reasoning, so they start in under a second, and devices perform gestures instead of describing them.
     - Voice devices answer in the language just spoken, acknowledge a request before the Agent starts, ignore filler noise, and announce results without waiting on room noise.
+    - Voice devices can be interrupted mid-reply and keep their answers to one short sentence; Lares's own push-to-talk clients are unchanged.
 
-    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.73)
+    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.74)
   developer: luolong
   submitter: Olares
   locale:

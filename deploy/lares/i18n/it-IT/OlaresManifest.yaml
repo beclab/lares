@@ -33,5 +33,6 @@ spec:
     - Una conversazione vocale continua dopo un'attività delegata anche con i modelli che richiedono il prompt di sistema per primo.
     - Le risposte vocali non attendono il ragionamento del modello e iniziano in meno di un secondo; i dispositivi eseguono i gesti invece di descriverli.
     - I dispositivi vocali rispondono nella lingua appena parlata, confermano una richiesta prima che parta l'Agente, ignorano i rumori di riempimento e annunciano i risultati senza aspettare il rumore della stanza.
+    - I dispositivi vocali si possono interrompere durante la risposta e rispondono con una frase breve; i client push-to-talk di Lares restano invariati.
 
-    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.73)
+    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.74)
