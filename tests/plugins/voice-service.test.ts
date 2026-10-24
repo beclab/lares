@@ -317,3 +317,28 @@ test("a whitespace-only answer next to a device call is not spoken", async () =>
   dialogue.setClientTools([MOVE]);
   assert.deepEqual(await dialogue.reply("nod", "t1"), { text: "", calls: [{ call_id: "c1", name: "move_head", arguments: "{}" }] });
 });
+
+test("a device session routes home control and lookups to ask_lares and answers in the user's language", async () => {
+  const requests: any[] = [];
+  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", submit: async () => ({ status: "pending" }), chat: async (request: any) => { requests.push(structuredClone(request)); return { role: "assistant", content: "好的" }; } });
+  dialogue.setClientTools([MOVE]);
+  dialogue.setInstructions("You are Reachy Mini, a friendly robot. Speak English.", 8000);
+  await dialogue.reply("帮我开下灯", "t1");
+  const prompt = requests[0].messages[0].content;
+  assert.match(prompt, /lights, switches or climate/);
+  assert.match(prompt, /Never say you cannot do something before asking ask_lares/);
+  // The reminder follows the caller's persona, so the last word on language is the user's.
+  assert.ok(prompt.indexOf("Answer in the language the user just spoke") > prompt.indexOf("Speak English."));
+  const ask = requests[0].tools.find((tool: any) => tool.function.name === "ask_lares");
+  assert.match(ask.function.description, /home devices such as lights/);
+  assert.match(ask.function.description, /calendar, schedules, reminders/);
+});
+
+test("sessions without device tools get neither the device rules nor the reminder", async () => {
+  const requests: any[] = [];
+  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", chat: async (request: any) => { requests.push(request); return { role: "assistant", content: "ok" }; } });
+  dialogue.setInstructions("Be formal.");
+  await dialogue.reply("hi", "t1");
+  const prompt = requests[0].messages[0].content;
+  assert.doesNotMatch(prompt, /declared its own tools|Answer in the language the user just spoke/);
+});
