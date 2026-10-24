@@ -1,6 +1,6 @@
 import { WebSocket } from "ws";
 import { ttsVoiceForModel } from "./tts-voice.js";
-import { listModels, pickSttModelId, pickTtsModelId, transcribe } from "../router/stt.js";
+import { listModels, pickSttModelId, pickTtsModelId, speechSeconds, transcribe } from "../router/stt.js";
 import { routerAuthHeaders, routerGatewayUrl } from "../router/gateway.js";
 import { pcmToWav, synthesizeStream } from "../router/tts.js";
 import { normalizeSttPcm } from "./pcm.js";
@@ -23,6 +23,8 @@ export function createRouterAudio(config) {
   return {
     // Same resolution as the streaming path: a configured model that is not installed falls back to one that is.
     transcribe: async (pcm, scope) => transcribe({ bytes: pcmToWav(pcm, 24000), filename: "voice.wav", contentType: "audio/wav", model: pickSttModelId(await listModels(), config().model) || config().model || "default-stt", language: scope.voiceOverrides?.language || config().language || undefined, signal: scope.voiceAbort?.signal, once: true, headers: routerSession(scope) }),
+    /** Seconds of speech in a 24 kHz PCM take by Router's VAD, which listens at 16 kHz; null when unknown. */
+    detectSpeech: async (pcm, scope) => speechSeconds({ bytes: pcmToWav(createPcmResampler(24000, 16000)(pcmSamples(pcm)), 16000), headers: routerSession(scope), signal: scope.voiceAbort?.signal }),
     /**
      * Streaming ASR for one turn when the selected model supports it: 24 kHz PCM in,
      * partial transcripts out. Returns null so the caller keeps the batch path otherwise.

@@ -71,7 +71,7 @@ export function joinSpoken(parts) {
  * `lares-realtime-v1` (docs/realtime-protocol.md) on one endpoint. Bearer voice-key callers get a
  * scope owned by the socket; ticket sockets attach to the Lares client's open voice scope.
  */
-export function createLaresRealtimeGateway({ service, config, transcribe, synthesize, openTranscription, keys, hostOwner = "", hostAudio, busyDefault = () => "queue", bargeIn = () => process.env.LARES_VOICE_BARGE_IN === "1", segment = speechSegments, onError = () => {}, onOpen = () => {}, limit = 64, playbackAckGraceMs = 60_000 }) {
+export function createLaresRealtimeGateway({ service, config, transcribe, synthesize, openTranscription, detectSpeech, keys, hostOwner = "", hostAudio, busyDefault = () => "queue", bargeIn = () => process.env.LARES_VOICE_BARGE_IN === "1", segment = speechSegments, onError = () => {}, onOpen = () => {}, limit = 64, playbackAckGraceMs = 60_000 }) {
   const server = new WebSocketServer({ noServer: true, maxPayload: MAX_FRAME, perMessageDeflate: false, handleProtocols: (values) => values.has("lares-voice") ? "lares-voice" : false });
   const clients = new Map();
   const tickets = new Map();
@@ -321,6 +321,14 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       send({ type: "input_audio_buffer.committed", item_id: id, previous_item_id: null });
       let epoch = generation;
       try {
+        // A server_vad take from a client without playback reports is often only the room or
+        // the reply's echo. Router's VAD decides before ASR and the dialogue spend anything on it;
+        // when it cannot answer, the take goes through as before.
+        if (automatic && !acknowledges && !headset && detectSpeech && await detectSpeech(input, scope) === 0) {
+          void opened?.ready.then((value) => value?.cancel());
+          if (!closed) send({ type: "conversation.item.input_audio_transcription.completed", item_id: id, content_index: 0, transcript: "" });
+          return;
+        }
         let text = null;
         const live = opened && await opened.ready;
         if (live) text = await live.finish().catch(() => null);

@@ -171,6 +171,28 @@ async function readTranscript(res) {
 }
 
 /**
+ * Seconds of speech Router's VAD (`default-vad`) hears in a WAV clip, or null when it
+ * cannot answer. Callers treat null as "do not know", never as silence.
+ */
+export async function speechSeconds({ bytes, headers, signal, timeoutMs = 3000 }) {
+  const { boundary, body } = multipartBody({ model: "default-vad" }, { filename: "take.wav", contentType: "audio/wav", bytes });
+  try {
+    const timeout = AbortSignal.timeout(timeoutMs);
+    const res = await fetch(`${routerShimBaseUrl()}/audio/vad`, {
+      method: "POST",
+      headers: { ...headers, "content-type": `multipart/form-data; boundary=${boundary}` },
+      body,
+      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+    });
+    if (!res.ok) return null;
+    const value = await res.json();
+    return Number.isFinite(value?.speech_seconds) ? value.speech_seconds : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * @param {{ bytes: Buffer, filename: string, contentType: string, model: string, language?: string, prompt?: string, preferred?: string, headers?: Record<string, string> }} take
  * @returns {Promise<string>}
  */

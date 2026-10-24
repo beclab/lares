@@ -587,3 +587,32 @@ test("server_vad in a steady noisy room keeps no take open and still ends one wh
     assert.ok(fixture.calls.transcribed[0].bytes <= 3 * 48000, String(fixture.calls.transcribed[0].bytes));
   } finally { client.close(); await fixture.stop(); }
 });
+
+test("Router VAD drops server_vad takes without speech from clients that send no playback reports", async () => {
+  const second = (amplitude: number) => { const pcm = Buffer.alloc(48000); for (let i = 0; i < 24000; i++) pcm.writeInt16LE(i % 2 ? amplitude : -amplitude, i * 2); return pcm.toString("base64"); };
+  const run = async (answer: number | null, acknowledging = false) => {
+    const checks: number[] = [];
+    const fixture = await serve({ detectSpeech: async (pcm: Buffer) => { checks.push(pcm.length); return answer; } });
+    const client = connect(fixture.port, "voice-chat");
+    try {
+      const events = await until(client, (event) => event.type === "conversation.item.input_audio_transcription.completed", (event) => {
+        if (event.type === "session.created") {
+          if (acknowledging) client.send(JSON.stringify({ type: "lares.playback.progress", item_id: null, played_ms: 0 }));
+          client.send(JSON.stringify({ type: "session.update", session: { audio: { input: { turn_detection: { type: "server_vad" } } } } }));
+        }
+        if (event.type === "session.updated") for (const amplitude of [300, 3000, 300]) client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: second(amplitude) }));
+      });
+      return { checks, transcribed: fixture.calls.transcribed.length, transcript: events.at(-1).transcript, prompts: fixture.calls.prompts.length };
+    } finally { client.close(); await fixture.stop(); }
+  };
+  const silent = await run(0);
+  assert.deepEqual([silent.checks.length, silent.transcribed, silent.transcript, silent.prompts], [1, 0, "", 0]);
+  const spoken = await run(0.8);
+  assert.deepEqual([spoken.checks.length, spoken.transcribed], [1, 1]);
+  // VAD unavailable: the take is not lost.
+  const unknown = await run(null);
+  assert.equal(unknown.transcribed, 1);
+  // Lares's own clients report playback and keep their path untouched.
+  const lares = await run(0, true);
+  assert.deepEqual([lares.checks.length, lares.transcribed], [0, 1]);
+});

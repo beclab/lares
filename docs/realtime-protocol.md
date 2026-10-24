@@ -188,7 +188,10 @@ what it was sent in real time. Until that estimate runs out, plus about 400 ms
 of room echo, input audio is dropped without an error (unless barge-in is
 active), so the reply heard through the microphone does not open a new turn.
 `response.cancel` or `conversation.item.truncate` from the client ends the
-estimate. Truncate stays approximate.
+estimate. Truncate stays approximate. For such a client each `server_vad` take
+is also checked once by Router's VAD (`default-vad`, `/v1/audio/vad`). A take
+with no speech in it completes with an empty transcript and never reaches ASR
+or the dialogue. When the VAD cannot answer, the take goes through as before.
 
 | Event | Direction | Fields | Replaces |
 | --- | --- | --- | --- |
