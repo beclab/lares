@@ -86,10 +86,10 @@ entrances:
   #   title: Webhook
   #   authLevel: public
   #   invisible: true
-# Router and other in-cluster callers. A second app entrance would publish the
-# page at <appid>0 and leave the app-list host with no route. This shared
-# entrance stays off that list, so the page keeps the unsuffixed host.
-sharedEntrances:
+  # Router and other in-cluster callers. Olares publishes sharedEntrances only for
+  # shared and cluster-scoped apps, so on a per-user app the webhook has to be an
+  # app entrance; internal lets in-cluster callers in without a login. A second
+  # entrance moves the page to <appid>0 and this one to <appid>1.
   - name: webhook-internal
     host: lares-svc
     port: 8081

@@ -59,7 +59,7 @@ One endpoint: `GET /api/lares/voice/realtime?model=<model>`, WebSocket upgrade.
 | Caller | Authentication | Entry |
 | --- | --- | --- |
 | Lares desktop and mobile | `POST /api/lares/voice/realtime/ticket` returns a single-use ticket valid for 30 s; connect with subprotocols `lares-voice, lares-ticket.<ticket>`. Browsers cannot set headers, so the ticket stays | Olares entrance; the platform has authenticated the user |
-| Router and other server-side callers | `Authorization: Bearer <lares voice key>` | The `webhook-internal` entrance (`authLevel: internal`, port 8081). The per-user namespace's NetworkPolicy refuses direct Service traffic from shared apps |
+| Router and other server-side callers | `Authorization: Bearer <lares voice key>` | The `webhook-internal` app entrance (`authLevel: internal`, port 8081), published at `<appid>1.<user zone>`. The per-user namespace's NetworkPolicy refuses direct Service traffic from shared apps |
 
 Voice keys:
 
@@ -70,7 +70,8 @@ Voice keys:
 - The caller identity is the key owner. Identity headers such as
   `x-caller-appid` and `X-BFL-USER` are ignored.
 - Router stores the key as an ordinary encrypted provider credential with base
-  URL `https://<webhook-internal entrance host>/api/lares/voice` and appends
+  URL `https://<appid>1.<user zone>/api/lares/voice` (the `webhook-internal`
+  entrance; for example `https://489966aa1.alice.olares.com/api/lares/voice`) and appends
   `/realtime?model=`. The 8081 listener forwards only that WebSocket path to
   this handler; everything else there stays the webhook API or 404.
 - Access control on Router's side (model allowlists, quotas) belongs to Router.

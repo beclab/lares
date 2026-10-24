@@ -454,7 +454,7 @@ curl -X DELETE .../api/lares/voice/keys -d '{"id":"<id>"}'
 
 The caller is the key owner; identity headers on the request are ignored. `voice-assistant` and `voice-direct` operate the owner's Agent, so grant them only to keys whose Router side is restricted to the owner.
 
-Register in Router an OpenAI-compatible provider with base URL `https://<webhook-internal entrance host>/api/lares/voice` (the per-user namespace refuses direct Service traffic from router-shared, so Router comes through the internal entrance on 8081) and the voice key as its encrypted credential, models `voice-dictation`, `voice-chat`, `voice-assistant`, `voice-direct` with `mode=realtime` and:
+Register in Router a provider of type `openai` (Router's Realtime path accepts only that type) with base URL `https://<appid>1.<user zone>/api/lares/voice`, the `webhook-internal` app entrance (the per-user namespace refuses direct Service traffic from router-shared, so Router comes through the internal entrance on 8081), and the voice key as its encrypted credential, models `voice-dictation`, `voice-chat`, `voice-assistant`, `voice-direct` with `mode=realtime` and:
 
 ```json
 {"extensions":{"voice_service":{"protocol":"lares-realtime-v1","billing":"child-models"}}}
