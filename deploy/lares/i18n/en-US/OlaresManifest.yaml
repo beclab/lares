@@ -43,5 +43,6 @@ spec:
     - Voice devices hear their room with a speech model instead of by loudness, no longer interrupt themselves with their own voice, and keep answers after a camera look to one sentence.
     - Voice devices stop listening once the speaker's words end, even with other people talking nearby, and acknowledge a task in a few words.
     - A cough or a knock near a voice device no longer keeps it listening for ten seconds.
+    - Home Assistant skills use hass-cli 0.0.2, which turns a light on in a couple of steps; installs that already have the skills are upgraded at startup. A cough no longer holds a hands-free headset take open either.
 
-    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.80)
+    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.81)

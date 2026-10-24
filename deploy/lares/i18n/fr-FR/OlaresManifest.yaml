@@ -39,5 +39,6 @@ spec:
     - Les appareils vocaux détectent la parole avec un modèle plutôt qu'au volume, ne s'interrompent plus avec leur propre voix et répondent en une phrase après un regard par la caméra.
     - Les appareils vocaux cessent d'écouter dès que les mots de l'interlocuteur s'arrêtent, même si d'autres parlent à côté, et confirment une tâche en quelques mots.
     - Une toux ou un coup près d'un appareil vocal ne le fait plus écouter pendant dix secondes.
+    - Les compétences Home Assistant utilisent hass-cli 0.0.2, qui allume une lumière en quelques étapes ; les installations existantes sont mises à jour au démarrage. Une toux ne garde plus ouverte la prise du casque mains libres.
 
-    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.80)
+    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.81)

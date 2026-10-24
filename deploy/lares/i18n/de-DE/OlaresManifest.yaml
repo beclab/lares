@@ -39,5 +39,6 @@ spec:
     - Sprachgeräte erkennen Sprache im Raum mit einem Sprachmodell statt über die Lautstärke, unterbrechen sich nicht mehr mit der eigenen Stimme und antworten nach einem Kamerablick in einem Satz.
     - Sprachgeräte hören auf zuzuhören, sobald die Worte des Sprechers enden, auch wenn in der Nähe andere reden, und bestätigen eine Aufgabe in wenigen Worten.
     - Ein Husten oder Klopfen in der Nähe eines Sprachgeräts lässt es nicht mehr zehn Sekunden lang zuhören.
+    - Home-Assistant-Skills nutzen hass-cli 0.0.2, das ein Licht in wenigen Schritten einschaltet; bestehende Installationen werden beim Start aktualisiert. Auch beim freihändigen Headset hält ein Husten die Aufnahme nicht mehr offen.
 
-    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.80)
+    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.81)
