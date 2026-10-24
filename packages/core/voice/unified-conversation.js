@@ -161,9 +161,9 @@ export function createUnifiedConversation({ request, socket: openSocket = browse
   // Headset: the Host owns the microphone; the socket only opens and closes it.
   const hostInput = () => ({
     capabilities: { duplex: false, bargeIn: false, audio: "pcm16-24000" },
-    capture({ signal, onReady, onSpeech, onTranscribing }) {
+    capture({ signal, onReady, onSpeech, onDropped, onTranscribing }) {
       const current = take();
-      current.onSpeech = onSpeech; current.onTranscribing = onTranscribing;
+      current.onSpeech = onSpeech; current.onDropped = onDropped; current.onTranscribing = onTranscribing;
       let timer = null;
       const clear = () => { if (timer) { clearTimeout(timer); timer = null; } };
       return new Promise((resolve, reject) => {
@@ -195,6 +195,8 @@ export function createUnifiedConversation({ request, socket: openSocket = browse
   const onEvent = (event) => {
     switch (event.type) {
       case "input_audio_buffer.speech_started": turn?.onSpeech?.(); break;
+      // A take too short to be a phrase was dropped; the call keeps listening on the same turn.
+      case "input_audio_buffer.cleared": turn?.onDropped?.(); break;
       case "input_audio_buffer.committed": turn?.onTranscribing?.(); break;
       case "conversation.item.input_audio_transcription.delta": if (turn?.onPartial) { turn.partial = `${turn.partial || ""}${event.delta}`; turn.onPartial(turn.partial); } break;
       case "conversation.item.input_audio_transcription.completed": {

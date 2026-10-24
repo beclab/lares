@@ -564,9 +564,9 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       if (automatic && endpoint.push(voiced ? 1 : 0, rms, ms)) {
         send({ type: "input_audio_buffer.speech_stopped", audio_end_ms: Math.round(totalMs), item_id: itemId });
         void commit("silence").catch(report);
-      } else if (policy.mode === "device" && endpoint.abandoned()) {
+      } else if (automatic && endpoint.abandoned()) {
         // A sound too short to be a phrase opened the take; it would otherwise hold it, and an ASR
-        // stream, until the take limit.
+        // stream, until the take limit. `cleared` tells the client the speech it was told of is gone.
         reportTake(chunks, turnMs, null, "short");
         send({ type: "input_audio_buffer.speech_stopped", audio_end_ms: Math.round(totalMs), item_id: itemId });
         send({ type: "input_audio_buffer.cleared" });

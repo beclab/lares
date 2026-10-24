@@ -74,6 +74,9 @@ export function createVoiceController({ input, agent, output, voiceId = mintRpcI
       // recording; it must not turn that take into a one-shot dictation.
       const text = String(await input.capture({ signal: run.abort.signal, continuous: state.continuous, manual: manualTurns, onReady: () => { if (live(run)) change({ inputReady: true }); }, onLevel: (level) => { if (live(run)) change({ inputLevel: Math.max(0, Math.min(1, level)) }); }, onSpeech: () => {
         if (live(run)) { touch(); change({ userSpeaking: true }); if (interruptible() && state.playback !== "idle") interruption.suspect(); }
+      }, onDropped: () => {
+        // A cough or a knock: no words, so a reply paused on suspicion resumes as it would after silence.
+        if (live(run)) { interruption.speechEnded(); interruption.final(""); change({ userSpeaking: false }); }
       }, onTranscribing: () => { if (live(run)) { interruption.speechEnded(); change({ capture: "transcribing", userSpeaking: false }); } } }) ?? "").trim();
       if (!live(run)) return;
       report("recognition", run.started, { turnId: run.id });
