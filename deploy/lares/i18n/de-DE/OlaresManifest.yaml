@@ -36,5 +36,6 @@ spec:
     - Sprachgeräte lassen sich mitten in der Antwort unterbrechen und antworten in einem kurzen Satz; Lares' eigene Push-to-Talk-Clients bleiben unverändert.
     - Ist die Spracherkennung ausgelastet, warten Sprachsitzungen kurz statt abzubrechen, und Sprachgeräte lernen den Pegel eines lauten Raums, statt endlos aufzunehmen.
     - Sprachgeräte in einem Raum mit Lüfter oder Motor nehmen das Geräusch nicht mehr als endlose Aufnahme auf.
+    - Sprachgeräte erkennen Sprache im Raum mit einem Sprachmodell statt über die Lautstärke, unterbrechen sich nicht mehr mit der eigenen Stimme und antworten nach einem Kamerablick in einem Satz.
 
-    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.77)
+    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.78)

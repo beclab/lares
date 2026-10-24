@@ -36,5 +36,6 @@ spec:
     - Les appareils vocaux peuvent être interrompus en pleine réponse et répondent en une courte phrase ; les clients push-to-talk de Lares sont inchangés.
     - Les sessions vocales patientent un instant quand la reconnaissance vocale est occupée au lieu d'échouer, et les appareils vocaux apprennent le niveau d'une pièce bruyante pour ne plus enregistrer sans fin.
     - Les appareils vocaux dans une pièce avec un ventilateur ou un moteur ne l'enregistrent plus comme une prise sans fin.
+    - Les appareils vocaux détectent la parole avec un modèle plutôt qu'au volume, ne s'interrompent plus avec leur propre voix et répondent en une phrase après un regard par la caméra.
 
-    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.77)
+    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.78)
