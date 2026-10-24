@@ -778,3 +778,20 @@ test("a bursty room is learned from its loud moments, so its bursts stop opening
     assert.ok(seconds < 3.5, String(seconds));
   } finally { client.close(); await fixture.stop(); }
 });
+
+test("each device take reports its length, how it ended, the VAD answer and the room's levels", async () => {
+  const second = (amplitude: number) => { const pcm = Buffer.alloc(48000); for (let i = 0; i < 24000; i++) pcm.writeInt16LE(i % 2 ? amplitude : -amplitude, i * 2); return pcm.toString("base64"); };
+  const metrics: any[] = [];
+  const fixture = await serve({ detectSpeech: async () => 0, metric: (fields: any) => metrics.push(fields) });
+  const client = connect(fixture.port, "voice-chat");
+  try {
+    await until(client, (event) => event.type === "conversation.item.input_audio_transcription.completed", (event) => {
+      if (event.type === "session.created") client.send(JSON.stringify({ type: "session.update", session: { audio: { input: { turn_detection: { type: "server_vad" } } } } }));
+      if (event.type === "session.updated") for (const amplitude of [300, 3000, 300]) client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: second(amplitude) }));
+    });
+    const take = metrics.find((fields) => fields.event === "device-take");
+    assert.equal(take.ended, "silence");
+    assert.equal(take.speech, 0);
+    assert.ok(Math.abs(take.max - 3000 / 32768) < 0.001, String(take.max));
+  } finally { client.close(); await fixture.stop(); }
+});

@@ -72,7 +72,7 @@ export function joinSpoken(parts) {
  * `lares-realtime-v1` (docs/realtime-protocol.md) on one endpoint. Bearer voice-key callers get a
  * scope owned by the socket; ticket sockets attach to the Lares client's open voice scope.
  */
-export function createLaresRealtimeGateway({ service, config, transcribe, synthesize, openTranscription, detectSpeech, keys, hostOwner = "", hostAudio, busyDefault = () => "queue", bargeIn = () => process.env.LARES_VOICE_BARGE_IN === "1", segment = speechSegments, onError = () => {}, onOpen = () => {}, limit = 64, playbackAckGraceMs = 60_000 }) {
+export function createLaresRealtimeGateway({ service, config, transcribe, synthesize, openTranscription, detectSpeech, keys, hostOwner = "", hostAudio, busyDefault = () => "queue", bargeIn = () => process.env.LARES_VOICE_BARGE_IN === "1", segment = speechSegments, onError = () => {}, onOpen = () => {}, metric = () => {}, limit = 64, playbackAckGraceMs = 60_000 }) {
   const server = new WebSocketServer({ noServer: true, maxPayload: MAX_FRAME, perMessageDeflate: false, handleProtocols: (values) => values.has("lares-voice") ? "lares-voice" : false });
   const clients = new Map();
   const tickets = new Map();
@@ -312,7 +312,17 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       if (speakableUtterance(state.utterance)) { lastReply = state.utterance.key; speak(state.utterance.text, "turn", state.utterance.key, input, state.utterance.calls); }
     };
     const userItem = (id, content) => send({ type: "conversation.item.done", item: { id, object: "realtime.item", type: "message", role: "user", status: "completed", content: [content] } });
-    const commit = async () => {
+    // One line per device take: what the room sounded like and why the take ended, which is the
+    // only way to tune the noise gate against a real room.
+    const reportTake = (taken, ms, speech, ended) => {
+      try {
+        const levels = taken.map((chunk) => frameRms(pcmSamples(chunk))).sort((a, b) => a - b);
+        const at = (q) => Number((levels[Math.min(levels.length - 1, Math.floor(levels.length * q))] ?? 0).toFixed(4));
+        const { noise, learned } = noiseGate.levels();
+        metric({ event: "device-take", voiceId: scope.id, ms: Math.round(ms), ended, speech, chunks: levels.length, p50: at(0.5), p95: at(0.95), max: at(1), noise: Number((noise ?? 0).toFixed(4)), learned: Number(learned.toFixed(4)) });
+      } catch {}
+    };
+    const commit = async (ended = "client") => {
       if (closed) return;
       // A commit with no samples still has a client waiting in transcribing.
       // Returning here never completes that take, so the composer stays on 转写中.
@@ -336,7 +346,9 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
           // A server_vad take from a client without playback reports is often only the room or
           // the reply's echo. Router's VAD decides before ASR and the dialogue spend anything on it;
           // when it cannot answer, the take goes through as before.
-          if (policy.vadVeto && detectSpeech && await detectSpeech(input, scope) === 0) {
+          const speech = policy.vadVeto && detectSpeech ? await detectSpeech(input, scope) : null;
+          if (policy.vadVeto) reportTake(taken, ms, speech, ended);
+          if (speech === 0) {
             await opened?.ready.then((value) => value?.cancel());
             noiseGate.learn(taken.map((chunk) => frameRms(pcmSamples(chunk))));
             if (!closed) send({ type: "conversation.item.input_audio_transcription.completed", item_id: id, content_index: 0, transcript: "" });
@@ -491,7 +503,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
         if (!automatic) fail("audio_limit_exceeded");
         // A take that never fell quiet is closed rather than refusing everything after it.
         send({ type: "input_audio_buffer.speech_stopped", audio_end_ms: Math.round(totalMs), item_id: itemId });
-        void commit().catch(report);
+        void commit("overflow").catch(report);
         return;
       }
       itemId ??= `item_${randomUUID()}`;
@@ -509,12 +521,12 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       if (policy.suspendBargeIn && response && !response.suspended && speechMs >= BARGE_IN_MS) suspend(response);
       if (policy.takeLimitMs && turnMs >= policy.takeLimitMs) {
         send({ type: "input_audio_buffer.speech_stopped", audio_end_ms: Math.round(totalMs), item_id: itemId });
-        void commit().catch(report);
+        void commit("limit").catch(report);
         return;
       }
       if (automatic && endpoint.push(voiced ? 1 : 0, rms, ms)) {
         send({ type: "input_audio_buffer.speech_stopped", audio_end_ms: Math.round(totalMs), item_id: itemId });
-        void commit().catch(report);
+        void commit("silence").catch(report);
       }
     };
     // Full duplex for a device: Router's VAD tells a person from the reply's echo, and only a person

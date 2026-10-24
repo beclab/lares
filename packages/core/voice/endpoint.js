@@ -92,6 +92,8 @@ export function createNoiseGate() {
      * fades unless further empty takes keep it up, so a room that quietens hears quiet
      * speakers again.
      */
+    /** The floors this gate is applying now, for diagnostics. */
+    levels() { return { noise, learned }; },
     learn(levels) {
       const sorted = [...levels].sort((a, b) => a - b);
       if (!sorted.length) return;

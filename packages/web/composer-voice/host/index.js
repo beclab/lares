@@ -380,7 +380,8 @@ export function apply(ctx) {
     const unified = createLaresRealtimeGateway({ service: voiceHost, config: readConfig, ...createRouterAudio(readConfig), keys: voiceKeys, hostOwner: routerEndUser(),
       hostAudio: openRealtimeHostAudio, busyDefault: () => busyEnterDefault(ctx),
       onError: (cause, scope) => writeReport({ scope: "voice", event: "realtime-error", voiceId: scope.id, code: cause?.code || cause?.message || "voice_failed" }),
-      onOpen: (fields) => writeReport({ scope: "voice", event: "realtime-open", ...fields }) });
+      onOpen: (fields) => writeReport({ scope: "voice", event: "realtime-open", ...fields }),
+      metric: (fields) => writeReport({ scope: "voice", ...fields }) });
     realtime = registerRealtime(ctx, voiceHost, unified);
     const unpublish = publishRealtimeUpgrade((req, socket, head) => unified.upgrade(req, socket, head));
     return () => { unpublish(); realtime.dispose(); unified.close(); };
