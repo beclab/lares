@@ -44,5 +44,6 @@ spec:
     - 语音设备在说话人说完后就结束录音，即使旁边有人在聊天；接到任务时也只简短应答。
     - 语音设备旁边的一声咳嗽或敲击，不会再让它白白录音十秒。
     - Home Assistant 技能改用 hass-cli 0.0.2，开灯只需几步；已安装的技能会在启动时自动升级。耳机免提模式下，一声咳嗽也不会再让录音一直开着。
+    - 语音设备不会再把音量比第一个字小的指令当成噪音丢掉。
 
-    [版本说明](https://github.com/beclab/lares/releases/tag/v0.26.81)
+    [版本说明](https://github.com/beclab/lares/releases/tag/v0.26.82)

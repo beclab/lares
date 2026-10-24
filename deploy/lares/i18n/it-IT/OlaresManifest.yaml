@@ -40,5 +40,6 @@ spec:
     - I dispositivi vocali smettono di ascoltare quando finiscono le parole di chi parla, anche se altri parlano vicino, e confermano un'attività in poche parole.
     - Un colpo di tosse o un rumore vicino a un dispositivo vocale non lo tiene più in ascolto per dieci secondi.
     - Le competenze Home Assistant usano hass-cli 0.0.2, che accende una luce in un paio di passaggi; le installazioni esistenti si aggiornano all'avvio. Un colpo di tosse non tiene più aperta la ripresa delle cuffie a mani libere.
+    - I dispositivi vocali non scartano più un comando parlato come rumore quando è più basso della sua prima sillaba.
 
-    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.81)
+    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.82)

@@ -8,14 +8,27 @@ test it are in [voice-runtime](voice-runtime.md#device-voice-through-router-reac
 
 | On pptest03 | Version | Note |
 | --- | --- | --- |
-| Lares | 0.26.81 (upload source) | Silero device gate, echo word check, settled-words and short-take endpoints, hass-cli 0.0.2 |
+| Lares | 0.26.81 (upload source); 0.26.82 built, not deployed | Silero device gate, echo word check, settled-words and short-take endpoints, hass-cli 0.0.2 |
 | reachymini | 0.1.7 (upload source) | `lares` dialect, ReSpeaker USB access; main says 0.1.6 |
 | Qwen3-ASR 0.6B | 1.0.2 (market.test) | engine v1.1.33, `ENGINE_MAX_CONCURRENCY=3`; the one in use |
 | Qwen3-ASR 1.7B | 1.0.30 (market.test) | stopped: no card with 12 Gi free |
 | sglang Qwen3.5-9B | 1.0.4 (market.test) | thinking off at launch |
 
-Next: measure "turn on the light" end to end on the robot with hass-cli 0.0.2,
-then the open items listed in voice-runtime. Full suite: 1126 pass; the two
+**0.26.82 is built and on Docker Hub but not deployed** (pptest03 was needed for
+other work). It fixes what the 0.26.81 robot test showed: spoken commands of
+1.1–1.3 s were dropped as too short, because the take endpoint still counted a
+frame as speech only above 30% of the take's peak; under Silero the model's
+verdict alone now counts. The fragments that reached ASR explain the nonsense
+replies in that test ("幾年後", "把房门关下来" answered as a door). The same test
+measured the Agent with hass-cli 0.0.2: 6 model calls, done in 4.7 s, against
+10 calls and about 14 s before.
+
+Next: deploy 0.26.82 (`olares-cli market upload artifacts/lares-0.26.82.tgz`,
+then `market upgrade lares -s upload --version 0.26.82`), retest turning lights on
+and off, and check the `device-take` metrics for takes ending `short`. ASR's
+language is unset in voice settings, so Qwen3-ASR sometimes answers Chinese in
+Traditional characters and the dialogue follows; not changed yet. Then the open
+items listed in voice-runtime. Full suite: 1126 pass; the two
 known failures (`actual dsh adapter sends Router identifiers…`, `actual session
 catalog waits for default initialization…`) predate this work.
 
