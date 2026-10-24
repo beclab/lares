@@ -904,3 +904,24 @@ test("a device take ends once ASR stops finding new words, though voices go on a
     assert.ok(take.ms < 3500 && Date.now() - started < 4000, `${take.ms} ms`);
   } finally { clearInterval(pump); client.close(); await fixture.stop(); }
 });
+
+test("a knock that opens a device take is dropped after half a second of quiet, and the next phrase is heard", async () => {
+  const chunk = (amplitude: number) => { const pcm = Buffer.alloc(2400); for (let i = 0; i < 1200; i++) pcm.writeInt16LE(i % 2 ? amplitude : -amplitude, i * 2); return pcm.toString("base64"); };
+  const metrics: any[] = [];
+  const fixture = await serve({ speechGate: async () => fakeSpeechGate(), metric: (fields: any) => metrics.push(fields) });
+  const client = connect(fixture.port, "voice-chat");
+  try {
+    const started = Date.now();
+    const events = await until(client, (event) => event.type === "conversation.item.input_audio_transcription.completed", (event) => {
+      if (event.type === "session.created") client.send(JSON.stringify({ type: "session.update", session: { audio: { input: { turn_detection: { type: "server_vad" } } } } }));
+      // 100 ms knock, a second of quiet, then one second of a voice and quiet: 50 ms chunks.
+      if (event.type === "session.updated") for (const amplitude of [...Array(20).fill(300), 6000, 6000, ...Array(20).fill(300), ...Array(20).fill(6000), ...Array(20).fill(300)]) client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: chunk(amplitude) }));
+    });
+    assert.ok(events.some((event) => event.type === "input_audio_buffer.cleared"));
+    assert.deepEqual(metrics.filter((fields) => fields.event === "device-take").map((fields) => fields.ended), ["short", "silence"]);
+    assert.equal(fixture.calls.transcribed.length, 1);
+    const seconds = fixture.calls.transcribed[0].bytes / 48000;
+    assert.ok(seconds > 1 && seconds < 2, String(seconds));
+    assert.ok(Date.now() - started < 3000);
+  } finally { client.close(); await fixture.stop(); }
+});

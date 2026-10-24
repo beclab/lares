@@ -564,6 +564,13 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       if (automatic && endpoint.push(voiced ? 1 : 0, rms, ms)) {
         send({ type: "input_audio_buffer.speech_stopped", audio_end_ms: Math.round(totalMs), item_id: itemId });
         void commit("silence").catch(report);
+      } else if (policy.mode === "device" && endpoint.abandoned()) {
+        // A sound too short to be a phrase opened the take; it would otherwise hold it, and an ASR
+        // stream, until the take limit.
+        reportTake(chunks, turnMs, null, "short");
+        send({ type: "input_audio_buffer.speech_stopped", audio_end_ms: Math.round(totalMs), item_id: itemId });
+        send({ type: "input_audio_buffer.cleared" });
+        reset(); scope.voiceInputActive = false;
       }
     };
     // Full duplex for a device: only a person stops the reply. With the speech model the gate has

@@ -57,6 +57,10 @@ export function createSpeechEndpoint(options = {}) {
       }
       return false;
     },
+    /** A take that went quiet before its voice added up to a phrase: a cough, a knock, a click. */
+    abandoned() {
+      return !ended && speechMs < o.minSpeechMs && quietMs >= o.silenceMs;
+    },
   };
 }
 
