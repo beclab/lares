@@ -37,5 +37,6 @@ spec:
     - Les sessions vocales patientent un instant quand la reconnaissance vocale est occupée au lieu d'échouer, et les appareils vocaux apprennent le niveau d'une pièce bruyante pour ne plus enregistrer sans fin.
     - Les appareils vocaux dans une pièce avec un ventilateur ou un moteur ne l'enregistrent plus comme une prise sans fin.
     - Les appareils vocaux détectent la parole avec un modèle plutôt qu'au volume, ne s'interrompent plus avec leur propre voix et répondent en une phrase après un regard par la caméra.
+    - Les appareils vocaux cessent d'écouter dès que les mots de l'interlocuteur s'arrêtent, même si d'autres parlent à côté, et confirment une tâche en quelques mots.
 
-    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.78)
+    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.79)
