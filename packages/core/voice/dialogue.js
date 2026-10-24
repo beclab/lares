@@ -172,7 +172,8 @@ export function createVoiceDialogue({ config, agent = false, owner, context = []
           } else owed.push(...calls);
         }
         if (!owed.length && typeof answer.content !== "string") throw new Error("voice_chat_protocol");
-        const content = typeof answer.content === "string" ? answer.content : "";
+        // A model that only calls tools often still emits a few newlines; that is not something to say.
+        const content = typeof answer.content === "string" && answer.content.trim() ? answer.content : "";
         // Keep completed exchanges, never incomplete function-call pairs.
         messages = [messages[0], ...next.slice(1).filter((item) => item !== cue), ...(answer.tool_calls?.length ? [] : [{ role: "assistant", content }])];
         for (const call of owed) if (call.sent) close(call.call_id); else pending.add(call.call_id);

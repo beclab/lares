@@ -540,3 +540,26 @@ test("a key without the device grant still cannot declare tools on the assistant
     assert.equal(events.at(-1).error.code, "unsupported_parameter");
   } finally { client.close(); await fixture.stop(); }
 });
+
+test("without playback acknowledgements the microphone stays closed while the reply plays", async () => {
+  // 24,000 bytes at 24 kHz PCM16 is 500 ms of reply audio.
+  const fixture = await serve({ synthesize: async () => Buffer.alloc(24000) });
+  const client = connect(fixture.port, "voice-chat");
+  const voice = Buffer.alloc(4800, 1).toString("base64");
+  let phase = 0;
+  try {
+    await until(client, (event) => event.type === "conversation.item.input_audio_transcription.completed" && ++phase === 2, (event) => {
+      if (event.type === "session.created") client.send(JSON.stringify({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text: "hi" }] } }));
+      if (event.type === "response.done") {
+        // Still inside the reply's playback: this take is dropped and commits empty.
+        client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: voice }));
+        client.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
+        setTimeout(() => {
+          client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: voice }));
+          client.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
+        }, 1000);
+      }
+    });
+    assert.equal(fixture.calls.transcribed.length, 1);
+  } finally { client.close(); await fixture.stop(); }
+});

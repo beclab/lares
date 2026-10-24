@@ -183,9 +183,12 @@ exposed as function calls; only calls to [device tools](#device-tools) are.
 ## Lares extension events
 
 Three groups only: playback acknowledgement, Agent tasks and host device. When
-a standard client sends no playback acknowledgement, the server treats audio as
-played once sent; conversation still works, but truncate and half-duplex
-protection are imprecise.
+a standard client sends no playback acknowledgement, the server assumes it plays
+what it was sent in real time. Until that estimate runs out, plus about 400 ms
+of room echo, input audio is dropped without an error (unless barge-in is
+active), so the reply heard through the microphone does not open a new turn.
+`response.cancel` or `conversation.item.truncate` from the client ends the
+estimate. Truncate stays approximate.
 
 | Event | Direction | Fields | Replaces |
 | --- | --- | --- | --- |

@@ -63,10 +63,13 @@ test("pure chat does not create or inspect a business session and repeated turns
     await service.open(scope, {});
     await service.prompt(scope, { text: "hi", requestId: "one" });
     await service.prompt(scope, { text: "hi", requestId: "one" });
-    assert.equal(creates, 0); assert.equal(replies, 2);
+    // One reply for the deduplicated turn; the history summary waits for a quiet spell.
+    assert.equal(creates, 0); assert.equal(replies, 1);
     assert.equal(service.state(scope).utterance.text, "hello");
     assert.equal(service.records(scope).records.length, 2);
     await service.clearRecords(scope);
+    // Closing writes the pending summary instead of dropping it.
+    assert.equal(replies, 2);
     assert.equal(service.records(scope).records.length, 0);
     await service.close(scope);
   } finally { h.close(); }
@@ -288,4 +291,29 @@ test("tools and caller instructions on the assistant need the device grant", asy
     service.tools(device, [MOVE]);
     service.instructions(device, "y".repeat(5000));
   } finally { h.close(); }
+});
+
+test("the history summary waits until turns stop instead of following every one", async () => {
+  const h = store();
+  const calls: string[] = [];
+  const service = createVoiceHostService({}, { records: h.records, config: () => ({ preset: "chat" }), summaryIdleMs: 30,
+    chat: async ({ messages }: any) => { calls.push(/Summarize/.test(messages[0].content) ? "summary" : "reply"); return { role: "assistant", content: "ok" }; },
+  });
+  const scope: any = { id: "client-four", owner: "alice" };
+  try {
+    await service.open(scope, {});
+    for (const id of ["a", "b", "c"]) await service.prompt(scope, { text: id, requestId: id });
+    assert.deepEqual(calls, ["reply", "reply", "reply"]);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    await scope.summaryTask;
+    assert.deepEqual(calls, ["reply", "reply", "reply", "summary"]);
+    await service.close(scope);
+    assert.equal(calls.filter((call) => call === "summary").length, 1);
+  } finally { h.close(); }
+});
+
+test("a whitespace-only answer next to a device call is not spoken", async () => {
+  const dialogue = createVoiceDialogue({ config: {}, owner: "alice", chat: async () => ({ role: "assistant", content: "\n\n", tool_calls: [call("c1", "move_head")] }) });
+  dialogue.setClientTools([MOVE]);
+  assert.deepEqual(await dialogue.reply("nod", "t1"), { text: "", calls: [{ call_id: "c1", name: "move_head", arguments: "{}" }] });
 });

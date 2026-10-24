@@ -10,7 +10,7 @@ import { voiceCapabilities } from "./capabilities.js";
 const failure = (code, status) => Object.assign(new Error(code), { code, status });
 
 /** Presets and task policy stay in core; the Host supplies an authenticated scope. */
-export function createVoiceHostService(api, { env = process.env, metric = () => {}, records = createVoiceRecords(), config = readConfig, chat } = {}) {
+export function createVoiceHostService(api, { env = process.env, metric = () => {}, records = createVoiceRecords(), config = readConfig, chat, summaryIdleMs = 15_000 } = {}) {
   const ownerOf = (scope) => scope.owner || "@local";
   const keyOf = (scope) => scope.session?.snapshot().sessionId || `voice:${scope.contextId || scope.id}`;
   const append = (scope, role, text, turnId, taskId = null, fields = {}) => records.append(ownerOf(scope), keyOf(scope), {
@@ -27,7 +27,18 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
   };
   // Router groups a keyed Realtime session's child requests by its session id (Router ADR-83).
   const chatFor = (scope) => (request) => (chat || voiceChat)({ ...request, ...(scope.routerSessionId ? { headers: { ...request.headers, "x-session-id": scope.routerSessionId } } : {}) });
+  // A summary rewrites the whole history on the dialogue model. Queued after every turn it ran
+  // behind each utterance on the same model, so it waits for a quiet spell and covers every
+  // turn since the last one.
   const summarize = (scope) => {
+    clearTimeout(scope.summaryTimer);
+    scope.summaryTimer = setTimeout(() => checkpoint(scope), summaryIdleMs);
+    scope.summaryTimer.unref?.();
+  };
+  const checkpoint = (scope) => {
+    clearTimeout(scope.summaryTimer); scope.summaryTimer = null;
+    if (!scope.dialogue) return;
+    if (scope.active && scope.voiceState?.running) { summarize(scope); return; }
     const key = keyOf(scope);
     const checkpointVersion = records.read(ownerOf(scope), key).version;
     scope.summaryTask = Promise.resolve(scope.summaryTask).catch(() => {}).then(() => scope.dialogue.summarize()).then((summary) => records.checkpoint(ownerOf(scope), key, summary, checkpointVersion)).catch((cause) => {
@@ -296,6 +307,7 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
         scope.capture?.stop(true);
         const cleanup = await Promise.allSettled([scope.duplex?.interrupt(), scope.realtimeAudio?.stop(), scope.session?.close()]);
         await scope.voiceSerial?.catch(() => {});
+        if (scope.summaryTimer) checkpoint(scope);
         await scope.summaryTask;
         scopes.delete(scope);
         const failed = cleanup.find((result) => result.status === "rejected");

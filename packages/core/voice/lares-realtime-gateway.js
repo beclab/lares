@@ -17,6 +17,8 @@ const SPEECH_RMS = 0.004;
 // and a suspected interruption that never resolves stops the reply.
 const BARGE_IN_MS = 500;
 const BARGE_IN_LIMIT_MS = 10_000;
+// Room echo outlasts the last sample a client was sent by roughly this much.
+const ECHO_TAIL_MS = 400;
 const TICKET_MS = 30_000;
 // A device's camera frame arrives as one data URL; everything else stays far below this.
 const MAX_FRAME = 512 * 1024;
@@ -86,6 +88,8 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
     let ackTimer = null;
     // Device sessions follow OpenAI item semantics: items only add context and `response.create` asks for a reply.
     let pendingText = null, pendingCreate = false, declared = [], toolChoice = "auto";
+    // A client that never acknowledges playback is assumed to play what it was sent in real time.
+    let playbackUntil = 0;
     const tasks = new Map();
     const spoken = new Map();
     const played = new Map();
@@ -202,6 +206,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
         if (current.abort.signal.aborted || current.done || closed || client.readyState !== 1) return;
         const chunk = audio.subarray(offset, offset + CHUNK_BYTES);
         current.outputMs += chunk.length / BYTES_PER_MS;
+        if (!acknowledges) playbackUntil = Math.max(playbackUntil, Date.now()) + chunk.length / BYTES_PER_MS;
         send({ type: "response.output_audio.delta", response_id: current.id, item_id: current.itemId, output_index: 0, content_index: 0, delta: chunk.toString("base64") });
         sentAt = Date.now();
       }
@@ -418,6 +423,10 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
     };
     const append = (audio) => {
       if (awaitingPlayback && !bargeActive()) fail("waiting_for_playback");
+      // Half duplex for a client without playback acknowledgements: while its speaker is still
+      // playing the reply, the microphone mostly hears that reply. Dropped quietly, because the
+      // client cannot tell when to stop sending.
+      if (!acknowledges && !headset && !bargeActive() && Date.now() < playbackUntil + ECHO_TAIL_MS) return;
       // Audio that arrives while the previous take is being transcribed belongs
       // to the next turn; keep it and let that commit queue behind the first one.
       if (typeof audio !== "string" || audio.length > 64000 || !/^[A-Za-z0-9+/]*={0,2}$/.test(audio)) fail("unsupported_audio_format");
@@ -518,6 +527,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
     };
     const truncate = (event) => {
       const current = spoken.get(event.item_id) || (response?.itemId === event.item_id ? response : null);
+      playbackUntil = 0;
       if (!current || event.content_index !== 0 || !Number.isInteger(event.audio_end_ms) || event.audio_end_ms < 0) fail("unsupported_parameter");
       if (response === current) cancel("cancelled");
       truncateTo(current, event.audio_end_ms);
@@ -540,7 +550,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
         case "response.cancel":
           // The client has stopped listening. A reply that already finished must
           // not keep the next utterance behind waiting_for_playback.
-          awaitingPlayback = false;
+          awaitingPlayback = false; playbackUntil = 0;
           clearAckWatch();
           if (busy && turn) generation++;
           cancel("cancelled");
