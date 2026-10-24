@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createVoiceRecords } from "@olares/lares-core/voice/records";
-import { createVoiceDialogue } from "@olares/lares-core/voice/dialogue";
+import { createVoiceDialogue, voiceChat } from "@olares/lares-core/voice/dialogue";
 import { createVoiceHostService } from "@olares/lares-core/voice/host-service";
 
 function store() {
@@ -206,7 +206,7 @@ test("device tools end the step, answer through outputs and give up unanswered c
   assert.deepEqual(await dialogue.reply("nod", "t1"), { text: "Sure.", calls: [{ call_id: "c1", name: "move_head", arguments: "{}" }] });
   assert.deepEqual(requests[0].tools.map((tool: any) => tool.function.name), ["ask_lares", "move_head"]);
   assert.equal(requests[0].maxCalls, 8);
-  assert.match(requests[0].messages[0].content, /declared its own tools/);
+  assert.match(requests[0].messages[0].content, /Saying an action does not perform it/);
   assert.equal(dialogue.toolOutput("c1", '{"ok":true}'), true);
   assert.deepEqual(await dialogue.reply(null, "t2"), { text: "Done.", calls: [] });
   assert.deepEqual(requests[1].messages.slice(-2).map((item: any) => [item.role, item.tool_call_id ?? null]), [["assistant", null], ["tool", "c1"]]);
@@ -251,7 +251,7 @@ test("without device tools the dialogue prompt and tools stay exactly as before"
   const requests: any[] = [];
   const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", chat: async (request: any) => { requests.push(request); return { role: "assistant", content: "ok" }; } });
   await dialogue.reply("hi", "t1");
-  assert.doesNotMatch(requests[0].messages[0].content, /declared its own tools/);
+  assert.doesNotMatch(requests[0].messages[0].content, /Saying an action does not perform it/);
   assert.deepEqual(requests[0].tools.map((tool: any) => tool.function.name), ["ask_lares"]);
   assert.equal(requests[0].maxCalls, 1);
 });
@@ -340,7 +340,7 @@ test("sessions without device tools get neither the device rules nor the reminde
   dialogue.setInstructions("Be formal.");
   await dialogue.reply("hi", "t1");
   const prompt = requests[0].messages[0].content;
-  assert.doesNotMatch(prompt, /declared its own tools|Reply in the same language as the user/);
+  assert.doesNotMatch(prompt, /Saying an action does not perform it|Reply in the same language as the user/);
 });
 
 test("only the leading message reaches the model as system, so strict chat templates accept task results", async () => {
@@ -358,4 +358,54 @@ test("only the leading message reaches the model as system, so strict chat templ
   const note = requests[1].messages.find((item: any) => /Light is on/.test(JSON.stringify(item.content)));
   assert.equal(note.role, "user");
   assert.match(note.content, /^\[Lares note, not said by the user\] Authorized Lares task result/);
+});
+
+test("voice chat turns reasoning off and drops the knob for a model whose card refuses it", async () => {
+  const bodies: any[] = [];
+  const fetch = async (_url: string, init: any) => {
+    const body = JSON.parse(init.body); bodies.push(body);
+    if (body.model === "strict" && body.reasoning_effort) return Response.json({ error: { code: "invalid_parameter_value", message: "reasoning_effort=\"none\" is not one of the values this model accepts" } }, { status: 400 });
+    return Response.json({ choices: [{ message: { role: "assistant", content: "ok" } }] });
+  };
+  const env = { LLM_GATEWAY_URL: "http://router.test/v1" } as any;
+  assert.equal((await voiceChat({ model: "thinker", messages: [], reasoningEffort: "none", env, fetch })).content, "ok");
+  assert.equal(bodies[0].reasoning_effort, "none");
+  assert.equal((await voiceChat({ model: "strict", messages: [], reasoningEffort: "none", env, fetch })).content, "ok");
+  assert.deepEqual(bodies.slice(1).map((body) => body.reasoning_effort ?? null), ["none", null]);
+  // Remembered: the next call to that model does not ask again.
+  await voiceChat({ model: "strict", messages: [], reasoningEffort: "none", env, fetch });
+  assert.equal(bodies.at(-1).reasoning_effort, undefined);
+  assert.equal(bodies.length, 4);
+});
+
+test("reasoning a parser left in the content is never spoken", async () => {
+  const env = { LLM_GATEWAY_URL: "http://router.test/v1" } as any;
+  const plain = async () => Response.json({ choices: [{ message: { role: "assistant", content: "Thinking it over\n</think>\n\n好的，马上开灯。" } }] });
+  assert.equal((await voiceChat({ messages: [], env, fetch: plain as any })).content, "好的，马上开灯。");
+  const sse = ["好的", "\n</think>\n\n", "马上开灯。"].map((content) => `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n`).join("") + "data: [DONE]\n";
+  const streamed = async () => new Response(sse, { headers: { "content-type": "text/event-stream" } });
+  const partials: string[] = [];
+  assert.equal((await voiceChat({ messages: [], env, fetch: streamed as any, onDelta: (text: string) => partials.push(text) })).content, "马上开灯。");
+  assert.ok(!partials.at(-1)?.includes("</think>"));
+});
+
+test("a model that asks for ask_lares again after delegating is made to answer instead of failing the turn", async () => {
+  const requests: any[] = [];
+  const answers: any[] = [
+    { role: "assistant", content: null, tool_calls: [call("own", "ask_lares", '{"operation":"run","task":"turn off the light"}')] },
+    { role: "assistant", content: null, tool_calls: [call("again", "ask_lares", '{"operation":"status"}')] },
+    { role: "assistant", content: "好的，正在关灯。" },
+  ];
+  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", submit: async () => ({ status: "pending" }), chat: async (request: any) => { requests.push(structuredClone(request)); return answers.shift(); } });
+  dialogue.setClientTools([MOVE]);
+  assert.deepEqual(await dialogue.reply("关灯", "t1"), { text: "好的，正在关灯。", calls: [] });
+  assert.equal(requests[2].toolChoice, "none");
+  assert.ok(requests.every((request: any) => request.reasoningEffort === "none"));
+});
+
+test("past the step limit a call the model makes anyway is dropped and its words are kept", async () => {
+  const dialogue = createVoiceDialogue({ config: {}, owner: "alice", chat: async () => ({ role: "assistant", content: "Done for now.", tool_calls: [call("x", "move_head")] }) });
+  dialogue.setClientTools([MOVE]);
+  for (let i = 0; i < 2; i++) await dialogue.reply(null, `c${i}`);
+  assert.deepEqual(await dialogue.reply(null, "c2"), { text: "Done for now.", calls: [] });
 });

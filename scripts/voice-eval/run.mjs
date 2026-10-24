@@ -7,8 +7,9 @@
  *   node scripts/voice-eval/run.mjs                      # default-chat, 3 runs each
  *   node scripts/voice-eval/run.mjs --runs 5 --model default-chat --model Olares/x/y
  *   node scripts/voice-eval/run.mjs --only light-on-zh,clarify-answer
+ *   node scripts/voice-eval/run.mjs --effort none          # force a reasoning_effort on every chat call
+ *   node scripts/voice-eval/run.mjs --dialogue ../../packages/core/voice/dialogue.next.js   # a working copy
  */
-import { createVoiceDialogue, voiceChat } from "../../packages/core/voice/dialogue.js";
 import { DEVICE_TOOLS, PERSONA, SCENARIOS } from "./scenarios.mjs";
 
 const args = process.argv.slice(2);
@@ -17,6 +18,18 @@ const models = values("--model").length ? values("--model") : ["default-chat"];
 const runs = Number(values("--runs")[0] || 3);
 const only = values("--only")[0]?.split(",");
 const scenarios = SCENARIOS.filter((scenario) => !only || only.includes(scenario.id));
+const effort = values("--effort")[0];
+// A working copy placed beside the real module keeps its relative imports.
+const { createVoiceDialogue, voiceChat } = await import(new URL(values("--dialogue")[0] || "../../packages/core/voice/dialogue.js", import.meta.url));
+
+// voiceChat builds its own request body, so a trial parameter is added on the way out.
+if (effort) {
+  const send = globalThis.fetch;
+  globalThis.fetch = (url, init = {}) => {
+    if (String(url).endsWith("/chat/completions") && typeof init.body === "string") init = { ...init, body: JSON.stringify({ ...JSON.parse(init.body), reasoning_effort: effort }) };
+    return send(url, init);
+  };
+}
 
 async function once(scenario, model) {
   const delegations = [];
@@ -48,7 +61,7 @@ const describe = (run) => [
 
 let failed = 0;
 for (const model of models) {
-  console.log(`\n=== ${model} · ${runs} run(s) per scenario`);
+  console.log(`\n=== ${model} · ${runs} run(s) per scenario${effort ? ` · reasoning_effort=${effort}` : ""}`);
   let passedAll = 0;
   for (const scenario of scenarios) {
     const results = [];
