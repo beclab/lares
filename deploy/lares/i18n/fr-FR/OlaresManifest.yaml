@@ -28,5 +28,6 @@ spec:
     - Router atteint la voix de Lares par une entrée interne ; l'adresse de la page Lares se termine désormais par 0 dans sa première partie.
     - Les appareils vocaux qui ne signalent pas la lecture n'entendent plus leurs propres réponses comme un nouveau tour, et les réponses n'attendent plus les résumés d'historique.
     - La détection automatique des tours termine un tour dans une pièce bruyante au lieu d'attendre la limite audio.
+    - Les appareils vocaux qui diffusent leur micro en continu ignorent les tours où la détection vocale de Router n'entend aucune parole.
 
-    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.68)
+    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.69)
