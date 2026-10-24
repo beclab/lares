@@ -23,6 +23,29 @@ export const DEVICE_TOOLS = [
   { name: "pollen_robotics_reachy_mini_time_tool__get_time", description: "Get the current local time.", parameters: object() },
 ];
 
+import { deflateSync } from "node:zlib";
+
+// A camera frame without shipping a photo: a red apple with a green leaf on a wooden table, drawn as a
+// 256x192 PNG at run time.
+export function cameraFrame() {
+  const width = 256, height = 192, rows = [];
+  for (let y = 0; y < height; y++) {
+    const row = [0];
+    for (let x = 0; x < width; x++) {
+      const apple = (x - 128) ** 2 + (y - 104) ** 2 < 52 ** 2;
+      const leaf = (x - 146) ** 2 / 400 + (y - 44) ** 2 / 90 < 1;
+      const table = y > 150;
+      row.push(...(apple ? [200, 30, 40] : leaf ? [40, 150, 50] : table ? [150, 100, 60] : [235, 235, 230]));
+    }
+    rows.push(Buffer.from(row));
+  }
+  const crc = (bytes) => { let c = ~0; for (const b of bytes) { c ^= b; for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xedb88320 & -(c & 1)); } return ~c >>> 0; };
+  const chunk = (type, data) => { const head = Buffer.alloc(8); head.writeUInt32BE(data.length); head.write(type, 4); const tail = Buffer.alloc(4); tail.writeUInt32BE(crc(Buffer.concat([Buffer.from(type), data]))); return Buffer.concat([head, data, tail]); };
+  const header = Buffer.alloc(13); header.writeUInt32BE(width, 0); header.writeUInt32BE(height, 4); header[8] = 8; header[9] = 2;
+  const png = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", header), chunk("IDAT", deflateSync(Buffer.concat(rows))), chunk("IEND", Buffer.alloc(0))]);
+  return `data:image/png;base64,${png.toString("base64")}`;
+}
+
 const CJK = /[㐀-鿿]/;
 const FRENCH = /\b(je|vous|bonjour|pour|lumière|c'est|est-ce)\b/i;
 export const language = (text) => CJK.test(text) ? "zh" : FRENCH.test(text) ? "fr" : /[a-z]/i.test(text) ? "en" : "none";
@@ -138,6 +161,20 @@ export const SCENARIOS = [
     issue: "\"What can you do?\" listed capabilities for 155 words",
     say: "What can you do?",
     expect: check([(run) => run.text.split(/\s+/).filter(Boolean).length <= 25, "reply longer than 25 words"], [(run) => !/\n\s*[-*]|\*\*/.test(run.text), "reply uses a list or markdown"]),
+  },
+  {
+    id: "camera-brief-zh",
+    issue: "After looking through the camera the robot described the scene at length",
+    say: "看看我手上拿的是什么",
+    after: { tool: "camera", output: JSON.stringify({ status: "ok", note: "frame attached" }), image: cameraFrame },
+    expect: check([(run) => run.text.trim().length > 0, "said nothing after the camera"], [(run) => [...run.text.replace(/\s/g, "")].length <= 30, "reply longer than 30 characters"], [(run) => speaks(run, "zh"), "did not answer in Chinese"]),
+  },
+  {
+    id: "camera-brief-en",
+    issue: "After looking through the camera the robot described the scene at length",
+    say: "What am I holding? Take a look.",
+    after: { tool: "camera", output: JSON.stringify({ status: "ok", note: "frame attached" }), image: cameraFrame },
+    expect: check([(run) => run.text.trim().length > 0, "said nothing after the camera"], [(run) => run.text.split(/\s+/).filter(Boolean).length <= 15, "reply longer than 15 words"], [(run) => speaks(run, "en"), "did not answer in English"]),
   },
   {
     id: "weather-zh",

@@ -7,6 +7,9 @@ const DEVICE_RULES = "Saying an action does not perform it. To nod, shake or mov
 // Repeated after the caller's instructions: a small model follows whatever it read last, and a
 // device persona is often written in another language and lists only the device's own tools.
 const DEVICE_REMINDER = "Reply in the same language as the user's latest message: Chinese when they speak Chinese, English when they speak English. Gestures are device tool calls, not words; home control, lookups and schedules go through ask_lares. Speak one short sentence, under 15 words or 30 Chinese characters: no jokes, offers or lists unless the user asks.";
+// The device's result (a camera frame, a tool output) is the last thing a continuation reads, and
+// the persona's "one quick answer + one wink of humor" otherwise turns a look into a description.
+const CONTINUE = "Answer the user's request from the device result above in one short sentence, under 15 words or 30 Chinese characters, in the user's language. Say it in words even if you also call a device tool. No jokes, emoji, offers or questions.";
 const ANNOUNCE = "A delegated Lares task has just finished; its result is the latest task result above. Tell the user what matters in one or two short sentences unless you already did. Device tools may accompany the answer. If nothing needs saying, reply with an empty message.";
 const TOOL = { type: "function", function: { name: "ask_lares", description: "Hand a request to the user's Lares Agent, which acts and looks things up for them: controlling home devices such as lights, switches, climate and scenes; facts, weather, news and the user's files; calendar, schedules, reminders and messages; any other task that needs real action. Pass the request as task. It returns pending at once and the result is announced later; status reports tasks still running.", parameters: { type: "object", properties: { operation: { type: "string", enum: ["run", "status"] }, task: { type: "string", maxLength: 16000 } }, required: ["operation"], additionalProperties: false } } };
 const MAX_DEVICE_CALLS = 8;
@@ -177,7 +180,7 @@ export function createVoiceDialogue({ config, agent = false, owner, context = []
       settle();
       busy = true;
       steps = text === null ? steps + 1 : 0;
-      const cue = announce ? { role: "system", content: ANNOUNCE } : null;
+      const cue = announce ? { role: "system", content: ANNOUNCE } : text === null && device.length ? { role: "system", content: CONTINUE } : null;
       const lastWords = text ?? [...messages].reverse().find((item) => item.role === "user" && typeof item.content === "string")?.content;
       // Only when the language is at risk: an announcement has no new words to follow, and a model
       // keeps the language of its own last reply. Said every turn, the line pulls a small model toward

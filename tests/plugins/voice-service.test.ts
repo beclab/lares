@@ -209,9 +209,10 @@ test("device tools end the step, answer through outputs and give up unanswered c
   assert.match(requests[0].messages[0].content, /Saying an action does not perform it/);
   assert.equal(dialogue.toolOutput("c1", '{"ok":true}'), true);
   assert.deepEqual(await dialogue.reply(null, "t2"), { text: "Done.", calls: [] });
-  // The per-turn language hint follows; the call and its output are just before it.
+  // The per-turn language hint follows; the call and its output come before the continuation's cue.
   const turn = requests[1].messages.filter((item: any) => !/latest message is in/.test(String(item.content)));
-  assert.deepEqual(turn.slice(-2).map((item: any) => [item.role, item.tool_call_id ?? null]), [["assistant", null], ["tool", "c1"]]);
+  assert.deepEqual(turn.slice(-3).map((item: any) => [item.role, item.tool_call_id ?? null]), [["assistant", null], ["tool", "c1"], ["user", null]]);
+  assert.match(turn.at(-1).content, /from the device result above in one short sentence/);
   await dialogue.reply("again", "t3");
   // c2 never got an output: the next turn records that instead of leaving the pair open.
   await dialogue.reply("hello", "t4");

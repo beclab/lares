@@ -46,6 +46,24 @@ async function once(scenario, model) {
   for (const task of scenario.tasks || []) dialogue.observeTask(task);
   const started = performance.now();
   try {
+    if (scenario.after) {
+      // The device's own flow: the user's turn calls a device tool, the device answers it (a camera
+      // also sends its frame), and the dialogue continues on that result.
+      const first = await dialogue.reply(scenario.say, "eval", undefined, () => {});
+      const call = first.calls.find((item) => item.name === scenario.after.tool);
+      if (!call) return { ...first, delegations, error: `no ${scenario.after.tool} call to continue from`, ms: Math.round(performance.now() - started) };
+      for (const other of first.calls) dialogue.toolOutput(other.call_id, other === call ? scenario.after.output : JSON.stringify({ status: "ok" }));
+      if (scenario.after.image) dialogue.observe([{ type: "image_url", image_url: { url: scenario.after.image() } }]);
+      let reply = await dialogue.reply(null, "eval:after", undefined, () => {});
+      // A gesture with no words is a step, not an answer: the device reports it and asks again.
+      const gestures = [];
+      for (let step = 0; step < 2 && !reply.text.trim() && reply.calls.length; step++) {
+        gestures.push(...reply.calls);
+        for (const item of reply.calls) dialogue.toolOutput(item.call_id, JSON.stringify({ status: "ok" }));
+        reply = await dialogue.reply(null, `eval:after${step}`, undefined, () => {});
+      }
+      return { ...reply, calls: [...gestures, ...reply.calls], first, delegations, ms: Math.round(performance.now() - started) };
+    }
     const reply = scenario.announce
       ? await dialogue.reply(null, "task:r1", undefined, undefined, { announce: true })
       : await dialogue.reply(scenario.say, "eval", undefined, () => {});
