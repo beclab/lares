@@ -35,5 +35,6 @@ spec:
     - I dispositivi vocali rispondono nella lingua appena parlata, confermano una richiesta prima che parta l'Agente, ignorano i rumori di riempimento e annunciano i risultati senza aspettare il rumore della stanza.
     - I dispositivi vocali si possono interrompere durante la risposta e rispondono con una frase breve; i client push-to-talk di Lares restano invariati.
     - Le sessioni vocali attendono un attimo quando il riconoscimento vocale è occupato invece di fallire, e i dispositivi vocali imparano il livello di una stanza rumorosa per non registrare all'infinito.
+    - I dispositivi vocali in una stanza con una ventola o un motore non lo registrano più come una ripresa infinita.
 
-    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.75)
+    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.76)

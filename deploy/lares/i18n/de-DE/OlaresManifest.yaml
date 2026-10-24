@@ -35,5 +35,6 @@ spec:
     - Sprachgeräte antworten in der gerade gesprochenen Sprache, bestätigen eine Bitte, bevor der Agent startet, übergehen Füllgeräusche und melden Ergebnisse, ohne auf Raumgeräusche zu warten.
     - Sprachgeräte lassen sich mitten in der Antwort unterbrechen und antworten in einem kurzen Satz; Lares' eigene Push-to-Talk-Clients bleiben unverändert.
     - Ist die Spracherkennung ausgelastet, warten Sprachsitzungen kurz statt abzubrechen, und Sprachgeräte lernen den Pegel eines lauten Raums, statt endlos aufzunehmen.
+    - Sprachgeräte in einem Raum mit Lüfter oder Motor nehmen das Geräusch nicht mehr als endlose Aufnahme auf.
 
-    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.75)
+    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.76)
