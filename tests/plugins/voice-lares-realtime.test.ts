@@ -5,7 +5,9 @@ import { WebSocket } from "ws";
 import { createLaresRealtimeGateway } from "@olares/lares-core/voice/lares-realtime-gateway";
 
 const KEY = "lvk_0123456789abcdef_" + "a".repeat(43);
-const keys = { verify: (header: any) => header === `Bearer ${KEY}` ? { id: "0123456789abcdef", name: "Router", models: ["voice-chat", "voice-dictation", "voice-assistant"], sessionId: null, workspaceId: null } : null };
+const DEVICE_KEY = "lvk_fedcba9876543210_" + "b".repeat(43);
+const keys = { verify: (header: any) => header === `Bearer ${KEY}` ? { id: "0123456789abcdef", name: "Router", models: ["voice-chat", "voice-dictation", "voice-assistant"], sessionId: null, workspaceId: null }
+  : header === `Bearer ${DEVICE_KEY}` ? { id: "fedcba9876543210", name: "Reachy", models: ["voice-assistant"], clientTools: true, sessionId: null, workspaceId: null } : null };
 
 async function serve(options: any = {}, overrides: any = {}) {
   const calls: any = { prompts: [], closes: 0, transcribed: [], synthesized: [], truncated: [], instructions: [], withdrawn: [] };
@@ -482,4 +484,59 @@ test("a long reply is paced by the client's playout progress instead of filling 
     for (let i = 0; i < 100 && !events.some((event) => event.type === "response.done"); i += 1) await sleep(20);
     assert.ok(events.some((event) => event.type === "response.done"));
   } finally { client.terminate(); await fixture.stop(); }
+});
+
+test("a device key declares its own tools, gets calls before the speech and continues only when it asks", async () => {
+  const seen: any = { tools: [], outputs: [], observed: [], proceeds: [] };
+  const fixture = await serve({}, {
+    tools(_scope: any, tools: any[]) { seen.tools.push(tools); },
+    toolOutput(_scope: any, callId: string, output: string) { if (callId !== "call_1") throw Object.assign(new Error("voice_tool_unknown"), { code: "voice_tool_unknown" }); seen.outputs.push([callId, output]); return true; },
+    observe(_scope: any, parts: any[]) { seen.observed.push(parts); },
+    async prompt(_scope: any, body: any) { fixture.calls.prompts.push(body); return { utterance: { key: body.requestId, text: "Sure.", calls: [{ call_id: "call_1", name: "move_head", arguments: '{"direction":"down"}' }], silent: false } }; },
+    async proceed(_scope: any, body: any) { seen.proceeds.push(body); return { utterance: { key: body.requestId, text: "It is a cup.", calls: [], silent: false } }; },
+  });
+  const client = new WebSocket(`ws://127.0.0.1:${fixture.port}/api/lares/voice/realtime?model=voice-assistant`, { headers: { authorization: `Bearer ${DEVICE_KEY}` } });
+  let dones = 0;
+  try {
+    const events = await until(client, (event) => event.type === "response.done" && ++dones === 2, (event) => {
+      if (event.type === "session.created") {
+        client.send(JSON.stringify({ type: "session.update", session: { type: "realtime", instructions: "x".repeat(3000), tools: [{ type: "function", name: "move_head", description: "Move the head", parameters: { type: "object", properties: {} } }], tool_choice: "auto" } }));
+        client.send(JSON.stringify({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text: "nod please" }] } }));
+        client.send(JSON.stringify({ type: "response.create" }));
+      }
+      if (event.type === "response.done" && dones === 0) {
+        client.send(JSON.stringify({ type: "conversation.item.create", event_id: "evt-stray", item: { type: "function_call_output", call_id: "call_9", output: "{}" } }));
+        client.send(JSON.stringify({ type: "conversation.item.create", item: { type: "function_call_output", call_id: "call_1", output: '{"status":"ok"}' } }));
+        client.send(JSON.stringify({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_image", image_url: "data:image/jpeg;base64,AAAA" }] } }));
+        client.send(JSON.stringify({ type: "response.create" }));
+      }
+    });
+    assert.equal(events.find((event) => event.type === "session.created").session.lares.capabilities.client_tools, true);
+    assert.deepEqual(seen.tools, [[{ name: "move_head", description: "Move the head", parameters: { type: "object", properties: {} } }]]);
+    assert.equal(fixture.calls.instructions[0].length, 3000);
+    assert.deepEqual(fixture.calls.prompts.map((body: any) => body.text), ["nod please"]);
+    const types = events.map((event) => event.type);
+    const call = events.find((event) => event.type === "response.function_call_arguments.done");
+    assert.deepEqual([call.call_id, call.name, call.arguments, call.output_index], ["call_1", "move_head", '{"direction":"down"}', 1]);
+    assert.ok(types.indexOf("response.function_call_arguments.done") < types.indexOf("response.output_audio.delta"));
+    const first = events.find((event) => event.type === "response.done");
+    assert.deepEqual(first.response.output.map((item: any) => [item.type, item.call_id]), [["function_call", "call_1"]]);
+    assert.equal(events.find((event) => event.type === "error").error.event_id, "evt-stray");
+    assert.deepEqual(seen.outputs, [["call_1", '{"status":"ok"}']]);
+    assert.deepEqual(seen.observed, [[{ type: "image_url", image_url: { url: "data:image/jpeg;base64,AAAA" } }]]);
+    assert.equal(seen.proceeds.length, 1);
+    assert.equal(events.filter((event) => event.type === "response.output_audio_transcript.done").at(-1).transcript, "It is a cup.");
+  } finally { client.close(); await fixture.stop(); }
+});
+
+test("a key without the device grant still cannot declare tools on the assistant", async () => {
+  const fixture = await serve();
+  const client = connect(fixture.port, "voice-assistant");
+  try {
+    const events = await until(client, (event) => event.type === "error", (event) => {
+      if (event.type === "session.created") client.send(JSON.stringify({ type: "session.update", session: { tools: [{ type: "function", name: "move_head" }] } }));
+    });
+    assert.equal(events.find((event) => event.type === "session.created").session.lares.capabilities.client_tools, false);
+    assert.equal(events.at(-1).error.code, "unsupported_parameter");
+  } finally { client.close(); await fixture.stop(); }
 });

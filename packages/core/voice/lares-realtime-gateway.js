@@ -6,8 +6,8 @@ import { pcmSamples } from "./realtime-audio.js";
 import { createPlayoutClock, PLAYOUT_LEAD_MS, SOCKET_FUSE_BYTES } from "./playout-clock.js";
 import { speechSegments } from "./script.js";
 import { bindRouterSession } from "../router/session-alias.js";
+import { REALTIME_MODEL_PRESETS, voiceCapabilities } from "./capabilities.js";
 
-const PRESETS = Object.freeze({ "voice-dictation": "dictation", "voice-chat": "chat", "voice-assistant": "assistant", "voice-direct": "direct" });
 const FORMAT = Object.freeze({ type: "audio/pcm", rate: 24000 });
 const BYTES_PER_MS = 48;
 const TURN_BYTES = 60_000 * BYTES_PER_MS;
@@ -18,6 +18,10 @@ const SPEECH_RMS = 0.004;
 const BARGE_IN_MS = 500;
 const BARGE_IN_LIMIT_MS = 10_000;
 const TICKET_MS = 30_000;
+// A device's camera frame arrives as one data URL; everything else stays far below this.
+const MAX_FRAME = 512 * 1024;
+const IMAGE_URL = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/;
+const TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 // Usage lives in the child ASR/LLM/TTS requests; the OpenAI shape stays parseable (Router ADR-83).
 const ZERO_USAGE = Object.freeze({ total_tokens: 0, input_tokens: 0, output_tokens: 0, input_token_details: { text_tokens: 0, audio_tokens: 0, cached_tokens: 0 }, output_token_details: { text_tokens: 0, audio_tokens: 0 } });
 const TASK_STATUS = Object.freeze({ accepted: "pending", waiting: "pending", running: "running", completed: "completed", failed: "failed", cancelled: "cancelled" });
@@ -40,7 +44,20 @@ const CJK_START = /^[　-〿㐀-鿿＀-￯]/;
 const separator = (before, after) => !before || CJK_END.test(before) || CJK_START.test(after) ? "" : " ";
 // `done === false` is a live partial. A finished utterance sets done, and a caller
 // that never reports it (tests, a one-shot reply) is spoken as-is.
-const speakableUtterance = (utterance) => Boolean(utterance?.text) && utterance.done !== false && !utterance.silent;
+const speakableUtterance = (utterance) => (Boolean(utterance?.text) || Boolean(utterance?.calls?.length)) && utterance.done !== false && !utterance.silent;
+/** Device tools in Realtime function shape; `ask_lares` stays the dialogue's own. */
+function clientTools(value) {
+  if (!Array.isArray(value) || value.length > 64 || JSON.stringify(value).length > 64_000) fail("unsupported_parameter");
+  const names = new Set();
+  return value.map((entry) => {
+    const tool = only(entry, ["type", "name", "description", "parameters"]);
+    if (tool.type !== "function" || typeof tool.name !== "string" || !TOOL_NAME.test(tool.name) || tool.name === "ask_lares" || names.has(tool.name)) fail("unsupported_parameter");
+    if (tool.description !== undefined && (typeof tool.description !== "string" || tool.description.length > 4000)) fail("unsupported_parameter");
+    if (tool.parameters !== undefined && (!tool.parameters || typeof tool.parameters !== "object" || Array.isArray(tool.parameters))) fail("unsupported_parameter");
+    names.add(tool.name);
+    return { name: tool.name, description: tool.description || "", parameters: tool.parameters };
+  });
+}
 /** Spoken segments are cleaned clauses; rejoin them without inventing spaces inside CJK text. */
 export function joinSpoken(parts) {
   return parts.reduce((text, part) => `${text}${separator(text, part)}${part}`, "");
@@ -51,12 +68,13 @@ export function joinSpoken(parts) {
  * scope owned by the socket; ticket sockets attach to the Lares client's open voice scope.
  */
 export function createLaresRealtimeGateway({ service, config, transcribe, synthesize, openTranscription, keys, hostOwner = "", hostAudio, busyDefault = () => "queue", bargeIn = () => process.env.LARES_VOICE_BARGE_IN === "1", segment = speechSegments, onError = () => {}, onOpen = () => {}, limit = 64, playbackAckGraceMs = 60_000 }) {
-  const server = new WebSocketServer({ noServer: true, maxPayload: 96 * 1024, perMessageDeflate: false, handleProtocols: (values) => values.has("lares-voice") ? "lares-voice" : false });
+  const server = new WebSocketServer({ noServer: true, maxPayload: MAX_FRAME, perMessageDeflate: false, handleProtocols: (values) => values.has("lares-voice") ? "lares-voice" : false });
   const clients = new Map();
   const tickets = new Map();
 
   function run(client, { scope, model, preset, owned, sessionId }) {
-    const type = preset === "dictation" ? "transcription" : "realtime";
+    const caps = voiceCapabilities(preset, { clientTools: owned && scope.authorizedBinding?.clientTools === true });
+    const { type } = caps;
     const headset = !owned && scope.device === "headset";
     scope.voiceOverrides ??= {};
     let chunks = [], bytes = 0, turnMs = 0, totalMs = 0, speaking = false, speechMs = 0, itemId = null, partial = "", stream = null;
@@ -66,6 +84,8 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
     let response = null, awaitingPlayback = false, acknowledges = false, lastReply = null, lastSpoken = null, turn = null, port = null, unbind = () => {};
     let hostOutput = Promise.resolve();
     let ackTimer = null;
+    // Device sessions follow OpenAI item semantics: items only add context and `response.create` asks for a reply.
+    let pendingText = null, pendingCreate = false, declared = [], toolChoice = "auto";
     const tasks = new Map();
     const spoken = new Map();
     const played = new Map();
@@ -104,7 +124,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
         input: { format: FORMAT, turn_detection: automatic ? { type: "server_vad", silence_duration_ms: silenceMs } : null, ...(scope.voiceOverrides.language ? { transcription: { language: scope.voiceOverrides.language } } : {}) },
         ...(type === "realtime" ? { output: { format: FORMAT, ...(scope.voiceOverrides.voice ? { voice: scope.voiceOverrides.voice } : {}) } } : {}),
       },
-      lares: { capabilities: { ...REALTIME_CAPABILITIES, barge_in: bargeActive() }, context_id: scope.contextId, device: headset ? "headset" : "device" },
+      lares: { capabilities: { ...REALTIME_CAPABILITIES, barge_in: bargeActive(), client_tools: caps.clientTools }, context_id: scope.contextId, device: headset ? "headset" : "device" },
     });
     const reset = () => {
       chunks = []; bytes = 0; turnMs = 0; pendingCommit = false; speaking = false; speechMs = 0; itemId = null; partial = "";
@@ -124,12 +144,15 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       if (!current.outputMs) { awaitingPlayback = false; clearAckWatch(); }
       if (current.done) return;
       current.done = true;
-      remember(current);
-      const text = joinSpoken(current.sentences.map((sentence) => sentence.text));
-      const item = { id: current.itemId, object: "realtime.item", type: "message", role: "assistant", status: status === "completed" ? "completed" : "incomplete", content: [audioOutput ? { type: "output_audio", transcript: text } : { type: "output_text", text }] };
-      send({ type: "response.output_item.done", response_id: current.id, output_index: 0, item });
-      send({ type: "conversation.item.done", item });
-      send({ type: "response.done", response: { id: current.id, object: "realtime.response", status, output: [], usage: ZERO_USAGE, metadata: { lares: { origin: current.origin, usage: { billing: "child-models", input_audio_ms: Math.round(current.inputMs), output_audio_ms: Math.round(current.outputMs) } } } } });
+      if (current.message) {
+        remember(current);
+        const text = joinSpoken(current.sentences.map((sentence) => sentence.text));
+        const item = { id: current.itemId, object: "realtime.item", type: "message", role: "assistant", status: status === "completed" ? "completed" : "incomplete", content: [audioOutput ? { type: "output_audio", transcript: text } : { type: "output_text", text }] };
+        send({ type: "response.output_item.done", response_id: current.id, output_index: 0, item });
+        send({ type: "conversation.item.done", item });
+      }
+      send({ type: "response.done", response: { id: current.id, object: "realtime.response", status, output: current.calls, usage: ZERO_USAGE, metadata: { lares: { origin: current.origin, usage: { billing: "child-models", input_audio_ms: Math.round(current.inputMs), output_audio_ms: Math.round(current.outputMs) } } } } });
+      queueMicrotask(drainCreate);
     };
     const truncateTo = (current, audioEndMs) => {
       const heard = Math.max(0, Math.min(audioEndMs, current.outputMs));
@@ -183,13 +206,25 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
         sentAt = Date.now();
       }
     };
-    const respond = async (text, origin, key, input) => {
+    const respond = async (text, origin, key, input, calls = []) => {
       if (response) cancel("cancelled");
-      const current = { id: `resp_${randomUUID()}`, itemId: `item_${randomUUID()}`, origin, key, inputMs: input, outputMs: 0, sentences: [], abort: new AbortController(), suspended: null, done: false };
-      response = current; lastSpoken = { text, origin, key };
+      const current = { id: `resp_${randomUUID()}`, itemId: `item_${randomUUID()}`, origin, key, inputMs: input, outputMs: 0, sentences: [], abort: new AbortController(), suspended: null, done: false, message: Boolean(text), calls: [] };
+      response = current;
+      if (current.message) lastSpoken = { text, origin, key };
       const part = { response_id: current.id, item_id: current.itemId, output_index: 0, content_index: 0 };
       send({ type: "response.created", response: { id: current.id, object: "realtime.response", status: "in_progress", output: [], metadata: { lares: { origin } } } });
-      send({ type: "response.output_item.added", response_id: current.id, output_index: 0, item: { id: current.itemId, object: "realtime.item", type: "message", role: "assistant", status: "in_progress", content: [] } });
+      if (current.message) send({ type: "response.output_item.added", response_id: current.id, output_index: 0, item: { id: current.itemId, object: "realtime.item", type: "message", role: "assistant", status: "in_progress", content: [] } });
+      // Calls go out before the speech so a gesture can accompany the words it belongs to.
+      calls.forEach((call, index) => {
+        const outputIndex = index + (current.message ? 1 : 0);
+        const item = { id: `item_${randomUUID()}`, object: "realtime.item", type: "function_call", status: "completed", name: call.name, call_id: call.call_id, arguments: call.arguments };
+        send({ type: "response.output_item.added", response_id: current.id, output_index: outputIndex, item: { ...item, status: "in_progress", arguments: "" } });
+        send({ type: "response.function_call_arguments.done", response_id: current.id, item_id: item.id, output_index: outputIndex, call_id: call.call_id, name: call.name, arguments: call.arguments });
+        send({ type: "response.output_item.done", response_id: current.id, output_index: outputIndex, item });
+        send({ type: "conversation.item.done", item });
+        current.calls.push(item);
+      });
+      if (!current.message) { finish(current, "completed"); return; }
       if (!audioOutput) {
         current.sentences = [{ text, endMs: 0 }];
         send({ type: "response.output_text.delta", ...part, delta: text });
@@ -225,7 +260,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       send({ type: "response.output_audio.done", ...part });
       finish(current, "completed");
     };
-    const speak = (text, origin, key, input) => { void respond(text, origin, key, input).catch((cause) => report(cause)); };
+    const speak = (text, origin, key, input, calls) => { void respond(text, origin, key, input, calls).catch((cause) => report(cause)); };
 
     // Turns.
     const observeTasks = () => {
@@ -245,7 +280,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       const running = scope.session?.snapshot().running === true;
       const mode = running ? busyTurn || busyDefault() : undefined;
       let state;
-      try { state = await service.prompt(scope, { text, requestId, ...(mode ? { mode } : {}) }); }
+      try { state = text === null ? await service.proceed(scope, { requestId }) : await service.prompt(scope, { text, requestId, ...(mode ? { mode } : {}) }); }
       finally { observeTasks(); }
       if (closed) return;
       if (epoch !== generation) {
@@ -255,7 +290,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       }
       // A snapshot taken while the answer is still streaming only has the first
       // sentence. Speaking that and remembering the key drops the rest.
-      if (speakableUtterance(state.utterance)) { lastReply = state.utterance.key; speak(state.utterance.text, "turn", state.utterance.key, input); }
+      if (speakableUtterance(state.utterance)) { lastReply = state.utterance.key; speak(state.utterance.text, "turn", state.utterance.key, input, state.utterance.calls); }
     };
     const userItem = (id, content) => send({ type: "conversation.item.done", item: { id, object: "realtime.item", type: "message", role: "user", status: "completed", content: [content] } });
     const commit = async () => {
@@ -281,7 +316,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
         const live = opened && await opened.ready;
         if (live) text = await live.finish().catch(() => null);
         text ??= await transcribe(input, scope);
-        if (preset === "dictation" && owned) text = await service.clean(scope, text);
+        if (type === "transcription" && owned) text = await service.clean(scope, text);
         if (closed || epoch !== generation) return;
         if (response?.suspended) {
           // Barge-in resolves on the interrupting turn: silence resumes the reply, words stop it.
@@ -293,7 +328,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
         send({ type: "conversation.item.input_audio_transcription.completed", item_id: id, content_index: 0, transcript: text });
         if (!text.trim()) return;
         userItem(id, { type: "input_audio", transcript: text });
-        if (preset !== "dictation") await submit(text, id, epoch, ms);
+        if (type === "realtime") await submit(text, id, epoch, ms);
       } catch (cause) { if (!closed && epoch === generation) report(cause); }
       finally {
         busy = false;
@@ -305,9 +340,50 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
     // of being rejected: on a shared link the client cannot tell it is early.
     const typedQueue = [];
     const drainTyped = () => {
-      if (closed || busy || !typedQueue.length) return;
+      if (closed || busy) return;
+      if (!typedQueue.length) { drainCreate(); return; }
       const next = typedQueue.shift();
       void runTyped(next).catch(report);
+    };
+    const create = () => {
+      if (busy || response) { pendingCreate = true; return; }
+      if (pendingText !== null) { const text = pendingText; pendingText = null; void runTyped({ id: `item_${randomUUID()}`, text }).catch(report); return; }
+      void proceed().catch(report);
+    };
+    function drainCreate() { if (pendingCreate && !closed && !busy && !response) { pendingCreate = false; create(); } }
+    const proceed = async () => {
+      if (closed) return;
+      busy = true;
+      try { await submit(null, `resp_turn_${randomUUID()}`, generation, 0); }
+      finally { busy = false; drainTyped(); }
+    };
+    const deviceItem = (item) => {
+      if (item.type === "function_call_output") {
+        const output = only(item, ["id", "type", "call_id", "output"]);
+        if (typeof output.call_id !== "string" || !output.call_id || output.call_id.length > 128 || typeof output.output !== "string" || output.output.length > 16000) fail("unsupported_parameter");
+        try { service.toolOutput(scope, output.call_id, output.output); } catch (cause) { if (cause.code === "voice_tool_unknown") fail("unsupported_parameter"); throw cause; }
+        return;
+      }
+      only(item, ["id", "type", "role", "content"]);
+      if (item.type !== "message" || item.role !== "user" || !Array.isArray(item.content) || !item.content.length || item.content.length > 4) fail("unsupported_parameter");
+      const texts = [], images = [];
+      for (const value of item.content) {
+        if (value?.type === "input_text") {
+          const part = only(value, ["type", "text"]);
+          if (typeof part.text !== "string" || !part.text.trim() || part.text.length > 16000) fail("unsupported_parameter");
+          texts.push(part.text);
+        } else if (value?.type === "input_image") {
+          const part = only(value, ["type", "image_url", "detail"]);
+          if (typeof part.image_url !== "string" || part.image_url.length > MAX_FRAME - 1024 || !IMAGE_URL.test(part.image_url)) fail("unsupported_parameter");
+          images.push({ type: "image_url", image_url: { url: part.image_url } });
+        } else fail("unsupported_parameter");
+      }
+      if (images.length) service.observe(scope, images);
+      if (texts.length) {
+        const text = [pendingText, ...texts].filter(Boolean).join("\n");
+        if (text.length > 16000) fail("unsupported_parameter");
+        pendingText = text;
+      }
     };
     const runTyped = async ({ id, text }) => {
       if (closed) return;
@@ -318,6 +394,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
     };
     const typed = async (event) => {
       if (type !== "realtime") fail("unsupported_parameter");
+      if (caps.clientTools) return deviceItem(only(event.item, ["id", "type", "role", "content", "call_id", "output"]));
       const item = only(event.item, ["id", "type", "role", "content"]);
       const content = Array.isArray(item.content) && item.content.length === 1 ? only(item.content[0], ["type", "text"]) : fail("unsupported_parameter");
       if (item.type !== "message" || item.role !== "user" || content.type !== "input_text" || typeof content.text !== "string" || !content.text.trim() || content.text.length > 16000) fail("unsupported_parameter");
@@ -368,10 +445,13 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
     };
 
     const configure = async (event) => {
-      const session = only(event.session, ["type", "model", "audio", "output_modalities", "instructions", "lares"]);
+      const session = only(event.session, ["type", "model", "audio", "output_modalities", "instructions", "lares", ...(caps.clientTools ? ["tools", "tool_choice"] : [])]);
       if ((session.type && session.type !== type) || (session.model && session.model !== model)) fail("unsupported_parameter");
       const next = { automatic, silenceMs, audioOutput, busyTurn, echoCancellation, overrides: { ...scope.voiceOverrides } };
       let contextId = null, instructions = null;
+      if (session.tool_choice !== undefined && !["auto", "none"].includes(session.tool_choice)) fail("unsupported_parameter");
+      const tools = session.tools === undefined ? declared : clientTools(session.tools);
+      const choice = session.tool_choice ?? toolChoice;
       if (session.audio !== undefined) {
         const audio = only(session.audio, type === "realtime" ? ["input", "output"] : ["input"]);
         if (audio.input !== undefined) {
@@ -403,7 +483,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
         next.audioOutput = session.output_modalities[0] === "audio";
       }
       if (session.instructions !== undefined) {
-        if (preset !== "chat" || typeof session.instructions !== "string" || session.instructions.length > 2000) fail("unsupported_parameter");
+        if (!caps.instructions || typeof session.instructions !== "string" || session.instructions.length > caps.instructionLimit) fail("unsupported_parameter");
         instructions = session.instructions;
       }
       if (session.lares !== undefined) {
@@ -427,6 +507,9 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
         finally { configuring = false; }
       }
       if (instructions !== null) service.instructions(scope, instructions);
+      // A reopened context starts a fresh dialogue, so declared tools are applied again.
+      if (caps.clientTools && (contextId || tools !== declared || choice !== toolChoice)) service.tools(scope, choice === "none" ? [] : tools);
+      declared = tools; toolChoice = choice;
       if (!owned && next.audioOutput !== audioOutput) scope.readAloud = next.audioOutput;
       ({ automatic, silenceMs, audioOutput, busyTurn, echoCancellation } = next);
       scope.voiceOverrides = next.overrides;
@@ -449,6 +532,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
         case "conversation.item.truncate": return truncate(event);
         case "response.create":
           if (event.response !== undefined && (typeof event.response !== "object" || event.response === null || Object.keys(event.response).length)) fail("unsupported_parameter");
+          if (caps.clientTools) { create(); return; }
           if (busy || response) fail("turn_busy");
           if (!lastSpoken) fail("unsupported_parameter");
           speak(lastSpoken.text, lastSpoken.origin, lastSpoken.key, 0);
@@ -509,7 +593,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
         const state = service.state(scope);
         if (!speakableUtterance(state.utterance) || state.utterance.key === lastReply) return;
         lastReply = state.utterance.key;
-        speak(state.utterance.text, String(state.utterance.key).startsWith("task:") ? "task" : "turn", state.utterance.key, 0);
+        speak(state.utterance.text, String(state.utterance.key).startsWith("task:") ? "task" : "turn", state.utterance.key, 0, state.utterance.calls);
       } catch { close(); }
     }, 250);
     client.on("pong", () => { alive = true; });
@@ -556,11 +640,11 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       const key = keys.verify(req.headers.authorization);
       if (!key) return refuse(socket, 401, "Unauthorized");
       const model = new URL(req.url, "http://voice.invalid").searchParams.get("model");
-      const preset = PRESETS[model];
+      const preset = REALTIME_MODEL_PRESETS[model];
       if (!preset || !key.models.includes(model)) return refuse(socket, 403, "Forbidden");
       const dependencies = config();
       if ([dependencies.model, dependencies.chatModel, dependencies.ttsModel, dependencies.realtimeModel].some((id) => id === model || id?.endsWith(`/${model}`))) return refuse(socket, 503, "Service Unavailable");
-      const scope = { id: randomUUID(), owner: hostOwner, authorizedBinding: { sessionId: key.sessionId, workspaceId: key.workspaceId }, device: "device", routerSessionId: routerSession(req.headers["x-session-id"]), voiceOverrides: {} };
+      const scope = { id: randomUUID(), owner: hostOwner, authorizedBinding: { sessionId: key.sessionId, workspaceId: key.workspaceId, clientTools: key.clientTools === true }, device: "device", routerSessionId: routerSession(req.headers["x-session-id"]), voiceOverrides: {} };
       try { onOpen({ voiceId: scope.id, keyId: key.id, model, routerSession: scope.routerSessionId, remote: req.socket?.remoteAddress }); } catch {}
       server.handleUpgrade(req, socket, head, (client) => run(client, { scope, model, preset, owned: true, sessionId: key.sessionId }));
     },

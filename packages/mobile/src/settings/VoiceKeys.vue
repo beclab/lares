@@ -4,7 +4,7 @@
     <p>{{ t('settings.keys.hint') }}</p>
     <ul v-if="keys && keys.length" class="lares-voice-keys__list">
       <li v-for="key in keys" :key="key.id">
-        <span class="lares-voice-keys__name">{{ key.name }}<small>{{ key.models.join(', ') }}</small></span>
+        <span class="lares-voice-keys__name">{{ key.name }}<small>{{ key.models.join(', ') }}{{ key.clientTools ? ` · ${t('settings.keys.clientToolsTag')}` : '' }}</small></span>
         <button type="button" :disabled="busy" @click="revoking = key">{{ t('settings.keys.revoke') }}</button>
       </li>
     </ul>
@@ -21,6 +21,11 @@
       </label>
     </div>
     <p v-if="agentSelected" role="note">{{ t('settings.keys.agentWarning') }}</p>
+    <label class="lares-voice-keys__tools">
+      <input type="checkbox" :checked="clientTools && toolsApply" :disabled="busy || !toolsApply" @change="clientTools = !clientTools" />
+      <span>{{ t('settings.keys.clientTools') }}</span>
+    </label>
+    <p>{{ t('settings.keys.clientToolsHint') }}</p>
     <button type="button" class="lares-voice-keys__issue" :disabled="busy || !name.trim() || !models.length" @click="issue">{{ t(busy ? 'settings.keys.issuing' : 'settings.keys.issue') }}</button>
     <p v-if="error" role="alert">{{ error }}</p>
     <div v-if="issued" class="lares-voice-keys__dialog" role="dialog">
@@ -43,13 +48,16 @@
 <script>
 import { markRaw } from "vue";
 import { messageFromCode } from "@olares/lares-core/i18n/t";
-import { VOICE_KEY_AGENT_MODELS, VOICE_KEY_DEFAULT_MODELS, VOICE_KEY_MODELS } from "@olares/lares-core/voice/keys-client";
+import { VOICE_KEY_AGENT_MODELS, VOICE_KEY_DEFAULT_MODELS, VOICE_KEY_MODELS, VOICE_KEY_TOOL_MODELS } from "@olares/lares-core/voice/keys-client";
 export default {
   props: { client: { type: Object, required: true }, t: { type: Function, required: true } },
   data() {
-    return { keys: null, name: "", models: [...VOICE_KEY_DEFAULT_MODELS], issued: null, copied: false, revoking: null, busy: false, error: "", allModels: markRaw([...VOICE_KEY_MODELS]) };
+    return { keys: null, name: "", models: [...VOICE_KEY_DEFAULT_MODELS], clientTools: false, issued: null, copied: false, revoking: null, busy: false, error: "", allModels: markRaw([...VOICE_KEY_MODELS]) };
   },
-  computed: { agentSelected() { return this.models.some((model) => VOICE_KEY_AGENT_MODELS.includes(model)); } },
+  computed: {
+    agentSelected() { return this.models.some((model) => VOICE_KEY_AGENT_MODELS.includes(model)); },
+    toolsApply() { return this.models.some((model) => VOICE_KEY_TOOL_MODELS.includes(model)); },
+  },
   mounted() { void this.load(); },
   methods: {
     fail(err) { this.error = messageFromCode(this.t, err?.message || "", "error.voice_key_failed"); },
@@ -57,7 +65,7 @@ export default {
     toggle(model) { this.models = this.models.includes(model) ? this.models.filter((value) => value !== model) : VOICE_KEY_MODELS.filter((value) => value === model || this.models.includes(value)); },
     async issue() {
       this.busy = true; this.error = "";
-      try { this.issued = await this.client.issue({ name: this.name, models: this.models }); this.copied = false; this.name = ""; this.models = [...VOICE_KEY_DEFAULT_MODELS]; await this.load(); }
+      try { this.issued = await this.client.issue({ name: this.name, models: this.models, clientTools: this.clientTools && this.toolsApply }); this.copied = false; this.name = ""; this.models = [...VOICE_KEY_DEFAULT_MODELS]; this.clientTools = false; await this.load(); }
       catch (err) { this.fail(err); }
       finally { this.busy = false; }
     },
@@ -184,7 +192,8 @@ export default {
   line-height: 18px;
 }
 
-.lares-voice-keys__models label {
+.lares-voice-keys__models label,
+.lares-voice-keys__tools {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -195,7 +204,8 @@ export default {
   line-height: 22px;
 }
 
-.lares-voice-keys__models input {
+.lares-voice-keys__models input,
+.lares-voice-keys__tools input {
   width: 20px;
   height: 20px;
   margin: 0;
