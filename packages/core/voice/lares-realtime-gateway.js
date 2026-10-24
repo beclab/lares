@@ -326,7 +326,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       // shared and the client cannot know that, so queue this take instead of
       // rejecting it; the composer would otherwise see a hard turn_busy.
       if (busy) { pendingCommit = true; return; }
-      const input = Buffer.concat(chunks), id = itemId || `item_${randomUUID()}`, ms = input.length / BYTES_PER_MS, opened = stream, held = barge, policy = listening();
+      const taken = chunks, input = Buffer.concat(taken), id = itemId || `item_${randomUUID()}`, ms = input.length / BYTES_PER_MS, opened = stream, held = barge, policy = listening();
       stream = null; reset(); scope.voiceInputActive = false; busy = true;
       send({ type: "input_audio_buffer.committed", item_id: id, previous_item_id: null });
       let epoch = generation, text = null;
@@ -338,7 +338,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
           // when it cannot answer, the take goes through as before.
           if (policy.vadVeto && detectSpeech && await detectSpeech(input, scope) === 0) {
             await opened?.ready.then((value) => value?.cancel());
-            noiseGate.learn(frameRms(pcmSamples(input)));
+            noiseGate.learn(taken.map((chunk) => frameRms(pcmSamples(chunk))));
             if (!closed) send({ type: "conversation.item.input_audio_transcription.completed", item_id: id, content_index: 0, transcript: "" });
             return;
           }
@@ -479,7 +479,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       // kept, so steady noise neither fills the take nor streams to ASR, and only audio that
       // clears the room's level counts as speech that can end.
       const duringReply = policy.confirmedBargeIn && playing();
-      const voiced = automatic ? (duringReply ? replyGate : noiseGate).voiced(rms, speaking) : rms >= SPEECH_RMS;
+      const voiced = automatic ? (duringReply ? replyGate : noiseGate).voiced(rms, speaking, ms) : rms >= SPEECH_RMS;
       totalMs += ms;
       if (automatic && !speaking && !voiced) {
         chunks.push(chunk); bytes += chunk.length;

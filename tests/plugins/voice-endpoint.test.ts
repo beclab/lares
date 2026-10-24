@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createSpeechEndpoint, frameRms } from "@olares/lares-core/voice/endpoint";
+import { createNoiseGate, createSpeechEndpoint, frameRms } from "@olares/lares-core/voice/endpoint";
 
 const FRAME = 32;
 
@@ -75,4 +75,15 @@ test("a noisy room does not count as speech, and quiet speech still ends the tak
   for (let i = 0; i < 8; i += 1) audio.feed(0.01);
   assert.equal(ended, 1);
   endpoint.stop();
+});
+
+test("a floor learned from a loud empty take fades once the room quietens", () => {
+  const gate = createNoiseGate();
+  gate.learn([0.03, 0.03, 0.05, 0.03]);
+  // The room's loud moments, with margin, are not a voice.
+  assert.equal(gate.voiced(0.05, false, 40), false);
+  assert.equal(gate.voiced(0.07, false, 40), true);
+  // Two quiet minutes later a quiet speaker is heard again.
+  for (let i = 0; i < 3000; i++) gate.voiced(0.001, false, 40);
+  assert.equal(gate.voiced(0.01, false, 40), true);
 });

@@ -286,9 +286,12 @@ A device that sets `lares.echo_cancellation: false` cannot tell its own reply
 from the user, so it stays half duplex: input is dropped quietly until the
 reply has played, plus about 400 ms of room echo. When Router's VAD cannot
 answer, a take or a barge-in goes through as if it held speech. A take Router's
-VAD finds empty also teaches the device's noise gate the room's level, even
-above the usual widest floor, so a loud fan or a microphone's gain stops
-reading as a voice that never ends.
+VAD finds empty also teaches the device's noise gate the room: the floor rises
+to the take's loud moments (its 95th-percentile frame level, plus 20%), even
+above the usual widest floor, so a loud fan, a motor or a microphone's gain
+stops reading as a voice that never ends. That floor halves every 30 s unless
+another empty take holds it up, so a room that quietens hears quiet speakers
+again.
 
 Every session holds at most one ASR request at a time: a take that starts
 while the previous one is still being transcribed is buffered and streamed

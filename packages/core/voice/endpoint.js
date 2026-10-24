@@ -63,29 +63,40 @@ export function createSpeechEndpoint(options = {}) {
 /** Widest room-noise floor a quiet speaker is still expected to clear. */
 const MAX_NOISE_FLOOR = 0.02;
 
+/** How far above the loud moments of a room Router's VAD heard as empty a voice has to be. */
+const LEARNED_MARGIN = 1.2;
+/** A learned floor halves over this long unless another empty take holds it up. */
+const LEARNED_HALF_LIFE_MS = 30_000;
+
 /**
  * Speech without a speech model is whatever clears the room by 2.5x. The floor
  * follows the frames heard while nobody is speaking, so a fan or a motor does
  * not count as a voice that never stops, and a quiet speaker still does.
  */
 export function createNoiseGate() {
-  let noise = null, widest = MAX_NOISE_FLOOR;
+  let noise = null, learned = 0;
   return {
     /** @returns {boolean} whether this frame is louder than the room */
-    voiced(rms, speaking) {
+    voiced(rms, speaking, frameMs = 0) {
       if (!speaking) noise = noise == null ? rms : noise * 0.9 + rms * 0.1;
-      const floor = Math.max(ENDPOINT.floor, Math.min(widest, (noise ?? ENDPOINT.floor / 2.5) * 2.5));
+      if (learned && frameMs) learned *= 0.5 ** (frameMs / LEARNED_HALF_LIFE_MS);
+      const floor = Math.max(ENDPOINT.floor, Math.min(MAX_NOISE_FLOOR, (noise ?? ENDPOINT.floor / 2.5) * 2.5), learned);
       return rms >= floor;
     },
     /**
-     * A stretch a speech model heard as nobody speaking. Its level is the room, even above the
-     * usual widest floor: a loud fan or a microphone's gain otherwise reads as a voice that never
-     * stops, and the gate could never learn otherwise because it only listens between voices.
-     * A quieter room pulls the floor back down through the frames that follow.
+     * The frame levels of a take a speech model heard as nobody speaking. A room that never
+     * falls quiet enough between voices (a fan, a motor, a microphone's gain) can only be
+     * learned this way, since the floor otherwise listens only between voices. Its loud
+     * moments set the floor, not its average: a take ends only after half a second without a
+     * voiced frame, so bursts above an average-based floor keep it open. The learned floor
+     * fades unless further empty takes keep it up, so a room that quietens hears quiet
+     * speakers again.
      */
-    learn(rms) {
-      noise = rms;
-      widest = Math.max(MAX_NOISE_FLOOR, rms * 1.5);
+    learn(levels) {
+      const sorted = [...levels].sort((a, b) => a - b);
+      if (!sorted.length) return;
+      const loud = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))];
+      learned = Math.max(learned, loud * LEARNED_MARGIN);
     },
   };
 }

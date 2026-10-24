@@ -757,3 +757,24 @@ test("a room louder than the widest floor is learned once Router's VAD says a ta
     assert.ok(seconds < 3.5, String(seconds));
   } finally { client.close(); await fixture.stop(); }
 });
+
+test("a bursty room is learned from its loud moments, so its bursts stop opening takes", async () => {
+  // 40 ms chunks like a device's microphone: a steady hum with a louder burst every fifth chunk.
+  const chunk = (amplitude: number) => { const pcm = Buffer.alloc(1920); for (let i = 0; i < 960; i++) pcm.writeInt16LE(i % 2 ? amplitude : -amplitude, i * 2); return pcm.toString("base64"); };
+  const room = (seconds: number) => Array.from({ length: seconds * 25 }, (_, i) => chunk(i % 5 === 4 ? 2600 : 1500));
+  const fixture = await serve({ detectSpeech: async (pcm: Buffer) => { for (let i = 0; i < pcm.length; i += 2) if (pcm.readInt16LE(i) > 4000) return 1; return 0; } });
+  const client = connect(fixture.port, "voice-chat");
+  try {
+    await until(client, (event) => event.type === "conversation.item.input_audio_transcription.completed" && event.transcript.trim() !== "", (event) => {
+      if (event.type === "session.created") client.send(JSON.stringify({ type: "session.update", session: { audio: { input: { turn_detection: { type: "server_vad" } } } } }));
+      if (event.type === "session.updated") {
+        for (const audio of room(11)) client.send(JSON.stringify({ type: "input_audio_buffer.append", audio }));
+        setTimeout(() => { for (const audio of [...room(2), ...Array.from({ length: 25 }, () => chunk(6000)), ...room(2)]) client.send(JSON.stringify({ type: "input_audio_buffer.append", audio })); }, 200);
+      }
+    });
+    // The person's take is that second of speech and its edges, not the room since the first veto.
+    assert.equal(fixture.calls.transcribed.length, 1);
+    const seconds = fixture.calls.transcribed[0].bytes / 48000;
+    assert.ok(seconds < 3.5, String(seconds));
+  } finally { client.close(); await fixture.stop(); }
+});
