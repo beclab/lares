@@ -7,14 +7,14 @@ metadata:
   title: Lares
   description: Chat on Olares, wired to Router
   icon: https://app.cdn.olares.com/appstore/lares/icon_new.png
-  version: 0.26.76
+  version: 0.26.77
   categories:
     - agents
   tags:
     - framework
     - personal-assistant
 spec:
-  versionName: "0.26.76"
+  versionName: "0.26.77"
   runAsUser: true
   fullDescription: |
     Lares is a chat app on Olares.
@@ -54,7 +54,7 @@ spec:
     - Voice sessions wait briefly when speech recognition is busy instead of failing, and voice devices learn a loud room's level so they stop recording endless takes.
     - Voice devices in a room with a fan or a motor stop recording it as one endless take.
 
-    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.76)
+    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.77)
   developer: luolong
   submitter: Olares
   locale:

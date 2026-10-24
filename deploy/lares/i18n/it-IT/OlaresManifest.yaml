@@ -37,4 +37,4 @@ spec:
     - Le sessioni vocali attendono un attimo quando il riconoscimento vocale è occupato invece di fallire, e i dispositivi vocali imparano il livello di una stanza rumorosa per non registrare all'infinito.
     - I dispositivi vocali in una stanza con una ventola o un motore non lo registrano più come una ripresa infinita.
 
-    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.76)
+    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.77)

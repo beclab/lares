@@ -41,4 +41,4 @@ spec:
     - Voice sessions wait briefly when speech recognition is busy instead of failing, and voice devices learn a loud room's level so they stop recording endless takes.
     - Voice devices in a room with a fan or a motor stop recording it as one endless take.
 
-    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.76)
+    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.77)

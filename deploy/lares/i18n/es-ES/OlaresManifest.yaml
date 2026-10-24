@@ -37,4 +37,4 @@ spec:
     - Las sesiones de voz esperan un momento cuando el reconocimiento de voz está ocupado en lugar de fallar, y los dispositivos de voz aprenden el nivel de una sala ruidosa para no grabar sin fin.
     - Los dispositivos de voz en una sala con un ventilador o un motor dejan de grabarlo como una toma sin fin.
 
-    [Notas de la versión](https://github.com/beclab/lares/releases/tag/v0.26.76)
+    [Notas de la versión](https://github.com/beclab/lares/releases/tag/v0.26.77)

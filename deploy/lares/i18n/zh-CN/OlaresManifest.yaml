@@ -41,4 +41,4 @@ spec:
     - 语音识别繁忙时会稍等重试而不是直接报错；语音设备会学习嘈杂房间的音量，不再没完没了地录音。
     - 语音设备在有风扇或电机噪音的房间里，不会再把噪音当成一段录不完的语音。
 
-    [版本说明](https://github.com/beclab/lares/releases/tag/v0.26.76)
+    [版本说明](https://github.com/beclab/lares/releases/tag/v0.26.77)

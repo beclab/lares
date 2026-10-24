@@ -37,4 +37,4 @@ spec:
     - Ist die Spracherkennung ausgelastet, warten Sprachsitzungen kurz statt abzubrechen, und Sprachgeräte lernen den Pegel eines lauten Raums, statt endlos aufzunehmen.
     - Sprachgeräte in einem Raum mit Lüfter oder Motor nehmen das Geräusch nicht mehr als endlose Aufnahme auf.
 
-    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.76)
+    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.77)
