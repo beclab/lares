@@ -34,5 +34,6 @@ spec:
     - Les réponses vocales se passent du raisonnement du modèle et commencent en moins d'une seconde ; les appareils font les gestes au lieu de les décrire.
     - Les appareils vocaux répondent dans la langue qui vient d'être parlée, confirment une demande avant que l'Agent ne commence, ignorent les bruits de remplissage et annoncent les résultats sans attendre le bruit ambiant.
     - Les appareils vocaux peuvent être interrompus en pleine réponse et répondent en une courte phrase ; les clients push-to-talk de Lares sont inchangés.
+    - Les sessions vocales patientent un instant quand la reconnaissance vocale est occupée au lieu d'échouer, et les appareils vocaux apprennent le niveau d'une pièce bruyante pour ne plus enregistrer sans fin.
 
-    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.74)
+    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.75)

@@ -34,5 +34,6 @@ spec:
     - Las respuestas de voz no esperan el razonamiento del modelo y empiezan en menos de un segundo; los dispositivos hacen los gestos en lugar de describirlos.
     - Los dispositivos de voz responden en el idioma que se acaba de hablar, confirman la petición antes de que empiece el Agente, ignoran los ruidos de relleno y anuncian resultados sin esperar al ruido de la sala.
     - Los dispositivos de voz se pueden interrumpir a mitad de respuesta y contestan con una frase corta; los clientes de pulsar para hablar de Lares no cambian.
+    - Las sesiones de voz esperan un momento cuando el reconocimiento de voz está ocupado en lugar de fallar, y los dispositivos de voz aprenden el nivel de una sala ruidosa para no grabar sin fin.
 
-    [Notas de la versión](https://github.com/beclab/lares/releases/tag/v0.26.74)
+    [Notas de la versión](https://github.com/beclab/lares/releases/tag/v0.26.75)
