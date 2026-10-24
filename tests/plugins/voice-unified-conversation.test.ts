@@ -194,3 +194,22 @@ test("a transcript that never arrives releases the take without closing the call
     assert.equal(snap.error, null);
   } finally { await f.conversation.stop(); }
 });
+
+test("a take the server dropped as too short clears the speaking state and keeps listening", async () => {
+  const f = fixture({ device: "headset", readAloud: false, preset: "direct" });
+  await f.conversation.start({ continuous: true });
+  const controller = f.conversation.controller;
+  try {
+    void controller.listen();
+    await tick();
+    f.socket.emit({ type: "input_audio_buffer.speech_started", item_id: "i1" });
+    await tick();
+    assert.equal(controller.getSnapshot().userSpeaking, true);
+    f.socket.emit({ type: "input_audio_buffer.speech_stopped", item_id: "i1" });
+    f.socket.emit({ type: "input_audio_buffer.cleared" });
+    await tick();
+    const snap = controller.getSnapshot();
+    assert.equal(snap.userSpeaking, false);
+    assert.equal(snap.capture, "recording");
+  } finally { await f.conversation.stop(); }
+});

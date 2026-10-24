@@ -925,3 +925,21 @@ test("a knock that opens a device take is dropped after half a second of quiet, 
     assert.ok(Date.now() - started < 3000);
   } finally { client.close(); await fixture.stop(); }
 });
+
+test("a hands-free take opened by a knock is dropped too, and the client is told it is gone", async () => {
+  const chunk = (amplitude: number) => { const pcm = Buffer.alloc(2400); for (let i = 0; i < 1200; i++) pcm.writeInt16LE(i % 2 ? amplitude : -amplitude, i * 2); return pcm.toString("base64"); };
+  const fixture = await serve();
+  const client = connect(fixture.port, "voice-chat");
+  try {
+    const events = await until(client, (event) => event.type === "conversation.item.input_audio_transcription.completed", (event) => {
+      // A Lares headset: server_vad with playback reports, on the loudness gate.
+      if (event.type === "session.created") { client.send(JSON.stringify({ type: "lares.playback.progress", item_id: null, played_ms: 0 })); client.send(JSON.stringify({ type: "session.update", session: { audio: { input: { turn_detection: { type: "server_vad" } } } } })); }
+      if (event.type === "session.updated") for (const amplitude of [...Array(20).fill(300), 3000, 3000, ...Array(20).fill(300), ...Array(20).fill(3000), ...Array(20).fill(300)]) client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: chunk(amplitude) }));
+    });
+    const kinds = events.map((event) => event.type);
+    assert.ok(kinds.indexOf("input_audio_buffer.cleared") > kinds.indexOf("input_audio_buffer.speech_started"));
+    assert.equal(fixture.calls.transcribed.length, 1);
+    const seconds = fixture.calls.transcribed[0].bytes / 48000;
+    assert.ok(seconds > 1 && seconds < 2, String(seconds));
+  } finally { client.close(); await fixture.stop(); }
+});
