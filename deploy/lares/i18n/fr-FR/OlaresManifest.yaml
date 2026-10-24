@@ -32,5 +32,6 @@ spec:
     - Les appareils vocaux confient le contrôle de la maison, les recherches et l'agenda à Lares et répondent dans la langue de l'utilisateur.
     - Une conversation vocale continue après une tâche déléguée, même avec les modèles qui exigent le prompt système en premier.
     - Les réponses vocales se passent du raisonnement du modèle et commencent en moins d'une seconde ; les appareils font les gestes au lieu de les décrire.
+    - Les appareils vocaux répondent dans la langue qui vient d'être parlée, confirment une demande avant que l'Agent ne commence, ignorent les bruits de remplissage et annoncent les résultats sans attendre le bruit ambiant.
 
-    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.72)
+    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.73)

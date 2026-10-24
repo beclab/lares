@@ -32,5 +32,6 @@ spec:
     - Sprachgeräte geben Hausgerätesteuerung, Abfragen und Termine an Lares weiter und antworten in der Sprache des Nutzers.
     - Ein Sprachgespräch läuft nach einer erledigten Aufgabe weiter, auch mit Chatmodellen, die den Systemprompt zuerst verlangen.
     - Sprachantworten laufen ohne Modell-Denkphase und beginnen in unter einer Sekunde; Geräte führen Gesten aus, statt sie zu beschreiben.
+    - Sprachgeräte antworten in der gerade gesprochenen Sprache, bestätigen eine Bitte, bevor der Agent startet, übergehen Füllgeräusche und melden Ergebnisse, ohne auf Raumgeräusche zu warten.
 
-    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.72)
+    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.73)
