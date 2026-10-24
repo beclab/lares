@@ -27,5 +27,6 @@ spec:
     - Geräte wie Reachy Mini können in Sprachgesprächen ihre eigenen Werkzeuge nutzen, wenn ihr Sprachschlüssel Geräte-Werkzeuge erlaubt.
     - Router erreicht Lares Voice über einen internen Zugang; die Adresse der Lares-Seite endet nun im ersten Teil auf 0.
     - Sprachgeräte ohne Wiedergabemeldung hören ihre eigenen Antworten nicht mehr als neue Runde, und Antworten warten nicht mehr auf Verlaufszusammenfassungen.
+    - Die automatische Sprecherkennung beendet eine Runde auch in lauter Umgebung, statt bis zur Audiogrenze zu warten.
 
-    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.67)
+    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.68)

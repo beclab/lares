@@ -27,5 +27,6 @@ spec:
     - Dispositivi come Reachy Mini possono usare i propri strumenti nelle conversazioni vocali con una chiave vocale che consente gli strumenti del dispositivo.
     - Router raggiunge la voce di Lares tramite un ingresso interno; l'indirizzo della pagina Lares ora termina con 0 nella prima parte.
     - I dispositivi vocali senza segnalazione della riproduzione non sentono più le proprie risposte come un nuovo turno, e le risposte non aspettano più i riepiloghi della cronologia.
+    - Il rilevamento automatico dei turni chiude un turno anche in una stanza rumorosa invece di attendere il limite audio.
 
-    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.67)
+    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.68)
