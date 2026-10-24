@@ -30,5 +30,6 @@ spec:
     - Automation tasks run a prompt on a schedule, and topic morning briefs are written to the workspace.
     - Devices such as Reachy Mini can use their own tools in voice conversations through a voice key that allows device tools.
     - Router reaches Lares voice through an internal entrance; the Lares page address gains a trailing 0.
+    - Voice devices without playback reports no longer hear their own replies as new turns, and replies are no longer queued behind history summaries.
 
-    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.66)
+    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.67)

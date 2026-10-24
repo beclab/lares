@@ -7,14 +7,14 @@ metadata:
   title: Lares
   description: Chat on Olares, wired to Router
   icon: https://app.cdn.olares.com/appstore/lares/icon_new.png
-  version: 0.26.66
+  version: 0.26.67
   categories:
     - agents
   tags:
     - framework
     - personal-assistant
 spec:
-  versionName: "0.26.66"
+  versionName: "0.26.67"
   runAsUser: true
   fullDescription: |
     Lares is a chat app on Olares.
@@ -43,8 +43,9 @@ spec:
     - Automation tasks run a prompt on a schedule, and topic morning briefs are written to the workspace.
     - Devices such as Reachy Mini can use their own tools in voice conversations through a voice key that allows device tools.
     - Router reaches Lares voice through an internal entrance; the Lares page address gains a trailing 0.
+    - Voice devices without playback reports no longer hear their own replies as new turns, and replies are no longer queued behind history summaries.
 
-    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.66)
+    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.67)
   developer: luolong
   submitter: Olares
   locale:

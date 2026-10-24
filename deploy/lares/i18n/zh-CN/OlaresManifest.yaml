@@ -30,5 +30,6 @@ spec:
     - 自动化任务可以按时间执行指令，分主题的晨报会写入工作区。
     - 勾选“允许设备工具”的语音密钥可以让 Reachy Mini 等设备在语音对话中使用自己的工具。
     - Router 通过内部入口访问 Lares 语音；Lares 页面地址的第一段末尾多了一个 0。
+    - 不回报播放进度的语音设备不再把自己的回复声音当成新的一轮，回复也不再排在历史摘要后面。
 
-    [版本说明](https://github.com/beclab/lares/releases/tag/v0.26.66)
+    [版本说明](https://github.com/beclab/lares/releases/tag/v0.26.67)
