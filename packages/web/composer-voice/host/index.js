@@ -6,6 +6,7 @@ import { createVoiceKeyStore } from "@olares/lares-core/voice/keys";
 import { publishRealtimeUpgrade } from "@olares/lares-core/voice/internal-upgrade";
 import { busyEnterBehavior, CONVERSATION_SETTINGS_NAMESPACE } from "@olares/lares-core/larepass/submission-settings";
 import { createRouterAudio } from "@olares/lares-core/voice/router-audio";
+import { createSileroGate } from "@olares/lares-core/voice/silero";
 import { createVoiceHostService } from "@olares/lares-core/voice/host-service";
 import { registerRealtime } from "./realtime.js";
 /**
@@ -381,6 +382,7 @@ export function apply(ctx) {
       hostAudio: openRealtimeHostAudio, busyDefault: () => busyEnterDefault(ctx),
       onError: (cause, scope) => writeReport({ scope: "voice", event: "realtime-error", voiceId: scope.id, code: cause?.code || cause?.message || "voice_failed" }),
       onOpen: (fields) => writeReport({ scope: "voice", event: "realtime-open", ...fields }),
+      speechGate: createSileroGate,
       metric: (fields) => writeReport({ scope: "voice", ...fields }) });
     realtime = registerRealtime(ctx, voiceHost, unified);
     const unpublish = publishRealtimeUpgrade((req, socket, head) => unified.upgrade(req, socket, head));

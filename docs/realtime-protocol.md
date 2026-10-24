@@ -280,18 +280,18 @@ different ways, and the server applies each rule to one mode only
 | --- | --- | --- | --- |
 | Push-to-talk | Lares phone (hold, release) and desktop (tap, tap again) | The client commits (`turn_detection: null`) | Half duplex: the client reports playback and does not send audio |
 | Hands-free | Lares headset, continuous | `server_vad`, with playback reports | Half duplex, unless `LARES_VOICE_BARGE_IN=1` turns on suspend-and-resolve barge-in |
-| Device | A robot that hears its room all the time: `server_vad`, no playback reports | `server_vad` against the room's noise floor; a take closes after 10 s at most; Router's VAD (`default-vad`) drops a take with no speech before ASR | **Full duplex**: speech that stands out from the reply's echo for 500 ms is checked by Router's VAD. Only a person sends `input_audio_buffer.speech_started`, which the device takes as "stop playing". The reply is truncated to what was heard, and the speech becomes the next turn |
+| Device | A robot that hears its room all the time: `server_vad`, no playback reports | Silero VAD in Lares, frame by frame (32 ms): a take starts when the model hears a voice and ends after 500 ms without one, and closes after 10 s at most. A fan, a motor or a microphone's gain is not a voice however loud it is | **Full duplex**: speech that stands out from the reply's echo for 500 ms and that the model hears as a voice is a candidate. Its first words from streaming ASR (at most 1.5 s) are compared with what the device is saying: the reply's own words are its echo and are dropped, anything else is a person. Only a person sends `input_audio_buffer.speech_started`, which the device takes as "stop playing". The reply is truncated to what was heard, and the speech becomes the next turn |
 
 A device that sets `lares.echo_cancellation: false` cannot tell its own reply
 from the user, so it stays half duplex: input is dropped quietly until the
 reply has played, plus about 400 ms of room echo. When Router's VAD cannot
-answer, a take or a barge-in goes through as if it held speech. A take Router's
-VAD finds empty also teaches the device's noise gate the room: the floor rises
-to the take's loud moments (its 95th-percentile frame level, plus 20%), even
-above the usual widest floor, so a loud fan, a motor or a microphone's gain
-stops reading as a voice that never ends. That floor halves every 30 s unless
-another empty take holds it up, so a room that quietens hears quiet speakers
-again.
+answer, a take or a barge-in goes through as if it held speech. When the speech model cannot load, a device falls back to loudness: a take
+opens when the room's level is cleared, Router's VAD (`default-vad`) checks
+each take and each barge-in afterwards, and a take it finds empty teaches the
+gate the room's loud moments (95th-percentile frame level plus 20%, halving
+every 30 s). The model runs on `onnxruntime-web` with the Silero v5 weights
+`@ricky0123/vad-web` already ships; it is loaded once per process, with state
+per session.
 
 Every session holds at most one ASR request at a time: a take that starts
 while the previous one is still being transcribed is buffered and streamed

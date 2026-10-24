@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { WebSocketServer } from "ws";
 import { validateConfigPatch } from "./config.js";
+import { echoVerdict } from "./echo.js";
 import { createNoiseGate, createSpeechEndpoint, frameRms } from "./endpoint.js";
 import { pcmSamples } from "./realtime-audio.js";
 import { createPlayoutClock, PLAYOUT_LEAD_MS, SOCKET_FUSE_BYTES } from "./playout-clock.js";
@@ -19,6 +20,8 @@ const SPEECH_RMS = 0.004;
 // Interruption policy (docs/realtime-protocol.md): speech must last this long to suspect barge-in,
 // and a suspected interruption that never resolves stops the reply.
 const BARGE_IN_MS = 500;
+// How long a barge-in waits for ASR's first words before deciding whether they were the reply's echo.
+const ECHO_WAIT_MS = 1500;
 const BARGE_IN_LIMIT_MS = 10_000;
 // Room echo outlasts the last sample a client was sent by roughly this much.
 const ECHO_TAIL_MS = 400;
@@ -72,7 +75,7 @@ export function joinSpoken(parts) {
  * `lares-realtime-v1` (docs/realtime-protocol.md) on one endpoint. Bearer voice-key callers get a
  * scope owned by the socket; ticket sockets attach to the Lares client's open voice scope.
  */
-export function createLaresRealtimeGateway({ service, config, transcribe, synthesize, openTranscription, detectSpeech, keys, hostOwner = "", hostAudio, busyDefault = () => "queue", bargeIn = () => process.env.LARES_VOICE_BARGE_IN === "1", segment = speechSegments, onError = () => {}, onOpen = () => {}, metric = () => {}, limit = 64, playbackAckGraceMs = 60_000 }) {
+export function createLaresRealtimeGateway({ service, config, transcribe, synthesize, openTranscription, detectSpeech, speechGate, keys, hostOwner = "", hostAudio, busyDefault = () => "queue", bargeIn = () => process.env.LARES_VOICE_BARGE_IN === "1", segment = speechSegments, onError = () => {}, onOpen = () => {}, metric = () => {}, limit = 64, playbackAckGraceMs = 60_000 }) {
   const server = new WebSocketServer({ noServer: true, maxPayload: MAX_FRAME, perMessageDeflate: false, handleProtocols: (values) => values.has("lares-voice") ? "lares-voice" : false });
   const clients = new Map();
   const tickets = new Map();
@@ -100,7 +103,15 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
     // While a device plays a reply its microphone hears that reply. This gate learns the echo's level,
     // so only speech that stands out from it can become a barge-in.
     const replyGate = createNoiseGate();
-    // Speech heard during a device's reply, before Router's VAD has said whether it is a person.
+    // A device's room is judged by a speech model when there is one (speechGate), so a fan, a motor
+    // or a microphone's gain is never a voice however loud it is. Until it has loaded, or when it
+    // cannot, loudness decides and Router's VAD checks each take and each barge-in afterwards.
+    // Loaded with the session, so a device's first words are already heard by the model; the model
+    // itself is shared by the process and this is only its per-session state.
+    let modelGate = null;
+    if (speechGate) Promise.resolve().then(speechGate).then((gate) => { if (!closed) modelGate = gate; }).catch((cause) => { try { onError(cause, scope); } catch {} });
+    const roomGate = () => (modelGate && listening().mode === "device" ? modelGate : noiseGate);
+    // Speech heard during a device's reply, before it is confirmed as a person.
     let barge = null;
     const tasks = new Map();
     const spoken = new Map();
@@ -145,6 +156,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       lares: { capabilities: { ...REALTIME_CAPABILITIES, barge_in: type === "realtime" && listening().bargeIn, client_tools: caps.clientTools }, context_id: scope.contextId, device: headset ? "headset" : "device" },
     });
     const reset = () => {
+      clearTimeout(barge?.timer);
       chunks = []; bytes = 0; turnMs = 0; pendingCommit = false; speaking = false; speechMs = 0; itemId = null; partial = ""; barge = null;
       stream?.ready.then((value) => value?.cancel()); stream = null;
       endpoint = createSpeechEndpoint({ silenceMs });
@@ -319,7 +331,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
         const levels = taken.map((chunk) => frameRms(pcmSamples(chunk))).sort((a, b) => a - b);
         const at = (q) => Number((levels[Math.min(levels.length - 1, Math.floor(levels.length * q))] ?? 0).toFixed(4));
         const { noise, learned } = noiseGate.levels();
-        metric({ event: "device-take", voiceId: scope.id, ms: Math.round(ms), ended, speech, chunks: levels.length, p50: at(0.5), p95: at(0.95), max: at(1), noise: Number((noise ?? 0).toFixed(4)), learned: Number(learned.toFixed(4)) });
+        metric({ event: "device-take", voiceId: scope.id, gate: modelGate?.kind || "energy", ms: Math.round(ms), ended, speech, chunks: levels.length, p50: at(0.5), p95: at(0.95), max: at(1), noise: Number((noise ?? 0).toFixed(4)), learned: Number(learned.toFixed(4)) });
       } catch {}
     };
     const commit = async (ended = "client") => {
@@ -344,9 +356,10 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       try {
         try {
           // A server_vad take from a client without playback reports is often only the room or
-          // the reply's echo. Router's VAD decides before ASR and the dialogue spend anything on it;
-          // when it cannot answer, the take goes through as before.
-          const speech = policy.vadVeto && detectSpeech ? await detectSpeech(input, scope) : null;
+          // the reply's echo when loudness opened it. Router's VAD decides before ASR and the
+          // dialogue spend anything on it; when it cannot answer, the take goes through as before.
+          // A take the speech model opened has been heard as a voice already.
+          const speech = policy.vadVeto && detectSpeech && !modelGate ? await detectSpeech(input, scope) : null;
           if (policy.vadVeto) reportTake(taken, ms, speech, ended);
           if (speech === 0) {
             await opened?.ready.then((value) => value?.cancel());
@@ -354,11 +367,15 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
             if (!closed) send({ type: "conversation.item.input_audio_transcription.completed", item_id: id, content_index: 0, transcript: "" });
             return;
           }
-          // A take that ended while its barge-in was still unconfirmed: the VAD has just confirmed it.
-          if (held && !closed) interrupt(id, held.at);
           const live = opened && await opened.ready;
           if (live) text = await live.finish().catch(() => null);
           text ??= await transcribe(input, scope);
+          // A take that ended while its barge-in was still unconfirmed: the VAD has confirmed a voice,
+          // and the whole take's words now say whether it was the reply's own.
+          if (held && !closed) {
+            if (echoVerdict(text, replyText(), true) === "echo") { learnEcho(taken, text); text = ""; }
+            else interrupt(id, held.at);
+          }
         } catch (cause) {
           // A device cannot show an error and keeps listening, so a take ASR could not read is
           // dropped like noise; only the log keeps it.
@@ -459,6 +476,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       current.ready = Promise.resolve(openTranscription?.(scope, (text) => {
         if (text.startsWith(partial) && text.length > partial.length && itemId === current.id) send({ type: "conversation.item.input_audio_transcription.delta", item_id: current.id, content_index: 0, delta: text.slice(partial.length) });
         partial = text;
+        if (itemId === current.id) judgeEcho(false);
       })).catch(() => null).then((live) => {
         current.live = live;
         for (const chunk of live ? current.queue : []) live.write(chunk);
@@ -491,7 +509,13 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       // kept, so steady noise neither fills the take nor streams to ASR, and only audio that
       // clears the room's level counts as speech that can end.
       const duringReply = policy.confirmedBargeIn && playing();
-      const voiced = automatic ? (duringReply ? replyGate : noiseGate).voiced(rms, speaking, ms) : rms >= SPEECH_RMS;
+      const room = roomGate();
+      room.hear?.(chunk);
+      // During a device's reply its own voice is in the room too, and a speech model hears that as
+      // speech: only what also stands out from the reply's echo can be a person.
+      const voiced = !automatic ? rms >= SPEECH_RMS
+        : duringReply ? replyGate.voiced(rms, speaking, ms) && (room === noiseGate || room.voiced(rms, speaking, ms))
+        : room.voiced(rms, speaking, ms);
       totalMs += ms;
       if (automatic && !speaking && !voiced) {
         chunks.push(chunk); bytes += chunk.length;
@@ -529,18 +553,46 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
         void commit("silence").catch(report);
       }
     };
-    // Full duplex for a device: Router's VAD tells a person from the reply's echo, and only a person
-    // stops the reply. When the VAD cannot answer, the speech is taken as a person.
+    // Full duplex for a device: only a person stops the reply. With the speech model the gate has
+    // already heard one; on the loudness path Router's VAD decides, and when it cannot answer, the
+    // speech is taken as a person.
     const confirmBarge = () => {
       const current = barge;
       current.checking = true;
+      if (modelGate) { heardPerson(current); return; }
       void Promise.resolve(detectSpeech ? detectSpeech(Buffer.concat(chunks), scope) : null).catch(() => null).then((seconds) => {
         if (closed || barge !== current) return;
         if (seconds === 0) { reset(); scope.voiceInputActive = false; return; }
-        interrupt(itemId, current.at);
+        heardPerson(current);
       });
     };
+    // A device without echo cancellation hears its own reply, and a speech model hears that as a
+    // person; its words give it away. When the take is streaming to ASR, the barge-in waits for the
+    // first words (at most ECHO_WAIT_MS) and goes through only when they are not the reply's.
+    const replyText = () => [...new Set([...[...spoken.values()].slice(-2), ...(response ? [response] : [])])].flatMap((item) => item.sentences.map((sentence) => sentence.text)).join(" ");
+    const heardPerson = (current) => {
+      if (!stream) { interrupt(itemId, current.at); return; }
+      current.listening = true;
+      current.timer = setTimeout(() => judgeEcho(true), ECHO_WAIT_MS);
+      judgeEcho(false);
+    };
+    const judgeEcho = (final) => {
+      const current = barge;
+      if (closed || !current?.listening) return;
+      const verdict = echoVerdict(partial, replyText(), final);
+      if (!verdict) return;
+      clearTimeout(current.timer);
+      if (verdict === "person") { interrupt(itemId, current.at); return; }
+      learnEcho(chunks, partial);
+      reset(); scope.voiceInputActive = false;
+    };
+    // An echo's loudness is what the reply gate should not let through next time.
+    const learnEcho = (taken, heard) => {
+      replyGate.learn(taken.map((chunk) => frameRms(pcmSamples(chunk))));
+      try { metric({ event: "device-echo", voiceId: scope.id, heard: String(heard || "").slice(0, 80) }); } catch {}
+    };
     const interrupt = (id, at) => {
+      clearTimeout(barge?.timer);
       barge = null;
       send({ type: "input_audio_buffer.speech_started", audio_start_ms: at, item_id: id });
       // The device plays in real time: what it has not played when it stops was never heard. The

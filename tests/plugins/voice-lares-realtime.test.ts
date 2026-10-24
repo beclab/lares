@@ -795,3 +795,87 @@ test("each device take reports its length, how it ended, the VAD answer and the 
     assert.ok(Math.abs(take.max - 3000 / 32768) < 0.001, String(take.max));
   } finally { client.close(); await fixture.stop(); }
 });
+
+// A stand-in for Silero: a chunk with a sample past 4000 is a voice, anything else the room.
+const fakeSpeechGate = () => {
+  let probability = 0;
+  return { kind: "silero", hear(chunk: Buffer) { probability = 0; for (let i = 0; i < chunk.length; i += 2) if (Math.abs(chunk.readInt16LE(i)) > 4000) { probability = 1; break; } }, voiced(_rms: number, speaking: boolean) { return probability >= (speaking ? 0.35 : 0.5); } };
+};
+
+test("with a speech model a device's loud room opens no take, a voice opens one, and Router's VAD is not asked", async () => {
+  const chunk = (amplitude: number) => { const pcm = Buffer.alloc(480); for (let i = 0; i < 240; i++) pcm.writeInt16LE(i % 2 ? amplitude : -amplitude, i * 2); return pcm.toString("base64"); };
+  // 10 ms chunks: a room with bursts far louder than any floor, then one second of a voice.
+  const room = (seconds: number) => Array.from({ length: seconds * 100 }, (_, i) => chunk(i % 20 === 19 ? 3500 : 1500));
+  const checks: number[] = [], metrics: any[] = [];
+  const fixture = await serve({ speechGate: async () => fakeSpeechGate(), detectSpeech: async () => { checks.push(1); return 1; }, metric: (fields: any) => metrics.push(fields) });
+  const client = connect(fixture.port, "voice-chat");
+  try {
+    const events = await until(client, (event) => event.type === "conversation.item.input_audio_transcription.completed", (event) => {
+      if (event.type === "session.created") client.send(JSON.stringify({ type: "session.update", session: { audio: { input: { turn_detection: { type: "server_vad" } } } } }));
+      if (event.type === "session.updated") for (const audio of [...room(12), ...Array.from({ length: 100 }, () => chunk(6000)), ...room(2)]) client.send(JSON.stringify({ type: "input_audio_buffer.append", audio }));
+    });
+    assert.equal(events.filter((event) => event.type === "input_audio_buffer.speech_started").length, 1);
+    assert.equal(fixture.calls.transcribed.length, 1);
+    const seconds = fixture.calls.transcribed[0].bytes / 48000;
+    assert.ok(seconds > 1 && seconds < 2, String(seconds));
+    assert.deepEqual(checks, []);
+    assert.equal(metrics.find((fields) => fields.event === "device-take").gate, "silero");
+  } finally { client.close(); await fixture.stop(); }
+});
+
+test("a speech model that cannot load leaves a device on loudness and Router's VAD", async () => {
+  const second = (amplitude: number) => { const pcm = Buffer.alloc(48000); for (let i = 0; i < 24000; i++) pcm.writeInt16LE(i % 2 ? amplitude : -amplitude, i * 2); return pcm.toString("base64"); };
+  const checks: number[] = [], errors: any[] = [];
+  const fixture = await serve({ speechGate: async () => { throw new Error("onnx_unavailable"); }, onError: (cause: any) => errors.push(cause.message), detectSpeech: async () => { checks.push(1); return 1; } });
+  const client = connect(fixture.port, "voice-chat");
+  try {
+    await until(client, (event) => event.type === "conversation.item.input_audio_transcription.completed", (event) => {
+      if (event.type === "session.created") client.send(JSON.stringify({ type: "session.update", session: { audio: { input: { turn_detection: { type: "server_vad" } } } } }));
+      if (event.type === "session.updated") for (const amplitude of [300, 3000, 300]) client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: second(amplitude) }));
+    });
+    assert.deepEqual(errors, ["onnx_unavailable"]);
+    assert.equal(checks.length, 1);
+    assert.equal(fixture.calls.transcribed.length, 1);
+  } finally { client.close(); await fixture.stop(); }
+});
+
+test("a device's own reply heard back is told from a person by its words before anything is interrupted", async () => {
+  const second = (amplitude: number) => { const pcm = Buffer.alloc(48000); for (let i = 0; i < 24000; i++) pcm.writeInt16LE(i % 2 ? amplitude : -amplitude, i * 2); return pcm.toString("base64"); };
+  const run = async (heard: string) => {
+    const metrics: any[] = [];
+    // Streaming ASR that has words once 0.6 s of the take has reached it.
+    const openTranscription = async (_scope: any, onPartial: (text: string) => void) => {
+      let bytes = 0;
+      return { write(pcm: Buffer) { bytes += pcm.length; if (bytes >= 0.6 * 48000) onPartial(heard); }, async finish() { return heard; }, cancel() {} };
+    };
+    const fixture = await serve({ synthesize: async () => Buffer.alloc(5 * 48000), detectSpeech: async () => 1, openTranscription, metric: (fields: any) => metrics.push(fields) });
+    const client = connect(fixture.port, "voice-chat");
+    const events: any[] = [];
+    let sent = false;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(resolve, 3000);
+        client.on("error", reject);
+        client.on("message", (raw) => {
+          const event = JSON.parse(raw.toString()); events.push(event);
+          if (event.type === "session.created") client.send(JSON.stringify({ type: "session.update", session: { audio: { input: { turn_detection: { type: "server_vad" } } } } }));
+          if (event.type === "session.updated") {
+            client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: second(300) }));
+            client.send(JSON.stringify({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text: "tell me a story" }] } }));
+          }
+          if (event.type === "response.done" && !sent) {
+            sent = true;
+            for (const amplitude of [300, 3000, 3000]) client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: second(amplitude) }));
+          }
+          if (event.type === "input_audio_buffer.speech_started") { clearTimeout(timer); resolve(); }
+        });
+      });
+      return { started: events.filter((event) => event.type === "input_audio_buffer.speech_started").length, echoes: metrics.filter((fields) => fields.event === "device-echo"), truncated: fixture.calls.truncated.length };
+    } finally { client.close(); await fixture.stop(); }
+  };
+  // The service's reply is "actual reply": hearing those words back is the device's own voice.
+  const echo = await run("actual reply actual");
+  assert.deepEqual([echo.started, echo.echoes.length, echo.truncated], [0, 1, 0]);
+  const person = await run("what time is it");
+  assert.deepEqual([person.started, person.echoes.length], [1, 0]);
+});
