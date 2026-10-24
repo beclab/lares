@@ -184,14 +184,10 @@ exposed as function calls; only calls to [device tools](#device-tools) are.
 
 Three groups only: playback acknowledgement, Agent tasks and host device. When
 a standard client sends no playback acknowledgement, the server assumes it plays
-what it was sent in real time. Until that estimate runs out, plus about 400 ms
-of room echo, input audio is dropped without an error (unless barge-in is
-active), so the reply heard through the microphone does not open a new turn.
-`response.cancel` or `conversation.item.truncate` from the client ends the
-estimate. Truncate stays approximate. For such a client each `server_vad` take
-is also checked once by Router's VAD (`default-vad`, `/v1/audio/vad`). A take
-with no speech in it completes with an empty transcript and never reaches ASR
-or the dialogue. When the VAD cannot answer, the take goes through as before.
+what it was sent in real time; `response.cancel` or `conversation.item.truncate`
+from the client ends that estimate, and truncate stays approximate. What the
+server does with the microphone meanwhile depends on the client's
+[listening mode](#listening-modes).
 
 | Event | Direction | Fields | Replaces |
 | --- | --- | --- | --- |
@@ -272,6 +268,25 @@ answers first. Ticket sockets and other keys keep the behaviour above, and
 
 Device calls and their outputs live only in the dialogue context. They are not
 written to Lares session records.
+
+## Listening modes
+
+Lares's own clients and a device speak the same protocol but listen in
+different ways, and the server applies each rule to one mode only
+(`core/voice/listening.js`).
+
+| Mode | Who | How a take ends | While a reply plays |
+| --- | --- | --- | --- |
+| Push-to-talk | Lares phone (hold, release) and desktop (tap, tap again) | The client commits (`turn_detection: null`) | Half duplex: the client reports playback and does not send audio |
+| Hands-free | Lares headset, continuous | `server_vad`, with playback reports | Half duplex, unless `LARES_VOICE_BARGE_IN=1` turns on suspend-and-resolve barge-in |
+| Device | A robot that hears its room all the time: `server_vad`, no playback reports | `server_vad` against the room's noise floor; a take closes after 10 s at most; Router's VAD (`default-vad`) drops a take with no speech before ASR | **Full duplex**: speech that stands out from the reply's echo for 500 ms is checked by Router's VAD. Only a person sends `input_audio_buffer.speech_started`, which the device takes as "stop playing". The reply is truncated to what was heard, and the speech becomes the next turn |
+
+A device that sets `lares.echo_cancellation: false` cannot tell its own reply
+from the user, so it stays half duplex: input is dropped quietly until the
+reply has played, plus about 400 ms of room echo. When Router's VAD cannot
+answer, a take or a barge-in goes through as if it held speech.
+`session.lares.capabilities.barge_in` reports whether the session can be
+interrupted.
 
 ## Turns, interruption and truncate
 
@@ -457,7 +472,7 @@ unwanted action.
 | `X-Session-Id` on ASR, TTS, dialogue and Agent model calls | Live; dsh sends its session id and the `/llm/v1` shim swaps in the Realtime one while a keyed session drives it |
 | Host headset mode on ticket sockets | Live |
 | Lares desktop and mobile clients (`core/voice/unified-conversation.js`) | Live by default; `transport: "legacy"` keeps the pipeline endpoints |
-| Full-duplex barge-in | Code present; off unless `LARES_VOICE_BARGE_IN=1` and the client reports echo cancellation |
+| Full-duplex barge-in | Device mode: live, confirmed by Router's VAD. Lares clients: code present; off unless `LARES_VOICE_BARGE_IN=1` and the client reports echo cancellation |
 | Removal of the pipeline session endpoints | After device acceptance (step 5) |
 
 Deployment gate: Router reaches Lares only through the internal entrance on

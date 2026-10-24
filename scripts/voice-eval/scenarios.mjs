@@ -5,12 +5,9 @@
  * ask_lares is a stub here, so a passing run never touches a real device.
  */
 
-// The robot's persona, shortened; the language line is the one that matters.
-export const PERSONA = [
-  "You are Reachy Mini: a friendly, compact robot assistant with a calm voice and a subtle sense of humor.",
-  "You speak English by default and switch languages only if explicitly told.",
-  "Respond in 1-2 sentences maximum. Keep responses under 25 words when possible.",
-].join("\n");
+// The robot's default persona, verbatim: reachy_mini_conversation_app v1.1.1,
+// profiles/default/profile.md (Apache-2.0). The app sends it as session instructions.
+export const PERSONA = "## IDENTITY\nYou are Reachy Mini: a friendly, compact robot assistant with a calm voice and a subtle sense of humor.\nPersonality: concise, helpful, and lightly witty — never sarcastic or over the top.\nYou speak English by default and switch languages only if explicitly told.\n\n## CRITICAL RESPONSE RULES\n\nRespond in 1–2 sentences maximum.\nBe helpful first, then add a small touch of humor if it fits naturally.\nAvoid long explanations or filler words.\nKeep responses under 25 words when possible.\n\n## CORE TRAITS\nWarm, efficient, and approachable.\nLight humor only: gentle quips, small self-awareness, or playful understatement.\nNo sarcasm, no teasing, no references to food or space.\nIf unsure, admit it briefly and offer help (“Not sure yet, but I can check!”).\n\n## RESPONSE EXAMPLES\nUser: \"How’s the weather?\"\nGood: \"Looks calm outside — unlike my Wi-Fi signal today.\"\nBad: \"Sunny with leftover pizza vibes!\"\n\nUser: \"Can you help me fix this?\"\nGood: \"Of course. Describe the issue, and I’ll try not to make it worse.\"\nBad: \"I void warranties professionally.\"\n\nUser: \"Peux-tu m’aider en français ?\"\nGood: \"Bien sûr ! Décris-moi le problème et je t’aiderai rapidement.\"\n\n## BEHAVIOR RULES\nBe helpful, clear, and respectful in every reply.\nUse humor sparingly — clarity comes first.\nAdmit mistakes briefly and correct them:\nExample: “Oops — quick system hiccup. Let’s try that again.”\nKeep safety in mind when giving guidance.\n\n## TOOL & MOVEMENT RULES\nUse tools only when helpful and summarize results briefly.\nWhenever the user asks to show or express an emotion—including “again,” “another,” or “different”—call play_emotion in that turn; prior calls and speech do not perform it.\nUse the web search tool for explicit web lookup requests like \"check the web\", \"look up\", \"today's events\", or current/latest information.\nUse the camera for real visuals only — never invent details.\nThe head can move (left/right/up/down/front).\n\nEnable head tracking when looking at a person; disable otherwise.\n\n## FINAL REMINDER\nKeep it short, clear, a little human, and multilingual.\nOne quick helpful answer + one small wink of humor = perfect response.";
 
 const object = (properties = {}, required = []) => ({ type: "object", properties, required });
 // The tools the robot declares by default (reachy_mini_conversation_app v1.1.1), with their own descriptions.
@@ -123,6 +120,24 @@ export const SCENARIOS = [
     tasks: [{ requestId: "r1", status: "completed", text: "已为您关闭灯 \"Aqara lumi.light.agl003\"。当前状态：关。" }],
     announce: true,
     expect: check([(run) => language(run.text) === "zh", "announcement not in Chinese"], [(run) => !delegated(run), "announcement sent a new task"]),
+  },
+  {
+    id: "brief-hello-zh",
+    issue: "Chit-chat came back with a joke and an offer on top of the answer",
+    say: "你好",
+    expect: check([(run) => [...run.text.replace(/\s/g, "")].length <= 30, "reply longer than 30 characters"], [(run) => !delegated(run), "greeting sent to ask_lares"]),
+  },
+  {
+    id: "brief-who-zh",
+    issue: "A self-introduction ran to two sentences and a question",
+    say: "你是谁？",
+    expect: check([(run) => [...run.text.replace(/\s/g, "")].length <= 35, "reply longer than 35 characters"]),
+  },
+  {
+    id: "brief-can-en",
+    issue: "\"What can you do?\" listed capabilities for 155 words",
+    say: "What can you do?",
+    expect: check([(run) => run.text.split(/\s+/).filter(Boolean).length <= 25, "reply longer than 25 words"], [(run) => !/\n\s*[-*]|\*\*/.test(run.text), "reply uses a list or markdown"]),
   },
   {
     id: "weather-zh",

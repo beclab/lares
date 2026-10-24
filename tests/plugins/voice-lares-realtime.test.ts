@@ -631,3 +631,46 @@ test("a device take that never falls quiet is closed at ten seconds and left to 
     assert.ok(seconds >= 10 && seconds <= 11.5, String(seconds));
   } finally { client.close(); await fixture.stop(); }
 });
+
+test("a device is interrupted only once Router's VAD confirms a person spoke over its reply", async () => {
+  const second = (amplitude: number) => { const pcm = Buffer.alloc(48000); for (let i = 0; i < 24000; i++) pcm.writeInt16LE(i % 2 ? amplitude : -amplitude, i * 2); return pcm.toString("base64"); };
+  const run = async (person: boolean) => {
+    // Five seconds of reply: the device is still playing it after the server has sent it all.
+    const fixture = await serve({ synthesize: async () => Buffer.alloc(5 * 48000), detectSpeech: async () => (person ? 1 : 0) });
+    const client = connect(fixture.port, "voice-chat");
+    const events: any[] = [];
+    let sent = false;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(resolve, 2500);
+        client.on("error", reject);
+        client.on("message", (raw) => {
+          const event = JSON.parse(raw.toString()); events.push(event);
+          if (event.type === "session.created") client.send(JSON.stringify({ type: "session.update", session: { audio: { input: { turn_detection: { type: "server_vad" } } } } }));
+          if (event.type === "session.updated") {
+            // The room before the reply, so the gate knows its level when the reply ends.
+            client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: second(300) }));
+            client.send(JSON.stringify({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text: "tell me a story" }] } }));
+          }
+          if (event.type === "response.done" && !sent) {
+            sent = true;
+            // The reply's echo first, then someone speaking clearly over it, then quiet.
+            for (const amplitude of [300, 3000, 3000, 300]) client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: second(amplitude) }));
+          }
+          if (event.type === "conversation.item.input_audio_transcription.completed") { clearTimeout(timer); resolve(); }
+        });
+      });
+      return { events, calls: fixture.calls };
+    } finally { client.close(); await fixture.stop(); }
+  };
+  const spoken = await run(true);
+  const started = spoken.events.filter((event) => event.type === "input_audio_buffer.speech_started");
+  assert.equal(started.length, 1);
+  assert.ok(spoken.events.some((event) => event.type === "conversation.item.truncated"));
+  assert.ok(spoken.calls.truncated.length >= 1);
+  assert.equal(spoken.calls.transcribed.length, 1);
+  const echo = await run(false);
+  assert.equal(echo.events.filter((event) => event.type === "input_audio_buffer.speech_started").length, 0);
+  assert.ok(!echo.events.some((event) => event.type === "conversation.item.truncated"));
+  assert.equal(echo.calls.transcribed.length, 0);
+});

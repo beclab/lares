@@ -7,13 +7,11 @@ import { createPlayoutClock, PLAYOUT_LEAD_MS, SOCKET_FUSE_BYTES } from "./playou
 import { speechSegments } from "./script.js";
 import { bindRouterSession } from "../router/session-alias.js";
 import { REALTIME_MODEL_PRESETS, voiceCapabilities } from "./capabilities.js";
+import { listeningPolicy } from "./listening.js";
 
 const FORMAT = Object.freeze({ type: "audio/pcm", rate: 24000 });
 const BYTES_PER_MS = 48;
 const TURN_BYTES = 60_000 * BYTES_PER_MS;
-// A device streams its room all the time. Past this a take is closed and left to Router's VAD,
-// so steady noise cannot hold off replies and task results while it waits to fall quiet.
-const DEVICE_TAKE_MS = 10_000;
 // Audio kept from just before speech starts, so the first syllable is not cut.
 const PREROLL_BYTES = 300 * BYTES_PER_MS;
 const CHUNK_BYTES = 500 * BYTES_PER_MS;
@@ -97,6 +95,11 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
     let playbackUntil = 0;
     // The room's level persists across takes; a take only tells the gate when someone speaks.
     const noiseGate = createNoiseGate();
+    // While a device plays a reply its microphone hears that reply. This gate learns the echo's level,
+    // so only speech that stands out from it can become a barge-in.
+    const replyGate = createNoiseGate();
+    // Speech heard during a device's reply, before Router's VAD has said whether it is a person.
+    let barge = null;
     const tasks = new Map();
     const spoken = new Map();
     const played = new Map();
@@ -119,6 +122,8 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
     };
 
     const bargeActive = () => type === "realtime" && !headset && echoCancellation && bargeIn() === true;
+    const listening = () => listeningPolicy({ automatic, acknowledges, headset, echoCancellation, bargeIn: bargeActive() });
+    const playing = () => Date.now() < playbackUntil + ECHO_TAIL_MS;
     const send = (event) => {
       if (closed || client.readyState !== 1) return;
       client.send(JSON.stringify({ event_id: `event_${randomUUID()}`, ...event }));
@@ -135,10 +140,10 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
         input: { format: FORMAT, turn_detection: automatic ? { type: "server_vad", silence_duration_ms: silenceMs } : null, ...(scope.voiceOverrides.language ? { transcription: { language: scope.voiceOverrides.language } } : {}) },
         ...(type === "realtime" ? { output: { format: FORMAT, ...(scope.voiceOverrides.voice ? { voice: scope.voiceOverrides.voice } : {}) } } : {}),
       },
-      lares: { capabilities: { ...REALTIME_CAPABILITIES, barge_in: bargeActive(), client_tools: caps.clientTools }, context_id: scope.contextId, device: headset ? "headset" : "device" },
+      lares: { capabilities: { ...REALTIME_CAPABILITIES, barge_in: type === "realtime" && listening().bargeIn, client_tools: caps.clientTools }, context_id: scope.contextId, device: headset ? "headset" : "device" },
     });
     const reset = () => {
-      chunks = []; bytes = 0; turnMs = 0; pendingCommit = false; speaking = false; speechMs = 0; itemId = null; partial = "";
+      chunks = []; bytes = 0; turnMs = 0; pendingCommit = false; speaking = false; speechMs = 0; itemId = null; partial = ""; barge = null;
       stream?.ready.then((value) => value?.cancel()); stream = null;
       endpoint = createSpeechEndpoint({ silenceMs });
     };
@@ -319,7 +324,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       // shared and the client cannot know that, so queue this take instead of
       // rejecting it; the composer would otherwise see a hard turn_busy.
       if (busy) { pendingCommit = true; return; }
-      const input = Buffer.concat(chunks), id = itemId || `item_${randomUUID()}`, ms = input.length / BYTES_PER_MS, opened = stream;
+      const input = Buffer.concat(chunks), id = itemId || `item_${randomUUID()}`, ms = input.length / BYTES_PER_MS, opened = stream, held = barge, policy = listening();
       stream = null; reset(); scope.voiceInputActive = false; busy = true;
       send({ type: "input_audio_buffer.committed", item_id: id, previous_item_id: null });
       let epoch = generation;
@@ -327,11 +332,13 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
         // A server_vad take from a client without playback reports is often only the room or
         // the reply's echo. Router's VAD decides before ASR and the dialogue spend anything on it;
         // when it cannot answer, the take goes through as before.
-        if (automatic && !acknowledges && !headset && detectSpeech && await detectSpeech(input, scope) === 0) {
+        if (policy.vadVeto && detectSpeech && await detectSpeech(input, scope) === 0) {
           void opened?.ready.then((value) => value?.cancel());
           if (!closed) send({ type: "conversation.item.input_audio_transcription.completed", item_id: id, content_index: 0, transcript: "" });
           return;
         }
+        // A take that ended while its barge-in was still unconfirmed: the VAD has just confirmed it.
+        if (held && !closed) interrupt(id, held.at);
         let text = null;
         const live = opened && await opened.ready;
         if (live) text = await live.finish().catch(() => null);
@@ -438,10 +445,11 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
     };
     const append = (audio) => {
       if (awaitingPlayback && !bargeActive()) fail("waiting_for_playback");
-      // Half duplex for a client without playback acknowledgements: while its speaker is still
-      // playing the reply, the microphone mostly hears that reply. Dropped quietly, because the
-      // client cannot tell when to stop sending.
-      if (!acknowledges && !headset && !bargeActive() && Date.now() < playbackUntil + ECHO_TAIL_MS) return;
+      const policy = listening();
+      // Half duplex for a client without playback acknowledgements that cannot tell its echo from
+      // the user: while its speaker is still playing the reply, the microphone mostly hears that
+      // reply. Dropped quietly, because the client cannot tell when to stop sending.
+      if (policy.muteWhilePlaying && playing()) return;
       // Audio that arrives while the previous take is being transcribed belongs
       // to the next turn; keep it and let that commit queue behind the first one.
       if (typeof audio !== "string" || audio.length > 64000 || !/^[A-Za-z0-9+/]*={0,2}$/.test(audio)) fail("unsupported_audio_format");
@@ -453,7 +461,8 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       // server_vad hears the room all the time. Until someone speaks only a short pre-roll is
       // kept, so steady noise neither fills the take nor streams to ASR, and only audio that
       // clears the room's level counts as speech that can end.
-      const voiced = automatic ? noiseGate.voiced(rms, speaking) : rms >= SPEECH_RMS;
+      const duringReply = policy.confirmedBargeIn && playing();
+      const voiced = automatic ? (duringReply ? replyGate : noiseGate).voiced(rms, speaking) : rms >= SPEECH_RMS;
       totalMs += ms;
       if (automatic && !speaking && !voiced) {
         chunks.push(chunk); bytes += chunk.length;
@@ -473,9 +482,15 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       chunks.push(chunk); bytes += chunk.length; turnMs += ms;
       stream?.write(chunk);
       if (voiced) speechMs += ms; else speechMs = 0;
-      if (voiced && !speaking) { speaking = true; scope.voiceInputActive = true; send({ type: "input_audio_buffer.speech_started", audio_start_ms: Math.round(totalMs), item_id: itemId }); }
-      if (automatic && bargeActive() && response && !response.suspended && speechMs >= BARGE_IN_MS) suspend(response);
-      if (automatic && !acknowledges && !headset && turnMs >= DEVICE_TAKE_MS) {
+      if (voiced && !speaking) {
+        speaking = true; scope.voiceInputActive = true;
+        // A device stops playing on speech_started, so during its reply that waits for confirmation.
+        if (duringReply) barge = { at: Math.round(totalMs), checking: false };
+        else send({ type: "input_audio_buffer.speech_started", audio_start_ms: Math.round(totalMs), item_id: itemId });
+      }
+      if (barge && !barge.checking && speechMs >= BARGE_IN_MS) confirmBarge();
+      if (policy.suspendBargeIn && response && !response.suspended && speechMs >= BARGE_IN_MS) suspend(response);
+      if (policy.takeLimitMs && turnMs >= policy.takeLimitMs) {
         send({ type: "input_audio_buffer.speech_stopped", audio_end_ms: Math.round(totalMs), item_id: itemId });
         void commit().catch(report);
         return;
@@ -484,6 +499,31 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
         send({ type: "input_audio_buffer.speech_stopped", audio_end_ms: Math.round(totalMs), item_id: itemId });
         void commit().catch(report);
       }
+    };
+    // Full duplex for a device: Router's VAD tells a person from the reply's echo, and only a person
+    // stops the reply. When the VAD cannot answer, the speech is taken as a person.
+    const confirmBarge = () => {
+      const current = barge;
+      current.checking = true;
+      void Promise.resolve(detectSpeech ? detectSpeech(Buffer.concat(chunks), scope) : null).catch(() => null).then((seconds) => {
+        if (closed || barge !== current) return;
+        if (seconds === 0) { reset(); scope.voiceInputActive = false; return; }
+        interrupt(itemId, current.at);
+      });
+    };
+    const interrupt = (id, at) => {
+      barge = null;
+      send({ type: "input_audio_buffer.speech_started", audio_start_ms: at, item_id: id });
+      // The device plays in real time: what it has not played when it stops was never heard. The
+      // server has usually sent the whole reply already, so the last spoken one is cut instead.
+      const unplayed = Math.max(0, playbackUntil - Date.now());
+      const current = response || [...spoken.values()].at(-1);
+      if (current && unplayed) {
+        const heard = Math.max(0, current.outputMs - unplayed);
+        if (current === response) { played.set(current.itemId, heard); cancel("cancelled", { truncate: true }); }
+        else truncateTo(current, heard);
+      }
+      playbackUntil = 0;
     };
     const suspend = (current) => {
       let settle;
