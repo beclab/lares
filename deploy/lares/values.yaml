@@ -1,4 +1,4 @@
-image: docker.io/beclab/lares:0.26.70
+image: docker.io/beclab/lares:0.26.71
 imagePullPolicy: IfNotPresent
 
 workloads:

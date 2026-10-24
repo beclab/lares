@@ -34,5 +34,6 @@ spec:
     - 自动断句在有噪音的房间里也能结束一轮，不再一直等到录音时长上限。
     - 持续上传麦克风的语音设备，如果 Router 的人声检测没听到人声，这一轮会被跳过。
     - 语音设备会把家居控制、查询和日程交给 Lares 处理，并用用户说话的语言回复。
+    - 对话模型要求系统提示必须放在最前面时，委派任务完成后语音对话也能继续。
 
-    [版本说明](https://github.com/beclab/lares/releases/tag/v0.26.70)
+    [版本说明](https://github.com/beclab/lares/releases/tag/v0.26.71)

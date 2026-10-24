@@ -30,5 +30,6 @@ spec:
     - Il rilevamento automatico dei turni chiude un turno anche in una stanza rumorosa invece di attendere il limite audio.
     - I dispositivi vocali che trasmettono di continuo il microfono saltano i turni in cui il rilevamento vocale di Router non sente parlato.
     - I dispositivi vocali affidano a Lares il controllo della casa, le ricerche e l'agenda e rispondono nella lingua dell'utente.
+    - Una conversazione vocale continua dopo un'attività delegata anche con i modelli che richiedono il prompt di sistema per primo.
 
-    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.70)
+    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.71)
