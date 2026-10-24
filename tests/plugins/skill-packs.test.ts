@@ -50,7 +50,7 @@ test("hass-cli uses npm global-prefix layout so the executable lands in prefix/b
   const args = packInstallArgs(OFFICIAL_PACKS[0]);
   assert.equal(args.includes("--global"), true);
   assert.equal(args.includes("--prefix"), true);
-  assert.equal(args.at(-1), "@olares/hass-cli@0.0.1");
+  assert.equal(args.at(-1), "@olares/hass-cli@0.0.2");
 });
 
 test("repairCliBin makes a mode-644 shim behind an existing symlink executable", () => {
@@ -176,4 +176,47 @@ test("token entry keeps the secret off the command line and out of the status", 
   assert.throws(() => connectionInput({ server: "ftp://ha.example.com", token }), HttpError);
   assert.throws(() => connectionInput({ server: "https://user:secret@ha.example.com", token }), HttpError);
   assert.throws(() => connectionInput({ server: "https://ha.example.com", token: "short" }), HttpError);
+});
+
+test("the pinned CLI version is read from --version without matching a longer one", async () => {
+  const { reportsVersion } = await import("../../packages/web/skill-packs/host/cli.js");
+  assert.equal(reportsVersion("hass-cli version 0.0.2\n", "0.0.2"), true);
+  assert.equal(reportsVersion("v0.0.2", "0.0.2"), true);
+  assert.equal(reportsVersion("hass-cli version 0.0.1", "0.0.2"), false);
+  assert.equal(reportsVersion("hass-cli version 0.0.21", "0.0.2"), false);
+  assert.equal(reportsVersion("hass-cli version 10.0.2", "0.0.2"), false);
+});
+
+test("a downloaded pack on an older CLI is reinstalled, re-exported and synced at startup", async () => {
+  const { upgradeDownloadedPacks } = await import("../../packages/web/skill-packs/host/cli.js");
+  const home = mkdtempSync(join(tmpdir(), "lares-home-"));
+  const previous = process.env.HOME;
+  process.env.HOME = home;
+  try {
+    const ha = OFFICIAL_PACKS.find((pack) => pack.id === "ha")!;
+    mkdirSync(join(home, ".local", "bin"), { recursive: true });
+    writeFileSync(join(home, ".local", "bin", "hass-cli"), "#!/bin/sh\n");
+    // Downloaded and enabled under the old pin.
+    const root = mkdtempSync(join(tmpdir(), "lares-skills-"));
+    const catalog = join(root, "catalog");
+    mkdirSync(catalog, { recursive: true });
+    writeExportedSkills(packCacheDir(root, "ha"), [{ name: "ha-shared", body: "old" }]);
+    enableOfficialPack(catalog, root, "ha");
+    const calls: string[] = [];
+    const run = (current: boolean) => upgradeDownloadedPacks(root, catalog, {
+      packs: [ha],
+      matches: async () => current,
+      reinstall: async () => { calls.push("install"); },
+      exportSkills: async (_pack: any, dir: string) => { calls.push("export"); writeExportedSkills(packCacheDir(dir, "ha"), [{ name: "ha-shared", body: "new" }]); return 1; },
+    });
+    assert.deepEqual(await run(true), []);
+    assert.deepEqual(calls, []);
+    assert.deepEqual(await run(false), ["ha"]);
+    assert.deepEqual(calls, ["install", "export"]);
+    assert.equal(readFileSync(join(root, "skills", "ha-shared", "SKILL.md"), "utf8"), "new");
+    rmSync(root, { recursive: true, force: true });
+  } finally {
+    process.env.HOME = previous;
+    rmSync(home, { recursive: true, force: true });
+  }
 });

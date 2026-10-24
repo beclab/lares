@@ -9,7 +9,7 @@ import {
   enableOfficialPack,
   listOfficialPacks,
 } from "@olares/lares-core/skills/state";
-import { cliReadyMap, downloadPackSkills, readCliConnection, saveCliConnection } from "./cli.js";
+import { cliReadyMap, downloadPackSkills, readCliConnection, saveCliConnection, upgradeDownloadedPacks } from "./cli.js";
 
 export const name = "lares-skill-packs";
 export const inject = ["webServer"];
@@ -107,6 +107,11 @@ export function routes() {
 
 /** @param {import('@deepseek-ai/cordis').Context} ctx */
 export function apply(ctx) {
+  // In the background: a slow npm install must not hold up the routes or boot.
+  void upgradeDownloadedPacks(dataDir(), defaultCatalogRoot()).then(
+    (ids) => { if (ids.length) console.warn(`[lares] skill packs upgraded to their pinned CLI: ${ids.join(", ")}`); },
+    (err) => console.warn(`[lares] skill pack upgrade failed; the installed CLI stays: ${err instanceof Error ? err.message : err}`),
+  );
   ctx.effect(
     () =>
       ctx.webServer.register({

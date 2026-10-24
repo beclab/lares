@@ -6,8 +6,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { HttpError } from "@olares/lares-core/tools/http";
 import { HASS_PROFILE, connectionStatus, profileLoginArgs, scrubSecret } from "@olares/lares-core/skills/connection";
-import { parseSkillNames } from "@olares/lares-core/skills/packs";
-import { packCacheDir, writeExportedSkills } from "@olares/lares-core/skills/state";
+import { OFFICIAL_PACKS, parseSkillNames } from "@olares/lares-core/skills/packs";
+import { packCacheDir, packDownloaded, syncRuntimeSkills, writeExportedSkills } from "@olares/lares-core/skills/state";
 
 const INSTALL_ATTEMPTS = 3;
 const INSTALL_PAUSE_MS = 2_000;
@@ -192,6 +192,41 @@ export async function downloadPackSkills(pack, dataDir) {
     }
     return await exportPackSkills(pack, dataDir);
   }
+}
+
+/** Whether the installed CLI reports the version this Lares pins. */
+export function reportsVersion(output, version) {
+  const escaped = String(version).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^0-9.])v?${escaped}($|[^0-9.])`).test(String(output ?? ""));
+}
+
+async function cliVersionMatches(pack) {
+  try {
+    return reportsVersion(await run(cliBinPath(pack), ["--version"], { timeoutMs: 15_000 }), pack.cli.version);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A pack downloaded under an older pin keeps that CLI, and the skills it exported, until
+ * someone downloads it again: `ensurePackCli` only checks that a binary runs. At startup
+ * this brings every downloaded npm pack to the pinned CLI and re-exports its skills, so a
+ * Lares upgrade that moves the pin reaches installs that already had the pack.
+ * @returns {Promise<string[]>} the ids of the packs it upgraded
+ */
+export async function upgradeDownloadedPacks(dataDir, catalogRoot, { packs = OFFICIAL_PACKS, matches = cliVersionMatches, reinstall = installPackCli, exportSkills = exportPackSkills } = {}) {
+  const upgraded = [];
+  for (const pack of packs) {
+    if (!pack.cli?.package || !cliPresent(pack) || !packDownloaded(dataDir, pack)) continue;
+    if (await matches(pack)) continue;
+    await reinstall(pack);
+    await exportSkills(pack, dataDir);
+    upgraded.push(pack.id);
+  }
+  // Enabled packs are copied into the runtime skills dir from their cache; a disabled one stays out.
+  if (upgraded.length) syncRuntimeSkills(catalogRoot, dataDir);
+  return upgraded;
 }
 
 const emptyConnection = { configured: false, server: "" };
