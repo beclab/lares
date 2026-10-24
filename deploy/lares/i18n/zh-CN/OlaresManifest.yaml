@@ -28,5 +28,6 @@ spec:
     - 只出现在思考过程里的工具调用，会在同一轮真正执行。
     - 全新安装后语音输入可以启动。
     - 自动化任务可以按时间执行指令，分主题的晨报会写入工作区。
+    - 勾选“允许设备工具”的语音密钥可以让 Reachy Mini 等设备在语音对话中使用自己的工具。
 
-    [版本说明](https://github.com/beclab/lares/releases/tag/v0.26.64)
+    [版本说明](https://github.com/beclab/lares/releases/tag/v0.26.65)

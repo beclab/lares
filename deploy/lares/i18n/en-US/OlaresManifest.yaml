@@ -28,5 +28,6 @@ spec:
     - A tool call that only appeared in the reasoning runs in the same turn.
     - Voice input starts on a fresh install.
     - Automation tasks run a prompt on a schedule, and topic morning briefs are written to the workspace.
+    - Devices such as Reachy Mini can use their own tools in voice conversations through a voice key that allows device tools.
 
-    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.64)
+    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.65)
