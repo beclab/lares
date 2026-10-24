@@ -6,7 +6,7 @@ const INSTRUCTIONS = "You are a voice interface. Reply briefly in the user's lan
 const DEVICE_RULES = "The client device declared its own tools. They only move or animate that device or use its camera: call them directly, never through ask_lares. Anything else that needs action or information, such as home devices like lights, switches or climate, lookups, weather, news, the calendar, schedules and reminders, goes to ask_lares even when the caller's instructions never mention it. Never say you cannot do something before asking ask_lares. Only say a device action happened once its result arrives.";
 // Repeated after the caller's instructions: a small model follows whatever it read last, and a
 // device persona is often written in another language and lists only the device's own tools.
-const DEVICE_REMINDER = "Answer in the language the user just spoke, whatever language the instructions above use. Home control, lookups and schedules go through ask_lares.";
+const DEVICE_REMINDER = "Reply in the same language as the user's latest message: Chinese when they speak Chinese, English when they speak English. Home control, lookups and schedules go through ask_lares.";
 const ANNOUNCE = "A delegated Lares task has just finished; its result is the latest task result above. Tell the user what matters in one or two short sentences unless you already did. Device tools may accompany the answer. If nothing needs saying, reply with an empty message.";
 const TOOL = { type: "function", function: { name: "ask_lares", description: "Hand a request to the user's Lares Agent, which acts and looks things up for them: controlling home devices such as lights, switches, climate and scenes; facts, weather, news and the user's files; calendar, schedules, reminders and messages; any other task that needs real action. Pass the request as task. It returns pending at once and the result is announced later; status reports tasks still running.", parameters: { type: "object", properties: { operation: { type: "string", enum: ["run", "status"] }, task: { type: "string", maxLength: 16000 } }, required: ["operation"], additionalProperties: false } } };
 const MAX_DEVICE_CALLS = 8;
@@ -69,6 +69,9 @@ const deviceCall = (call) => {
   if (typeof call.id !== "string" || !call.id || call.id.length > 128 || typeof call.function?.arguments !== "string") throw new Error("voice_tool_invalid");
   return { call_id: call.id, name: call.function.name, arguments: call.function.arguments };
 };
+// Many chat templates (llama.cpp's Qwen among them) refuse a system message anywhere but first.
+// Notes the dialogue adds later, such as task results, go out as labelled user turns.
+const wire = (messages) => messages.map((item, index) => index > 0 && item.role === "system" ? { role: "user", content: `[Lares note, not said by the user] ${item.content}` } : item);
 const plain = (content) => Array.isArray(content) ? content.map((part) => part.type === "text" ? part.text : IMAGE_OMITTED).join("\n") : content;
 
 /**
@@ -150,7 +153,7 @@ export function createVoiceDialogue({ config, agent = false, owner, context = []
         const tools = [...(agent ? [TOOL] : []), ...device];
         const maxCalls = device.length ? MAX_DEVICE_CALLS : 1;
         const limited = steps >= MAX_STEPS;
-        let answer = await chat({ messages: next, model: config.chatModel, owner, signal, tools: tools.length ? tools : undefined, ...(limited ? { toolChoice: "none" } : {}), maxCalls, onDelta });
+        let answer = await chat({ messages: wire(next), model: config.chatModel, owner, signal, tools: tools.length ? tools : undefined, ...(limited ? { toolChoice: "none" } : {}), maxCalls, onDelta });
         const owed = [];
         if (answer.tool_calls?.length) {
           if (limited || answer.tool_calls.length > maxCalls) throw new Error("voice_tool_limit");
@@ -165,7 +168,7 @@ export function createVoiceDialogue({ config, agent = false, owner, context = []
             next.push({ role: "tool", tool_call_id: own[0].id, content: JSON.stringify(result) });
             // The model has not seen the task status yet; device calls from the same batch are already sent.
             for (const call of calls) next.push({ role: "tool", tool_call_id: call.call_id, content: SENT });
-            answer = await chat({ messages: next, model: config.chatModel, owner, signal, tools: device.length ? device : undefined, maxCalls, onDelta });
+            answer = await chat({ messages: wire(next), model: config.chatModel, owner, signal, tools: device.length ? device : undefined, maxCalls, onDelta });
             if (answer.tool_calls?.length) {
               if (answer.tool_calls.length > maxCalls || !answer.tool_calls.every(declared)) throw new Error("voice_tool_limit");
               next.push(answer);

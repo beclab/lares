@@ -328,7 +328,7 @@ test("a device session routes home control and lookups to ask_lares and answers 
   assert.match(prompt, /lights, switches or climate/);
   assert.match(prompt, /Never say you cannot do something before asking ask_lares/);
   // The reminder follows the caller's persona, so the last word on language is the user's.
-  assert.ok(prompt.indexOf("Answer in the language the user just spoke") > prompt.indexOf("Speak English."));
+  assert.ok(prompt.indexOf("Reply in the same language as the user's latest message") > prompt.indexOf("Speak English."));
   const ask = requests[0].tools.find((tool: any) => tool.function.name === "ask_lares");
   assert.match(ask.function.description, /home devices such as lights/);
   assert.match(ask.function.description, /calendar, schedules, reminders/);
@@ -340,5 +340,22 @@ test("sessions without device tools get neither the device rules nor the reminde
   dialogue.setInstructions("Be formal.");
   await dialogue.reply("hi", "t1");
   const prompt = requests[0].messages[0].content;
-  assert.doesNotMatch(prompt, /declared its own tools|Answer in the language the user just spoke/);
+  assert.doesNotMatch(prompt, /declared its own tools|Reply in the same language as the user/);
+});
+
+test("only the leading message reaches the model as system, so strict chat templates accept task results", async () => {
+  const requests: any[] = [];
+  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", chat: async (request: any) => { requests.push(structuredClone(request)); return { role: "assistant", content: "ok" }; } });
+  await dialogue.reply("turn on the light", "t1");
+  dialogue.observeTask({ requestId: "r1", status: "completed", text: "Light is on." });
+  await dialogue.reply("thanks", "t2");
+  dialogue.setClientTools([MOVE]);
+  dialogue.observeTask({ requestId: "r2", status: "completed", text: "Rain tomorrow." });
+  await dialogue.reply(null, "task:r2", undefined, undefined, { announce: true });
+  for (const request of requests.slice(1)) {
+    assert.deepEqual(request.messages.map((item: any, index: number) => index === 0 ? item.role : item.role === "system"), ["system", ...request.messages.slice(1).map(() => false)]);
+  }
+  const note = requests[1].messages.find((item: any) => /Light is on/.test(JSON.stringify(item.content)));
+  assert.equal(note.role, "user");
+  assert.match(note.content, /^\[Lares note, not said by the user\] Authorized Lares task result/);
 });
