@@ -8,7 +8,7 @@ Validation date: 2026-10-24. Implementation uses gogcli v0.46.0.
 - PC plugin, Vue, and server production builds: passed. Vite reports its existing
   bundle-size advisory; the build succeeds.
 - Full repository suite with `LARES_TEST_GOG_BIN` pointing at the pinned binary:
-  **1,073 passed, 0 failed, 0 skipped**.
+  **1,082 passed, 0 failed, 0 skipped**.
 - Focused Google Workspace and HA tests: **21 passed**. This includes real CLI
   encrypted client import, remote PKCE URL generation, launcher execution, and
   recreation without changing its persistent keyring password.
@@ -21,27 +21,27 @@ Validation date: 2026-10-24. Implementation uses gogcli v0.46.0.
 Tests used the full local dsh Host and actual Vue components with a separate data
 and workspace directory. An initial occupied test port was rejected as evidence;
 checks were repeated against a newly isolated Host whose API returned both plugin
-IDs. The preview displayed build ID
-`8200cc9-dc226e2c1852-1b791e6e715e-9b5e0376ee60` (working tree included the plugin).
-The final build additionally changes the enable/disable action labels.
+IDs. The final preview displayed build ID
+`e3d0dff-13d8267dfa66-891d656eec57-9b5e0376ee60`.
 
 | Surface | Viewport | Observed result | Remaining work |
 | --- | --- | --- | --- |
-| Official dsh PC | Initial desktop default; later DOM viewport 1280×900 | Plugins navigation, HA/Google cards, actual download and enable, invalid JSON rejection, encrypted synthetic Desktop JSON import, and remote authorization form passed | Final-build reload and enable/disable UI check blocked by expired local Router debug identity; desktop screenshot capture did not reliably follow the viewport override and is not layout acceptance evidence |
-| Vue mobile settings | 390×844 confirmed in the real preview | Shared Host state, Google installation/configuration, authorization status, and connection inputs loaded; narrow-layout screenshot retained locally | Complete authorization, final-build reload, and new chat task remain blocked |
-| Vue mobile chat | Not executed this run | Blocked | Existing debug Router identity returned HTTP 401; no simulated reply substituted |
-| Vue desktop chat/settings | Not executed this run | Blocked | Existing debug Router identity expired before the final restart |
+| Official dsh PC | 1280×900 | Plugins navigation, HA/Google cards, actual download and auto-enable, invalid JSON rejection, encrypted synthetic Desktop JSON import, remote authorization form, disable/re-enable, and persistence after reload and Host restart passed | Real Google authorization and Agent task require test credentials and an available chat model |
+| Vue mobile settings | 390×844 | Shared Host state, installed/enabled Google plugin, saved OAuth configuration, account input, enabled Connect action, and narrow layout passed | Real Google authorization requires test credentials |
+| Vue mobile chat | 390×844 | Real chat component loaded and displayed no available chat model | Real task blocked by empty authorized chat catalog |
+| Vue desktop settings | 1280×900 | Shared plugin state, HA configuration form, Google setup guide, saved configuration and connection form passed | Real Google authorization requires test credentials |
+| Vue desktop chat | 1280×900 | Real chat component loaded; model-unavailable state disabled composer and Send | Real task blocked by empty authorized chat catalog |
 
-The isolated Host's Router catalog reported HTTP 401 and zero usable models;
-voice capability reads returned `voice_model_unavailable`. The local debug key
-subsequently reached its recorded expiration. The isolated processes were stopped.
-No replacement key was created, permissions expanded, or authentication disabled.
-A renewal request was left for the user as required by local debugging rules.
+After explicit user approval, a seven-day dedicated Router test key was renewed
+within the original model permission scope. The Router model catalog returned
+HTTP 200 with zero chat models and no authorization failures. Missing models were
+not replaced with placeholders or accessed through an administrator identity.
+Settings and chat-shell checks above use that renewed identity; no successful
+model task is claimed.
 
-Screenshots and sanitized local notes are retained outside tracked source. The
-mobile screenshot shows the tested pre-final label text; it does not prove the
-final build was reloaded. Unusable desktop screenshot output is excluded from
-layout acceptance.
+PC, mobile, and desktop screenshots plus sanitized local notes are retained
+outside tracked source. The PC screenshot shows the final plugin action labels;
+the mobile screenshot verifies the Google connection form at the narrow viewport.
 
 ## Google-account verification still required
 
