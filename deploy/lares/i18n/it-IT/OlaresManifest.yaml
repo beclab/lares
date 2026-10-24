@@ -38,5 +38,6 @@ spec:
     - I dispositivi vocali in una stanza con una ventola o un motore non lo registrano più come una ripresa infinita.
     - I dispositivi vocali riconoscono il parlato con un modello invece che dal volume, non si interrompono più con la propria voce e rispondono in una frase dopo uno sguardo con la fotocamera.
     - I dispositivi vocali smettono di ascoltare quando finiscono le parole di chi parla, anche se altri parlano vicino, e confermano un'attività in poche parole.
+    - Un colpo di tosse o un rumore vicino a un dispositivo vocale non lo tiene più in ascolto per dieci secondi.
 
-    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.79)
+    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.80)

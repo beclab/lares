@@ -38,5 +38,6 @@ spec:
     - Los dispositivos de voz en una sala con un ventilador o un motor dejan de grabarlo como una toma sin fin.
     - Los dispositivos de voz detectan el habla con un modelo en lugar de por el volumen, ya no se interrumpen con su propia voz y responden en una frase tras mirar con la cámara.
     - Los dispositivos de voz dejan de escuchar cuando terminan las palabras de quien habla, aunque otras personas hablen cerca, y confirman una tarea en pocas palabras.
+    - Una tos o un golpe cerca de un dispositivo de voz ya no lo mantiene escuchando diez segundos.
 
-    [Notas de la versión](https://github.com/beclab/lares/releases/tag/v0.26.79)
+    [Notas de la versión](https://github.com/beclab/lares/releases/tag/v0.26.80)

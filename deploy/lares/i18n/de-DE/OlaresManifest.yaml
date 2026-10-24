@@ -38,5 +38,6 @@ spec:
     - Sprachgeräte in einem Raum mit Lüfter oder Motor nehmen das Geräusch nicht mehr als endlose Aufnahme auf.
     - Sprachgeräte erkennen Sprache im Raum mit einem Sprachmodell statt über die Lautstärke, unterbrechen sich nicht mehr mit der eigenen Stimme und antworten nach einem Kamerablick in einem Satz.
     - Sprachgeräte hören auf zuzuhören, sobald die Worte des Sprechers enden, auch wenn in der Nähe andere reden, und bestätigen eine Aufgabe in wenigen Worten.
+    - Ein Husten oder Klopfen in der Nähe eines Sprachgeräts lässt es nicht mehr zehn Sekunden lang zuhören.
 
-    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.79)
+    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.80)

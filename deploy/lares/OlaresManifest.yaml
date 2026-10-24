@@ -7,14 +7,14 @@ metadata:
   title: Lares
   description: Chat on Olares, wired to Router
   icon: https://app.cdn.olares.com/appstore/lares/icon_new.png
-  version: 0.26.79
+  version: 0.26.80
   categories:
     - agents
   tags:
     - framework
     - personal-assistant
 spec:
-  versionName: "0.26.79"
+  versionName: "0.26.80"
   runAsUser: true
   fullDescription: |
     Lares is a chat app on Olares.
@@ -55,8 +55,9 @@ spec:
     - Voice devices in a room with a fan or a motor stop recording it as one endless take.
     - Voice devices hear their room with a speech model instead of by loudness, no longer interrupt themselves with their own voice, and keep answers after a camera look to one sentence.
     - Voice devices stop listening once the speaker's words end, even with other people talking nearby, and acknowledge a task in a few words.
+    - A cough or a knock near a voice device no longer keeps it listening for ten seconds.
 
-    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.79)
+    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.80)
   developer: luolong
   submitter: Olares
   locale:
