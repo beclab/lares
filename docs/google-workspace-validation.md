@@ -43,6 +43,37 @@ PC, mobile, and desktop screenshots plus sanitized local notes are retained
 outside tracked source. The PC screenshot shows the final plugin action labels;
 the mobile screenshot verifies the Google connection form at the narrow viewport.
 
+## Follow-up: available chat model
+
+The follow-up used the user-selected Router with a newly approved seven-day
+key restricted to `default-chat` and
+`Olares/cyankiwi/Qwen3.5-9B-AWQ-4bit`. LAN TLS verification and the authorized
+catalog both passed. Product sources and the preview build ID above are unchanged;
+only the isolated local test target changed.
+
+| Surface | Viewport | Real model result |
+| --- | --- | --- |
+| Official dsh PC | 1280×720 | Completed a new text task with the selected Qwen3.5-9B model |
+| Vue mobile | 390×844 | Submitted a follow-up task and displayed its completed reply |
+| Vue desktop | 1280×900 | Submitted a follow-up task and displayed its completed reply |
+
+The Agent also invoked `gog --version` through its Bash tool and returned
+`v0.46.0`. This verifies the installed launcher is reachable in a real Agent
+session without Google authorization; it does not verify Google data access.
+The mobile settings page continued to show the installed Google plugin and saved
+OAuth configuration with the new Router identity.
+
+A later desktop follow-up initially remained in the draft after Send; refreshing
+the preview restored submission and the launcher task then completed. Some
+background browser tabs also became unresponsive to automation. These observations
+are retained as preview/browser limitations rather than counted as additional
+successful interactions. No product change was made during this follow-up.
+
+Sanitized screenshots are retained locally as
+`lares-pptest03-mobile-chat.jpg` and `lares-pptest03-desktop-chat.jpg`.
+The earlier empty-catalog blocker is resolved for text tasks with this selected
+target. Google account verification below remains blocked independently.
+
 ## Google-account verification still required
 
 The client JSON used in tests is synthetic and cannot authorize a real account.
