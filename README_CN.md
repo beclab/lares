@@ -66,7 +66,7 @@ manifest list。触发只有推 `v<Chart.yaml 版本>` 标签或手动 dispatch 
 `olares-cli skills export packages/skills` 从底座里的 olares-cli 导出——技能
 描述的动词必须与手上那个二进制同一个 release，手抄的快照做不到这件事。
 
-`ha-*` 同样不入仓。设置 → 技能里下载 Home Assistant 包：安装 `@olares/hass-cli`，再跑
+`ha-*` 同样不入仓。设置 → 插件里下载 Home Assistant 包：安装 `@olares/hass-cli`，再跑
 `hass-cli skill list` / `skill show` 把嵌入二进制的技能写到
 `$LARES_DATA_DIR/skill-packs/ha`，并启用该包，技能随即进入运行时 skills 目录。
 
@@ -93,3 +93,7 @@ olares 技能一起复制到 `$LARES_DATA_DIR/skills`，经 `DSH_BUNDLED_SKILL_D
 
 语音输入的模型 / 语言 / 市场应用改在 **设置 → 语音输入** 面板配置，持久化到
 `$DSH_HOME/voice-input/config.json`。
+
+## Google Workspace 插件
+
+在 **设置 → 插件** 下载 Google Workspace（gogcli）。插件可先安装、后连接账号；导入自己在 Google Cloud 创建的 Desktop OAuth client JSON，填写邮箱，打开授权链接，再粘贴完整返回地址完成连接。支持 Gmail、Calendar、Drive、Docs、Sheets、Slides。详见[配置、凭据存储和故障处理](docs/google-workspace.md)。

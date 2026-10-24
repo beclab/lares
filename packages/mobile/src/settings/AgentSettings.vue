@@ -167,6 +167,7 @@
       </div>
       <p v-if="searchError" class="lares-agent__hint" data-status="error">{{ searchError }}</p>
     </section>
+    <PluginsSettings :key="`plugins-${hostKey}`" :client="plugins" :locale="locale" />
     <LaresSheet v-if="!isDesktop" :open="Boolean(panel)" :title="sheetTitle" @close="panel = ''">
       <p v-if="sheetEmpty" class="lares-agent__hint lares-agent__hint--sheet">{{ sheetEmpty }}</p>
       <template v-for="section in sheetSections" :key="section.heading || 'main'">
@@ -208,6 +209,7 @@ import { createHostClient } from "../host.js";
 import { adoptHost } from "../runtime.js";
 import { createT } from "../i18n.js";
 import { chatDevice, DEVICE_DESKTOP } from "../layout.js";
+import PluginsSettings from "./PluginsSettings.vue";
 import VoicePreferences from "./VoicePreferences.vue";
 import VoiceKeys from "./VoiceKeys.vue";
 import LaresSettingRow from "./SettingRow.vue";
@@ -226,7 +228,7 @@ function itemLabel(items, id) {
 
 export default {
   name: "LaresAgentSettings",
-  components: { VoicePreferences, VoiceKeys, LaresSettingRow, LaresSheet, LaresSelect },
+  components: { PluginsSettings, VoicePreferences, VoiceKeys, LaresSettingRow, LaresSheet, LaresSelect },
   expose: ["reload", "beforeLeave"],
   props: {
     locale: { type: String, default: "en" },
@@ -278,6 +280,7 @@ export default {
       return hostSessionKey(this.ports);
     },
     ttsFetch() { return createHostClient(this.ports).ttsFetch; },
+    plugins() { return createHostClient(this.ports).plugins; },
     voiceKeys() { return createHostClient(this.ports).voiceKeys; },
     settings() {
       return createHostClient(this.ports).settings;

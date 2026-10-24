@@ -1,4 +1,6 @@
 import React from "react";
+import { createPluginClient } from "@olares/lares-core/skills/client";
+import { GoogleConnection } from "./google.js";
 import { Button, IconLoadingOutlineMedium, Input } from "@deepseek-ai/dsh-client-ui-primitives";
 import { OFFICIAL_PACKS } from "@olares/lares-core/skills/packs";
 import { controlsCss } from "../../../shared/client/settings-controls.js";
@@ -21,7 +23,7 @@ export const settingsCss = `${controlsCss}${localSettingsCss}`;
 
 /** Which packs exist is a build-time fact, so the cards never wait on the host. */
 const PACK_IDS = OFFICIAL_PACKS.map((pack) => pack.id);
-const CONFIGURABLE = new Set(OFFICIAL_PACKS.filter((pack) => pack.cli).map((pack) => pack.id));
+const CONFIGURABLE = new Set(OFFICIAL_PACKS.filter((pack) => pack.connectionKind === "token").map((pack) => pack.id));
 
 function packAction(status) {
   if (!status.downloaded) {
@@ -127,7 +129,7 @@ function TokenForm({ id, status, busy, t, onSave }) {
   );
 }
 
-function PackCard({ id, status, busy, t, ...handlers }) {
+function PackCard({ id, status, busy, t, onGoogle, ...handlers }) {
   const pending = busy === id;
   const action = status ? packAction(status) : null;
   return h(
@@ -166,6 +168,7 @@ function PackCard({ id, status, busy, t, ...handlers }) {
             }),
       ),
     ),
+    id === "google-workspace" ? h(GoogleConnection, { status, busy, t, onAction: onGoogle }) : null,
     CONFIGURABLE.has(id)
       ? h(TokenForm, { id, status, busy, t, onSave: handlers.onSaveToken })
       : null,
@@ -218,6 +221,14 @@ export function SkillsSettings() {
     [mounted, t],
   );
 
+  const googleClient = createPluginClient();
+  const onGoogle = async (action, value) => {
+    let payload;
+    const ok = await run("google-workspace:auth", async () => { payload = await googleClient[action](value); return { packs: payload.packs }; }, "google.error");
+    if (!ok) { try { const next = await loadSkillPacks({ force: true }); if (mounted.current) setState(next); } catch {} }
+    return ok ? payload : null;
+  };
+
   const status = new Map((state?.packs ?? []).map((pack) => [pack.id, pack]));
 
   return h(
@@ -234,6 +245,7 @@ export function SkillsSettings() {
           status: status.get(id) ?? null,
           busy,
           t,
+          onGoogle,
           onDownload: () => run(id, downloadSkillPack),
           onEnable: () => run(id, enableSkillPack),
           onDisable: () => run(id, disableSkillPack),

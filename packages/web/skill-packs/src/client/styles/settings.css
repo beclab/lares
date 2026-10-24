@@ -152,3 +152,9 @@
     gap: 12px;
   }
 }
+
+.lares-skills-google { display: grid; gap: 12px; border-top: 1px solid var(--dsw-alias-border-standard); padding-top: 16px; overflow-wrap: anywhere; }
+.lares-skills-google input { width: 100%; min-width: 0; padding: 8px; border: 1px solid var(--dsw-alias-border-standard); border-radius: 8px; background: transparent; color: inherit; }
+.lares-skills-google-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.lares-skills-google button { padding: 8px 12px; border: 1px solid var(--dsw-alias-border-standard); border-radius: 8px; cursor: pointer; }
+.lares-skills-google button:disabled { opacity: .5; cursor: default; }
