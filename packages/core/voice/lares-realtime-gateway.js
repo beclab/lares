@@ -20,6 +20,8 @@ const SPEECH_RMS = 0.004;
 // Interruption policy (docs/realtime-protocol.md): speech must last this long to suspect barge-in,
 // and a suspected interruption that never resolves stops the reply.
 const BARGE_IN_MS = 500;
+// A device take ends once streaming ASR has heard this much more of it without a new word.
+const WORDS_SETTLED_MS = 1000;
 // How long a barge-in waits for ASR's first words before deciding whether they were the reply's echo.
 const ECHO_WAIT_MS = 1500;
 const BARGE_IN_LIMIT_MS = 10_000;
@@ -86,6 +88,8 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
     const headset = !owned && scope.device === "headset";
     scope.voiceOverrides ??= {};
     let chunks = [], bytes = 0, turnMs = 0, totalMs = 0, speaking = false, speechMs = 0, itemId = null, partial = "", stream = null;
+    // When streaming ASR first repeated the take's words unchanged; 0 while they are still growing.
+    let wordsSince = 0;
     let automatic = false, silenceMs = config().endpointSilenceMs || 500, endpoint = createSpeechEndpoint({ silenceMs });
     let audioOutput = type === "realtime" && (owned || scope.readAloud === true), busyTurn = null, echoCancellation = true;
     // The take being transcribed holds this session's one ASR request; the next take only buffers until it is done.
@@ -157,7 +161,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
     });
     const reset = () => {
       clearTimeout(barge?.timer);
-      chunks = []; bytes = 0; turnMs = 0; pendingCommit = false; speaking = false; speechMs = 0; itemId = null; partial = ""; barge = null;
+      chunks = []; bytes = 0; turnMs = 0; pendingCommit = false; speaking = false; speechMs = 0; itemId = null; partial = ""; barge = null; wordsSince = 0;
       stream?.ready.then((value) => value?.cancel()); stream = null;
       endpoint = createSpeechEndpoint({ silenceMs });
     };
@@ -475,6 +479,8 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       current.write = (chunk) => { if (current.live) current.live.write(chunk); else current.queue.push(chunk); };
       current.ready = Promise.resolve(openTranscription?.(scope, (text) => {
         if (text.startsWith(partial) && text.length > partial.length && itemId === current.id) send({ type: "conversation.item.input_audio_transcription.delta", item_id: current.id, content_index: 0, delta: text.slice(partial.length) });
+        // ASR reports after every step it decodes: the same words again mean it heard more and no new word.
+        if (itemId === current.id) wordsSince = text.trim() && text === partial ? wordsSince || Date.now() : 0;
         partial = text;
         if (itemId === current.id) judgeEcho(false);
       })).catch(() => null).then((live) => {
@@ -546,6 +552,13 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       if (policy.takeLimitMs && turnMs >= policy.takeLimitMs) {
         send({ type: "input_audio_buffer.speech_stopped", audio_end_ms: Math.round(totalMs), item_id: itemId });
         void commit("limit").catch(report);
+        return;
+      }
+      // A speech model hears any voice, including people talking to each other across the room, and
+      // keeps such a take open. The speaker has finished once ASR stops finding new words in it.
+      if (policy.mode === "device" && speaking && !barge && wordsSince && Date.now() - wordsSince >= WORDS_SETTLED_MS) {
+        send({ type: "input_audio_buffer.speech_stopped", audio_end_ms: Math.round(totalMs), item_id: itemId });
+        void commit("words").catch(report);
         return;
       }
       if (automatic && endpoint.push(voiced ? 1 : 0, rms, ms)) {

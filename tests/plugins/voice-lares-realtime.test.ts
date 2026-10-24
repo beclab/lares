@@ -879,3 +879,28 @@ test("a device's own reply heard back is told from a person by its words before 
   const person = await run("what time is it");
   assert.deepEqual([person.started, person.echoes.length], [1, 0]);
 });
+
+test("a device take ends once ASR stops finding new words, though voices go on across the room", async () => {
+  const chunk = (amplitude: number) => { const pcm = Buffer.alloc(2400); for (let i = 0; i < 1200; i++) pcm.writeInt16LE(i % 2 ? amplitude : -amplitude, i * 2); return pcm.toString("base64"); };
+  const metrics: any[] = [];
+  // Streaming ASR reports after every half second of audio; the speaker's words end after one second.
+  const openTranscription = async (_scope: any, onPartial: (text: string) => void) => {
+    let bytes = 0, steps = 0;
+    return { write(pcm: Buffer) { bytes += pcm.length; while (bytes >= (steps + 1) * 24000) { steps += 1; onPartial(steps < 2 ? "帮我" : "帮我开灯"); } }, async finish() { return "帮我开灯"; }, cancel() {} };
+  };
+  const fixture = await serve({ speechGate: async () => fakeSpeechGate(), openTranscription, metric: (fields: any) => metrics.push(fields) });
+  const client = connect(fixture.port, "voice-chat");
+  let pump: NodeJS.Timeout | undefined;
+  try {
+    const started = Date.now();
+    const events = await until(client, (event) => event.type === "conversation.item.input_audio_transcription.completed", (event) => {
+      if (event.type === "session.created") client.send(JSON.stringify({ type: "session.update", session: { audio: { input: { turn_detection: { type: "server_vad" } } } } }));
+      // 50 ms of "voice" every 50 ms, for as long as the take stays open.
+      if (event.type === "session.updated") pump = setInterval(() => client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: chunk(6000) })), 50);
+    });
+    assert.equal(events.find((event) => event.type === "conversation.item.input_audio_transcription.completed").transcript, "帮我开灯");
+    const take = metrics.find((fields) => fields.event === "device-take");
+    assert.equal(take.ended, "words");
+    assert.ok(take.ms < 3500 && Date.now() - started < 4000, `${take.ms} ms`);
+  } finally { clearInterval(pump); client.close(); await fixture.stop(); }
+});
