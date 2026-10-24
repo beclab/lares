@@ -23,5 +23,6 @@ spec:
 
     - Una llamada de herramienta que solo aparecía en el razonamiento se ejecuta en el mismo turno.
     - La entrada de voz arranca tras una instalación nueva.
+    - Las tareas automáticas ejecutan una instrucción según un horario, y los resúmenes matutinos por tema se guardan en el espacio de trabajo.
 
-    [Notas de la versión](https://github.com/beclab/lares/releases/tag/v0.26.63)
+    [Notas de la versión](https://github.com/beclab/lares/releases/tag/v0.26.64)

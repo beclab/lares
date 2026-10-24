@@ -23,5 +23,6 @@ spec:
 
     - 思考の中だけに出たツール呼び出しは、同じターンで実行されます。
     - 新規インストール後も音声入力は起動します。
+    - 自動化タスクが指示を予定どおりに実行し、テーマ別の朝のブリーフィングをワークスペースに書き出します。
 
-    [リリースノート](https://github.com/beclab/lares/releases/tag/v0.26.63)
+    [リリースノート](https://github.com/beclab/lares/releases/tag/v0.26.64)

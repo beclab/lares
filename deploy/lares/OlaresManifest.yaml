@@ -7,14 +7,14 @@ metadata:
   title: Lares
   description: Chat on Olares, wired to Router
   icon: https://app.cdn.olares.com/appstore/lares/icon_new.png
-  version: 0.26.63
+  version: 0.26.64
   categories:
     - agents
   tags:
     - framework
     - personal-assistant
 spec:
-  versionName: "0.26.63"
+  versionName: "0.26.64"
   runAsUser: true
   fullDescription: |
     Lares is a chat app on Olares.
@@ -40,8 +40,9 @@ spec:
 
     - A tool call that only appeared in the reasoning runs in the same turn.
     - Voice input starts on a fresh install.
+    - Automation tasks run a prompt on a schedule, and topic morning briefs are written to the workspace.
 
-    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.63)
+    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.64)
   developer: luolong
   submitter: Olares
   locale:

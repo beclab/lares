@@ -27,5 +27,6 @@ spec:
 
     - A tool call that only appeared in the reasoning runs in the same turn.
     - Voice input starts on a fresh install.
+    - Automation tasks run a prompt on a schedule, and topic morning briefs are written to the workspace.
 
-    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.63)
+    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.64)

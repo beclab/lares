@@ -23,5 +23,6 @@ spec:
 
     - Un appel d’outil qui n’apparaissait que dans le raisonnement s’exécute dans le même tour.
     - La saisie vocale démarre après une installation neuve.
+    - Les tâches automatisées exécutent une consigne selon un horaire, et les bulletins du matin par thème sont enregistrés dans l’espace de travail.
 
-    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.63)
+    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.64)
