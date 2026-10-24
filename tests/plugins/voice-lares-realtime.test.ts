@@ -943,3 +943,21 @@ test("a hands-free take opened by a knock is dropped too, and the client is told
     assert.ok(seconds > 1 && seconds < 2, String(seconds));
   } finally { client.close(); await fixture.stop(); }
 });
+
+test("with a speech model a phrase quieter than its first syllable is still a phrase, not a dropped knock", async () => {
+  const chunk = (amplitude: number) => { const pcm = Buffer.alloc(480); for (let i = 0; i < 240; i++) pcm.writeInt16LE(i % 2 ? amplitude : -amplitude, i * 2); return pcm.toString("base64"); };
+  // The model hears a voice in anything past 1000; loudness says the phrase is under a third of its peak.
+  const quietSpeechGate = () => { let probability = 0; return { kind: "silero", hear(c: Buffer) { probability = 0; for (let i = 0; i < c.length; i += 2) if (Math.abs(c.readInt16LE(i)) > 1000) { probability = 1; break; } }, voiced(_rms: number, speaking: boolean) { return probability >= (speaking ? 0.35 : 0.5); } }; };
+  const metrics: any[] = [];
+  const fixture = await serve({ speechGate: async () => quietSpeechGate(), metric: (fields: any) => metrics.push(fields) });
+  const client = connect(fixture.port, "voice-chat");
+  try {
+    await until(client, (event) => event.type === "conversation.item.input_audio_transcription.completed", (event) => {
+      if (event.type === "session.created") client.send(JSON.stringify({ type: "session.update", session: { audio: { input: { turn_detection: { type: "server_vad" } } } } }));
+      // 10 ms chunks: room, one loud syllable, a second of ordinary speech, room.
+      if (event.type === "session.updated") for (const amplitude of [...Array(50).fill(300), ...Array(5).fill(9000), ...Array(100).fill(2000), ...Array(80).fill(300)]) client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: chunk(amplitude) }));
+    });
+    assert.deepEqual(metrics.filter((fields) => fields.event === "device-take").map((fields) => fields.ended), ["silence"]);
+    assert.equal(fixture.calls.transcribed.length, 1);
+  } finally { client.close(); await fixture.stop(); }
+});

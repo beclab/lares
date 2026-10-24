@@ -543,6 +543,10 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       if (voiced) speechMs += ms; else speechMs = 0;
       if (voiced && !speaking) {
         speaking = true; scope.voiceInputActive = true;
+        // Loudness gates count a frame as speech only near the take's peak, which is how they keep a
+        // room's hum out. A speech model has already said which frames are a voice: its quieter
+        // syllables are speech too, or a phrase after one loud syllable reads as a knock.
+        if (room !== noiseGate) endpoint = createSpeechEndpoint({ silenceMs, relative: 0 });
         // A device stops playing on speech_started, so during its reply that waits for confirmation.
         if (duringReply) barge = { at: Math.round(totalMs), checking: false };
         else send({ type: "input_audio_buffer.speech_started", audio_start_ms: Math.round(totalMs), item_id: itemId });
