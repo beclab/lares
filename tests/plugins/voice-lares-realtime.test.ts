@@ -674,3 +674,86 @@ test("a device is interrupted only once Router's VAD confirms a person spoke ove
   assert.ok(!echo.events.some((event) => event.type === "conversation.item.truncated"));
   assert.equal(echo.calls.transcribed.length, 0);
 });
+
+test("a session holds one ASR stream at a time: the next take streams once the previous one is read", async () => {
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const streams: { bytes: number }[] = [];
+  let open = 0, widest = 0;
+  const fixture = await serve({
+    openTranscription: async () => {
+      const stream = { bytes: 0 };
+      streams.push(stream); open += 1; widest = Math.max(widest, open);
+      const first = streams.length === 1;
+      return { write(pcm: Buffer) { stream.bytes += pcm.length; }, async finish() { if (first) await gate; open -= 1; return first ? "first" : "second"; }, cancel() { open -= 1; } };
+    },
+  });
+  const client = connect(fixture.port, "voice-chat");
+  const completed: string[] = [];
+  client.on("message", (raw) => { const event = JSON.parse(raw.toString()); if (event.type === "conversation.item.input_audio_transcription.completed") completed.push(event.transcript); });
+  try {
+    await new Promise<void>((resolve) => client.once("open", resolve));
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    const audio = Buffer.alloc(4800, 1).toString("base64");
+    client.send(JSON.stringify({ type: "input_audio_buffer.append", audio }));
+    client.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    // The next take starts while the first is still being read: it is kept, not streamed yet.
+    client.send(JSON.stringify({ type: "input_audio_buffer.append", audio }));
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    assert.equal(streams.length, 1);
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    assert.equal(streams.length, 2);
+    assert.equal(streams[1].bytes, 4800);
+    client.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
+    for (let i = 0; i < 100 && completed.length < 2; i += 1) await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.deepEqual(completed, ["first", "second"]);
+    assert.equal(widest, 1);
+  } finally { client.terminate(); await fixture.stop(); }
+});
+
+test("a device take ASR cannot read is dropped without an error, other clients still see one", async () => {
+  const second = (amplitude: number) => { const pcm = Buffer.alloc(48000); for (let i = 0; i < 24000; i++) pcm.writeInt16LE(i % 2 ? amplitude : -amplitude, i * 2); return pcm.toString("base64"); };
+  const busy = Object.assign(new Error("busy"), { status: 503 });
+  const run = async (acknowledging: boolean) => {
+    const fixture = await serve({ detectSpeech: async () => 1, transcribe: async () => { throw busy; } });
+    const client = connect(fixture.port, "voice-chat");
+    try {
+      const events = await until(client, (event) => event.type === "error" || event.type === "conversation.item.input_audio_transcription.failed", (event) => {
+        if (event.type === "session.created") {
+          if (acknowledging) client.send(JSON.stringify({ type: "lares.playback.progress", item_id: null, played_ms: 0 }));
+          client.send(JSON.stringify({ type: "session.update", session: { audio: { input: { turn_detection: { type: "server_vad" } } } } }));
+        }
+        if (event.type === "session.updated") for (const amplitude of [300, 3000, 300]) client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: second(amplitude) }));
+      });
+      return events.at(-1).type;
+    } finally { client.close(); await fixture.stop(); }
+  };
+  assert.equal(await run(false), "conversation.item.input_audio_transcription.failed");
+  assert.equal(await run(true), "error");
+});
+
+test("a room louder than the widest floor is learned once Router's VAD says a take was only noise", async () => {
+  const second = (amplitude: number) => { const pcm = Buffer.alloc(48000); for (let i = 0; i < 24000; i++) pcm.writeInt16LE(i % 2 ? amplitude : -amplitude, i * 2); return pcm.toString("base64"); };
+  // Router's VAD hears the person only in takes that carry their louder second.
+  const fixture = await serve({ detectSpeech: async (pcm: Buffer) => { for (let i = 0; i < pcm.length; i += 2) if (pcm.readInt16LE(i) > 3000) return 1; return 0; } });
+  const client = connect(fixture.port, "voice-chat");
+  try {
+    // A fan through the device's gain: louder than any floor the gate allows on its own, so the
+    // first take never falls quiet and is closed at the take limit; the next room seconds are not a take.
+    const completed = await until(client, (event) => event.type === "conversation.item.input_audio_transcription.completed" && event.transcript.trim() !== "", (event) => {
+      if (event.type === "session.created") client.send(JSON.stringify({ type: "session.update", session: { audio: { input: { turn_detection: { type: "server_vad" } } } } }));
+      if (event.type === "session.updated") {
+        for (let i = 0; i < 11; i++) client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: second(1500) }));
+        setTimeout(() => { for (const amplitude of [1500, 1500, 6000, 1500, 1500]) client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: second(amplitude) })); }, 200);
+      }
+    });
+    const transcripts = completed.filter((e) => e.type === "conversation.item.input_audio_transcription.completed").map((e) => e.transcript.trim());
+    assert.equal(transcripts.at(-1), "test request");
+    assert.equal(fixture.calls.transcribed.length, 1);
+    // The person's take is that one second of speech and its edges, not the room since the veto.
+    const seconds = fixture.calls.transcribed[0].bytes / 48000;
+    assert.ok(seconds < 3.5, String(seconds));
+  } finally { client.close(); await fixture.stop(); }
+});

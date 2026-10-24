@@ -34,3 +34,40 @@ test("the Router audio adapter sends a take to VAD as 16 kHz WAV", async () => {
     assert.equal(wav.readUInt32LE(40), 32000);
   } finally { globalThis.fetch = original; }
 });
+
+test("a streaming take waits out a busy ASR model instead of failing over at once", async () => {
+  const { createServer } = await import("node:http");
+  const { WebSocketServer } = await import("ws");
+  const { catalogCache } = await import("../../packages/core/router/catalog-cache.js");
+  const originalFetch = globalThis.fetch;
+  const server = createServer();
+  const sockets = new WebSocketServer({ noServer: true });
+  let dials = 0;
+  const received: Buffer[] = [];
+  // Router refuses the first handshake as its slot is still held, then takes the next one.
+  server.on("upgrade", (req, socket, head) => {
+    dials += 1;
+    if (dials === 1) { socket.end("HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n"); return; }
+    sockets.handleUpgrade(req, socket, head, (ws) => ws.on("message", (raw, binary) => {
+      if (binary) { received.push(Buffer.from(raw as Buffer)); return; }
+      if (JSON.parse(String(raw)).type === "finish") ws.send(JSON.stringify({ type: "final", text: "你好" }));
+    }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  catalogCache.reset();
+  globalThis.fetch = (async () => Response.json({ data: [{ id: "asr", mode: "audio", supports: ["stt", "stt_stream"] }] })) as any;
+  try {
+    const audio = createRouterAudio(() => ({ model: "asr" }));
+    const env = { LLM_GATEWAY_URL: `http://127.0.0.1:${(server.address() as any).port}/v1` };
+    const live = await audio.openTranscription({}, () => {}, { env, retryMs: [10] });
+    live.write(Buffer.alloc(4800));
+    assert.equal(await live.finish(), "你好");
+    assert.equal(dials, 2);
+    assert.equal(received.length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+    catalogCache.reset();
+    sockets.close();
+    server.close();
+  }
+});

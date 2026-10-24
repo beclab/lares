@@ -85,6 +85,8 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
     let chunks = [], bytes = 0, turnMs = 0, totalMs = 0, speaking = false, speechMs = 0, itemId = null, partial = "", stream = null;
     let automatic = false, silenceMs = config().endpointSilenceMs || 500, endpoint = createSpeechEndpoint({ silenceMs });
     let audioOutput = type === "realtime" && (owned || scope.readAloud === true), busyTurn = null, echoCancellation = true;
+    // The take being transcribed holds this session's one ASR request; the next take only buffers until it is done.
+    let transcribing = false;
     let closed = false, busy = false, pendingCommit = false, configuring = false, alive = true, generation = 0, submittedTurns = 0;
     let response = null, awaitingPlayback = false, acknowledges = false, lastReply = null, lastSpoken = null, turn = null, port = null, unbind = () => {};
     let hostOutput = Promise.resolve();
@@ -327,22 +329,32 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       const input = Buffer.concat(chunks), id = itemId || `item_${randomUUID()}`, ms = input.length / BYTES_PER_MS, opened = stream, held = barge, policy = listening();
       stream = null; reset(); scope.voiceInputActive = false; busy = true;
       send({ type: "input_audio_buffer.committed", item_id: id, previous_item_id: null });
-      let epoch = generation;
+      let epoch = generation, text = null;
+      transcribing = true;
       try {
-        // A server_vad take from a client without playback reports is often only the room or
-        // the reply's echo. Router's VAD decides before ASR and the dialogue spend anything on it;
-        // when it cannot answer, the take goes through as before.
-        if (policy.vadVeto && detectSpeech && await detectSpeech(input, scope) === 0) {
-          void opened?.ready.then((value) => value?.cancel());
-          if (!closed) send({ type: "conversation.item.input_audio_transcription.completed", item_id: id, content_index: 0, transcript: "" });
+        try {
+          // A server_vad take from a client without playback reports is often only the room or
+          // the reply's echo. Router's VAD decides before ASR and the dialogue spend anything on it;
+          // when it cannot answer, the take goes through as before.
+          if (policy.vadVeto && detectSpeech && await detectSpeech(input, scope) === 0) {
+            await opened?.ready.then((value) => value?.cancel());
+            noiseGate.learn(frameRms(pcmSamples(input)));
+            if (!closed) send({ type: "conversation.item.input_audio_transcription.completed", item_id: id, content_index: 0, transcript: "" });
+            return;
+          }
+          // A take that ended while its barge-in was still unconfirmed: the VAD has just confirmed it.
+          if (held && !closed) interrupt(id, held.at);
+          const live = opened && await opened.ready;
+          if (live) text = await live.finish().catch(() => null);
+          text ??= await transcribe(input, scope);
+        } catch (cause) {
+          // A device cannot show an error and keeps listening, so a take ASR could not read is
+          // dropped like noise; only the log keeps it.
+          if (policy.mode !== "device" || closed) throw cause;
+          try { onError(cause, scope); } catch {}
+          send({ type: "conversation.item.input_audio_transcription.failed", item_id: id, content_index: 0, error: { type: "transcription_error", code: "transcription_failed", message: "Speech could not be transcribed" } });
           return;
-        }
-        // A take that ended while its barge-in was still unconfirmed: the VAD has just confirmed it.
-        if (held && !closed) interrupt(id, held.at);
-        let text = null;
-        const live = opened && await opened.ready;
-        if (live) text = await live.finish().catch(() => null);
-        text ??= await transcribe(input, scope);
+        } finally { resumeStream(); }
         if (type === "transcription" && owned) text = await service.clean(scope, text);
         if (closed || epoch !== generation) return;
         if (response?.suspended) {
@@ -443,6 +455,11 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       });
       return current;
     };
+    // The next take's stream opens once the previous take's ASR is done, with what it already heard.
+    const resumeStream = () => {
+      transcribing = false;
+      if (openTranscription && !stream && itemId && !closed) { stream = startStream(); for (const kept of chunks) stream.write(kept); }
+    };
     const append = (audio) => {
       if (awaitingPlayback && !bargeActive()) fail("waiting_for_playback");
       const policy = listening();
@@ -478,7 +495,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
         return;
       }
       itemId ??= `item_${randomUUID()}`;
-      if (openTranscription && !stream) { stream = startStream(); for (const kept of chunks) stream.write(kept); }
+      if (openTranscription && !stream && !transcribing) { stream = startStream(); for (const kept of chunks) stream.write(kept); }
       chunks.push(chunk); bytes += chunk.length; turnMs += ms;
       stream?.write(chunk);
       if (voiced) speechMs += ms; else speechMs = 0;

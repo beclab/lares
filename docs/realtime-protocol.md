@@ -166,6 +166,7 @@ conversation.
 | `input_audio_buffer.committed`, `cleared` | After commit / clear | None |
 | `conversation.item.input_audio_transcription.delta` | Streaming ASR has partial results | Optional, depends on the ASR model |
 | `conversation.item.input_audio_transcription.completed` | Recognition done | Final result in transcription sessions; cleaned text when cleanup ran |
+| `conversation.item.input_audio_transcription.failed` | A device take ASR could not read | Device mode only, in place of an `error`: the take is dropped and listening goes on. Other clients still get `error` |
 | `conversation.item.done` | User / assistant item finalized | None |
 | `response.created` | Reply starts | `response.metadata.lares.origin` is `turn` (answering the user) or `task` (announcing a finished Agent task) |
 | `response.output_item.added`, `output_item.done` | Assistant item starts / ends | None |
@@ -284,7 +285,16 @@ different ways, and the server applies each rule to one mode only
 A device that sets `lares.echo_cancellation: false` cannot tell its own reply
 from the user, so it stays half duplex: input is dropped quietly until the
 reply has played, plus about 400 ms of room echo. When Router's VAD cannot
-answer, a take or a barge-in goes through as if it held speech.
+answer, a take or a barge-in goes through as if it held speech. A take Router's
+VAD finds empty also teaches the device's noise gate the room's level, even
+above the usual widest floor, so a loud fan or a microphone's gain stops
+reading as a voice that never ends.
+
+Every session holds at most one ASR request at a time: a take that starts
+while the previous one is still being transcribed is buffered and streamed
+once that finishes. When Router answers that the ASR model is busy (503 or
+429), the stream handshake and the batch fallback each retry after 0.4 s and
+1.2 s before the take fails.
 `session.lares.capabilities.barge_in` reports whether the session can be
 interrupted.
 

@@ -69,13 +69,23 @@ const MAX_NOISE_FLOOR = 0.02;
  * not count as a voice that never stops, and a quiet speaker still does.
  */
 export function createNoiseGate() {
-  let noise = null;
+  let noise = null, widest = MAX_NOISE_FLOOR;
   return {
     /** @returns {boolean} whether this frame is louder than the room */
     voiced(rms, speaking) {
       if (!speaking) noise = noise == null ? rms : noise * 0.9 + rms * 0.1;
-      const floor = Math.max(ENDPOINT.floor, Math.min(MAX_NOISE_FLOOR, (noise ?? ENDPOINT.floor / 2.5) * 2.5));
+      const floor = Math.max(ENDPOINT.floor, Math.min(widest, (noise ?? ENDPOINT.floor / 2.5) * 2.5));
       return rms >= floor;
+    },
+    /**
+     * A stretch a speech model heard as nobody speaking. Its level is the room, even above the
+     * usual widest floor: a loud fan or a microphone's gain otherwise reads as a voice that never
+     * stops, and the gate could never learn otherwise because it only listens between voices.
+     * A quieter room pulls the floor back down through the frames that follow.
+     */
+    learn(rms) {
+      noise = rms;
+      widest = Math.max(MAX_NOISE_FLOOR, rms * 1.5);
     },
   };
 }

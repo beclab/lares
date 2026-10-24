@@ -193,13 +193,15 @@ export async function speechSeconds({ bytes, headers, signal, timeoutMs = 3000 }
 }
 
 /**
- * @param {{ bytes: Buffer, filename: string, contentType: string, model: string, language?: string, prompt?: string, preferred?: string, headers?: Record<string, string> }} take
+ * @param {{ bytes: Buffer, filename: string, contentType: string, model: string, language?: string, prompt?: string, preferred?: string, headers?: Record<string, string>, once?: boolean, backoffMs?: number[] }} take
  * @returns {Promise<string>}
  */
 export async function transcribe(take) {
   let model = take.model;
   const timeoutMs = Number(take.timeoutMs) > 0 ? Number(take.timeoutMs) : REQUEST_TIMEOUT_MS;
-  const retries = take.once ? 0 : RETRY_BACKOFF_MS.length;
+  // A caller with someone waiting on the answer passes its own short backoff instead.
+  const backoff = Array.isArray(take.backoffMs) ? take.backoffMs : take.once ? [] : RETRY_BACKOFF_MS;
+  const retries = backoff.length;
   for (let attempt = 0; ; attempt += 1) {
     const fields = { model };
     if (take.language) fields.language = take.language;
@@ -238,7 +240,7 @@ export async function transcribe(take) {
 
     if (take.signal?.aborted) throw new VoiceError("voice_cancelled", 499, "transcription cancelled");
     if (attempt >= retries) throw failure;
-    await new Promise((resolve) => setTimeout(resolve, RETRY_BACKOFF_MS[attempt]));
+    await new Promise((resolve) => setTimeout(resolve, backoff[attempt]));
     const refreshed = await resolveSttModel(take.preferred, { refresh: true }).catch(() => null);
     if (refreshed) model = refreshed;
   }
