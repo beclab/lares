@@ -8,6 +8,7 @@ import { busyEnterBehavior, CONVERSATION_SETTINGS_NAMESPACE } from "@olares/lare
 import { createRouterAudio } from "@olares/lares-core/voice/router-audio";
 import { createSileroGate } from "@olares/lares-core/voice/silero";
 import { createVoiceHostService } from "@olares/lares-core/voice/host-service";
+import { createAgentPromptTrace } from "@olares/lares-core/voice/agent-prompt-trace";
 import { registerRealtime } from "./realtime.js";
 /**
  * Voice-input Host routes under /api/lares/voice (STT via /llm/v1 shim).
@@ -392,9 +393,27 @@ export function apply(ctx) {
     () => ctx.webServer.register({ kind: "prefix", path: ROUTE_PREFIX, handler: voiceHandler }),
     "lares-composer-voice-routes",
   );
+  // What a device-driven Agent sends its model, as hashes: whether the spoken rule is in it and which
+  // part of the prompt or history changed between calls, which is what the engine's prefix cache sees.
+  const promptTrace = createAgentPromptTrace({ report: (fields) => writeReport({ scope: "voice", ...fields }) });
   ctx.inject(["systemPrompt"], (promptCtx) => {
     // Lares's own voice clients register in voiceSessionPrompt; a device reaches the Agent through the
     // realtime host instead, and until 0.26.88 its Agent got no spoken-reply rule at all.
-    promptCtx.systemPrompt.section({ name: "app:spoken-reply", order: 9800, text: (assembly) => voiceHost?.drivesDevice(assembly.scope?.id) ? `${SPOKEN_PROMPT} ${DEVICE_SPOKEN_PROMPT}` : voiceSessionPrompt(assembly.scope?.id) ? SPOKEN_PROMPT : "" });
+    promptCtx.systemPrompt.section({ name: "app:spoken-reply", order: 9800, text: (assembly) => {
+      const id = assembly.scope?.id, device = Boolean(voiceHost?.drivesDevice(id)), voice = voiceSessionPrompt(id);
+      if (device || voice) promptTrace.rule(id, device, voice);
+      return device ? `${SPOKEN_PROMPT} ${DEVICE_SPOKEN_PROMPT}` : voice ? SPOKEN_PROMPT : "";
+    } });
   });
+  ctx.on("system-prompt/assemble", async (_assembly, context, next) => {
+    const assembly = await next();
+    const id = context.agent?.id;
+    if (id && voiceHost?.drivesDevice(id)) promptTrace.assembled(id, assembly, { deviceRule: assembly.sections.some((section) => section.name === "app:spoken-reply" && String(section.text).includes(DEVICE_SPOKEN_PROMPT)) });
+    return assembly;
+  }, { prepend: true });
+  ctx.on("agent/pre-step", async (step, next) => {
+    const decision = await next();
+    if (decision?.kind !== "reject" && step?.agent?.id && voiceHost?.drivesDevice(step.agent.id)) promptTrace.step(step.agent.id, decision.messages);
+    return decision;
+  }, { prepend: true });
 }
