@@ -85,6 +85,10 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
   };
   const scopes = new Set();
   const service = {
+    /** Whether a device's dialogue drives this Agent Session now, so what it writes ends up spoken by that device. */
+    drivesDevice(sessionId) {
+      return Boolean(sessionId) && [...scopes].some((scope) => scope.active && scope.dialogue?.hasClientTools() && scope.session?.snapshot().sessionId === sessionId);
+    },
     async clean(scope, text, options = {}) {
       if (typeof text !== "string" || text.length > 16000) throw failure("voice_input_invalid", 400);
       if (options.config && Object.keys(options.config).some((key) => key !== "dictationProfiles")) throw failure("voice_config_invalid", 400);

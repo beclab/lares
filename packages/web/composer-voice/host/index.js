@@ -42,7 +42,7 @@ import {
 import { bluetoothRequest, ensureBluetoothReady } from "@olares/lares-core/voice/link";
 import { gpuAppAction, gpuModePayload, observeSpeechGpu, readingModePayload, saveSlicePlan, speechGpu, streamingEnabled, switchReadingMode } from "@olares/lares-core/voice/gpu-mode";
 import { routerEndUser } from "@olares/lares-core/router/gateway";
-import { SPOKEN_PROMPT } from "@olares/lares-core/voice/agent-session";
+import { DEVICE_SPOKEN_PROMPT, SPOKEN_PROMPT } from "@olares/lares-core/voice/agent-session";
 import { writeReport } from "@olares/lares-core/log/report";
 
 export const name = "lares-composer-voice";
@@ -393,6 +393,8 @@ export function apply(ctx) {
     "lares-composer-voice-routes",
   );
   ctx.inject(["systemPrompt"], (promptCtx) => {
-    promptCtx.systemPrompt.section({ name: "app:spoken-reply", order: 9800, text: (assembly) => voiceSessionPrompt(assembly.scope?.id) ? SPOKEN_PROMPT : "" });
+    // Lares's own voice clients register in voiceSessionPrompt; a device reaches the Agent through the
+    // realtime host instead, and until 0.26.88 its Agent got no spoken-reply rule at all.
+    promptCtx.systemPrompt.section({ name: "app:spoken-reply", order: 9800, text: (assembly) => voiceHost?.drivesDevice(assembly.scope?.id) ? `${SPOKEN_PROMPT} ${DEVICE_SPOKEN_PROMPT}` : voiceSessionPrompt(assembly.scope?.id) ? SPOKEN_PROMPT : "" });
   });
 }

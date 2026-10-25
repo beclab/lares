@@ -5,6 +5,10 @@ import { reduceUtterance } from "./speech.js";
 import { ROUTER_PROVIDER_ID } from "../router/models.js";
 
 export const SPOKEN_PROMPT = "This is a voice conversation. Keep user-facing answers concise and natural for speech. Do not read reasoning or tool payloads aloud. Preserve the task's factual results and use the user's language.";
+// A device's dialogue model turns the Agent's answer into one spoken sentence. A weather lookup came
+// back as a page of markdown with humidity, a coat tip, a week's forecast and unrelated news, which
+// took 11-14 s to write and left the dialogue to guess what mattered.
+export const DEVICE_SPOKEN_PROMPT = "The answer is spoken by a small voice device: give only what the user asked for, in at most two short sentences of plain text. No markdown, headings, lists, links, citations, emoji, advice or follow-up offers. Use the units of the user's language (°C for Chinese).";
 
 /** dsh opens a turn before claiming input; rpcId associates input with that open turn. */
 export function createVoiceAgentSession(api, { sessionId = null, preset, workspaceId, restoredRequests = [], onChange = () => {}, metric = () => {}, fallbackModel = async () => null } = {}) {

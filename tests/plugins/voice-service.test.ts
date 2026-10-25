@@ -595,3 +595,19 @@ test("a Lares client's announcement still goes through the dialogue model", asyn
   await dialogue.reply(null, "task:r1", undefined, undefined, { announce: true });
   assert.equal(requests.length, 2);
 });
+
+test("only an Agent Session a device's dialogue drives is told its answers are spoken by a device", async () => {
+  const h = store();
+  const service = createVoiceHostService({ create: async () => ({ sessionId: "s1" }) }, { records: h.records, config: () => ({ preset: "assistant" }), chat: async () => ({ role: "assistant", content: "ok" }) });
+  const plain: any = { id: "plain", owner: "alice" }, device: any = { id: "device", owner: "alice", authorizedBinding: { clientTools: true } };
+  try {
+    await service.open(plain, {}); await service.open(device, {});
+    plain.session = { snapshot: () => ({ running: false, sessionId: "agent-plain", tasks: [] }), close: async () => {} };
+    device.session = { snapshot: () => ({ running: false, sessionId: "agent-device", tasks: [] }), close: async () => {} };
+    assert.equal(service.drivesDevice("agent-device"), false, "no device tools declared yet");
+    service.tools(device, [MOVE]);
+    assert.equal(service.drivesDevice("agent-device"), true);
+    assert.equal(service.drivesDevice("agent-plain"), false);
+    assert.equal(service.drivesDevice(undefined), false);
+  } finally { h.close(); }
+});
