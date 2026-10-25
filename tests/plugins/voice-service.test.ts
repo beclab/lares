@@ -656,3 +656,33 @@ test("a routed task that fails is left for the dialogue to announce", async () =
     assert.equal(requests.length, 1);
   } finally { routing = "motion"; h.close(); }
 });
+
+test("talking over a device turn that reads out the Agent ends it, and the result is announced once", async () => {
+  const h = store();
+  routing = "lares";
+  const announced: any[] = [];
+  const service = createVoiceHostService({ create: async () => ({ sessionId: "s1" }) }, { records: h.records, config: () => ({ preset: "assistant" }),
+    chat: async (request: any) => { if (isRoute(request)) return routeTo(request); announced.push(request); return { role: "assistant", content: "灯开好了。" }; } });
+  const scope: any = { id: "device", owner: "alice", authorizedBinding: { clientTools: true } };
+  let tasks: any[] = [];
+  try {
+    await service.open(scope, {});
+    service.tools(scope, [MOVE]);
+    scope.session = { snapshot: () => ({ running: tasks.length > 0, sessionId: "s1", cursor: 0, tasks }), submit: async () => ({ sessionId: "s1" }), close: async () => {} };
+    const first = service.prompt(scope, { text: "开灯", requestId: "one" });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    tasks = [{ requestId: "one:delegate", turn: 1, status: "running", step: 1, text: "好的。", error: null }];
+    service.advance(scope);
+    service.release(scope);
+    assert.equal((await first as any).utterance.text, "");
+    // The words that steered the same Agent turn hear its answer; the first task is not announced again.
+    const second = service.prompt(scope, { text: "调成白色", requestId: "two" });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    tasks = [{ requestId: "one:delegate", turn: 1, status: "completed", step: 3, text: "灯已打开，白色。", error: null }, { requestId: "two:delegate", turn: 1, status: "completed", step: 3, text: "灯已打开，白色。", error: null }];
+    service.advance(scope);
+    assert.equal((await second as any).utterance.text, "灯已打开，白色。");
+    service.advance(scope);
+    await scope.voiceSerial;
+    assert.equal(announced.length, 0);
+  } finally { routing = "motion"; h.close(); }
+});

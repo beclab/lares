@@ -91,7 +91,8 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
    * A device's request the dialogue routed to the Agent is spoken in the Agent's own words, as the
    * live text of the turn that asked: the complete sentences of its first step while it writes them
    * (usually "好的，我来帮你开灯。"), then its answer when the task ends. Steps in between talk to
-   * tools, not to the user. A task that fails, or outlasts the wait, is announced by the dialogue later.
+   * tools, not to the user. A task that fails, outlasts the wait or is talked over (`release`) is
+   * announced by the dialogue later, unless a later turn heard the same Agent turn's answer.
    * @returns {Promise<null | { requestId: string, status: string, text: string }>}
    */
   const hearTask = (scope, taskId, requestId, waitMs = taskWaitMs) => new Promise((resolve) => {
@@ -100,8 +101,11 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
     const speak = (text) => { scope.voiceState.live = { key: requestId, call: 0, text, delegated: false }; scope.voiceState.version++; };
     const done = (task) => {
       clearTimeout(timer); scope.voiceAbort.signal.removeEventListener("abort", gone);
-      scope.taskWatch = null;
+      scope.taskWatch = null; scope.releaseTask = null;
       if (task?.status !== "completed" || !task.text) { scope.deliveredTasks.delete(taskId); resolve(null); return; }
+      // Words that steered this turn's Agent run end with the same answer; it is said once, here.
+      for (const other of scope.session?.snapshot().tasks || []) if (other.turn != null && other.turn === task.turn) scope.deliveredTasks.add(other.requestId);
+      scope.voiceResults = (scope.voiceResults || []).filter((other) => other.turn == null || other.turn !== task.turn);
       // One growing text, so the device's reader keeps every sentence it has already spoken.
       const text = !said || task.text.startsWith(said) ? task.text : `${said}${/[\u3000-\u303f\u3400-\u9fff\uff00-\uffef]$/.test(said) ? "" : " "}${task.text}`;
       speak(text);
@@ -121,6 +125,7 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
     timer = setTimeout(gone, waitMs);
     scope.voiceAbort.signal.addEventListener("abort", gone, { once: true });
     scope.taskWatch = watch;
+    scope.releaseTask = gone;
     watch();
   });
   const scopes = new Set();
@@ -129,6 +134,8 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
     drivesDevice(sessionId) {
       return Boolean(sessionId) && [...scopes].some((scope) => scope.active && scope.dialogue?.hasClientTools() && scope.session?.snapshot().sessionId === sessionId);
     },
+    /** The user spoke again: a turn still reading out the Agent's work ends, and its result is announced later. */
+    release(scope) { scope.releaseTask?.(); },
     /** The persona a device gave its dialogue, for the Agent that now answers in its voice. */
     devicePersona(sessionId) {
       const scope = sessionId ? [...scopes].find((item) => item.active && item.dialogue?.hasClientTools() && item.session?.snapshot().sessionId === sessionId) : null;

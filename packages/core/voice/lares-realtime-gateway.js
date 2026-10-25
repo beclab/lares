@@ -430,7 +430,8 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       submittedTurns++;
       turn = { id: requestId, accepted: false };
       const running = scope.session?.snapshot().running === true;
-      const mode = running ? busyTurn || busyDefault() : undefined;
+      // A device's new words while the Agent works change that work ("算了，关掉吧"), so they steer it.
+      const mode = running ? busyTurn || (caps.clientTools ? "steer" : busyDefault()) : undefined;
       let state;
       const live = readsWhileWriting() ? followLive(requestId, input) : null;
       try { state = text === null ? await service.proceed(scope, { requestId }) : await service.prompt(scope, { text, requestId, ...(mode ? { mode } : {}) }); }
@@ -475,8 +476,9 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       }
       // The previous turn is still being transcribed or submitted. The mic is
       // shared and the client cannot know that, so queue this take instead of
-      // rejecting it; the composer would otherwise see a hard turn_busy.
-      if (busy) { pendingCommit = true; return; }
+      // rejecting it; the composer would otherwise see a hard turn_busy. A device turn that is only
+      // reading out the Agent's work ends now, so the new words reach the Agent while it works.
+      if (busy) { pendingCommit = true; service.release?.(scope); return; }
       const taken = chunks, input = Buffer.concat(taken), id = itemId || `item_${randomUUID()}`, ms = input.length / BYTES_PER_MS, opened = stream, held = barge, policy = listening(), voicedMs = takeVoicedMs, firstVoice = firstVoiceMs;
       stream = null; reset(); scope.voiceInputActive = false; busy = true;
       send({ type: "input_audio_buffer.committed", item_id: id, previous_item_id: null });
@@ -542,7 +544,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
     };
     const flushCarry = async () => {
       if (!carry || closed) return;
-      if (busy) { pendingCommit = true; return; }
+      if (busy) { pendingCommit = true; service.release?.(scope); return; }
       const said = carry, id = `item_${randomUUID()}`, epoch = generation;
       carry = ""; busy = true;
       try {
