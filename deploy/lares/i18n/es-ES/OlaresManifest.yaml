@@ -56,5 +56,6 @@ spec:
     - Las skills de Home Assistant usan hass-cli 0.0.4, que acepta varios ajustes en un argumento, indica el dispositivo más parecido cuando no encuentra uno y explica cómo cambiar el color de una luz, así que el Agent cambia una luz en menos pasos.
     - Las skills de Home Assistant usan hass-cli 0.0.5, que recibe el dispositivo con --entity e indica el comando correcto cuando uno está mal escrito, así que el Agent enciende y apaga luces en menos pasos.
     - Un dispositivo de voz ya no pronuncia palabras que se sustituyeron antes de usar las luces o la cámara, y cuando no entiende lo dicho pide brevemente que lo repitas.
+    - Las skills de Home Assistant usan hass-cli 0.0.6, que antes de llamar indica un campo erróneo y el correcto (color_temp pasa a color_temp_kelvin), así que el Agent ajusta colores de luz en menos pasos.
 
-    [Notas de la versión](https://github.com/beclab/lares/releases/tag/v0.26.97)
+    [Notas de la versión](https://github.com/beclab/lares/releases/tag/v0.26.98)
