@@ -22,3 +22,16 @@ export function compactEarlierToolResults(messages, { limit = 1500 } = {}) {
   });
   return { messages: compacted ? next : messages, compacted };
 }
+
+/**
+ * The Agent tools a device's Session keeps. Its 35 tools were 31k characters (~9k tokens) of every
+ * request, re-read whenever the engine's cache had dropped the prefix; a voice device needs home
+ * control (skills run hass-cli through bash), lookups and reminders. Only Sessions a device drives
+ * are filtered: Lares's own clients, voice on the phone included, keep every tool.
+ */
+export const DEVICE_AGENT_TOOLS = Object.freeze(["bash", "skill", "read", "web_search", "web_fetch", "schedule_create", "schedule_list", "schedule_update", "schedule_delete"]);
+
+export function keepDeviceTools(tools, allowed = DEVICE_AGENT_TOOLS) {
+  if (!Array.isArray(tools)) return tools;
+  return tools.filter((tool) => allowed.includes(tool?.name ?? tool?.function?.name));
+}
