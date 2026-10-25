@@ -486,9 +486,9 @@ test("the history summary is short and runs without reasoning", async () => {
 });
 
 const CAMERA = { name: "camera", description: "Take a picture", parameters: { type: "object", properties: { question: { type: "string" } } } };
-const deviceDialogue = (answers: any[], submitted: any[] = []) => {
+const deviceDialogue = (answers: any[], submitted: any[] = [], live: boolean[] = []) => {
   const requests: any[] = [];
-  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", submit: async (...args: any[]) => { submitted.push(args); return { status: "pending" }; }, chat: async (request: any) => { requests.push(structuredClone(request)); return answers.shift() ?? { role: "assistant", content: "ok" }; } });
+  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", submit: async (...args: any[]) => { submitted.push(args); return { status: "pending" }; }, chat: async (request: any) => { live.push(typeof request.onDelta === "function"); requests.push(structuredClone(request)); return answers.shift() ?? { role: "assistant", content: "ok" }; } });
   dialogue.setClientTools([MOVE, CAMERA]);
   return { dialogue, requests };
 };
@@ -529,6 +529,20 @@ test("a home-device action claimed in words is asked again with ask_lares requir
   assert.deepEqual(requests[1].toolChoice, { type: "function", function: { name: "ask_lares" } });
   assert.deepEqual(submitted, [["开灯", "t1", "run"]]);
   assert.equal(reply.text, "好的，交给 Lares 了。");
+});
+
+test("a change to the light just named, claimed with the light before the verb, is held back and asked again", async () => {
+  const submitted: any[] = [];
+  const live: boolean[] = [];
+  const { dialogue, requests } = deviceDialogue([
+    { role: "assistant", content: "将灯光调整为白色中。" },
+    { role: "assistant", content: null, tool_calls: [call("own", "ask_lares", '{"operation":"run","task":"把灯调成白色"}')] },
+    { role: "assistant", content: "好的。" },
+  ], submitted, live);
+  await dialogue.reply("能把它变成白色吗？", "t1");
+  assert.deepEqual(requests[1].toolChoice, { type: "function", function: { name: "ask_lares" } });
+  assert.deepEqual(submitted, [["把灯调成白色", "t1", "run"]]);
+  assert.equal(live[0], false);
 });
 
 test("a second look answered with only a gesture is asked again with the camera, and curly quotes still read as a claim", async () => {

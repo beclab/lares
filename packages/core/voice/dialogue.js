@@ -40,8 +40,11 @@ const greeting = (text) => GREETING.test(String(text).replace(/[\s\p{P}\p{S}]/gu
 // look again was answered with "这其实是一个洗手液瓶" and no camera call; "正在为您开灯" with no
 // ask_lares left the light off. Such a reply is asked again with that one tool required.
 const LOOK_AGAIN = /(?:再|重新)(?:看|瞧|识别|拍)|仔细看|看清楚|\blook (?:again|closer|more closely)\b|\banother (?:look|picture|photo)\b|\b(?:check|see) (?:it |that |this )?again\b|\bwhat (?:it|that|this) really is\b/i;
+// A follow-up that changes the device just named without naming it: "能把它变成白色吗？".
+const DEVICE_CHANGE = /(?:变|调|换|改)(?:成|为|到)|调(?:亮|暗|高|低)|(?:亮|暗)一(?:点|些)|颜色|亮度|色温|\b(?:make|turn|set|change) it\b|\b(?:brighter|dimmer|warmer|cooler)\b/i;
 const HOME_DEVICE = /灯|空调|开关|窗帘|插座|风扇|电视|暖气|加湿器|light|lamp|switch|fan|curtain|heater|thermostat/i;
-const CLAIMED_ACTION = /(?:(?:正在|已经|已|马上|这就|立刻|立即|将|会|重新|再次)(?:为您|为你|帮您|帮你|给您|给你)?|(?:为您|为你|帮您|帮你|给您|给你)|把[^，。！？]{0,8})(?:打开|关闭|关掉|开启|调整|调成|调到|调暗|调亮|调|开|关|切换|设置)|\b(?:turning|switching|dimming|brightening|turned|switched|dimmed|adjusting|adjusted)\b|\b(?:i'll|i will|let me|going to) (?:turn|switch|dim|set|adjust|try|ask)\b|\blet me check with\b/i;
+// A claim may name what it acts on first: "将灯光调整为白色", "已把它调成黄色".
+const CLAIMED_ACTION = /(?:(?:正在|已经|已|马上|这就|立刻|立即|将|会|重新|再次)(?:为您|为你|帮您|帮你|给您|给你)?(?:[^，。！？]{0,4}(?:灯光|灯|空调|窗帘|风扇|电视|开关|插座|它))?|(?:为您|为你|帮您|帮你|给您|给你)|把[^，。！？]{0,8})(?:打开|关闭|关掉|开启|调整|调成|调为|调到|调暗|调亮|调|变成|变为|换成|改成|开|关|切换|设置)|\b(?:turning|switching|dimming|brightening|turned|switched|dimmed|adjusting|adjusted)\b|\b(?:i'll|i will|let me|going to) (?:turn|switch|dim|set|adjust|try|ask)\b|\blet me check with\b/i;
 // A second look answered with only a gesture (a nod, an emotion) counts as no look; a claimed home
 // action counts only when nothing was called at all.
 const requiredTool = (text, answer, tools) => {
@@ -251,7 +254,7 @@ export function createVoiceDialogue({ config, agent = false, owner, context = []
         // been spoken ("让我检查一下这是什么灯……正在调整灯光颜色" before the light request reached
         // ask_lares). A request that may be asked again (a home device, a second look) is read only once
         // the first answer has passed them; small talk still streams.
-        const mayRetry = device.length > 0 && text !== null && (HOME_DEVICE.test(text) || LOOK_AGAIN.test(text));
+        const mayRetry = device.length > 0 && text !== null && (HOME_DEVICE.test(text) || DEVICE_CHANGE.test(text) || LOOK_AGAIN.test(text));
         let answer = await chat({ ...first, ...(mayRetry ? {} : live()) });
         const required = device.length && text !== null && !limited ? requiredTool(text, answer, tools) : null;
         if (required) {
