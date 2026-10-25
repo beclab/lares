@@ -37,6 +37,16 @@ if (effort) {
   };
 }
 
+// default-chat follows whatever model Router serves right now, so every pass records which model
+// actually answered.
+const served = new Set();
+const sendChat = globalThis.fetch;
+globalThis.fetch = async (url, init) => {
+  const response = await sendChat(url, init);
+  if (String(url).endsWith("/chat/completions")) response.clone().text().then((body) => { const name = body.match(/"model"\s*:\s*"([^"]+)"/)?.[1]; if (name) served.add(name); }, () => {});
+  return response;
+};
+
 async function once(scenario, model) {
   const delegations = [];
   const dialogue = createVoiceDialogue({
@@ -104,7 +114,9 @@ for (const model of models) {
     report.models[model][scenario.id] = { passed, runs, ms, results: results.map(({ run, problems }) => ({ problems, did: describe(run) })) };
     for (const { run, problems } of results) console.log(`     ${problems.length ? `✗ ${problems.join("; ")}` : "✓"}  ${describe(run).slice(0, 260)}`);
   }
-  console.log(`--- ${model}: ${passedAll}/${scenarios.length} scenarios passed every run`);
+  report.models[model].served = [...served];
+  console.log(`--- ${model} (served by ${[...served].join(", ") || "unknown"}): ${passedAll}/${scenarios.length} scenarios passed every run`);
+  served.clear();
 }
 if (json) writeFileSync(json, JSON.stringify(report, null, 2));
 process.exitCode = failed ? 1 : 0;

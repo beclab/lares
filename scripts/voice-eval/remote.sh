@@ -25,7 +25,14 @@ here=$(cd "$(dirname "$0")" && pwd)
 run="/tmp/voice-eval-$(date +%s)"
 pexec() { "$cli" cluster pod exec "$pod" -c lares -- "$@" </dev/null; }
 
+# An exec that drops a chunk leaves a short file, so a failed checksum uploads again.
 upload() {
+  local attempt
+  for attempt in 1 2 3; do upload_once "$@" && return 0; echo "retrying upload of $1" >&2; done
+  exit 1
+}
+
+upload_once() {
   local src=$1 dst=$2 dir="$run/up-$RANDOM$RANDOM" i=0 chunk
   pexec mkdir -p "$dir" "$(dirname "$dst")"
   { base64 < "$src" | tr -d '\n' | tr '+/' '-_' | fold -w 1200; echo; } | while read -r chunk; do
@@ -34,9 +41,9 @@ upload() {
     pexec sh -c "printf %s '$chunk' > $dir/$(printf %04d $i)"
   done
   local remote local_sum
-  remote=$(pexec sh -c "cat $dir/* | tr -- '-_' '+/' | base64 -d > $dst && md5sum $dst" | cut -d' ' -f1)
+  remote=$(pexec sh -c "cat $dir/* | tr -- '-_' '+/' | base64 -d > $dst && md5sum $dst" | cut -d' ' -f1) || true
   local_sum=$( (md5 -q "$src" 2>/dev/null || md5sum "$src" | cut -d' ' -f1) )
-  [ "$remote" = "$local_sum" ] || { echo "upload of $src failed ($remote != $local_sum)" >&2; exit 1; }
+  [ "$remote" = "$local_sum" ] || { echo "upload of $src failed ($remote != $local_sum)" >&2; return 1; }
   echo "uploaded $(basename "$src") -> $dst"
 }
 
@@ -51,9 +58,17 @@ for entry in "${labels[@]}"; do
   fi
   passes="$passes node scripts/voice-eval/run.mjs $* $flags --json $run/$label.json > $run/$label.txt 2>&1;"
 done
-pexec sh -c "cd /app && nohup sh -c '$passes echo finished > $run/done' > /dev/null 2>&1 & echo started $run"
+# An exec that fails its handshake can still have run, and a retry would start the passes twice
+# into the same files; the lock directory lets only the first one through.
+pexec sh -c "cd /app && nohup sh -c 'mkdir $run/lock || exit 0; $passes echo finished > $run/done' > /dev/null 2>&1 & echo started $run"
 
-until pexec cat "$run/done" 2>/dev/null | grep -q finished; do sleep 30; done
+# A replaced pod loses /tmp with the passes in it, so a pod that stops answering ends the wait.
+misses=0
+until pexec cat "$run/done" 2>/dev/null | grep -q finished; do
+  if pexec true 2>/dev/null; then misses=0; else misses=$((misses + 1)); fi
+  [ $misses -lt 3 ] || { echo "$pod stopped answering; it was probably replaced, so run again on the new pod" >&2; exit 1; }
+  sleep 30
+done
 mkdir -p "$out"
 for entry in "${labels[@]}"; do
   label=${entry%%=*}

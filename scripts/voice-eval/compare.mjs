@@ -15,9 +15,10 @@ const reports = files.map((file) => JSON.parse(readFileSync(file, "utf8")));
 const labels = files.map((file) => file.split("/").pop().replace(/\.json$/, ""));
 
 for (const model of Object.keys(reports[0].models)) {
-  const tables = reports.map((report) => report.models[model] || {});
+  const tables = reports.map((report) => { const { served, ...rows } = report.models[model] || {}; return rows; });
+  const served = reports.map((report) => report.models[model]?.served?.join(", ") || "?");
   const ids = [...new Set(tables.flatMap((table) => Object.keys(table)))];
-  console.log(`\n=== ${model}`);
+  console.log(`\n=== ${model} · served by ${[...new Set(served)].join(" | ")}`);
   console.log(`${"scenario".padEnd(26)}${labels.map((label) => label.slice(0, 12).padEnd(13)).join("")}`);
   for (const id of ids) {
     const cells = tables.map((table) => (table[id] ? `${table[id].passed}/${table[id].runs}` : "-"));

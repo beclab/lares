@@ -210,11 +210,17 @@ Improvements, in order of value for effort (none implemented yet):
 
 ### Working on it
 
-- Eval: `node scripts/voice-eval/run.mjs --runs 5 [--only a,b] [--dialogue ../../packages/core/voice/dialogue.next.js]`
+- Eval: `node scripts/voice-eval/run.mjs --runs 5 [--only a,b] [--model <id>] [--dialogue ../../packages/core/voice/dialogue.next.js] [--json out.json]`
   inside the Lares pod, so Router sees the same identity. It replays a device's
   real flow, including the step after a device tool result and gesture-only
-  steps. Copy files into the pod as URL-safe base64 in 1200-character chunks
-  through `olares-cli cluster pod exec ... </dev/null`.
+  steps. From a workstation, `scripts/voice-eval/remote.sh <ns/pod> <out-dir>
+  base next=<dialogue.js copy> -- --runs 5 --model <id>` uploads the eval and
+  each working copy, runs the passes one after another in the pod and prints
+  `compare.mjs`'s table. Pass an explicit `--model`: `default-chat` follows
+  whichever model Router serves at the moment, and models differ — on
+  2026-10-25, Qwen3.6-35B-A3B passed 104 and Qwen3.5-9B 94 of the same 110 runs
+  with the same prompt. A 5-run pass moves by one or two runs between repeats;
+  compare candidates in the same invocation.
 - Test builds: `docker buildx build --builder desktop-linux --platform linux/amd64,linux/arm64`
   (the QEMU builder crashed esbuild), `scripts/package-chart.sh`, then
   `olares-cli market upload` and `market upgrade lares -s upload`. An app
