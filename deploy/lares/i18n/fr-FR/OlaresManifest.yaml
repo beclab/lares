@@ -54,5 +54,6 @@ spec:
     - L'Agent d'un appareil vocal ne relit plus les longs résultats d'outils des tours précédents, comme une recherche web : la requête suivante démarre plus tôt.
     - L'Agent d'un appareil vocal n'utilise que les outils dont il a besoin (commandes et skills, recherche web, rappels) : chaque requête compte environ 6k tokens de moins ; les applications Lares, y compris la voix sur mobile, gardent tous les outils.
     - Les skills Home Assistant utilisent hass-cli 0.0.4, qui accepte plusieurs réglages dans un argument, indique l'appareil le plus proche quand il n'en trouve pas et décrit comment régler la couleur d'une lumière : l'Agent change une lumière en moins d'étapes.
+    - Les skills Home Assistant utilisent hass-cli 0.0.5, qui prend l'appareil visé avec --entity et indique la bonne commande en cas d'erreur de saisie : l'Agent allume et éteint les lumières en moins d'étapes.
 
-    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.95)
+    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.96)

@@ -54,5 +54,6 @@ spec:
     - L'Agent di un dispositivo vocale non rilegge più i lunghi risultati degli strumenti dei turni precedenti, come una ricerca web, quindi la richiesta successiva parte prima.
     - L'Agent di un dispositivo vocale usa solo gli strumenti che gli servono (comandi e skill, ricerca web, promemoria), quindi ogni richiesta ha circa 6k token in meno; le app di Lares, compresa la voce sul telefono, mantengono tutti gli strumenti.
     - Le skill di Home Assistant usano hass-cli 0.0.4, che accetta più impostazioni in un argomento, indica il dispositivo più vicino quando non ne trova uno e spiega come impostare il colore di una luce, così l'Agent cambia una luce in meno passaggi.
+    - Le skill di Home Assistant usano hass-cli 0.0.5, che riceve il dispositivo con --entity e indica il comando giusto quando uno è scritto male, così l'Agent accende e spegne le luci in meno passaggi.
 
-    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.95)
+    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.96)

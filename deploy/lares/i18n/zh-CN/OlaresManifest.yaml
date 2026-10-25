@@ -58,5 +58,6 @@ spec:
     - 语音设备的 Agent 不再重复读取之前轮次的长工具结果（例如网页搜索），查询之后的下一个请求启动更快。
     - 语音设备的 Agent 只使用语音设备需要的工具（命令与技能、网页搜索、提醒），每次请求约少 6k token；Lares 自己的应用（包括手机语音）仍保留全部工具。
     - Home Assistant 技能改用 hass-cli 0.0.4：一个参数里可以写多项设置，找不到设备时会给出最接近的设备，并补充了调灯光颜色的写法，Agent 调灯所需的步骤更少。
+    - Home Assistant 技能改用 hass-cli 0.0.5：可以用 --entity 指定要操作的设备，命令写错时会提示正确写法，Agent 开关灯所需的步骤更少。
 
-    [版本说明](https://github.com/beclab/lares/releases/tag/v0.26.95)
+    [版本说明](https://github.com/beclab/lares/releases/tag/v0.26.96)
