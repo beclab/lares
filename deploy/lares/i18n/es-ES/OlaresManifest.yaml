@@ -49,5 +49,6 @@ spec:
     - Los dispositivos de voz ya no cortan una petición a mitad de palabra, unen una petición que sigue tras una pausa, mantienen breves las respuestas habladas y los avisos del Agent y registran lo que oyen durante una respuesta.
     - Los dispositivos de voz se recuperan cuando el modelo llama a una herramienta que el dispositivo no tiene, esperan una pausa tras «eh» o una palabra inacabada y registran cuánto de cada toma sonó a voz.
     - Los dispositivos de voz registran qué partes del prompt del Agent cambian entre peticiones, para averiguar por qué algunas tardan en empezar.
+    - Los dispositivos de voz registran qué mensaje anterior de una petición del Agent cambió, para averiguar por qué la primera petición tras una búsqueda tarda en empezar.
 
-    [Notas de la versión](https://github.com/beclab/lares/releases/tag/v0.26.90)
+    [Notas de la versión](https://github.com/beclab/lares/releases/tag/v0.26.91)

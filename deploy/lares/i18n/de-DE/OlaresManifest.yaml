@@ -49,5 +49,6 @@ spec:
     - Sprachgeräte schneiden eine Anfrage nicht mehr mitten im Wort ab, verbinden eine nach einer Pause fortgesetzte Anfrage, halten gesprochene Antworten und Ansagen des Agent kurz und protokollieren, was sie während einer Antwort hören.
     - Sprachgeräte fangen sich, wenn das Modell ein Werkzeug aufruft, das das Gerät nicht hat, warten eine Pause nach „äh“ oder einem unvollständigen Wort ab und protokollieren, wie viel jeder Aufnahme nach Stimme klang.
     - Sprachgeräte protokollieren, welche Teile des Agent-Prompts sich zwischen Anfragen ändern, um langsame Starts zu klären.
+    - Sprachgeräte protokollieren, welche frühere Nachricht einer Agent-Anfrage sich geändert hat, um langsame Starts nach einer Suche zu klären.
 
-    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.90)
+    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.91)
