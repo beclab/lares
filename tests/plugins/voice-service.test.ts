@@ -611,3 +611,28 @@ test("only an Agent Session a device's dialogue drives is told its answers are s
     assert.equal(service.drivesDevice(undefined), false);
   } finally { h.close(); }
 });
+
+test("a device turn that calls a tool nobody declared is told which exist, then asked without tools, instead of failing", async () => {
+  const submitted: any[] = [];
+  const { dialogue, requests } = deviceDialogue([
+    { role: "assistant", content: null, tool_calls: [call("x", "search_web", '{"query":"Beijing weather"}')] },
+    { role: "assistant", content: null, tool_calls: [call("own", "ask_lares", '{"operation":"run","task":"Beijing weather today"}')] },
+    { role: "assistant", content: "Asking Lares." },
+  ], submitted);
+  const reply = await dialogue.reply("Beijing, please search the Beijing weather.", "t1");
+  assert.equal(reply.text, "Asking Lares.");
+  assert.deepEqual(submitted, [["Beijing weather today", "t1", "run"]]);
+  assert.match(requests[1].messages.at(-1).content, /Only these tools exist: ask_lares, move_head, camera\. Web search/);
+  const stubborn = deviceDialogue([
+    { role: "assistant", content: "Searching.", tool_calls: [call("x", "search_web")] },
+    { role: "assistant", content: "Searching.", tool_calls: [call("y", "search_web")] },
+    { role: "assistant", content: "Still searching.", tool_calls: [call("z", "search_web")] },
+  ]);
+  assert.deepEqual(await stubborn.dialogue.reply("search the weather", "t1"), { text: "Still searching.", calls: [] });
+  assert.equal(stubborn.requests[2].toolChoice, "none");
+});
+
+test("a Lares client's session still refuses a tool it never offered", async () => {
+  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", chat: async () => ({ role: "assistant", content: null, tool_calls: [call("x", "search_web")] }) });
+  await assert.rejects(dialogue.reply("search", "t1"), /voice_tool_forbidden/);
+});

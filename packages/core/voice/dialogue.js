@@ -259,6 +259,19 @@ export function createVoiceDialogue({ config, agent = false, owner, context = []
           const retry = await chat({ ...first, ...live(), toolChoice: { type: "function", function: { name: required } } });
           if (retry.tool_calls?.some((call) => call.function?.name === required)) answer = retry;
         }
+        // A small model sometimes calls a tool by a name it made up, or ask_lares where there is no Agent;
+        // on the robot that ended the turn as "Voice operation failed". A device turn is asked once more
+        // without tools and keeps only words. Other sessions still refuse such a call.
+        // The robot's persona still names a web search tool its Lares profile no longer declares, so the
+        // first retry says which tools exist; only a second miss loses the tools.
+        const unknown = (item) => item.tool_calls?.some((call) => (call.function?.name === "ask_lares" ? !agent : !declared(call)));
+        if (device.length && unknown(answer)) {
+          const names = tools.map((tool) => tool.function.name).join(", ");
+          const known = { role: "system", content: `Only these tools exist: ${names || "none"}.${agent ? " Web search, weather, news, time and anything else outside them go to ask_lares." : ""}` };
+          answer = await chat({ ...first, ...live(), messages: wire([...next, known]) });
+          if (unknown(answer)) answer = await chat({ ...first, ...live(), toolChoice: "none" });
+          if (unknown(answer)) answer = { role: "assistant", content: typeof answer.content === "string" ? answer.content : "" };
+        }
         // Past the step limit tools were refused; a model that calls one anyway still gets its words spoken.
         if (limited && answer.tool_calls?.length) answer = { role: "assistant", content: typeof answer.content === "string" ? answer.content : "" };
         const owed = [];
