@@ -495,3 +495,103 @@ test("the history summary is short and runs without reasoning", async () => {
   assert.deepEqual([requests[0].maxTokens, requests[0].reasoningEffort], [800, "none"]);
   assert.match(requests[0].messages[0].content, /Maximum 1200 characters/);
 });
+
+const CAMERA = { name: "camera", description: "Take a picture", parameters: { type: "object", properties: { question: { type: "string" } } } };
+const deviceDialogue = (answers: any[], submitted: any[] = []) => {
+  const requests: any[] = [];
+  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", submit: async (...args: any[]) => { submitted.push(args); return { status: "pending" }; }, chat: async (request: any) => { requests.push(structuredClone(request)); return answers.shift() ?? { role: "assistant", content: "ok" }; } });
+  dialogue.setClientTools([MOVE, CAMERA]);
+  return { dialogue, requests };
+};
+
+test("a device greeting is answered without tools, even after earlier requests failed", async () => {
+  for (const said of ["你好。", "好的，你好。", "Hello Reachy!", "Okay, hello.", "Hi there!", "晚上好呀"]) {
+    const { dialogue, requests } = deviceDialogue([{ role: "assistant", content: "你好！" }]);
+    await dialogue.reply(said, "t1");
+    assert.equal(requests[0].tools, undefined, said);
+  }
+  const { dialogue, requests } = deviceDialogue([{ role: "assistant", content: "好的" }]);
+  await dialogue.reply("你好，帮我开灯", "t1");
+  assert.ok(requests[0].tools.length, "a greeting with a request keeps its tools");
+});
+
+test("a request to look again that is answered in words is asked again with the camera required", async () => {
+  const { dialogue, requests } = deviceDialogue([
+    { role: "assistant", content: "我再仔细看看，这其实是一个洗手液瓶。" },
+    { role: "assistant", content: null, tool_calls: [call("cam", "camera", '{"question":"这是什么"}')] },
+  ]);
+  const reply = await dialogue.reply("你再看看，它不是杯子。", "t1");
+  assert.deepEqual(reply.calls.map((item) => item.name), ["camera"]);
+  assert.equal(reply.text, "");
+  assert.deepEqual(requests[1].toolChoice, { type: "function", function: { name: "camera" } });
+  // The words that claimed a look never reach history.
+  await dialogue.reply("好的", "t2");
+  assert.ok(!JSON.stringify(requests.at(-1).messages).includes("洗手液瓶"));
+});
+
+test("a home-device action claimed in words is asked again with ask_lares required", async () => {
+  const submitted: any[] = [];
+  const { dialogue, requests } = deviceDialogue([
+    { role: "assistant", content: "正在为您开灯。" },
+    { role: "assistant", content: null, tool_calls: [call("own", "ask_lares", '{"operation":"run","task":"开灯"}')] },
+    { role: "assistant", content: "好的，交给 Lares 了。" },
+  ], submitted);
+  const reply = await dialogue.reply("开下灯。", "t1");
+  assert.deepEqual(requests[1].toolChoice, { type: "function", function: { name: "ask_lares" } });
+  assert.deepEqual(submitted, [["开灯", "t1", "run"]]);
+  assert.equal(reply.text, "好的，交给 Lares 了。");
+});
+
+test("a second look answered with only a gesture is asked again with the camera, and curly quotes still read as a claim", async () => {
+  const look = deviceDialogue([{ role: "assistant", content: null, tool_calls: [call("nod", "move_head")] }, { role: "assistant", content: null, tool_calls: [call("cam", "camera")] }]);
+  assert.deepEqual((await look.dialogue.reply("Look again, it's not a cup.", "t1")).calls.map((item) => item.name), ["camera"]);
+  assert.deepEqual(look.requests[1].toolChoice, { type: "function", function: { name: "camera" } });
+  const submitted: any[] = [];
+  const light = deviceDialogue([{ role: "assistant", content: "Got it! I’ll ask Lares to turn off the light for you." }, { role: "assistant", content: null, tool_calls: [call("own", "ask_lares", '{"operation":"run","task":"turn off the light"}')] }, { role: "assistant", content: "On it." }], submitted);
+  await light.dialogue.reply("Turn off the light.", "t1");
+  assert.equal(submitted.length, 1);
+});
+
+test("the English forms of a second look and a claimed light change are caught too", async () => {
+  const look = deviceDialogue([{ role: "assistant", content: "It's a soap bottle." }, { role: "assistant", content: null, tool_calls: [call("cam", "camera")] }]);
+  assert.deepEqual((await look.dialogue.reply("Look again, it's not a cup.", "t1")).calls.map((item) => item.name), ["camera"]);
+  const submitted: any[] = [];
+  const light = deviceDialogue([{ role: "assistant", content: "Got it! I'll turn off the light for you." }, { role: "assistant", content: null, tool_calls: [call("own", "ask_lares", '{"operation":"run","task":"turn off the light"}')] }, { role: "assistant", content: "On it." }], submitted);
+  await light.dialogue.reply("Turn off the light.", "t1");
+  assert.deepEqual(submitted, [["turn off the light", "t1", "run"]]);
+});
+
+test("a model that still refuses the required tool keeps its words, and ordinary replies are not retried", async () => {
+  const kept = deviceDialogue([{ role: "assistant", content: "正在为您开灯。" }, { role: "assistant", content: "正在为您开灯。" }]);
+  assert.equal((await kept.dialogue.reply("开下灯。", "t1")).text, "正在为您开灯。");
+  assert.equal(kept.requests.length, 2);
+  const plain = deviceDialogue([{ role: "assistant", content: "我是 Reachy Mini。" }]);
+  await plain.dialogue.reply("你是谁？", "t1");
+  // "你再看看灯开了没" is about the light, not the camera.
+  const light = deviceDialogue([{ role: "assistant", content: "我去问问 Lares。" }]);
+  await light.dialogue.reply("你再看看灯开了没", "t1");
+  assert.equal(plain.requests.length + light.requests.length, 2);
+});
+
+test("a short task result is announced as the Agent wrote it; long, formatted or other-language results are not", async () => {
+  const announce = async (result: string, asked = "帮我调成白色的") => {
+    const { dialogue, requests } = deviceDialogue([{ role: "assistant", content: "好的" }]);
+    await dialogue.reply(asked, "t1");
+    dialogue.observeTask({ requestId: "r1", status: "completed", text: result });
+    const reply = await dialogue.reply(null, "task:r1", undefined, undefined, { announce: true });
+    return { text: reply.text, calls: requests.length };
+  };
+  assert.deepEqual(await announce("好的，灯光已经调整为明亮的白色，亮度已经调低了（50%）。"), { text: "好的，灯光已经调整为明亮的白色，亮度已经调低了（50%）。", calls: 1 });
+  assert.equal((await announce("已为您关闭灯 \"Aqara lumi.light.agl003\"。")).calls, 2);
+  assert.equal((await announce("## 北京今日热点\n1. 马拉松")).calls, 2);
+  assert.equal((await announce("The lights are now bright white.")).calls, 2);
+});
+
+test("a Lares client's announcement still goes through the dialogue model", async () => {
+  const requests: any[] = [];
+  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", chat: async (request: any) => { requests.push(request); return { role: "assistant", content: "灯开了。" }; } });
+  await dialogue.reply("开灯", "t1");
+  dialogue.observeTask({ requestId: "r1", status: "completed", text: "灯已经打开了。" });
+  await dialogue.reply(null, "task:r1", undefined, undefined, { announce: true });
+  assert.equal(requests.length, 2);
+});
