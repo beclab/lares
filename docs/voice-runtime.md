@@ -242,6 +242,18 @@ choice (lares must call ask_lares, so the dialogue still writes the task from
 context; speak may call nothing; camera must call the camera), and
 acknowledgements and announcements stay with the dialogue.
 
+On the robot B routed every turn correctly, but the Agent then answered "好的，
+我来帮你把灯打开并调成绿色。" in one 13-token step with no tool call, and the
+same for the light off, although its prompt, tools, model and parameters
+matched earlier sessions that acted at once. The failure began after 15:00 UTC,
+when the probes and then every B turn sent forced (grammar-constrained) tool
+calls to the same sglang; the 0.26.98 code (repackaged as 0.26.102, a downgrade
+being refused) in a new Agent session after an sglang restart switched lights
+again. Whether constrained requests disturb other requests on sglang is not
+confirmed: replay a captured Agent request alone and beside forced tool calls
+before routing with tool_choice again. Every change after 0.26.98 was reverted;
+these notes and the probe remain.
+
 ### Working on it
 
 - Eval: `node scripts/voice-eval/run.mjs --runs 5 [--only a,b] [--model <id>] [--dialogue ../../packages/core/voice/dialogue.next.js] [--json out.json]`

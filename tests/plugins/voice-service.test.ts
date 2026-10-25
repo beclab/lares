@@ -11,12 +11,6 @@ function store() {
   const directory = mkdtempSync(join(tmpdir(), "voice-records-"));
   return { records: createVoiceRecords({ directory }), close: () => rmSync(directory, { recursive: true, force: true }) };
 }
-// A device turn starts with a forced route call. Tests of the dialogue's own tool flow route to
-// "motion"; a test that wants another route sets `routing` and puts it back.
-let routing = "motion";
-const isRoute = (request: any) => request.toolChoice?.function?.name === "route";
-const routeTo = (_request: any) => ({ role: "assistant", content: null, tool_calls: [{ id: "r", type: "function", function: { name: "route", arguments: JSON.stringify({ route: routing }) } }] });
-
 test("records isolate owners, deduplicate append and reject stale summaries", () => {
   const h = store();
   try {
@@ -114,7 +108,7 @@ test("truncate keeps only the heard reply, caller instructions append, and child
   const h = store();
   const calls: any[] = [];
   const service = createVoiceHostService({}, { records: h.records, config: () => ({ preset: "chat" }),
-    chat: async (request: any) => { if (isRoute(request)) return routeTo(request); calls.push(request); return { role: "assistant", content: "First sentence. Second sentence." }; },
+    chat: async (request: any) => { calls.push(request); return { role: "assistant", content: "First sentence. Second sentence." }; },
   });
   const scope: any = { id: "client-two", owner: "alice", routerSessionId: "rtc_1" };
   try {
@@ -205,7 +199,7 @@ test("device tools end the step, answer through outputs and give up unanswered c
     { role: "assistant", content: null, tool_calls: [call("c2", "move_head")] },
     { role: "assistant", content: "Hello again." },
   ];
-  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", submit: async () => ({}), chat: async (request: any) => { if (isRoute(request)) return routeTo(request); requests.push(structuredClone(request)); return answers.shift(); } });
+  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", submit: async () => ({}), chat: async (request: any) => { requests.push(structuredClone(request)); return answers.shift(); } });
   assert.ok(!requests.length);
   dialogue.setClientTools([MOVE]);
   assert.ok(dialogue.hasClientTools());
@@ -230,7 +224,7 @@ test("device tools end the step, answer through outputs and give up unanswered c
 
 test("continuations stop offering tools after three steps and a newer camera frame replaces the older one", async () => {
   const requests: any[] = [];
-  const dialogue = createVoiceDialogue({ config: {}, owner: "alice", chat: async (request: any) => { if (isRoute(request)) return routeTo(request); requests.push(structuredClone(request)); return { role: "assistant", content: "ok" }; } });
+  const dialogue = createVoiceDialogue({ config: {}, owner: "alice", chat: async (request: any) => { requests.push(structuredClone(request)); return { role: "assistant", content: "ok" }; } });
   dialogue.setClientTools([MOVE]);
   dialogue.observe([{ type: "image_url", image_url: { url: "data:image/jpeg;base64,AAAA" } }]);
   dialogue.observe([{ type: "image_url", image_url: { url: "data:image/jpeg;base64,BBBB" } }]);
@@ -247,7 +241,7 @@ test("a delegation batched with a device call still lets the dialogue speak abou
     { role: "assistant", content: null, tool_calls: [call("own", "ask_lares", '{"operation":"run","task":"turn on the light"}'), call("dev", "move_head")] },
     { role: "assistant", content: "Turning it on." },
   ];
-  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", submit: async (...args: any[]) => { submitted.push(args); return { status: "pending" }; }, chat: async (request: any) => { if (isRoute(request)) return routeTo(request); requests.push(structuredClone(request)); return answers.shift(); } });
+  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", submit: async (...args: any[]) => { submitted.push(args); return { status: "pending" }; }, chat: async (request: any) => { requests.push(structuredClone(request)); return answers.shift(); } });
   dialogue.setClientTools([MOVE]);
   assert.deepEqual(await dialogue.reply("light", "t1"), { text: "Turning it on.", calls: [{ call_id: "dev", name: "move_head", arguments: "{}" }] });
   assert.deepEqual(submitted, [["turn on the light", "t1", "run"]]);
@@ -261,7 +255,7 @@ test("a delegation batched with a device call still lets the dialogue speak abou
 
 test("without device tools the dialogue prompt and tools stay exactly as before", async () => {
   const requests: any[] = [];
-  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", chat: async (request: any) => { if (isRoute(request)) return routeTo(request); requests.push(request); return { role: "assistant", content: "ok" }; } });
+  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", chat: async (request: any) => { requests.push(request); return { role: "assistant", content: "ok" }; } });
   await dialogue.reply("hi", "t1");
   assert.doesNotMatch(requests[0].messages[0].content, /Saying an action does not perform it/);
   assert.deepEqual(requests[0].tools.map((tool: any) => tool.function.name), ["ask_lares"]);
@@ -274,7 +268,7 @@ test("a device session hears a finished task through the dialogue, which may act
   const service = createVoiceHostService({ create: async () => ({ sessionId: "s1" }) }, {
     records: h.records,
     config: () => ({ preset: "assistant" }),
-    chat: async (request: any) => { if (isRoute(request)) return routeTo(request); requests.push(structuredClone(request)); return { role: "assistant", content: "It will rain.", tool_calls: [call("sad", "move_head")] }; },
+    chat: async (request: any) => { requests.push(structuredClone(request)); return { role: "assistant", content: "It will rain.", tool_calls: [call("sad", "move_head")] }; },
   });
   const scope: any = { id: "client-one", owner: "alice", authorizedBinding: { clientTools: true } };
   try {
@@ -332,7 +326,7 @@ test("a whitespace-only answer next to a device call is not spoken", async () =>
 
 test("a device session routes home control and lookups to ask_lares and answers in the user's language", async () => {
   const requests: any[] = [];
-  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", submit: async () => ({ status: "pending" }), chat: async (request: any) => { if (isRoute(request)) return routeTo(request); requests.push(structuredClone(request)); return { role: "assistant", content: "好的" }; } });
+  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", submit: async () => ({ status: "pending" }), chat: async (request: any) => { requests.push(structuredClone(request)); return { role: "assistant", content: "好的" }; } });
   dialogue.setClientTools([MOVE]);
   dialogue.setInstructions("You are Reachy Mini, a friendly robot. Speak English.", 8000);
   await dialogue.reply("帮我开下灯", "t1");
@@ -348,7 +342,7 @@ test("a device session routes home control and lookups to ask_lares and answers 
 
 test("sessions without device tools get neither the device rules nor the reminder", async () => {
   const requests: any[] = [];
-  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", chat: async (request: any) => { if (isRoute(request)) return routeTo(request); requests.push(request); return { role: "assistant", content: "ok" }; } });
+  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", chat: async (request: any) => { requests.push(request); return { role: "assistant", content: "ok" }; } });
   dialogue.setInstructions("Be formal.");
   await dialogue.reply("hi", "t1");
   const prompt = requests[0].messages[0].content;
@@ -357,7 +351,7 @@ test("sessions without device tools get neither the device rules nor the reminde
 
 test("only the leading message reaches the model as system, so strict chat templates accept task results", async () => {
   const requests: any[] = [];
-  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", chat: async (request: any) => { if (isRoute(request)) return routeTo(request); requests.push(structuredClone(request)); return { role: "assistant", content: "ok" }; } });
+  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", chat: async (request: any) => { requests.push(structuredClone(request)); return { role: "assistant", content: "ok" }; } });
   await dialogue.reply("turn on the light", "t1");
   dialogue.observeTask({ requestId: "r1", status: "completed", text: "Light is on." });
   await dialogue.reply("thanks", "t2");
@@ -408,7 +402,7 @@ test("a model that asks for ask_lares again after delegating is made to answer i
     { role: "assistant", content: null, tool_calls: [call("again", "ask_lares", '{"operation":"status"}')] },
     { role: "assistant", content: "好的，正在关灯。" },
   ];
-  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", submit: async () => ({ status: "pending" }), chat: async (request: any) => { if (isRoute(request)) return routeTo(request); requests.push(structuredClone(request)); return answers.shift(); } });
+  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", submit: async () => ({ status: "pending" }), chat: async (request: any) => { requests.push(structuredClone(request)); return answers.shift(); } });
   dialogue.setClientTools([MOVE]);
   assert.deepEqual(await dialogue.reply("关灯", "t1"), { text: "好的，正在关灯。", calls: [] });
   assert.equal(requests[2].toolChoice, "none");
@@ -425,7 +419,7 @@ test("past the step limit a call the model makes anyway is dropped and its words
 test("a device turn sends the same system prompt every time, announcements included, so its prefix stays cached", async () => {
   const requests: any[] = [];
   const context = [{ role: "user", text: "Hello, please open the lights." }, { role: "assistant", text: "Done, lights on." }];
-  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", context, submit: async () => ({ status: "pending" }), chat: async (request: any) => { if (isRoute(request)) return routeTo(request); requests.push(structuredClone(request)); return { role: "assistant", content: "好的" }; } });
+  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", context, submit: async () => ({ status: "pending" }), chat: async (request: any) => { requests.push(structuredClone(request)); return { role: "assistant", content: "好的" }; } });
   dialogue.setClientTools([MOVE]);
   await dialogue.reply("你能把灯关了吗？", "t1");
   dialogue.observeTask({ requestId: "r1", status: "completed", text: "## Light\n- off" });
@@ -445,7 +439,7 @@ test("a run is acknowledged before the Agent starts, and history keeps the real 
   ];
   const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice",
     submit: async () => { order.push("submit"); return { status: "pending", requestId: "r9:delegate" }; },
-    chat: async (request: any) => { if (isRoute(request)) return routeTo(request); order.push("chat"); requests.push(structuredClone(request)); return answers.shift(); } });
+    chat: async (request: any) => { order.push("chat"); requests.push(structuredClone(request)); return answers.shift(); } });
   dialogue.setClientTools([MOVE]);
   assert.equal((await dialogue.reply("开灯", "r9")).text, "好的，正在开灯。");
   assert.deepEqual(order, ["chat", "chat", "submit"]);
@@ -467,7 +461,7 @@ test("a status check still asks the Agent before the dialogue answers", async ()
   ];
   const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice",
     submit: async () => { order.push("submit"); return { running: true }; },
-    chat: async (request: any) => { if (isRoute(request)) return routeTo(request); order.push("chat"); return answers.shift(); } });
+    chat: async () => { order.push("chat"); return answers.shift(); } });
   dialogue.setClientTools([MOVE]);
   await dialogue.reply("好了吗", "t1");
   assert.deepEqual(order, ["chat", "submit", "chat"]);
@@ -475,7 +469,7 @@ test("a status check still asks the Agent before the dialogue answers", async ()
 
 test("a filler on a device is answered without tools", async () => {
   const requests: any[] = [];
-  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", chat: async (request: any) => { if (isRoute(request)) return routeTo(request); requests.push(request); return { role: "assistant", content: "嗯？" }; } });
+  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", chat: async (request: any) => { requests.push(request); return { role: "assistant", content: "嗯？" }; } });
   dialogue.setClientTools([MOVE]);
   for (const filler of ["嗯嗯。", "啊", "Uh...", "哦！"]) await dialogue.reply(filler, filler);
   assert.ok(requests.every((request: any) => request.tools === undefined));
@@ -485,19 +479,88 @@ test("a filler on a device is answered without tools", async () => {
 
 test("the history summary is short and runs without reasoning", async () => {
   const requests: any[] = [];
-  const dialogue = createVoiceDialogue({ config: {}, owner: "alice", chat: async (request: any) => { if (isRoute(request)) return routeTo(request); requests.push(request); return { role: "assistant", content: "summary" }; } });
+  const dialogue = createVoiceDialogue({ config: {}, owner: "alice", chat: async (request: any) => { requests.push(request); return { role: "assistant", content: "summary" }; } });
   await dialogue.summarize();
   assert.deepEqual([requests[0].maxTokens, requests[0].reasoningEffort], [800, "none"]);
   assert.match(requests[0].messages[0].content, /Maximum 1200 characters/);
 });
 
 const CAMERA = { name: "camera", description: "Take a picture", parameters: { type: "object", properties: { question: { type: "string" } } } };
-const deviceDialogue = (answers: any[], submitted: any[] = [], live: boolean[] = []) => {
+const deviceDialogue = (answers: any[], submitted: any[] = []) => {
   const requests: any[] = [];
-  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", submit: async (...args: any[]) => { submitted.push(args); return { status: "pending" }; }, chat: async (request: any) => { if (isRoute(request)) return routeTo(request); live.push(typeof request.onDelta === "function"); requests.push(structuredClone(request)); return answers.shift() ?? { role: "assistant", content: "ok" }; } });
+  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", submit: async (...args: any[]) => { submitted.push(args); return { status: "pending" }; }, chat: async (request: any) => { requests.push(structuredClone(request)); return answers.shift() ?? { role: "assistant", content: "ok" }; } });
   dialogue.setClientTools([MOVE, CAMERA]);
   return { dialogue, requests };
 };
+
+test("a device greeting is answered without tools, even after earlier requests failed", async () => {
+  for (const said of ["你好。", "好的，你好。", "Hello Reachy!", "Okay, hello.", "Hi there!", "晚上好呀"]) {
+    const { dialogue, requests } = deviceDialogue([{ role: "assistant", content: "你好！" }]);
+    await dialogue.reply(said, "t1");
+    assert.equal(requests[0].tools, undefined, said);
+  }
+  const { dialogue, requests } = deviceDialogue([{ role: "assistant", content: "好的" }]);
+  await dialogue.reply("你好，帮我开灯", "t1");
+  assert.ok(requests[0].tools.length, "a greeting with a request keeps its tools");
+});
+
+test("a request to look again that is answered in words is asked again with the camera required", async () => {
+  const { dialogue, requests } = deviceDialogue([
+    { role: "assistant", content: "我再仔细看看，这其实是一个洗手液瓶。" },
+    { role: "assistant", content: null, tool_calls: [call("cam", "camera", '{"question":"这是什么"}')] },
+  ]);
+  const reply = await dialogue.reply("你再看看，它不是杯子。", "t1");
+  assert.deepEqual(reply.calls.map((item) => item.name), ["camera"]);
+  assert.equal(reply.text, "");
+  assert.deepEqual(requests[1].toolChoice, { type: "function", function: { name: "camera" } });
+  // The words that claimed a look never reach history.
+  await dialogue.reply("好的", "t2");
+  assert.ok(!JSON.stringify(requests.at(-1).messages).includes("洗手液瓶"));
+});
+
+test("a home-device action claimed in words is asked again with ask_lares required", async () => {
+  const submitted: any[] = [];
+  const { dialogue, requests } = deviceDialogue([
+    { role: "assistant", content: "正在为您开灯。" },
+    { role: "assistant", content: null, tool_calls: [call("own", "ask_lares", '{"operation":"run","task":"开灯"}')] },
+    { role: "assistant", content: "好的，交给 Lares 了。" },
+  ], submitted);
+  const reply = await dialogue.reply("开下灯。", "t1");
+  assert.deepEqual(requests[1].toolChoice, { type: "function", function: { name: "ask_lares" } });
+  assert.deepEqual(submitted, [["开灯", "t1", "run"]]);
+  assert.equal(reply.text, "好的，交给 Lares 了。");
+});
+
+test("a second look answered with only a gesture is asked again with the camera, and curly quotes still read as a claim", async () => {
+  const look = deviceDialogue([{ role: "assistant", content: null, tool_calls: [call("nod", "move_head")] }, { role: "assistant", content: null, tool_calls: [call("cam", "camera")] }]);
+  assert.deepEqual((await look.dialogue.reply("Look again, it's not a cup.", "t1")).calls.map((item) => item.name), ["camera"]);
+  assert.deepEqual(look.requests[1].toolChoice, { type: "function", function: { name: "camera" } });
+  const submitted: any[] = [];
+  const light = deviceDialogue([{ role: "assistant", content: "Got it! I’ll ask Lares to turn off the light for you." }, { role: "assistant", content: null, tool_calls: [call("own", "ask_lares", '{"operation":"run","task":"turn off the light"}')] }, { role: "assistant", content: "On it." }], submitted);
+  await light.dialogue.reply("Turn off the light.", "t1");
+  assert.equal(submitted.length, 1);
+});
+
+test("the English forms of a second look and a claimed light change are caught too", async () => {
+  const look = deviceDialogue([{ role: "assistant", content: "It's a soap bottle." }, { role: "assistant", content: null, tool_calls: [call("cam", "camera")] }]);
+  assert.deepEqual((await look.dialogue.reply("Look again, it's not a cup.", "t1")).calls.map((item) => item.name), ["camera"]);
+  const submitted: any[] = [];
+  const light = deviceDialogue([{ role: "assistant", content: "Got it! I'll turn off the light for you." }, { role: "assistant", content: null, tool_calls: [call("own", "ask_lares", '{"operation":"run","task":"turn off the light"}')] }, { role: "assistant", content: "On it." }], submitted);
+  await light.dialogue.reply("Turn off the light.", "t1");
+  assert.deepEqual(submitted, [["turn off the light", "t1", "run"]]);
+});
+
+test("a model that still refuses the required tool keeps its words, and ordinary replies are not retried", async () => {
+  const kept = deviceDialogue([{ role: "assistant", content: "正在为您开灯。" }, { role: "assistant", content: "正在为您开灯。" }]);
+  assert.equal((await kept.dialogue.reply("开下灯。", "t1")).text, "正在为您开灯。");
+  assert.equal(kept.requests.length, 2);
+  const plain = deviceDialogue([{ role: "assistant", content: "我是 Reachy Mini。" }]);
+  await plain.dialogue.reply("你是谁？", "t1");
+  // "你再看看灯开了没" is about the light, not the camera.
+  const light = deviceDialogue([{ role: "assistant", content: "我去问问 Lares。" }]);
+  await light.dialogue.reply("你再看看灯开了没", "t1");
+  assert.equal(plain.requests.length + light.requests.length, 2);
+});
 
 test("a short task result is announced as the Agent wrote it; long, formatted or other-language results are not", async () => {
   const announce = async (result: string, asked = "帮我调成白色的") => {
@@ -515,7 +578,7 @@ test("a short task result is announced as the Agent wrote it; long, formatted or
 
 test("a Lares client's announcement still goes through the dialogue model", async () => {
   const requests: any[] = [];
-  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", chat: async (request: any) => { if (isRoute(request)) return routeTo(request); requests.push(request); return { role: "assistant", content: "灯开了。" }; } });
+  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", chat: async (request: any) => { requests.push(request); return { role: "assistant", content: "灯开了。" }; } });
   await dialogue.reply("开灯", "t1");
   dialogue.observeTask({ requestId: "r1", status: "completed", text: "灯已经打开了。" });
   await dialogue.reply(null, "task:r1", undefined, undefined, { announce: true });
@@ -563,29 +626,17 @@ test("a Lares client's session still refuses a tool it never offered", async () 
   await assert.rejects(dialogue.reply("search", "t1"), /voice_tool_forbidden/);
 });
 
-test("a device turn routed to Lares must call ask_lares, words alone may call nothing, and the camera route forces the camera", async () => {
-  const cases: [string, any][] = [["lares", { type: "function", function: { name: "ask_lares" } }], ["speak", "none"], ["camera", { type: "function", function: { name: "camera" } }], ["motion", undefined]];
-  for (const [route, choice] of cases) {
-    routing = route;
-    try {
-      const { dialogue, requests } = deviceDialogue([{ role: "assistant", content: "好的。" }]);
-      await dialogue.reply("能把它变成白色吗？", "t1");
-      assert.deepEqual(requests[0].toolChoice, choice, route);
-      // The tool list matches the route call's, so the rendered prefix stays cached.
-      assert.deepEqual(requests[0].tools.map((tool: any) => tool.function.name), ["ask_lares", "move_head", "camera"]);
-    } finally { routing = "motion"; }
-  }
-});
-
-test("a failed route call sends the turn to Lares, and sessions without device tools never route", async () => {
-  const requests: any[] = [];
-  const failing = createVoiceDialogue({ config: {}, agent: true, owner: "alice", submit: async () => ({ status: "pending" }),
-    chat: async (request: any) => { if (isRoute(request)) throw new Error("voice_chat_failed"); requests.push(request); return { role: "assistant", content: "好的。" }; } });
-  failing.setClientTools([MOVE]);
-  await failing.reply("开灯", "t1");
-  assert.deepEqual(requests[0].toolChoice, { type: "function", function: { name: "ask_lares" } });
-  const phone: any[] = [];
-  const plain = createVoiceDialogue({ config: {}, agent: true, owner: "alice", submit: async () => ({ status: "pending" }), chat: async (request: any) => { phone.push(request); return { role: "assistant", content: "好的。" }; } });
-  await plain.reply("开灯", "t1");
-  assert.ok(phone.every((request) => !isRoute(request)));
+test("a device request the checks may ask again is read only after its first answer; small talk still streams", async () => {
+  const live: Record<string, boolean> = {};
+  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", submit: async () => ({ status: "pending" }), chat: async (request: any) => {
+    const said = request.messages.filter((m: any) => m.role === "user").at(-1).content;
+    live[said] ??= typeof request.onDelta === "function";
+    return { role: "assistant", content: "好的。" };
+  } });
+  dialogue.setClientTools([MOVE, CAMERA]);
+  await dialogue.reply("把灯调整成黄色。", "t1", undefined, () => {});
+  await dialogue.reply("你再看看，它不是杯子。", "t2", undefined, () => {});
+  await dialogue.reply("今天心情不错。", "t3", undefined, () => {});
+  const first = Object.entries(live).map(([said, streamed]) => [String(said).slice(-12), streamed]);
+  assert.deepEqual(first.map(([, streamed]) => streamed), [false, false, true], JSON.stringify(first));
 });

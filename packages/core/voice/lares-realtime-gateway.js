@@ -430,8 +430,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       submittedTurns++;
       turn = { id: requestId, accepted: false };
       const running = scope.session?.snapshot().running === true;
-      // A device's new words while the Agent works change that work ("算了，关掉吧"), so they steer it.
-      const mode = running ? busyTurn || (caps.clientTools ? "steer" : busyDefault()) : undefined;
+      const mode = running ? busyTurn || busyDefault() : undefined;
       let state;
       const live = readsWhileWriting() ? followLive(requestId, input) : null;
       try { state = text === null ? await service.proceed(scope, { requestId }) : await service.prompt(scope, { text, requestId, ...(mode ? { mode } : {}) }); }
