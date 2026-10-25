@@ -8,13 +8,23 @@ test it are in [voice-runtime](voice-runtime.md#device-voice-through-router-reac
 
 | On pptest03 | Version | Note |
 | --- | --- | --- |
-| Lares | 0.26.81 (upload source); 0.26.82 built, not deployed | Silero device gate, echo word check, settled-words and short-take endpoints, hass-cli 0.0.2 |
+| Lares | 0.26.83 (upload source) | Silero device gate, echo word check, settled-words and short-take endpoints, hass-cli 0.0.2 |
 | reachymini | 0.1.7 (upload source) | `lares` dialect, ReSpeaker USB access; main says 0.1.6 |
 | Qwen3-ASR 0.6B | 1.0.2 (market.test) | engine v1.1.33, `ENGINE_MAX_CONCURRENCY=3`; the one in use |
 | Qwen3-ASR 1.7B | 1.0.30 (market.test) | stopped: no card with 12 Gi free |
 | sglang Qwen3.5-9B | 1.0.4 (market.test) | thinking off at launch |
 
-**0.26.82 is built and on Docker Hub but not deployed** (pptest03 was needed for
+**0.26.83 is deployed** (on top of 0.26.82): device speech streams from the TTS
+engine's first chunk (about 0.24 s instead of a whole sentence), the
+acknowledgment call keeps the delegating call's tools so it hits sglang's cache,
+and hass-cli 0.0.3 gives each Home Assistant request one skill to load (the
+Agent's first light task had taken seven steps through four competing skills).
+The Agent prompt is about 18k tokens: 35 dsh tools (~8.5k), system prompt
+(~2.7k), skill list (~4k, HA 61% before 0.0.3) and history; it misses sglang's
+cache on a task that follows the previous one by a minute or more, cause not yet
+confirmed.
+
+0.26.82 (pptest03 was needed for
 other work). It fixes what the 0.26.81 robot test showed: spoken commands of
 1.1–1.3 s were dropped as too short, because the take endpoint still counted a
 frame as speech only above 30% of the take's peak; under Silero the model's
