@@ -52,5 +52,6 @@ spec:
     - Voice devices take a new picture when asked to look again, answer greetings themselves, hand claimed light changes to Lares, and announce short results as Lares reported them.
     - Voice devices no longer cut a request while the speaker is mid-word, join a request continued after a pause, keep the Agent's spoken answers and announcements short, and log what they heard during a reply.
     - Voice devices recover when the model calls a tool the device does not have, wait out a pause after "uh" or an unfinished word, and log how much of each take sounded like a voice.
+    - Voice devices log which parts of the Agent's prompt change between requests, to find out why some requests start slowly.
 
-    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.89)
+    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.90)

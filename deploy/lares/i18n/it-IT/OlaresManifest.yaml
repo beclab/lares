@@ -48,5 +48,6 @@ spec:
     - I dispositivi vocali scattano una nuova foto quando si chiede di guardare di nuovo, rispondono da soli ai saluti, passano a Lares i cambi di luce annunciati e riferiscono i risultati brevi come li ha dati Lares.
     - I dispositivi vocali non tagliano più una richiesta a metà parola, uniscono una richiesta ripresa dopo una pausa, mantengono brevi le risposte parlate e gli annunci dell'Agent e registrano ciò che sentono durante una risposta.
     - I dispositivi vocali si riprendono quando il modello chiama uno strumento che il dispositivo non ha, aspettano la fine di una pausa dopo «ehm» o una parola incompleta e registrano quanta parte di ogni ripresa sembrava una voce.
+    - I dispositivi vocali registrano quali parti del prompt dell'Agent cambiano tra le richieste, per capire perché alcune partono lente.
 
-    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.89)
+    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.90)

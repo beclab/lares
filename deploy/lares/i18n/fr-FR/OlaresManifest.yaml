@@ -48,5 +48,6 @@ spec:
     - Les appareils vocaux prennent une nouvelle photo quand on leur demande de regarder à nouveau, répondent eux-mêmes aux salutations, confient à Lares les changements de lumière annoncés et annoncent les résultats courts tels que Lares les a donnés.
     - Les appareils vocaux ne coupent plus une demande au milieu d'un mot, réunissent une demande poursuivie après une pause, gardent courtes les réponses parlées et les annonces de l'Agent et consignent ce qu'ils entendent pendant une réponse.
     - Les appareils vocaux se rattrapent quand le modèle appelle un outil que l'appareil n'a pas, attendent la fin d'une pause après « euh » ou un mot inachevé et consignent quelle part de chaque prise ressemblait à une voix.
+    - Les appareils vocaux consignent les parties du prompt de l'Agent qui changent d'une requête à l'autre, pour comprendre pourquoi certaines démarrent lentement.
 
-    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.89)
+    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.90)
