@@ -15,7 +15,7 @@
  * pod, runs them there and fetches the results.
  */
 import { writeFileSync } from "node:fs";
-import { DEVICE_TOOLS, PERSONA, SCENARIOS } from "./scenarios.mjs";
+import { DEVICE_TOOLS, PERSONA, SCENARIOS, cameraFrame } from "./scenarios.mjs";
 
 const args = process.argv.slice(2);
 const values = (flag) => args.flatMap((value, index) => (args[index - 1] === flag ? [value] : []));
@@ -43,7 +43,12 @@ const served = new Set();
 const sendChat = globalThis.fetch;
 globalThis.fetch = async (url, init) => {
   const response = await sendChat(url, init);
-  if (String(url).endsWith("/chat/completions")) response.clone().text().then((body) => { const name = body.match(/"model"\s*:\s*"([^"]+)"/)?.[1]; if (name) served.add(name); }, () => {});
+  if (String(url).endsWith("/chat/completions")) response.clone().text().then((body) => {
+    const name = body.match(/"model"\s*:\s*"([^"]+)"/)?.[1];
+    if (name) served.add(name);
+    // voiceChat reports any refusal as voice_chat_failed; what Router said is only visible here.
+    if (!response.ok) console.error(`Router ${response.status}: ${body.slice(0, 300)}`);
+  }, () => {});
   return response;
 };
 
@@ -60,6 +65,22 @@ async function once(scenario, model) {
   dialogue.setClientTools(DEVICE_TOOLS);
   dialogue.setInstructions(PERSONA, 8000);
   for (const task of scenario.tasks || []) dialogue.observeTask(task);
+  // Earlier turns played the way the robot plays them, so history holds real tool calls, their outputs
+  // and the camera frame rather than words alone. A camera call is answered with the frame; any other
+  // device call with ok. Only the scored turn below is checked.
+  try {
+    for (const [index, turn] of (scenario.prelude || []).entries()) {
+      let reply = await dialogue.reply(turn.say, `eval:prelude${index}`, undefined, () => {});
+      for (let step = 0; step < 3 && reply.calls.length; step++) {
+        for (const call of reply.calls) dialogue.toolOutput(call.call_id, call.name === "camera" ? JSON.stringify({ image_attached: true }) : JSON.stringify({ status: "ok" }));
+        if (reply.calls.some((call) => call.name === "camera")) dialogue.observe([{ type: "image_url", image_url: { url: cameraFrame() } }]);
+        reply = await dialogue.reply(null, `eval:prelude${index}:${step}`, undefined, () => {});
+      }
+    }
+  } catch (error) {
+    return { text: "", calls: [], delegations, error: `prelude: ${error.message}`, ms: 0 };
+  }
+  delegations.length = 0;
   const started = performance.now();
   try {
     if (scenario.after) {

@@ -72,9 +72,11 @@ done
 mkdir -p "$out"
 for entry in "${labels[@]}"; do
   label=${entry%%=*}
-  pexec cat "$run/$label.txt" > "$out/$label.txt"
-  pexec cat "$run/$label.json" > "$out/$label.json"
+  pexec cat "$run/$label.txt" > "$out/$label.txt" || true
+  # A pass that crashed wrote no JSON; its text says why, and the other passes are still compared.
+  pexec cat "$run/$label.json" > "$out/$label.json" 2>/dev/null || { rm -f "$out/$label.json"; echo "pass $label wrote no results; see $out/$label.txt" >&2; }
 done
 results=()
-for entry in "${labels[@]}"; do results+=("$out/${entry%%=*}.json"); done
+for entry in "${labels[@]}"; do [ -f "$out/${entry%%=*}.json" ] && results+=("$out/${entry%%=*}.json"); done
+[ ${#results[@]} -gt 0 ] || exit 1
 node "$here/compare.mjs" "${results[@]}"

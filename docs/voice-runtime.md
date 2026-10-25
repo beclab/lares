@@ -221,6 +221,23 @@ Improvements, in order of value for effort (none implemented yet):
   2026-10-25, Qwen3.6-35B-A3B passed 104 and Qwen3.5-9B 94 of the same 110 runs
   with the same prompt. A 5-run pass moves by one or two runs between repeats;
   compare candidates in the same invocation.
+- Regression: `scripts/voice-eval/regress.sh <model-id> ...` runs this checkout's
+  `dialogue.js` against `scripts/voice-eval/baselines/<model>.json` and exits 1
+  when a scenario lost two or more of its five runs, a scenario disappeared, or
+  the total fell by more than three runs per hundred. Run it before every
+  dialogue change ships, on each model a device may meet (today Qwen3.5-9B on a
+  memory-sliced card and Qwen3.6-35B-A3B on a time-sliced one: they fail
+  different scenarios), and refresh the baseline with `--update` after a
+  release. A new robot failure becomes a scenario first — `prelude` turns replay
+  earlier turns with real camera calls and frames — and is fixed second.
+- Field tests: `scripts/voice-eval/field/collect.sh <dir>` follows the robot's,
+  Lares's and Router's logs while someone talks to the robot;
+  `field/analyze.sh <dir> <from> [<to>]` prints one row per turn (path taken,
+  time to first audio, dialogue calls and whether the Agent was running, task
+  result, flags such as a home request not delegated). Keep the GPU mode and
+  serving model of each round next to its table: a time-sliced 35B and a
+  memory-sliced 9B differ by about 4x in time to first audio (4.9 s vs 1.2 s
+  median on 2026-10-25) and in which mistakes they make.
 - Test builds: `docker buildx build --builder desktop-linux --platform linux/amd64,linux/arm64`
   (the QEMU builder crashed esbuild), `scripts/package-chart.sh`, then
   `olares-cli market upload` and `market upgrade lares -s upload`. An app

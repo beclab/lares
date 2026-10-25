@@ -1,0 +1,850 @@
+{
+  "runs": 5,
+  "effort": null,
+  "dialogue": null,
+  "models": {
+    "Olares/cyankiwi/Qwen3.5-9B-AWQ-4bit": {
+      "nod-zh": {
+        "passed": 4,
+        "runs": 5,
+        "ms": 274,
+        "results": [
+          {
+            "problems": [],
+            "did": "dance({\"move\": \"simple_nod\"}) · \"\""
+          },
+          {
+            "problems": [],
+            "did": "dance({\"move\": \"simple_nod\"}) · \"\""
+          },
+          {
+            "problems": [],
+            "did": "dance({\"move\": \"simple_nod\"}) · \"\""
+          },
+          {
+            "problems": [
+              "no nod (dance / move_head)"
+            ],
+            "did": "\"来吧，给一个轻轻的点头！\""
+          },
+          {
+            "problems": [],
+            "did": "dance({\"move\": \"simple_nod\"}) · \"\""
+          }
+        ]
+      },
+      "light-on-zh": {
+        "passed": 4,
+        "runs": 5,
+        "ms": 569,
+        "results": [
+          {
+            "problems": [
+              "light request not sent to ask_lares"
+            ],
+            "did": "\"我需要帮您操作家里的灯光。请给我几秒钟时间来设置这个任务。\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: turn on the lights) · \"已通知开启灯光，请稍候。\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: turn on lights) · \"正在为您开灯，请稍候。\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: Turn on the lights.) · \"正在帮你开灯，请稍候。\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: turn on lights) · \"正在为您开灯，请稍等。\""
+          }
+        ]
+      },
+      "light-after-spoken-ack": {
+        "passed": 5,
+        "runs": 5,
+        "ms": 626,
+        "results": [
+          {
+            "problems": [],
+            "did": "ask_lares(run: Turn on the lights) · \"已请助手开启灯光，请稍候。\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: turn on the light) · \"已请求开启小灯，请稍等。\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: adjust lights to on) · \"已为您开启灯光。\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: Turn on the lights.) · \"已启动灯光控制任务。\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: turn on the lights) · \"已请求调灯光，正在等待处理。\""
+          }
+        ]
+      },
+      "light-still-off": {
+        "passed": 5,
+        "runs": 5,
+        "ms": 567,
+        "results": [
+          {
+            "problems": [],
+            "did": "ask_lares(run: turn on the lights) · \"已提交开灯指令，等待系统处理。\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: turn on the lights) · \"已请求开灯，请稍等。\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: Turn on the lights) · \"已请求开灯，请稍等。\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: Turn on the lights.) · \"已向系统请求开灯，请稍候。\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: Turn on the lights.) · \"灯马上开。\""
+          }
+        ]
+      },
+      "light-off-en": {
+        "passed": 4,
+        "runs": 5,
+        "ms": 642,
+        "results": [
+          {
+            "problems": [
+              "did not answer in English"
+            ],
+            "did": "ask_lares(run: Turn off the light.) · \"指令已发出，正在执行。让我检查一下状态并告知您结果。\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: Turn off the light.) · \"I'm turning off the light now.\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: Turn off the light.) · \"I'm turning off the light for you now.\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: Turn off the light.) · \"Turning off the light for you.\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: Turn off the light.) · \"I've submitted the request to turn off the light.\""
+          }
+        ]
+      },
+      "camera-zh": {
+        "passed": 5,
+        "runs": 5,
+        "ms": 329,
+        "results": [
+          {
+            "problems": [],
+            "did": "camera({\"question\": \"What is the user holding?\"}) · \"\""
+          },
+          {
+            "problems": [],
+            "did": "camera({\"question\": \"What is in the user's hand?\"}) · \"\""
+          },
+          {
+            "problems": [],
+            "did": "camera({\"question\": \"What is the user holding?\"}) · \"\""
+          },
+          {
+            "problems": [],
+            "did": "camera({\"question\": \"What is the user holding?\"}) · \"\""
+          },
+          {
+            "problems": [],
+            "did": "camera({\"question\": \"What is the user holding in their hand?\"}) · \"\""
+          }
+        ]
+      },
+      "clarify-answer": {
+        "passed": 5,
+        "runs": 5,
+        "ms": 609,
+        "results": [
+          {
+            "problems": [],
+            "did": "ask_lares(run: Turn off the living room light.) · \"正在关闭客厅灯...\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: Turn off the living room lights.) · \"好的，正在关闭客厅的灯。\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: Turn off the living room lights.) · \"关灯任务已提交，稍后确认。\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: Turn off the living room light.) · \"已提交关灯请求，请稍等。\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: Turn off the living room light.) · \"已提交关灯指令，请稍候。\""
+          }
+        ]
+      },
+      "not-done-followup": {
+        "passed": 4,
+        "runs": 5,
+        "ms": 552,
+        "results": [
+          {
+            "problems": [],
+            "did": "ask_lares(run: Turn off the light in the living room again.) · \"正在再次关闭客厅的灯。请稍等。\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: Turn off the light in the living room.) · \"任务已提交，正在尝试关闭灯光。请稍等。\""
+          },
+          {
+            "problems": [
+              "retry not sent to ask_lares"
+            ],
+            "did": "\"让我重新检查一下，请稍等。我会通过Lares确认灯光状态。\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: Turn off light.living_room.) · \"正在关闭客厅的灯。等我消息。\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: 检查客厅灯光状态并关闭。) · \"正在检查并关闭灯光，请稍等。\""
+          }
+        ]
+      },
+      "no-fabrication": {
+        "passed": 5,
+        "runs": 5,
+        "ms": 395,
+        "results": [
+          {
+            "problems": [],
+            "did": "ask_lares(run: turn off lights) · \"已提交关灯指令，请稍等。\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: Check the status of the lights.) · \"已提交查询，请稍候。\""
+          },
+          {
+            "problems": [],
+            "did": "\"我还没操作呢，让我试试。\""
+          },
+          {
+            "problems": [],
+            "did": "\"还没确认，让我再试试。\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: Check if the light has been turned off.) · \"正在检查灯光状态...请稍候。\""
+          }
+        ]
+      },
+      "greeting-en": {
+        "passed": 5,
+        "runs": 5,
+        "ms": 309,
+        "results": [
+          {
+            "problems": [],
+            "did": "\"Hello! I'm Reachy — care to say hi or drop by for a quick robot chat?\""
+          },
+          {
+            "problems": [],
+            "did": "\"Hello! I'm Reachy, ready to help you with a smile—or a slightly tilted head.\""
+          },
+          {
+            "problems": [],
+            "did": "\"Hi there! I'm Reachy—ready to help or just chat about the day. What's on your mind?\""
+          },
+          {
+            "problems": [],
+            "did": "\"Hello! I'm Reachy Mini, your friendly assistant. What can I help you with today?\""
+          },
+          {
+            "problems": [],
+            "did": "\"Hello! I'm Reachy, ready to help or just hang out—what's on your mind?\""
+          }
+        ]
+      },
+      "after-task-result": {
+        "passed": 5,
+        "runs": 5,
+        "ms": 375,
+        "results": [
+          {
+            "problems": [],
+            "did": "pollen_robotics_reachy_mini_weather_tool__get_weather({\"location\": \"北京\"}) · \"\""
+          },
+          {
+            "problems": [],
+            "did": "\"我明天再查。\""
+          },
+          {
+            "problems": [],
+            "did": "pollen_robotics_reachy_mini_weather_tool__get_weather({\"location\": \"北京\"}) · \"\""
+          },
+          {
+            "problems": [],
+            "did": "pollen_robotics_reachy_mini_weather_tool__get_weather({\"location\": \"北京\"}) · \"\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: Get the weather for tomorrow in Beijing.) · \"正在查询北京明天的天气。请稍等。\""
+          }
+        ]
+      },
+      "filler-noise": {
+        "passed": 5,
+        "runs": 5,
+        "ms": 232,
+        "results": [
+          {
+            "problems": [],
+            "did": "\"收到，我在听。有什么事可以尽管说，我随时帮得上忙。\""
+          },
+          {
+            "problems": [],
+            "did": "\"收到，我在听着呢。\""
+          },
+          {
+            "problems": [],
+            "did": "\"收到，随时为您效劳！ (收到，随时为您效劳！)\""
+          },
+          {
+            "problems": [],
+            "did": "\"好的，我在听。您是想让我点头致意吗？（等待调头 interpret_angle 工具被误调用，应改为简单回应，若需点头则调用 turn_head_right 等）\""
+          },
+          {
+            "problems": [],
+            "did": "\"收到，我在呢。有什么需要我帮忙的吗？\""
+          }
+        ]
+      },
+      "language-switch": {
+        "passed": 4,
+        "runs": 5,
+        "ms": 502,
+        "results": [
+          {
+            "problems": [],
+            "did": "ask_lares(run: turn off the lights) · \"已请求关闭灯光，请稍等\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: turn off lights) · \"已请求关灯，等待处理结果。\""
+          },
+          {
+            "problems": [
+              "light request not sent to ask_lares"
+            ],
+            "did": "\"我请求关闭了灯光。抱歉，内置工具无法直接控制家里的设备，需要通过网络请求。如果您需要其他帮助，请随时告诉我。\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: Turn off the lights.) · \"已请求关闭灯光。\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: turn off the lights) · \"已请求关闭灯光。\""
+          }
+        ]
+      },
+      "announce-language": {
+        "passed": 5,
+        "runs": 5,
+        "ms": 180,
+        "results": [
+          {
+            "problems": [],
+            "did": "\"灯 \\\"Aqara lumi.light.agl003\\\" 已成功关闭。\""
+          },
+          {
+            "problems": [],
+            "did": "\"灯已关闭。\""
+          },
+          {
+            "problems": [],
+            "did": "\"灯 \\\"Aqara lumi.light.agl003\\\" 已经关闭。当前状态：关。\""
+          },
+          {
+            "problems": [],
+            "did": "\"灯已关闭，当前状态为关闭。\""
+          },
+          {
+            "problems": [],
+            "did": "\"灯“Aqara lumi.light.agl003”已关闭。\""
+          }
+        ]
+      },
+      "camera-relook-zh": {
+        "passed": 4,
+        "runs": 5,
+        "ms": 545,
+        "results": [
+          {
+            "problems": [],
+            "did": "camera({\"question\": \"Is it a cup or what?\"}) · \"\""
+          },
+          {
+            "problems": [],
+            "did": "camera({\"question\": \"what object is in the container?\"}) · \"\""
+          },
+          {
+            "problems": [],
+            "did": "camera({\"question\": \"用户说这不是杯子，那是什么物品？\"}) · \"\""
+          },
+          {
+            "problems": [],
+            "did": "camera({\"question\": \"这是什么？\"}) · \"\""
+          },
+          {
+            "problems": [
+              "looked again without the camera",
+              "sent a camera look to ask_lares"
+            ],
+            "did": "ask_lares(run: Analyze the image to see what object it is, confirming it's not a cup.) · \"正在检查图像，请稍等。\""
+          }
+        ]
+      },
+      "camera-reidentify-zh": {
+        "passed": 3,
+        "runs": 5,
+        "ms": 704,
+        "results": [
+          {
+            "problems": [],
+            "did": "camera({\"question\": \"Identify this red round object with a green leaf on top.\"}) · \"\""
+          },
+          {
+            "problems": [
+              "re-identified without the camera",
+              "sent a camera look to ask_lares"
+            ],
+            "did": "ask_lares(run: identify object in camera view) · \"正在识别，请稍候。\""
+          },
+          {
+            "problems": [],
+            "did": "camera({\"question\": \"What object is shown in the image?\"}) · \"\""
+          },
+          {
+            "problems": [],
+            "did": "camera({\"question\": \"What object is this?\"}) · \"\""
+          },
+          {
+            "problems": [
+              "re-identified without the camera",
+              "sent a camera look to ask_lares"
+            ],
+            "did": "ask_lares(run: Ask the user to clarify what they mean and provide more context.) · \"已请求澄清。请提供更多信息。\""
+          }
+        ]
+      },
+      "hello-after-failed-light": {
+        "passed": 4,
+        "runs": 5,
+        "ms": 198,
+        "results": [
+          {
+            "problems": [],
+            "did": "\"你好！有什么我可以帮你的吗？\""
+          },
+          {
+            "problems": [],
+            "did": "\"你好！灯光已经为你开启了。需要我调整亮度吗？\""
+          },
+          {
+            "problems": [],
+            "did": "\"晚上好！我能为您做点什么吗？\""
+          },
+          {
+            "problems": [],
+            "did": "\"晚上好！我是你的个人助手，有什么我可以帮你的吗？\""
+          },
+          {
+            "problems": [
+              "reply longer than 30 characters"
+            ],
+            "did": "\"G'day! How can I brighten your day? (winks)\\n\\nCall ask_lares to control the lights.\""
+          }
+        ]
+      },
+      "announce-faithful-zh": {
+        "passed": 5,
+        "runs": 5,
+        "ms": 0,
+        "results": [
+          {
+            "problems": [],
+            "did": "\"好的，灯光已经调整为明亮的白色，亮度已经调低了（50%）。\""
+          },
+          {
+            "problems": [],
+            "did": "\"好的，灯光已经调整为明亮的白色，亮度已经调低了（50%）。\""
+          },
+          {
+            "problems": [],
+            "did": "\"好的，灯光已经调整为明亮的白色，亮度已经调低了（50%）。\""
+          },
+          {
+            "problems": [],
+            "did": "\"好的，灯光已经调整为明亮的白色，亮度已经调低了（50%）。\""
+          },
+          {
+            "problems": [],
+            "did": "\"好的，灯光已经调整为明亮的白色，亮度已经调低了（50%）。\""
+          }
+        ]
+      },
+      "camera-relook-en": {
+        "passed": 5,
+        "runs": 5,
+        "ms": 620,
+        "results": [
+          {
+            "problems": [],
+            "did": "camera({\"question\": \"What is this object? Confirm if it's not a cup.\"}) · \"Got it! Let me take another look.\""
+          },
+          {
+            "problems": [],
+            "did": "camera({\"question\": \"what object is this?\"}) · \"\""
+          },
+          {
+            "problems": [],
+            "did": "camera({\"question\": \"What does this red object with a green top resemble?\"}) · \"\""
+          },
+          {
+            "problems": [],
+            "did": "camera({\"question\": \"Look at the camera again and describe it better.\"}) · \"\""
+          },
+          {
+            "problems": [],
+            "did": "camera({\"question\": \"What is the object in the image?\"}) · \"\""
+          }
+        ]
+      },
+      "camera-reidentify-en": {
+        "passed": 5,
+        "runs": 5,
+        "ms": 633,
+        "results": [
+          {
+            "problems": [],
+            "did": "camera({\"question\": \"Please take a picture.\"}) · \"\""
+          },
+          {
+            "problems": [],
+            "did": "camera({\"question\": \"what is the object the user is showing?\"}) · \"\""
+          },
+          {
+            "problems": [],
+            "did": "camera({\"question\": \"What is the actual fruit shown in the image?\"}) · \"\""
+          },
+          {
+            "problems": [],
+            "did": "camera({\"question\": \"What is the object in the image?\"}) · \"\""
+          },
+          {
+            "problems": [],
+            "did": "camera({\"question\": \"What does the camera see now?\"}) · \"\""
+          }
+        ]
+      },
+      "hello-after-failed-light-en": {
+        "passed": 5,
+        "runs": 5,
+        "ms": 174,
+        "results": [
+          {
+            "problems": [],
+            "did": "\"Hello! I'm here to help. What do you need? 🤖\""
+          },
+          {
+            "problems": [],
+            "did": "\"Good evening! How can I help you today?\""
+          },
+          {
+            "problems": [],
+            "did": "\"Hello there! How can I help you today?\""
+          },
+          {
+            "problems": [],
+            "did": "\"Hello! Ready to assist. Need help with the light?\""
+          },
+          {
+            "problems": [],
+            "did": "\"Hello! How can I assist you today?\""
+          }
+        ]
+      },
+      "announce-faithful-en": {
+        "passed": 5,
+        "runs": 5,
+        "ms": 172,
+        "results": [
+          {
+            "problems": [],
+            "did": "\"The light is now white at 50% brightness.\""
+          },
+          {
+            "problems": [],
+            "did": "\"The light is now bright white at 50% brightness.\""
+          },
+          {
+            "problems": [],
+            "did": "\"The light is now white at 50% brightness.\""
+          },
+          {
+            "problems": [],
+            "did": "\"The light is now bright white at 50% brightness.\""
+          },
+          {
+            "problems": [],
+            "did": "\"The light is now bright white at 50% brightness.\""
+          }
+        ]
+      },
+      "brief-hello-zh": {
+        "passed": 3,
+        "runs": 5,
+        "ms": 185,
+        "results": [
+          {
+            "problems": [],
+            "did": "\"你好！我是 Reachy，想聊点什么吗？\""
+          },
+          {
+            "problems": [],
+            "did": "\"你好！我是小机器人 Reachy，今天能为你做点什么吗？\""
+          },
+          {
+            "problems": [
+              "reply longer than 30 characters"
+            ],
+            "did": "\"你好！需要帮你处理什么事吗？顺便说一句，我的 Wi-Fi 信号比我更准时。\""
+          },
+          {
+            "problems": [],
+            "did": "\"主人好开心！我正准备为您表演一个可爱的“点头”，马上就来~\""
+          },
+          {
+            "problems": [
+              "reply longer than 30 characters"
+            ],
+            "did": "\"你好！我是 Reachy Mini。虽然我没有食物，但我随时准备为您提供帮助。\""
+          }
+        ]
+      },
+      "brief-who-zh": {
+        "passed": 4,
+        "runs": 5,
+        "ms": 194,
+        "results": [
+          {
+            "problems": [],
+            "did": "\"我是 Reachy Mini，一个友好的小机器人助手。需要帮忙吗？\""
+          },
+          {
+            "problems": [
+              "reply longer than 35 characters"
+            ],
+            "did": "\"我是 Reachy Mini，您的机器人助手！需要我帮您看个东西或查点什么呢？\""
+          },
+          {
+            "problems": [],
+            "did": "\"我是Reachy Mini，你的贴心小助手。有什么可以帮你吗？\""
+          },
+          {
+            "problems": [],
+            "did": "\"我是朗读机器人Mini，一个为您提供简洁短句接口服务的助手。\""
+          },
+          {
+            "problems": [],
+            "did": "\"我是Reachy Mini，一个喜欢用简单表情和小小幽默的助手哦～ 😊\""
+          }
+        ]
+      },
+      "brief-can-en": {
+        "passed": 5,
+        "runs": 5,
+        "ms": 265,
+        "results": [
+          {
+            "problems": [],
+            "did": "\"I'm Reachy, your friendly robot assistant! Can help with chores, weather, or just a friendly nod. 😊\""
+          },
+          {
+            "problems": [],
+            "did": "\"I can check the weather, search the web, adjust home devices, and even dance! What would you like to do first?\""
+          },
+          {
+            "problems": [],
+            "did": "\"I can help with tasks, control home devices, check weather, search the web, and even move or express emotions. Need a hand?\""
+          },
+          {
+            "problems": [],
+            "did": "\"I can help with tasks, check the weather, control home devices, and even do a little dance! What would you like?\""
+          },
+          {
+            "problems": [],
+            "did": "\"I can help with tasks, control home devices, check weather, and even dance!\""
+          }
+        ]
+      },
+      "ack-brief-zh": {
+        "passed": 5,
+        "runs": 5,
+        "ms": 581,
+        "results": [
+          {
+            "problems": [],
+            "did": "ask_lares(run: Turn on the lights.) · \"好的，已指令灯光开启。\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: 开灯) · \"已呼叫助手处开灯，正在处理中。\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: Turn on the lights.) · \"已在处理，请稍等片刻。\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: Turn on the lights.) · \"已请求开灯，请稍等。\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: Turn on the lights.) · \"好的，我已通知系统开启灯光。\""
+          }
+        ]
+      },
+      "ack-brief-en": {
+        "passed": 5,
+        "runs": 5,
+        "ms": 589,
+        "results": [
+          {
+            "problems": [],
+            "did": "ask_lares(run: Turn off the light.) · \"I'm turning off the light for you now.\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: Turn off the light.) · \"I'm turning off the light. Stand by!\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: Turn off the light.) · \"I'll turn off the light for you.\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: Turn off the light.) · \"Your request is pending. Standing by for confirmation.\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: Turn off the light.) · \"I've queued the light for you, just giving it a gentle push.\""
+          }
+        ]
+      },
+      "camera-brief-zh": {
+        "passed": 5,
+        "runs": 5,
+        "ms": 611,
+        "results": [
+          {
+            "problems": [],
+            "did": "\"我看是个红苹果，绿色的叶子蛮新鲜的。\""
+          },
+          {
+            "problems": [],
+            "did": "\"我看到一个红苹果。\""
+          },
+          {
+            "problems": [],
+            "did": "ask_lares(run: Report the camera result as-is without adding any extra commentary.) · \"正在处理摄像头结果。请稍候。\""
+          },
+          {
+            "problems": [],
+            "did": "\"我看到一个苹果。不过我没法确认是不是您手里拿着的。\""
+          },
+          {
+            "problems": [],
+            "did": "\"我看到一个红色苹果。\""
+          }
+        ]
+      },
+      "camera-brief-en": {
+        "passed": 5,
+        "runs": 5,
+        "ms": 608,
+        "results": [
+          {
+            "problems": [],
+            "did": "\"You're holding an apple.\""
+          },
+          {
+            "problems": [],
+            "did": "\"You're holding a red ball with a green top.\""
+          },
+          {
+            "problems": [],
+            "did": "camera({\"question\": \"What is in the user's hands?\"}) · \"You’re holding an apple – with that cheeky leaf, I say!\""
+          },
+          {
+            "problems": [],
+            "did": "\"I see you're holding an apple.\""
+          },
+          {
+            "problems": [],
+            "did": "\"You're holding an apple.\""
+          }
+        ]
+      },
+      "weather-zh": {
+        "passed": 5,
+        "runs": 5,
+        "ms": 380,
+        "results": [
+          {
+            "problems": [],
+            "did": "pollen_robotics_reachy_mini_weather_tool__get_weather({\"location\": \"北京\"}) · \"\""
+          },
+          {
+            "problems": [],
+            "did": "pollen_robotics_reachy_mini_weather_tool__get_weather({\"location\": \"北京\"}) · \"\""
+          },
+          {
+            "problems": [],
+            "did": "pollen_robotics_reachy_mini_weather_tool__get_weather({\"location\": \"北京\"}) · \"\""
+          },
+          {
+            "problems": [],
+            "did": "pollen_robotics_reachy_mini_weather_tool__get_weather({\"location\": \"北京\"}) · \"\""
+          },
+          {
+            "problems": [],
+            "did": "pollen_robotics_reachy_mini_weather_tool__get_weather({\"location\": \"北京\"}) · \"\""
+          }
+        ]
+      },
+      "served": [
+        "cyankiwi/Qwen3.5-9B-AWQ-4bit"
+      ]
+    }
+  },
+  "note": "Lares 0.26.87 dialogue on Qwen3.5-9B-AWQ (sglang, memory-sliced RTX 5090), pptest03, 2026-10-25"
+}
