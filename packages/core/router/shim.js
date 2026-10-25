@@ -224,6 +224,16 @@ async function enrichGenerationPoll(up, res, req, env, cancellation, deps) {
   sendJson(res, status, enriched);
 }
 
+// A per-process observer of chat requests by dsh Session id; the voice host installs one to see
+// what a device-driven Agent sends its model.
+let requestTrace = null;
+export function setRequestTrace(trace) { requestTrace = trace; }
+const traceChat = (headers, body) => {
+  const sessionId = headers["x-session-id"];
+  if (!requestTrace || typeof sessionId !== "string") return;
+  try { requestTrace(sessionId, JSON.parse(body.toString("utf8")).messages); } catch {}
+};
+
 export function proxyToRouter(req, res, env = process.env, deps = {}) {
   if (isModelsGet(req)) {
     serveCachedModels(req, res);
@@ -254,6 +264,7 @@ export function proxyToRouter(req, res, env = process.env, deps = {}) {
       }
       if (method === "POST" && suffix.replace(/\/+$/, "") === "chat/completions") {
         body = adaptGeminiChatBuffer(body);
+        traceChat(req.headers, body);
       }
       headers["content-length"] = String(body.length);
     }

@@ -9,6 +9,7 @@ import { createRouterAudio } from "@olares/lares-core/voice/router-audio";
 import { createSileroGate } from "@olares/lares-core/voice/silero";
 import { createVoiceHostService } from "@olares/lares-core/voice/host-service";
 import { createAgentPromptTrace } from "@olares/lares-core/voice/agent-prompt-trace";
+import { setRequestTrace } from "@olares/lares-core/router/shim";
 import { registerRealtime } from "./realtime.js";
 /**
  * Voice-input Host routes under /api/lares/voice (STT via /llm/v1 shim).
@@ -411,9 +412,6 @@ export function apply(ctx) {
     if (id && voiceHost?.drivesDevice(id)) promptTrace.assembled(id, assembly, { deviceRule: assembly.sections.some((section) => section.name === "app:spoken-reply" && String(section.text).includes(DEVICE_SPOKEN_PROMPT)) });
     return assembly;
   }, { prepend: true });
-  ctx.on("agent/pre-step", async (step, next) => {
-    const decision = await next();
-    if (decision?.kind !== "reject" && step?.agent?.id && voiceHost?.drivesDevice(step.agent.id)) promptTrace.step(step.agent.id, decision.messages);
-    return decision;
-  }, { prepend: true });
+  // Whole model requests are traced where they leave for Router, in the LLM shim.
+  setRequestTrace((sessionId, messages) => { if (voiceHost?.drivesDevice(sessionId)) promptTrace.request(sessionId, messages); });
 }

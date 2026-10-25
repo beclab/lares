@@ -9,8 +9,10 @@ const short = (value) => createHash("sha1").update(typeof value === "string" ? v
  *
  * `rule` records once per Session, and again when it changes, whether the device or the voice
  * spoken-reply rule applies; `assembled` the system prompt's section, context and tool hashes,
- * naming the parts that changed since the Session's last assembly; `step` the first message a
- * step's history rewrote (null while history only grew). Only hashes and counts are reported.
+ * naming the parts that changed since the Session's last assembly; `request` the first message of
+ * a model request that differs from the Session's previous request, with its role and the shape of
+ * both versions (null while the conversation only grew). Only hashes, roles, keys and lengths are
+ * reported, never content.
  */
 export function createAgentPromptTrace({ report, limit = 256 }) {
   const rules = new Map(), prompts = new Map(), histories = new Map();
@@ -34,14 +36,17 @@ export function createAgentPromptTrace({ report, limit = 256 }) {
       if (before && !changed.length) return;
       report({ event: "agent-prompt", sessionId, deviceRule, first: !before, changed: changed || [], sections: (assembly.sections || []).length, chars: (assembly.sections || []).reduce((sum, section) => sum + String(section.text || "").length, 0), parts });
     },
-    step(sessionId, messages) {
-      const hashes = (messages || []).map(short);
+    request(sessionId, messages) {
+      const shape = (message) => ({ role: message?.role ?? null, keys: Object.keys(message || {}).sort().join(","), chars: JSON.stringify(message ?? null).length });
+      const now = (messages || []).map((message) => ({ hash: short(message), ...shape(message) }));
       const before = histories.get(sessionId);
-      remember(histories, sessionId, hashes);
-      let firstChanged = null;
-      if (before) for (let i = 0; i < Math.min(before.length, hashes.length); i++) if (before[i] !== hashes[i]) { firstChanged = i; break; }
-      if (before && firstChanged === null && hashes.length < before.length) firstChanged = hashes.length;
-      report({ event: "agent-step", sessionId, messages: hashes.length, previous: before?.length ?? null, firstChanged });
+      remember(histories, sessionId, now);
+      let index = null;
+      if (before) for (let i = 0; i < Math.min(before.length, now.length); i++) if (before[i].hash !== now[i].hash) { index = i; break; }
+      if (before && index === null && now.length < before.length) index = now.length;
+      const was = index === null ? null : before[index] ?? null, is = index === null ? null : now[index] ?? null;
+      report({ event: "agent-request", sessionId, messages: now.length, previous: before?.length ?? null, firstChanged: index,
+        ...(index === null ? {} : { changedRole: is?.role ?? was?.role ?? null, before: was && { keys: was.keys, chars: was.chars }, after: is && { keys: is.keys, chars: is.chars } }) });
     },
   };
 }

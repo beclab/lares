@@ -17,14 +17,19 @@ test("a Session's prompt is reported first in full and later only when a part ch
   assert.ok(!JSON.stringify(reports).includes("you are Lares"), "only hashes leave the process");
 });
 
-test("a step reports the first message its history rewrote, and null while history only grew", () => {
+test("a request reports the first message that differs from the Session's previous request, by shape only", () => {
   const reports: any[] = [];
   const trace = createAgentPromptTrace({ report: (fields: any) => reports.push(fields) });
-  trace.step("s1", [{ role: "user", content: "weather" }]);
-  trace.step("s1", [{ role: "user", content: "weather" }, { role: "assistant", content: "18°C" }]);
-  trace.step("s1", [{ role: "user", content: "[omitted]" }, { role: "assistant", content: "18°C" }, { role: "user", content: "light" }]);
-  trace.step("s1", [{ role: "user", content: "[omitted]" }]);
-  assert.deepEqual(reports.map((item) => item.firstChanged), [null, null, 0, 1]);
+  const system = { role: "system", content: "you are Lares" }, user = { role: "user", content: "weather" };
+  const result = { role: "tool", tool_call_id: "t1", content: "a long search result" };
+  trace.request("s1", [system, user]);
+  trace.request("s1", [system, user, result]);
+  trace.request("s1", [system, user, { ...result, content: "[result omitted]" }, { role: "user", content: "light" }]);
+  assert.deepEqual(reports.map((item) => item.firstChanged), [null, null, 2]);
+  assert.equal(reports[2].changedRole, "tool");
+  assert.equal(reports[2].before.keys, "content,role,tool_call_id");
+  assert.ok(reports[2].before.chars > reports[2].after.chars);
+  assert.ok(!JSON.stringify(reports).includes("search result") && !JSON.stringify(reports).includes("Lares"), "no content is reported");
 });
 
 test("the spoken rule is reported once per Session and again when it changes", () => {
