@@ -103,6 +103,75 @@ are still dark in a bright room: auto exposure meters on the monitor and the
 ceiling lights in view. Raising contrast to 32 and backlight compensation to 6
 made it darker, and the defaults (contrast 1, backlight 2) were restored.
 
+### Where a device turn spends its time, compared with LiveKit Agents (2026-10-25)
+
+Measured on pptest03 with sglang Qwen3.5-9B and nothing else using the GPU,
+for "turn off the light" (Lares 0.26.82; from the moment the user stops
+speaking):
+
+| Stage | Time | Running total |
+| --- | --- | --- |
+| Silence until the take ends | 0.5 s | 0.5 s |
+| ASR final result (streaming) | 0.16 s | 0.7 s |
+| Dialogue decides to delegate (5.1k-token prompt, cached) | 0.48 s | 1.2 s |
+| Dialogue words the acknowledgment (missed the cache until 0.26.83) | 0.94 s | 2.1 s |
+| TTS of the whole sentence (streamed from 0.26.83, first audio about 0.24 s) | 0.64 s | 2.8 s |
+| Agent, two model calls (first prefilled about 17.9k tokens from scratch, about 3 s) | 4.8 s | |
+| Result wording 1.1 s, its TTS 1.2 s | | about 8.9 s to the result |
+
+A chat turn skips the acknowledgment call. sglang's `Prefill batch` log lines
+(`#new-token`, `#cached-token`) show each call's prefill and cache use; the
+robot-side capture and playback latency is not measured.
+
+The same stretch in LiveKit Agents (Python `livekit-agents` at `ab7fe5b46`;
+agents-js has the same defaults), stage by stage:
+
+| Stage | LiveKit Agents | Lares device sessions |
+| --- | --- | --- |
+| End of turn | Silero plus a text end-of-turn model: waits `min_delay` 0.3 s when the model says the turn is complete, up to `max_delay` 2.5 s when not (0.5/3.0 s without the model); `dynamic` mode learns the user's pauses (`voice/turn.py`, `voice/audio_recognition.py`) | Fixed 500 ms of silence, or 1 s after ASR stops finding new words |
+| Preemptive generation | On by default: the LLM starts on each changed STT final transcript, before the end-of-turn delay; reused at commit only if transcript, chat context, tools and tool choice are unchanged; TTS and tools wait for the commit | None: the dialogue starts after the take commits |
+| LLM to TTS | Token stream into a sentence tokenizer (blingfire, `min_sentence_len` 20); the next segment's TTS starts while the previous one plays | Whole reply first, then sentence by sentence; device TTS streams from 0.26.83 |
+| Interruption | 0.5 s of speech pauses playback; with no words within `false_interruption_timeout` 2 s it resumes; interruptions ignored during `aec_warmup_duration` 3 s after the agent starts speaking; echo is left to AEC, transcripts are not compared | Speech that clears the reply's echo for 500 ms and that Silero hears as a voice, then up to 1.5 s for ASR words, compared with the reply; only then playback stops |
+| Tools | The voice LLM speaks and calls tools in one reply; tool results trigger a follow-up (`max_tool_steps` 3); optional `with_filler` and a `BackgroundAudioPlayer` thinking sound; `say(audio=...)` plays pre-synthesized audio | A separate acknowledgment call, then the dsh Agent (its own LLM and an about 18k-token prompt) |
+| Latency metrics | Per turn: `end_of_turn_delay`, `transcription_delay`, LLM `ttft`, TTS `ttfb`, `playback_latency`, `e2e_latency` | `device-take` only (take length, ending, levels) |
+| Warm-up | VAD, LLM and TTS connections prewarmed at session start | Silero loaded at session open (about 0.5 s) |
+
+Improvements, in order of value for effort (none implemented yet):
+
+1. **Per-turn latency metrics.** Record, per turn, end of speech, take commit,
+   ASR final, dialogue first token, first TTS audio and first audio sent, and
+   the end-to-end delay, after LiveKit's `MetricsReport`. Every change below is
+   judged by it.
+2. **Preemptive generation** (about 0.3–0.5 s every turn). Start the dialogue on
+   the streaming ASR text as soon as Silero hears silence; at commit reuse it if
+   the final text is unchanged, otherwise discard and restart. As in LiveKit,
+   nothing is synthesized and no tool (`ask_lares` or a device tool) runs before
+   the commit.
+3. **End of turn by completeness** (about 0.2 s on average, fewer cut
+   sentences). Cheap form: Qwen3-ASR's partials carry punctuation, so a take
+   whose text ends in 。？！ commits after 300 ms and one that does not waits up
+   to about 1 s. Full form: LiveKit's multilingual end-of-turn model (v1-mini,
+   Chinese included).
+4. **Thinking feedback** (largest perceived gain). When a take commits, the
+   device plays a short gesture or sound, like LiveKit's thinking sound.
+5. **Fixed acknowledgments with cached audio** (about 1 s on delegation). Pick a
+   short phrase per language instead of an LLM call, from pre-synthesized audio
+   (`say(audio=...)` in LiveKit).
+6. **Stream the dialogue's text into TTS** instead of waiting for the whole
+   reply; worth more as replies get longer.
+7. **Interruption.** Turn on the ReSpeaker's echo cancellation with the playback
+   reference, which is what LiveKit relies on and would let the 1.5 s word
+   check shrink; ignore interruptions for the first seconds of a reply, as
+   LiveKit's AEC warm-up does. Pausing and resuming playback is not possible
+   over the OpenAI Realtime protocol Reachy speaks.
+8. **One model for everyday home control** (about 4–5 s on "turn on the
+   light"). LiveKit's voice LLM calls tools itself; Lares's dialogue hands even a
+   light switch to the dsh Agent, whose first call alone costs about 3 s of
+   prefill. Giving the dialogue a direct home-control tool trades the Agent's
+   generality for speed and is a product decision. Short of that, keep the
+   Agent's prompt prefix identical across tasks (anything that changes per task
+   at the end) and smaller than its current 17.9k tokens.
+
 ### Working on it
 
 - Eval: `node scripts/voice-eval/run.mjs --runs 5 [--only a,b] [--dialogue ../../packages/core/voice/dialogue.next.js]`
