@@ -57,5 +57,6 @@ spec:
     - Home-Assistant-Skills nutzen hass-cli 0.0.5: Das Zielgerät wird mit --entity angegeben, und bei einem Tippfehler nennt es den richtigen Befehl, sodass der Agent Lichter in weniger Schritten schaltet.
     - Ein Sprachgerät spricht keine Worte mehr aus, die vor dem Schalten von Lichtern oder der Kamera ersetzt wurden, und bittet bei Unverständlichem kurz um Wiederholung.
     - Home-Assistant-Skills nutzen hass-cli 0.0.6: Vor dem Aufruf nennt es ein falsches Feld und das richtige (color_temp wird color_temp_kelvin), sodass der Agent Lichtfarben in weniger Schritten setzt.
+    - Ein Sprachgerät übergibt außer Kamera und Bewegungen alles dem Agent, der in der Persona des Geräts antwortet: Sein erster Satz ist schon während der Arbeit zu hören, die Antwort am Ende, und das Gerät behauptet keine Aktion mehr, die nicht stattfand.
 
-    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.98)
+    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.99)

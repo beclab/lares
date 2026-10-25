@@ -57,5 +57,6 @@ spec:
     - Home Assistant のスキルは hass-cli 0.0.5 を使います。操作するデバイスを --entity で指定でき、コマンドを間違えると正しい形を示すため、Agent はより少ない手順でライトを点けたり消したりします。
     - 音声デバイスは、ライトやカメラを使う前に置き換えられた言葉を話さなくなり、聞き取れないときは短く言い直しを頼みます。
     - Home Assistant のスキルは hass-cli 0.0.6 を使います。呼び出し前に誤ったフィールドと正しいフィールドを示すため（color_temp は color_temp_kelvin）、Agent はより少ない手順でライトの色を設定します。
+    - 音声デバイスはカメラと動作以外をすべて Agent に任せ、Agent がデバイスの人格で答えます。作業中に最初の一文が聞こえ、終わると結果が聞こえます。デバイスが実際にしていない操作をしたと言うことはなくなりました。
 
-    [リリースノート](https://github.com/beclab/lares/releases/tag/v0.26.98)
+    [リリースノート](https://github.com/beclab/lares/releases/tag/v0.26.99)
