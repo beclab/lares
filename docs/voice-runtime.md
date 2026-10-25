@@ -84,6 +84,33 @@ announcement queued behind the camera reply. 0.26.79 ends such takes on settled
 words; hass-cli 0.0.2 (0.26.81) gives everyday control a two-command path and is
 not yet measured on the robot.
 
+**Measured on 0.26.83, the first run end to end** (2026-10-25 05:55, sglang
+Qwen3.5-9B with nothing else on it). Times count from the end of the take,
+which comes 500 ms after the speaker stops.
+
+| Request | ASR final | Decide to delegate | Acknowledgment | First TTS audio | Device speaks | Agent | Result heard |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| turn the light off (first task after restart) | 0.14 s | 0.45 s | 0.13 s (cached) | ~0.25 s (streamed) | ~1.0 s | 6 calls, 6.8 s | ~8.3 s |
+| turn it on | 0.2 s | 1.3 s (cache miss) | 0.18 s | ~0.25 s | ~2.0 s | 2 calls, 1.9 s | ~4.4 s |
+| make it white | 0.17 s | 0.52 s | 0.13 s | ~0.25 s | ~1.1 s | 3 calls, 3.4 s | ~5 s |
+
+The Agent loaded `ha-lighting` first with no "unknown tool" detour (the 0.0.2
+run had three). The first task still took five tool steps because the light's
+only name is "Aqara lumi.light.agl003": searches for "卧室" and "灯" found
+nothing, so it listed every light before switching it; a Chinese friendly name
+in Home Assistant would make it two. Later tasks ran with the skill already in
+the session: `service call` alone, or `state get` then `service call`.
+
+sglang prefill per call: the dialogue's ~5k-token prompt hit the cache on the
+decision and, since the acknowledgment call keeps the delegating call's tools,
+on the acknowledgment too (one decision missed after an announcement changed
+the history). The Agent's prompt is now ~13.4k tokens on a new session (35 dsh
+tools ~8.5k, system prompt ~2.7k, hass-cli 0.0.3's shorter skill list); its
+first call after the restart prefilled all of it (3.4 s), later calls hit
+13–15k cached tokens. Before these changes (0.26.82 with the 9B) the same
+requests spoke after ~2.3 s and turning the light off took ~8.9 s; at the start
+of this work it was ~2.5–3 s and ~24 s with ten Agent calls.
+
 **The camera's colours were lost in its JPEG, not its lens.** Every camera look
 came back as "too blurry", "the picture went green" or "green light and blurry
 outlines". A frame captured in the robot pod through the app's own path
@@ -191,7 +218,12 @@ Improvements, in order of value for effort (none implemented yet):
 
 ### Open
 
-- Agent latency for home control with hass-cli 0.0.2 has not been measured on the robot.
+- The Agent's first call misses sglang's cache when a task follows the previous
+  one by a minute or more (tasks 17 s apart hit 17.9k tokens); whether a
+  refreshed time or runtime snapshot or eviction by other requests on the
+  hybrid model breaks it is not confirmed. Capture two such requests to diff.
+- Every voice task still carries all 35 dsh tools (~8.5k tokens); a voice preset
+  with about ten would cut the Agent prompt roughly in half.
 - The eval's overall pass rate fell from about 91% to 80–85% after sglang 1.0.4;
   not investigated.
 - Camera frames are dark when bright lights or a monitor are in view (auto
