@@ -46,5 +46,6 @@ spec:
     - Home Assistant 技能改用 hass-cli 0.0.2，开灯只需几步；已安装的技能会在启动时自动升级。耳机免提模式下，一声咳嗽也不会再让录音一直开着。
     - 语音设备不会再把音量比第一个字小的指令当成噪音丢掉。
     - 语音设备从语音合成的第一段音频就开始说话，接任务的应答更快；Agent 借助 hass-cli 0.0.3 用更少的步骤开灯。
+    - 打开边写边读且 GPU 为显存切分时，语音设备可以在回复还在生成时就开始说话。
 
-    [版本说明](https://github.com/beclab/lares/releases/tag/v0.26.83)
+    [版本说明](https://github.com/beclab/lares/releases/tag/v0.26.84)

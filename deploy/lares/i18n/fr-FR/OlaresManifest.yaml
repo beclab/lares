@@ -42,5 +42,6 @@ spec:
     - Les compétences Home Assistant utilisent hass-cli 0.0.2, qui allume une lumière en quelques étapes ; les installations existantes sont mises à jour au démarrage. Une toux ne garde plus ouverte la prise du casque mains libres.
     - Les appareils vocaux n'écartent plus une commande parlée comme du bruit lorsqu'elle est plus faible que sa première syllabe.
     - Les appareils vocaux parlent dès le premier audio du moteur vocal, confirment une tâche plus vite, et l'Agent allume une lumière en moins d'étapes avec hass-cli 0.0.3.
+    - Les appareils vocaux peuvent commencer à dire une réponse pendant qu'elle s'écrit, lorsque la lecture en direct est activée et que le GPU est partagé par mémoire.
 
-    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.83)
+    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.84)

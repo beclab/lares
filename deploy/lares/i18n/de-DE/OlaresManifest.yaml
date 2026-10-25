@@ -42,5 +42,6 @@ spec:
     - Home-Assistant-Skills nutzen hass-cli 0.0.2, das ein Licht in wenigen Schritten einschaltet; bestehende Installationen werden beim Start aktualisiert. Auch beim freihändigen Headset hält ein Husten die Aufnahme nicht mehr offen.
     - Sprachgeräte verwerfen einen gesprochenen Befehl nicht mehr als Geräusch, wenn er leiser ist als seine erste Silbe.
     - Sprachgeräte beginnen schon mit dem ersten Audio der Sprachausgabe zu sprechen, bestätigen Aufgaben schneller, und der Agent schaltet ein Licht mit hass-cli 0.0.3 in weniger Schritten ein.
+    - Sprachgeräte können eine Antwort schon sprechen, während sie noch geschrieben wird, wenn Mitlesen aktiviert ist und die GPU in Speicherabschnitte geteilt ist.
 
-    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.83)
+    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.84)

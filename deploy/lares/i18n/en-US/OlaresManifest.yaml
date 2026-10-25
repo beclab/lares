@@ -46,5 +46,6 @@ spec:
     - Home Assistant skills use hass-cli 0.0.2, which turns a light on in a couple of steps; installs that already have the skills are upgraded at startup. A cough no longer holds a hands-free headset take open either.
     - Voice devices no longer drop a spoken command as background noise when it is quieter than its first syllable.
     - Voice devices start speaking from the speech engine's first audio, acknowledge a task faster, and the Agent turns a light on in fewer steps with hass-cli 0.0.3.
+    - Voice devices can start speaking a reply while it is still being written, when read-while-writing is on and the GPU is memory-sliced.
 
-    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.83)
+    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.84)

@@ -42,5 +42,6 @@ spec:
     - Las habilidades de Home Assistant usan hass-cli 0.0.2, que enciende una luz en un par de pasos; las instalaciones existentes se actualizan al arrancar. Una tos ya no mantiene abierta la toma del auricular manos libres.
     - Los dispositivos de voz ya no descartan una orden hablada como ruido cuando es más baja que su primera sílaba.
     - Los dispositivos de voz empiezan a hablar con el primer audio del motor de voz, confirman las tareas más rápido y el Agent enciende una luz en menos pasos con hass-cli 0.0.3.
+    - Los dispositivos de voz pueden empezar a decir una respuesta mientras aún se escribe, si la lectura simultánea está activada y la GPU está dividida por memoria.
 
-    [Notas de la versión](https://github.com/beclab/lares/releases/tag/v0.26.83)
+    [Notas de la versión](https://github.com/beclab/lares/releases/tag/v0.26.84)
