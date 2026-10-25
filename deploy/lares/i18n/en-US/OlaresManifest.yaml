@@ -62,5 +62,6 @@ spec:
     - A voice device no longer hears words that were replaced before the lights or camera were used, and when it cannot make out what was said it asks you to repeat it in a few words.
     - Home Assistant skills use hass-cli 0.0.6, which names a wrong field and the right one before calling (color_temp becomes color_temp_kelvin), so the Agent sets light colours in fewer steps.
     - A voice device now hands everything except its camera and movements to the Agent, which answers in the device's persona; you hear the Agent's first sentence while it works and its answer when it finishes, and the device no longer says it did something it did not.
+    - On a voice device you can speak while the Agent is still working: your new words go straight into that task ("actually, turn it off") instead of waiting for it to finish.
 
-    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.99)
+    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.100)

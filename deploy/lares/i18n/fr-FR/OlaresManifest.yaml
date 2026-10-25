@@ -58,5 +58,6 @@ spec:
     - Un appareil vocal ne prononce plus les mots remplacés avant d'utiliser les lumières ou la caméra, et quand il ne comprend pas, il demande brièvement de répéter.
     - Les skills Home Assistant utilisent hass-cli 0.0.6, qui signale avant l'appel un champ erroné et le bon (color_temp devient color_temp_kelvin) : l'Agent règle la couleur des lumières en moins d'étapes.
     - Un appareil vocal confie tout sauf sa caméra et ses mouvements à l'Agent, qui répond avec la personnalité de l'appareil : sa première phrase s'entend pendant qu'il travaille et sa réponse à la fin, et l'appareil n'annonce plus une action qu'il n'a pas faite.
+    - Sur un appareil vocal, vous pouvez parler pendant que l'Agent travaille : vos nouveaux mots rejoignent aussitôt la tâche en cours (« finalement, éteins-la ») au lieu d'attendre qu'elle se termine.
 
-    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.99)
+    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.100)

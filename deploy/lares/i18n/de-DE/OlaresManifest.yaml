@@ -58,5 +58,6 @@ spec:
     - Ein Sprachgerät spricht keine Worte mehr aus, die vor dem Schalten von Lichtern oder der Kamera ersetzt wurden, und bittet bei Unverständlichem kurz um Wiederholung.
     - Home-Assistant-Skills nutzen hass-cli 0.0.6: Vor dem Aufruf nennt es ein falsches Feld und das richtige (color_temp wird color_temp_kelvin), sodass der Agent Lichtfarben in weniger Schritten setzt.
     - Ein Sprachgerät übergibt außer Kamera und Bewegungen alles dem Agent, der in der Persona des Geräts antwortet: Sein erster Satz ist schon während der Arbeit zu hören, die Antwort am Ende, und das Gerät behauptet keine Aktion mehr, die nicht stattfand.
+    - Auf einem Sprachgerät können Sie sprechen, während der Agent noch arbeitet: Ihre neuen Worte fließen sofort in die laufende Aufgabe ein („doch lieber ausschalten“), statt auf ihr Ende zu warten.
 
-    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.99)
+    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.100)

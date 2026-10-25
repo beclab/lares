@@ -58,5 +58,6 @@ spec:
     - Un dispositivo vocale non pronuncia più parole sostituite prima di usare le luci o la fotocamera e, quando non capisce, chiede brevemente di ripetere.
     - Le skill di Home Assistant usano hass-cli 0.0.6, che prima della chiamata indica un campo errato e quello giusto (color_temp diventa color_temp_kelvin), così l'Agent imposta i colori delle luci in meno passaggi.
     - Un dispositivo vocale affida all'Agent tutto tranne fotocamera e movimenti, e l'Agent risponde con la personalità del dispositivo: la sua prima frase si sente mentre lavora e la risposta alla fine, e il dispositivo non dice più di aver fatto ciò che non ha fatto.
+    - Su un dispositivo vocale puoi parlare mentre l'Agent sta ancora lavorando: le nuove parole entrano subito nell'attività in corso («anzi, spegnila») invece di attendere che finisca.
 
-    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.99)
+    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.100)

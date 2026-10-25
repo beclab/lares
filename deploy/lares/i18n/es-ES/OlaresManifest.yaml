@@ -58,5 +58,6 @@ spec:
     - Un dispositivo de voz ya no pronuncia palabras que se sustituyeron antes de usar las luces o la cámara, y cuando no entiende lo dicho pide brevemente que lo repitas.
     - Las skills de Home Assistant usan hass-cli 0.0.6, que antes de llamar indica un campo erróneo y el correcto (color_temp pasa a color_temp_kelvin), así que el Agent ajusta colores de luz en menos pasos.
     - Un dispositivo de voz pasa al Agent todo salvo su cámara y sus movimientos, y el Agent responde con la personalidad del dispositivo: oyes su primera frase mientras trabaja y su respuesta al terminar, y el dispositivo ya no dice haber hecho algo que no hizo.
+    - En un dispositivo de voz puedes hablar mientras el Agent sigue trabajando: tus nuevas palabras entran de inmediato en esa tarea («mejor apágala») en lugar de esperar a que termine.
 
-    [Notas de la versión](https://github.com/beclab/lares/releases/tag/v0.26.99)
+    [Notas de la versión](https://github.com/beclab/lares/releases/tag/v0.26.100)
