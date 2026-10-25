@@ -75,6 +75,26 @@ export const SCENARIOS = [
     expect: check([delegated, "light request not sent to ask_lares"], [(run) => speaks(run, "zh"), "did not answer in Chinese"]),
   },
   {
+    id: "light-after-spoken-ack",
+    issue: "On the robot (Qwen3.6-35B-A3B, 0.26.83) one light request answered in words left that reply in history, and every later request copied it",
+    context: [
+      { role: "user", text: "你好。" }, { role: "assistant", text: "你好！有什么可以帮你的？" },
+      { role: "user", text: "哦，开小灯。" }, { role: "assistant", text: "正在调暗灯光。" },
+    ],
+    say: "开下灯。",
+    expect: check([delegated, "light request not sent to ask_lares"]),
+  },
+  {
+    id: "light-still-off",
+    issue: "After two spoken-only acknowledgements the user reports the light is still off",
+    context: [
+      { role: "user", text: "哦，开小灯。" }, { role: "assistant", text: "正在调暗灯光。" },
+      { role: "user", text: "开下灯。" }, { role: "assistant", text: "正在开灯。" },
+    ],
+    say: "灯还是没有打开。",
+    expect: check([delegated, "retry not sent to ask_lares"]),
+  },
+  {
     id: "light-off-en",
     issue: "English request answered in French",
     say: "Please turn off the light.",

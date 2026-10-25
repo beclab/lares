@@ -9,7 +9,12 @@
  *   node scripts/voice-eval/run.mjs --only light-on-zh,clarify-answer
  *   node scripts/voice-eval/run.mjs --effort none          # force a reasoning_effort on every chat call
  *   node scripts/voice-eval/run.mjs --dialogue ../../packages/core/voice/dialogue.next.js   # a working copy
+ *   node scripts/voice-eval/run.mjs --json /tmp/base.json  # also write every run's result, for compare.mjs
+ *
+ * From a workstation, scripts/voice-eval/remote.sh uploads these files and a working copy into the
+ * pod, runs them there and fetches the results.
  */
+import { writeFileSync } from "node:fs";
 import { DEVICE_TOOLS, PERSONA, SCENARIOS } from "./scenarios.mjs";
 
 const args = process.argv.slice(2);
@@ -19,6 +24,7 @@ const runs = Number(values("--runs")[0] || 3);
 const only = values("--only")[0]?.split(",");
 const scenarios = SCENARIOS.filter((scenario) => !only || only.includes(scenario.id));
 const effort = values("--effort")[0];
+const json = values("--json")[0];
 // A working copy placed beside the real module keeps its relative imports.
 const { createVoiceDialogue, voiceChat } = await import(new URL(values("--dialogue")[0] || "../../packages/core/voice/dialogue.js", import.meta.url));
 
@@ -80,7 +86,9 @@ const describe = (run) => [
 ].join(" · ");
 
 let failed = 0;
+const report = { runs, effort: effort || null, dialogue: values("--dialogue")[0] || null, models: {} };
 for (const model of models) {
+  report.models[model] = {};
   console.log(`\n=== ${model} · ${runs} run(s) per scenario${effort ? ` · reasoning_effort=${effort}` : ""}`);
   let passedAll = 0;
   for (const scenario of scenarios) {
@@ -93,8 +101,10 @@ for (const model of models) {
     if (passed === runs) passedAll++; else failed++;
     const ms = Math.round(results.reduce((sum, result) => sum + result.run.ms, 0) / runs);
     console.log(`${passed === runs ? "PASS" : "FAIL"} ${scenario.id.padEnd(18)} ${passed}/${runs}  ~${ms} ms  ${scenario.issue}`);
+    report.models[model][scenario.id] = { passed, runs, ms, results: results.map(({ run, problems }) => ({ problems, did: describe(run) })) };
     for (const { run, problems } of results) console.log(`     ${problems.length ? `✗ ${problems.join("; ")}` : "✓"}  ${describe(run).slice(0, 260)}`);
   }
   console.log(`--- ${model}: ${passedAll}/${scenarios.length} scenarios passed every run`);
 }
+if (json) writeFileSync(json, JSON.stringify(report, null, 2));
 process.exitCode = failed ? 1 : 0;
