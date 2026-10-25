@@ -43,5 +43,6 @@ spec:
     - Les appareils vocaux n'écartent plus une commande parlée comme du bruit lorsqu'elle est plus faible que sa première syllabe.
     - Les appareils vocaux parlent dès le premier audio du moteur vocal, confirment une tâche plus vite, et l'Agent allume une lumière en moins d'étapes avec hass-cli 0.0.3.
     - Les appareils vocaux peuvent commencer à dire une réponse pendant qu'elle s'écrit, lorsque la lecture en direct est activée et que le GPU est partagé par mémoire.
+    - Les appareils vocaux transmettent à Lares une demande concernant une lumière ou un autre appareil de la maison même si une réponse précédente l'annonçait seulement, et quand l'utilisateur dit que ce n'est toujours pas fait.
 
-    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.84)
+    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.85)

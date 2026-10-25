@@ -43,5 +43,6 @@ spec:
     - Sprachgeräte verwerfen einen gesprochenen Befehl nicht mehr als Geräusch, wenn er leiser ist als seine erste Silbe.
     - Sprachgeräte beginnen schon mit dem ersten Audio der Sprachausgabe zu sprechen, bestätigen Aufgaben schneller, und der Agent schaltet ein Licht mit hass-cli 0.0.3 in weniger Schritten ein.
     - Sprachgeräte können eine Antwort schon sprechen, während sie noch geschrieben wird, wenn Mitlesen aktiviert ist und die GPU in Speicherabschnitte geteilt ist.
+    - Sprachgeräte geben eine Anfrage für ein Licht oder ein anderes Hausgerät auch dann an Lares weiter, wenn eine frühere Antwort sie nur angekündigt hat oder der Nutzer sagt, dass noch nichts passiert ist.
 
-    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.84)
+    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.85)

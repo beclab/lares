@@ -43,5 +43,6 @@ spec:
     - I dispositivi vocali non scartano più un comando parlato come rumore quando è più basso della sua prima sillaba.
     - I dispositivi vocali iniziano a parlare dal primo audio del motore vocale, confermano un'attività più in fretta e l'Agent accende una luce in meno passaggi con hass-cli 0.0.3.
     - I dispositivi vocali possono iniziare a pronunciare una risposta mentre viene ancora scritta, se la lettura in tempo reale è attiva e la GPU è suddivisa per memoria.
+    - I dispositivi vocali passano a Lares una richiesta per una luce o un altro dispositivo di casa anche se una risposta precedente diceva solo che era in corso, e quando l'utente dice che non è ancora successo.
 
-    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.84)
+    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.85)

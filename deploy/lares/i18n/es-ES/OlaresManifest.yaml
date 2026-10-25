@@ -43,5 +43,6 @@ spec:
     - Los dispositivos de voz ya no descartan una orden hablada como ruido cuando es más baja que su primera sílaba.
     - Los dispositivos de voz empiezan a hablar con el primer audio del motor de voz, confirman las tareas más rápido y el Agent enciende una luz en menos pasos con hass-cli 0.0.3.
     - Los dispositivos de voz pueden empezar a decir una respuesta mientras aún se escribe, si la lectura simultánea está activada y la GPU está dividida por memoria.
+    - Los dispositivos de voz pasan a Lares una petición sobre una luz u otro dispositivo del hogar aunque una respuesta anterior solo dijera que se estaba haciendo, y cuando el usuario dice que aún no ha ocurrido.
 
-    [Notas de la versión](https://github.com/beclab/lares/releases/tag/v0.26.84)
+    [Notas de la versión](https://github.com/beclab/lares/releases/tag/v0.26.85)

@@ -7,14 +7,14 @@ metadata:
   title: Lares
   description: Chat on Olares, wired to Router
   icon: https://app.cdn.olares.com/appstore/lares/icon_new.png
-  version: 0.26.84
+  version: 0.26.85
   categories:
     - agents
   tags:
     - framework
     - personal-assistant
 spec:
-  versionName: "0.26.84"
+  versionName: "0.26.85"
   runAsUser: true
   fullDescription: |
     Lares is a chat app on Olares.
@@ -60,8 +60,9 @@ spec:
     - Voice devices no longer drop a spoken command as background noise when it is quieter than its first syllable.
     - Voice devices start speaking from the speech engine's first audio, acknowledge a task faster, and the Agent turns a light on in fewer steps with hass-cli 0.0.3.
     - Voice devices can start speaking a reply while it is still being written, when read-while-writing is on and the GPU is memory-sliced.
+    - Voice devices hand a light or other home device request to Lares even after an earlier reply only said it was being done, and when the user says it still has not happened.
 
-    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.84)
+    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.85)
   developer: luolong
   submitter: Olares
   locale:
