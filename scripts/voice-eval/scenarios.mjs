@@ -10,7 +10,10 @@
 export const PERSONA = "## IDENTITY\nYou are Reachy Mini: a friendly, compact robot assistant with a calm voice and a subtle sense of humor.\nPersonality: concise, helpful, and lightly witty — never sarcastic or over the top.\nYou speak English by default and switch languages only if explicitly told.\n\n## CRITICAL RESPONSE RULES\n\nRespond in 1–2 sentences maximum.\nBe helpful first, then add a small touch of humor if it fits naturally.\nAvoid long explanations or filler words.\nKeep responses under 25 words when possible.\n\n## CORE TRAITS\nWarm, efficient, and approachable.\nLight humor only: gentle quips, small self-awareness, or playful understatement.\nNo sarcasm, no teasing, no references to food or space.\nIf unsure, admit it briefly and offer help (“Not sure yet, but I can check!”).\n\n## RESPONSE EXAMPLES\nUser: \"How’s the weather?\"\nGood: \"Looks calm outside — unlike my Wi-Fi signal today.\"\nBad: \"Sunny with leftover pizza vibes!\"\n\nUser: \"Can you help me fix this?\"\nGood: \"Of course. Describe the issue, and I’ll try not to make it worse.\"\nBad: \"I void warranties professionally.\"\n\nUser: \"Peux-tu m’aider en français ?\"\nGood: \"Bien sûr ! Décris-moi le problème et je t’aiderai rapidement.\"\n\n## BEHAVIOR RULES\nBe helpful, clear, and respectful in every reply.\nUse humor sparingly — clarity comes first.\nAdmit mistakes briefly and correct them:\nExample: “Oops — quick system hiccup. Let’s try that again.”\nKeep safety in mind when giving guidance.\n\n## TOOL & MOVEMENT RULES\nUse tools only when helpful and summarize results briefly.\nWhenever the user asks to show or express an emotion—including “again,” “another,” or “different”—call play_emotion in that turn; prior calls and speech do not perform it.\nUse the web search tool for explicit web lookup requests like \"check the web\", \"look up\", \"today's events\", or current/latest information.\nUse the camera for real visuals only — never invent details.\nThe head can move (left/right/up/down/front).\n\nEnable head tracking when looking at a person; disable otherwise.\n\n## FINAL REMINDER\nKeep it short, clear, a little human, and multilingual.\nOne quick helpful answer + one small wink of humor = perfect response.";
 
 const object = (properties = {}, required = []) => ({ type: "object", properties, required });
-// The tools the robot declares by default (reachy_mini_conversation_app v1.1.1), with their own descriptions.
+// The tools the robot declares with the Lares backend (olares-reachymini's lares profile: the stock
+// reachy_mini_conversation_app v1.1.1 list without its remote weather, web search and time tools,
+// which Lares answers instead), with their own descriptions. The persona still names a web search
+// tool; a call to a tool nobody declared is the dialogue's to recover from.
 export const DEVICE_TOOLS = [
   { name: "dance", description: "Play a named or random dance move once (or repeat). Non-blocking.", parameters: object({ move: { type: "string", description: "Move name such as simple_nod, head_tilt_roll or random" }, repeat: { type: "integer" } }) },
   { name: "move_head", description: "Move your head in a given direction: left, right, up, down or front.", parameters: object({ direction: { type: "string", enum: ["left", "right", "up", "down", "front"] } }, ["direction"]) },
@@ -18,9 +21,6 @@ export const DEVICE_TOOLS = [
   { name: "camera", description: "Take a picture with the camera to see what is in front of the robot. Use this when the user asks you to look at something, see what they are holding, check their appearance, describe the scene.", parameters: object({ question: { type: "string" } }, ["question"]) },
   { name: "head_tracking", description: "Enable or disable following the user's face with the head.", parameters: object({ enabled: { type: "boolean" } }, ["enabled"]) },
   { name: "robot_status", description: "Read Reachy's own status: name, software, wifi, battery.", parameters: object({ topic: { type: "string" } }, ["topic"]) },
-  { name: "pollen_robotics_reachy_mini_weather_tool__get_weather", description: "Get today's weather for a place: current conditions, high and low.", parameters: object({ location: { type: "string" } }, ["location"]) },
-  { name: "pollen_robotics_reachy_mini_search_tool__search_web", description: "Search the web and return short results.", parameters: object({ query: { type: "string" } }, ["query"]) },
-  { name: "pollen_robotics_reachy_mini_time_tool__get_time", description: "Get the current local time.", parameters: object() },
 ];
 
 import { deflateSync } from "node:zlib";
@@ -251,6 +251,18 @@ export const SCENARIOS = [
     tasks: [{ requestId: "r1", status: "completed", text: "根据搜索结果，北京今天的天气如下：\n\n**当前天气：**\n- **天气：** 午后多云\n- **气温：** 最高 18°C（64°F），最低 9°C（48°F）\n- **风力：** 3 级，有轻雾\n- **湿度：** 21%\n- **紫外线：** 3（中等）\n\n这是北京典型的秋季天气，白天凉爽舒适，晚上降温明显，建议穿厚外套。未来几天白天最高 10–16°C，夜间最低 3–7°C。" }],
     announce: true,
     expect: check([(run) => /18/.test(run.text), "temperature left out"], [(run) => [...run.text.replace(/\s/g, "")].length <= 45, "announcement longer than 45 characters"], [(run) => !/外套|紫外线|湿度|°F/.test(run.text), "announced what the user did not ask for"]),
+  },
+  {
+    id: "search-web-en",
+    issue: "The persona names a web search tool the Lares profile no longer declares; a made-up tool call failed the turn on the robot",
+    say: "Can you search the web for today's news?",
+    expect: check([delegated, "search not sent to ask_lares"]),
+  },
+  {
+    id: "beijing-weather-search-en",
+    issue: "On the robot (0.26.88) \"Beijing, please search the Beijing weather\" called an undeclared tool and the turn failed",
+    say: "Beijing, please search the Beijing weather.",
+    expect: check([delegated, "weather not sent to ask_lares"]),
   },
   {
     id: "brief-hello-zh",
