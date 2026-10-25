@@ -45,5 +45,6 @@ spec:
     - Sprachgeräte können eine Antwort schon sprechen, während sie noch geschrieben wird, wenn Mitlesen aktiviert ist und die GPU in Speicherabschnitte geteilt ist.
     - Sprachgeräte geben eine Anfrage für ein Licht oder ein anderes Hausgerät auch dann an Lares weiter, wenn eine frühere Antwort sie nur angekündigt hat oder der Nutzer sagt, dass noch nichts passiert ist.
     - Der Agent folgt dem Modell, mit dem default-chat im Router antwortet, und ein Sprachgerät gibt weiter Aufgaben an Lares, nachdem das zuletzt genutzte Modell gestoppt wurde.
+    - Sprachgeräte machen ein neues Bild, wenn sie noch einmal hinsehen sollen, beantworten Begrüßungen selbst, geben angekündigte Lichtänderungen an Lares weiter und sagen kurze Ergebnisse so an, wie Lares sie gemeldet hat.
 
-    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.86)
+    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.87)

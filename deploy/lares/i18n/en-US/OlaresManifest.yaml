@@ -49,5 +49,6 @@ spec:
     - Voice devices can start speaking a reply while it is still being written, when read-while-writing is on and the GPU is memory-sliced.
     - Voice devices hand a light or other home device request to Lares even after an earlier reply only said it was being done, and when the user says it still has not happened.
     - The Agent follows the model Router's default-chat answers with, and a voice device keeps handing tasks to Lares after the model it last used stops.
+    - Voice devices take a new picture when asked to look again, answer greetings themselves, hand claimed light changes to Lares, and announce short results as Lares reported them.
 
-    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.86)
+    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.87)

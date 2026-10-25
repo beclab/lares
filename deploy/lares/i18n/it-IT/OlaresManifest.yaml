@@ -45,5 +45,6 @@ spec:
     - I dispositivi vocali possono iniziare a pronunciare una risposta mentre viene ancora scritta, se la lettura in tempo reale è attiva e la GPU è suddivisa per memoria.
     - I dispositivi vocali passano a Lares una richiesta per una luce o un altro dispositivo di casa anche se una risposta precedente diceva solo che era in corso, e quando l'utente dice che non è ancora successo.
     - L'Agent segue il modello con cui risponde default-chat in Router, e un dispositivo vocale continua a passare attività a Lares dopo che il modello usato per ultimo si ferma.
+    - I dispositivi vocali scattano una nuova foto quando si chiede di guardare di nuovo, rispondono da soli ai saluti, passano a Lares i cambi di luce annunciati e riferiscono i risultati brevi come li ha dati Lares.
 
-    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.86)
+    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.87)
