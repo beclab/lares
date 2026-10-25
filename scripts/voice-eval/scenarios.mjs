@@ -265,6 +265,19 @@ export const SCENARIOS = [
     expect: check([delegated, "weather not sent to ask_lares"]),
   },
   {
+    id: "unclear-zh",
+    issue: "On the robot (9B, 0.26.96) ASR heard \"軍刀。\" and the dialogue answered with two sentences asking what it meant",
+    context: [{ role: "user", text: "往啊，軍德。" }, { role: "assistant", text: "我没听清，能再说一遍吗？" }],
+    say: "軍刀。",
+    expect: check([(run) => !delegated(run), "unclear words sent to ask_lares"], [(run) => [...run.text.replace(/\s/g, "")].length <= 15, "reply longer than 15 characters"], [(run) => /再说|重复|没听清|再讲|一遍/.test(run.text), "did not ask to hear it again"]),
+  },
+  {
+    id: "unclear-en",
+    issue: "English twin of unclear-zh",
+    say: "Gorp the mumble.",
+    expect: check([(run) => !delegated(run), "unclear words sent to ask_lares"], [(run) => run.text.trim().split(/\s+/).length <= 10, "reply longer than 10 words"], [(run) => /again|repeat|didn.t catch|pardon|sorry/i.test(run.text), "did not ask to hear it again"]),
+  },
+  {
     id: "brief-hello-zh",
     issue: "Chit-chat came back with a joke and an offer on top of the answer",
     say: "你好",

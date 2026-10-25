@@ -625,3 +625,18 @@ test("a Lares client's session still refuses a tool it never offered", async () 
   const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", chat: async () => ({ role: "assistant", content: null, tool_calls: [call("x", "search_web")] }) });
   await assert.rejects(dialogue.reply("search", "t1"), /voice_tool_forbidden/);
 });
+
+test("a device request the checks may ask again is read only after its first answer; small talk still streams", async () => {
+  const live: Record<string, boolean> = {};
+  const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", submit: async () => ({ status: "pending" }), chat: async (request: any) => {
+    const said = request.messages.filter((m: any) => m.role === "user").at(-1).content;
+    live[said] ??= typeof request.onDelta === "function";
+    return { role: "assistant", content: "好的。" };
+  } });
+  dialogue.setClientTools([MOVE, CAMERA]);
+  await dialogue.reply("把灯调整成黄色。", "t1", undefined, () => {});
+  await dialogue.reply("你再看看，它不是杯子。", "t2", undefined, () => {});
+  await dialogue.reply("今天心情不错。", "t3", undefined, () => {});
+  const first = Object.entries(live).map(([said, streamed]) => [String(said).slice(-12), streamed]);
+  assert.deepEqual(first.map(([, streamed]) => streamed), [false, false, true], JSON.stringify(first));
+});
