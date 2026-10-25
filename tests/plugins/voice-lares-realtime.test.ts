@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import test from "node:test";
 import { WebSocket } from "ws";
-import { createLaresRealtimeGateway } from "@olares/lares-core/voice/lares-realtime-gateway";
+import { createLaresRealtimeGateway, unfinishedWords } from "@olares/lares-core/voice/lares-realtime-gateway";
 
 const KEY = "lvk_0123456789abcdef_" + "a".repeat(43);
 const DEVICE_KEY = "lvk_fedcba9876543210_" + "b".repeat(43);
@@ -983,6 +983,36 @@ test("a device take whose speaker is talking again when its words come back wait
     await new Promise((resolve) => setTimeout(resolve, 200));
     assert.deepEqual(fixture.calls.prompts.map((body: any) => body.text), ["search Beijing weather today"]);
   } finally { client.close(); await fixture.stop(); }
+});
+
+test("a pause after an unfinished word waits for the rest of the request", async () => {
+  const chunk = (amplitude: number) => { const pcm = Buffer.alloc(2400); for (let i = 0; i < 1200; i++) pcm.writeInt16LE(i % 2 ? amplitude : -amplitude, i * 2); return pcm.toString("base64"); };
+  const metrics: any[] = [];
+  // "could you please uh" for the first second of voice, the whole request once the speaker goes on.
+  const openTranscription = async (_scope: any, onPartial: (text: string) => void) => {
+    let bytes = 0, steps = 0, heard = "";
+    return { write(pcm: Buffer) { bytes += pcm.length; while (bytes >= (steps + 1) * 24000) { steps += 1; heard = steps <= 3 ? "Could you please uh." : "Could you please uh search Beijing weather today."; onPartial(heard); } }, async finish() { return heard; }, cancel() {} };
+  };
+  const fixture = await serve({ speechGate: async () => fakeSpeechGate(), openTranscription, metric: (fields: any) => metrics.push(fields) });
+  const client = connect(fixture.port, "voice-chat");
+  try {
+    await until(client, (event) => event.type === "conversation.item.input_audio_transcription.completed", (event) => {
+      if (event.type === "session.created") client.send(JSON.stringify({ type: "session.update", session: { audio: { input: { turn_detection: { type: "server_vad" } } } } }));
+      // One second of voice, 800 ms of thinking, the rest of the request, then quiet: 50 ms chunks.
+      if (event.type === "session.updated") for (const amplitude of [...Array(20).fill(6000), ...Array(16).fill(300), ...Array(20).fill(6000), ...Array(30).fill(300)]) client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: chunk(amplitude) }));
+    }, 7000);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.deepEqual(fixture.calls.prompts.map((body: any) => body.text), ["Could you please uh search Beijing weather today."]);
+    const takes = metrics.filter((fields) => fields.event === "device-take");
+    assert.equal(takes.length, 1);
+    assert.equal(takes[0].voicedMs, 2000);
+    assert.equal(takes[0].firstVoiceMs, 0);
+  } finally { client.close(); await fixture.stop(); }
+});
+
+test("only a request that ends on a filler or a dangling word counts as unfinished", () => {
+  for (const text of ["Could you please uh.", "turn on the", "帮我把", "呃，", "Can you", "就是那个"]) assert.equal(unfinishedWords(text), true, text);
+  for (const text of ["Turn on the light.", "你好。", "What is in my hand?", "", "Search Beijing weather today."]) assert.equal(unfinishedWords(text), false, text);
 });
 
 test("held words are still answered when what followed them was only a knock", async () => {

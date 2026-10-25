@@ -27,6 +27,18 @@ const WORDS_SETTLED_MS = 1000;
 // heard this recently the words have to stay unchanged this much longer before the take ends.
 const VOICE_RECENT_MS = 300;
 const WORDS_SETTLED_VOICED_MS = 2500;
+// A pause after "uh", "the" or "please" is the speaker thinking, not finishing: "Could you please
+// uh." became a turn of its own on the robot. Silence that ends on such a word waits this much longer.
+const UNFINISHED_HOLD_MS = 1200;
+const UNFINISHED_EN = new Set(["uh", "um", "uhm", "er", "erm", "hmm", "the", "a", "an", "to", "and", "or", "but", "so", "please", "could", "can", "would", "will", "you", "me", "my", "your", "for", "of", "in", "on", "at", "with", "about", "is", "are", "if", "because", "like"]);
+const UNFINISHED_ZH = /(?:呃|嗯|额|那个|就是|然后|还有|而且|和|跟|把|帮我|给我|请|要|想|能不能|可不可以)$/;
+export const unfinishedWords = (text) => {
+  const bare = String(text || "").trim().replace(/[\s.,!?;:…。，！？；：、"'“”]+$/u, "");
+  if (!bare) return false;
+  if (UNFINISHED_ZH.test(bare)) return true;
+  const last = bare.split(/\s+/).at(-1).toLowerCase();
+  return UNFINISHED_EN.has(last);
+};
 // How long a barge-in waits for ASR's first words before deciding whether they were the reply's echo.
 const ECHO_WAIT_MS = 1500;
 const BARGE_IN_LIMIT_MS = 10_000;
@@ -97,6 +109,9 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
     let chunks = [], bytes = 0, turnMs = 0, totalMs = 0, speaking = false, speechMs = 0, itemId = null, partial = "", stream = null;
     // When streaming ASR first repeated the take's words unchanged; 0 while they are still growing.
     let wordsSince = 0, voicedAt = 0;
+    // A take whose silence ended on an unfinished word, and how long it has been quiet since; and how
+    // long the room gate heard a voice in the take, with when it first did, for the device-take report.
+    let pauseHeld = false, heldQuietMs = 0, takeVoicedMs = 0, firstVoiceMs = null;
     // What the microphone heard while a device played a reply, reported once the reply has stopped:
     // the only way to tell from the logs why speaking over a reply did or did not interrupt it.
     let listen = null;
@@ -184,6 +199,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
     const reset = () => {
       clearTimeout(barge?.timer);
       chunks = []; bytes = 0; turnMs = 0; pendingCommit = false; speaking = false; speechMs = 0; itemId = null; partial = ""; barge = null; wordsSince = 0;
+      pauseHeld = false; heldQuietMs = 0; takeVoicedMs = 0; firstVoiceMs = null;
       stream?.ready.then((value) => value?.cancel()); stream = null;
       endpoint = createSpeechEndpoint({ silenceMs });
     };
@@ -438,12 +454,12 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
     const userItem = (id, content) => send({ type: "conversation.item.done", item: { id, object: "realtime.item", type: "message", role: "user", status: "completed", content: [content] } });
     // One line per device take: what the room sounded like and why the take ended, which is the
     // only way to tune the noise gate against a real room.
-    const reportTake = (taken, ms, speech, ended) => {
+    const reportTake = (taken, ms, speech, ended, voicedMs = takeVoicedMs, firstVoice = firstVoiceMs) => {
       try {
         const levels = taken.map((chunk) => frameRms(pcmSamples(chunk))).sort((a, b) => a - b);
         const at = (q) => Number((levels[Math.min(levels.length - 1, Math.floor(levels.length * q))] ?? 0).toFixed(4));
         const { noise, learned } = noiseGate.levels();
-        metric({ event: "device-take", voiceId: scope.id, gate: modelGate?.kind || "energy", ms: Math.round(ms), ended, speech, chunks: levels.length, p50: at(0.5), p95: at(0.95), max: at(1), noise: Number((noise ?? 0).toFixed(4)), learned: Number(learned.toFixed(4)) });
+        metric({ event: "device-take", voiceId: scope.id, gate: modelGate?.kind || "energy", ms: Math.round(ms), ended, speech, chunks: levels.length, p50: at(0.5), p95: at(0.95), max: at(1), noise: Number((noise ?? 0).toFixed(4)), learned: Number(learned.toFixed(4)), voicedMs: Math.round(voicedMs), firstVoiceMs: firstVoice });
       } catch {}
     };
     const commit = async (ended = "client") => {
@@ -461,7 +477,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       // shared and the client cannot know that, so queue this take instead of
       // rejecting it; the composer would otherwise see a hard turn_busy.
       if (busy) { pendingCommit = true; return; }
-      const taken = chunks, input = Buffer.concat(taken), id = itemId || `item_${randomUUID()}`, ms = input.length / BYTES_PER_MS, opened = stream, held = barge, policy = listening();
+      const taken = chunks, input = Buffer.concat(taken), id = itemId || `item_${randomUUID()}`, ms = input.length / BYTES_PER_MS, opened = stream, held = barge, policy = listening(), voicedMs = takeVoicedMs, firstVoice = firstVoiceMs;
       stream = null; reset(); scope.voiceInputActive = false; busy = true;
       send({ type: "input_audio_buffer.committed", item_id: id, previous_item_id: null });
       let epoch = generation, text = null;
@@ -473,7 +489,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
           // dialogue spend anything on it; when it cannot answer, the take goes through as before.
           // A take the speech model opened has been heard as a voice already.
           const speech = policy.vadVeto && detectSpeech && !modelGate ? await detectSpeech(input, scope) : null;
-          if (policy.vadVeto) reportTake(taken, ms, speech, ended);
+          if (policy.vadVeto) reportTake(taken, ms, speech, ended, voicedMs, firstVoice);
           if (speech === 0) {
             await opened?.ready.then((value) => value?.cancel());
             noiseGate.learn(taken.map((chunk) => frameRms(pcmSamples(chunk))));
@@ -683,7 +699,7 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       if (openTranscription && !stream && !transcribing) { stream = startStream(); for (const kept of chunks) stream.write(kept); }
       chunks.push(chunk); bytes += chunk.length; turnMs += ms;
       stream?.write(chunk);
-      if (voiced) { speechMs += ms; voicedAt = Date.now(); } else speechMs = 0;
+      if (voiced) { speechMs += ms; voicedAt = Date.now(); takeVoicedMs += ms; firstVoiceMs ??= Math.round(turnMs - ms); } else speechMs = 0;
       if (voiced && !speaking) {
         speaking = true; scope.voiceInputActive = true;
         // Loudness gates count a frame as speech only near the take's peak, which is how they keep a
@@ -709,7 +725,16 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
         void commit("words").catch(report);
         return;
       }
+      if (pauseHeld) {
+        heldQuietMs = voiced ? 0 : heldQuietMs + ms;
+        if (heldQuietMs >= silenceMs + (unfinishedWords(partial) ? UNFINISHED_HOLD_MS : 0)) {
+          send({ type: "input_audio_buffer.speech_stopped", audio_end_ms: Math.round(totalMs), item_id: itemId });
+          void commit("silence").catch(report);
+        }
+        return;
+      }
       if (automatic && endpoint.push(voiced ? 1 : 0, rms, ms)) {
+        if (policy.mode === "device" && unfinishedWords(partial)) { pauseHeld = true; heldQuietMs = silenceMs; return; }
         send({ type: "input_audio_buffer.speech_stopped", audio_end_ms: Math.round(totalMs), item_id: itemId });
         void commit("silence").catch(report);
       } else if (automatic && endpoint.abandoned()) {
