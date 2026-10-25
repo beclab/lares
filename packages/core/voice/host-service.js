@@ -11,7 +11,7 @@ import { voiceCapabilities } from "./capabilities.js";
 const failure = (code, status) => Object.assign(new Error(code), { code, status });
 
 /** Presets and task policy stay in core; the Host supplies an authenticated scope. */
-export function createVoiceHostService(api, { env = process.env, metric = () => {}, records = createVoiceRecords(), config = readConfig, chat, summaryIdleMs = 60_000 } = {}) {
+export function createVoiceHostService(api, { env = process.env, metric = () => {}, records = createVoiceRecords(), config = readConfig, chat, summaryIdleMs = 60_000, taskWaitMs = 20_000 } = {}) {
   const ownerOf = (scope) => scope.owner || "@local";
   const keyOf = (scope) => scope.session?.snapshot().sessionId || `voice:${scope.contextId || scope.id}`;
   const append = (scope, role, text, turnId, taskId = null, fields = {}) => records.append(ownerOf(scope), keyOf(scope), {
@@ -67,6 +67,10 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
           scope.voiceState.live = { ...live, ...(partial === null ? {} : { text: partial }), delegated: live.delegated || delegated };
           if (partial !== null) append(scope, "assistant", partial, turnId, taskOf(), { status: "streaming", ...fields });
         }, { announce: Boolean(task) });
+        if (reply.task) {
+          const heard = await hearTask(scope, reply.task, requestId);
+          if (heard) { reply.text = heard.text; scope.dialogue.observeTask(heard); }
+        }
         if (reply.text) append(scope, "assistant", reply.text, turnId, taskOf(), fields);
         summarize(scope);
         const key = task ? `task:${task.requestId}` : requestId;
@@ -83,11 +87,52 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
     scope.voiceSerial = operation;
     return operation;
   };
+  /**
+   * A device's request the dialogue routed to the Agent is spoken in the Agent's own words, as the
+   * live text of the turn that asked: the complete sentences of its first step while it writes them
+   * (usually "好的，我来帮你开灯。"), then its answer when the task ends. Steps in between talk to
+   * tools, not to the user. A task that fails, or outlasts the wait, is announced by the dialogue later.
+   * @returns {Promise<null | { requestId: string, status: string, text: string }>}
+   */
+  const hearTask = (scope, taskId, requestId, waitMs = taskWaitMs) => new Promise((resolve) => {
+    scope.deliveredTasks.add(taskId);
+    let first = null, said = "", timer = null;
+    const speak = (text) => { scope.voiceState.live = { key: requestId, call: 0, text, delegated: false }; scope.voiceState.version++; };
+    const done = (task) => {
+      clearTimeout(timer); scope.voiceAbort.signal.removeEventListener("abort", gone);
+      scope.taskWatch = null;
+      if (task?.status !== "completed" || !task.text) { scope.deliveredTasks.delete(taskId); resolve(null); return; }
+      // One growing text, so the device's reader keeps every sentence it has already spoken.
+      const text = !said || task.text.startsWith(said) ? task.text : `${said}${/[\u3000-\u303f\u3400-\u9fff\uff00-\uffef]$/.test(said) ? "" : " "}${task.text}`;
+      speak(text);
+      resolve({ ...task, text });
+    };
+    const watch = () => {
+      const task = scope.session?.snapshot().tasks.find((item) => item.requestId === taskId);
+      if (!task) return;
+      if (["completed", "failed", "cancelled"].includes(task.status)) { done(task); return; }
+      if (task.step === null) return;
+      first ??= task.step;
+      if (task.step !== first) return;
+      const whole = task.text.slice(0, Math.max(...[..."。！？!?"].map((mark) => task.text.lastIndexOf(mark))) + 1);
+      if (whole.length > said.length) { said = whole; speak(said); }
+    };
+    const gone = () => done(null);
+    timer = setTimeout(gone, waitMs);
+    scope.voiceAbort.signal.addEventListener("abort", gone, { once: true });
+    scope.taskWatch = watch;
+    watch();
+  });
   const scopes = new Set();
   const service = {
     /** Whether a device's dialogue drives this Agent Session now, so what it writes ends up spoken by that device. */
     drivesDevice(sessionId) {
       return Boolean(sessionId) && [...scopes].some((scope) => scope.active && scope.dialogue?.hasClientTools() && scope.session?.snapshot().sessionId === sessionId);
+    },
+    /** The persona a device gave its dialogue, for the Agent that now answers in its voice. */
+    devicePersona(sessionId) {
+      const scope = sessionId ? [...scopes].find((item) => item.active && item.dialogue?.hasClientTools() && item.session?.snapshot().sessionId === sessionId) : null;
+      return scope?.dialogue.instructions() || "";
     },
     async clean(scope, text, options = {}) {
       if (typeof text !== "string" || text.length > 16000) throw failure("voice_input_invalid", 400);
@@ -196,6 +241,7 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
      */
     advance(scope) {
       if (!scope.active || !scope.voiceState) return;
+      scope.taskWatch?.();
       const state = scope.session?.snapshot() || {};
       // Completion is keyed by durable request/turn, never by the session's aggregate idle flag.
       for (const task of state.tasks || []) {

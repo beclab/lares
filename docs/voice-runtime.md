@@ -208,6 +208,33 @@ Improvements, in order of value for effort (none implemented yet):
    Agent's prompt prefix identical across tasks (anything that changes per task
    at the end) and smaller than its current 17.9k tokens.
 
+### Routing a device turn: three options measured (2026-10-25)
+
+The device dialogue decided between speaking and acting in free text, and
+keyword checks caught a model that said an action instead of doing it
+("能把它变成白色吗？" answered "将灯光调整为白色中。" with no ask_lares, so the
+light stayed yellow). Every new phrasing was a new gap, so three structural
+options were measured with `scripts/voice-eval/route-probe.mjs`: 26 utterances
+from field tests (follow-ups such as "调亮一点" and "Make it warmer" after a
+light turn included), each sent three times as the dialogue's own first request
+to Qwen3.5-9B (sglang, memory slicing).
+
+| Option | Correct route | Time per call | Notes |
+|---|---|---|---|
+| Today: tool_choice auto, before the keyword checks | 72/78 | median 353 ms | 5 of 6 misses are a home or device request answered in words |
+| A: every reply is a tool call (`speak` added), tool_choice `required` | 12/78 | about 9.8 s | the model keeps emitting tool calls until max_tokens; `parallel_tool_calls: false` reaches sglang and changes nothing (15/78) |
+| B: a forced `route` call (lares / camera / motion / speak), then the turn | 75/78 | median 302 ms, p90 316 ms | one of three "Turn off the lights please" routed to speak, which is the failure being removed |
+| C: B without `speak`: everything but the camera and motion goes to Lares | 77/78 | the route call, then the Agent | small talk waits for the Agent: first text 0.2–2.4 s after hand-off, median about 1.6 s |
+
+A is not usable until the engine stops a `required` call after one tool. B
+keeps small talk at about 1 s and makes a misroute either slower (sent to
+Lares) or, for a narrow speak route, rare. C cannot claim an action it did not
+take, because only the Agent can act and the dialogue no longer speaks for it;
+it costs small-talk latency and needs the device persona in the Agent's prompt.
+Lares ships C: the Agent's first sentence is spoken while it writes and its
+answer when the task ends, with no acknowledgement or announcement written by
+the dialogue model.
+
 ### Working on it
 
 - Eval: `node scripts/voice-eval/run.mjs --runs 5 [--only a,b] [--model <id>] [--dialogue ../../packages/core/voice/dialogue.next.js] [--json out.json]`

@@ -32,28 +32,14 @@ const filler = (text) => {
   const bare = String(text).replace(/[\s\p{P}\p{S}]/gu, "");
   return bare.length <= 1 || FILLER_WORDS.test(bare);
 };
-// A greeting is answered by the dialogue itself. With tools on offer a small model sent "你好" to
-// ask_lares, or resent a light request that had failed earlier in the conversation.
-const GREETING = /^(?:好的|嗯|哦|喂|okay|ok|oh|well)?(?:你好|您好|嗨|哈喽|哈啰|早上好|早安|中午好|下午好|晚上好|晚安|hi|hello|hey|hiya|howdy|hithere|hellothere|heythere|goodmorning|goodafternoon|goodevening|goodnight)(?:呀|啊|哇|again)?(?:reachy|reachymini|lares)?$/i;
-const greeting = (text) => GREETING.test(String(text).replace(/[\s\p{P}\p{S}]/gu, "").toLowerCase());
-// What a reply must have done, when its words say it did something no tool call backs. A request to
-// look again was answered with "这其实是一个洗手液瓶" and no camera call; "正在为您开灯" with no
-// ask_lares left the light off. Such a reply is asked again with that one tool required.
-const LOOK_AGAIN = /(?:再|重新)(?:看|瞧|识别|拍)|仔细看|看清楚|\blook (?:again|closer|more closely)\b|\banother (?:look|picture|photo)\b|\b(?:check|see) (?:it |that |this )?again\b|\bwhat (?:it|that|this) really is\b/i;
-// A follow-up that changes the device just named without naming it: "能把它变成白色吗？".
-const DEVICE_CHANGE = /(?:变|调|换|改)(?:成|为|到)|调(?:亮|暗|高|低)|(?:亮|暗)一(?:点|些)|颜色|亮度|色温|\b(?:make|turn|set|change) it\b|\b(?:brighter|dimmer|warmer|cooler)\b/i;
-const HOME_DEVICE = /灯|空调|开关|窗帘|插座|风扇|电视|暖气|加湿器|light|lamp|switch|fan|curtain|heater|thermostat/i;
-// A claim may name what it acts on first: "将灯光调整为白色", "已把它调成黄色".
-const CLAIMED_ACTION = /(?:(?:正在|已经|已|马上|这就|立刻|立即|将|会|重新|再次)(?:为您|为你|帮您|帮你|给您|给你)?(?:[^，。！？]{0,4}(?:灯光|灯|空调|窗帘|风扇|电视|开关|插座|它))?|(?:为您|为你|帮您|帮你|给您|给你)|把[^，。！？]{0,8})(?:打开|关闭|关掉|开启|调整|调成|调为|调到|调暗|调亮|调|变成|变为|换成|改成|开|关|切换|设置)|\b(?:turning|switching|dimming|brightening|turned|switched|dimmed|adjusting|adjusted)\b|\b(?:i'll|i will|let me|going to) (?:turn|switch|dim|set|adjust|try|ask)\b|\blet me check with\b/i;
-// A second look answered with only a gesture (a nod, an emotion) counts as no look; a claimed home
-// action counts only when nothing was called at all.
-const requiredTool = (text, answer, tools) => {
-  const offered = (name) => tools.some((tool) => tool.function.name === name);
-  const calls = (answer.tool_calls || []).map((call) => call.function?.name);
-  const said = (typeof answer.content === "string" ? answer.content : "").replace(/[’‘]/g, "'");
-  if (offered("camera") && LOOK_AGAIN.test(text) && !HOME_DEVICE.test(text) && !calls.includes("camera") && !calls.includes("ask_lares")) return "camera";
-  if (!calls.length && offered("ask_lares") && CLAIMED_ACTION.test(said) && HOME_DEVICE.test(`${text} ${said}`)) return "ask_lares";
-  return null;
+// A device turn is routed before anything is said. Left to choose between words and tools, a small
+// model answered "能把它变成白色吗？" with "将灯光调整为白色中。" and no call, and keyword checks on
+// its words only caught the phrasings already seen. Only the device's own camera and movements stay
+// with the dialogue; everything else is the Agent's to do and to say (docs/voice-runtime.md, "Routing
+// a device turn").
+const ROUTE = { type: "function", function: { name: "route", description: "Choose who handles the user's latest words.", parameters: { type: "object", properties: { route: { type: "string", enum: ["lares", "camera", "motion"], description: "camera: the robot must look to answer. motion: move the head, show an emotion, dance, or stop doing so. lares: everything else, including greetings, small talk, questions, home devices, weather, news, time, reminders and schedules." } }, required: ["route"] } } };
+const routeOf = (answer) => {
+  try { return JSON.parse(answer.tool_calls?.find((call) => call.function?.name === "route")?.function?.arguments || "{}").route; } catch { return undefined; }
 };
 // A short task result is said as the Agent wrote it: re-worded by the dialogue, "明亮的白色，亮度 50%"
 // came back as "柔和的白色". A long or formatted one still needs the dialogue to shorten it.
@@ -178,6 +164,7 @@ export function createVoiceDialogue({ config, agent = false, owner, context = []
     },
     /** Caller instructions append to the system prompt; they never replace it. */
     setInstructions(text, limit = 2000) { extra = String(text || "").slice(0, limit); messages = [system(), ...messages.slice(1)]; },
+    instructions: () => extra,
     /** Tools a device declared, in Realtime function shape; an empty list withdraws them. */
     setClientTools(tools) {
       device = tools.map(({ name, description, parameters }) => ({ type: "function", function: { name, ...(description ? { description } : {}), parameters: parameters || { type: "object", properties: {} } } }));
@@ -244,24 +231,25 @@ export function createVoiceDialogue({ config, agent = false, owner, context = []
       }
       const next = [lead, ...messages.slice(1), ...(text === null ? [] : [{ role: "user", content: text }]), ...transient];
       try {
-        const tools = device.length && text !== null && (filler(text) || greeting(text)) ? [] : [...(agent ? [TOOL] : []), ...device];
+        const tools = device.length && text !== null && filler(text) ? [] : [...(agent ? [TOOL] : []), ...device];
         const maxCalls = device.length ? MAX_DEVICE_CALLS : 1;
         const limited = steps >= MAX_STEPS;
+        // The route call offers every tool plus route, so the chat template renders the same tool list
+        // turn after turn and the engine keeps the conversation's prefix cached.
+        const route = device.length && agent && text !== null && tools.length
+          ? routeOf(await chat({ messages: wire(next), model: config.chatModel, owner, signal, tools: [...tools, ROUTE], toolChoice: { type: "function", function: { name: "route" } }, maxTokens: 40, reasoningEffort: "none" }).catch((cause) => { if (signal?.aborted) throw cause; return {}; })) || "lares"
+          : null;
+        if (route === "lares") {
+          // The Agent reads the user's own words; it answers, and its words are what the device says.
+          const call = { id: `route_${requestId}`.slice(0, 128), type: "function", function: { name: "ask_lares", arguments: JSON.stringify({ operation: "run", task: text }) } };
+          const result = await submit(text, requestId, "run");
+          messages = [messages[0], ...next.slice(1).filter((item) => !transient.includes(item)), { role: "assistant", content: null, tool_calls: [call] }, { role: "tool", tool_call_id: call.id, content: JSON.stringify(result) }];
+          return { text: "", calls: [], task: result?.requestId || null };
+        }
         // Voice turns run with reasoning off: a thinking model otherwise spends the whole token budget
         // and seconds of latency before it says anything.
-        const first = { messages: wire(next), model: config.chatModel, owner, signal, tools: tools.length ? tools : undefined, ...(limited ? { toolChoice: "none" } : {}), maxCalls, reasoningEffort: "none" };
-        // A device reads a reply while it is written, so words the checks below then drop had already
-        // been spoken ("让我检查一下这是什么灯……正在调整灯光颜色" before the light request reached
-        // ask_lares). A request that may be asked again (a home device, a second look) is read only once
-        // the first answer has passed them; small talk still streams.
-        const mayRetry = device.length > 0 && text !== null && (HOME_DEVICE.test(text) || DEVICE_CHANGE.test(text) || LOOK_AGAIN.test(text));
-        let answer = await chat({ ...first, ...(mayRetry ? {} : live()) });
-        const required = device.length && text !== null && !limited ? requiredTool(text, answer, tools) : null;
-        if (required) {
-          // The words that claimed the action are dropped; a model that still will not call the tool keeps them.
-          const retry = await chat({ ...first, ...live(), toolChoice: { type: "function", function: { name: required } } });
-          if (retry.tool_calls?.some((call) => call.function?.name === required)) answer = retry;
-        }
+        const first = { messages: wire(next), model: config.chatModel, owner, signal, tools: tools.length ? tools : undefined, ...(limited ? { toolChoice: "none" } : route === "camera" && device.some((tool) => tool.function.name === "camera") ? { toolChoice: { type: "function", function: { name: "camera" } } } : {}), maxCalls, reasoningEffort: "none" };
+        let answer = await chat({ ...first, ...live() });
         // A small model sometimes calls a tool by a name it made up, or ask_lares where there is no Agent;
         // on the robot that ended the turn as "Voice operation failed". A device turn is asked once more
         // without tools and keeps only words. Other sessions still refuse such a call.

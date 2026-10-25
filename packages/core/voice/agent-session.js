@@ -10,6 +10,10 @@ export const SPOKEN_PROMPT = "This is a voice conversation. Keep user-facing ans
 // took 11-14 s to write and left the dialogue to guess what mattered.
 export const DEVICE_SPOKEN_PROMPT = "The answer is spoken by a small voice device: give only what the user asked for, in at most two short sentences of plain text. No markdown, headings, lists, links, citations, emoji, advice or follow-up offers. Use the units of the user's language (°C for Chinese).";
 
+// A device's persona was written for its own dialogue model: its tools, language and movement rules
+// are not the Agent's, only its character is.
+export const DEVICE_PERSONA_PROMPT = "You speak through this device, so answer in its character below: take its personality and tone only. Ignore what it says about tools, movement, language and web search; the rules above and the user's language still apply.";
+
 /** dsh opens a turn before claiming input; rpcId associates input with that open turn. */
 export function createVoiceAgentSession(api, { sessionId = null, preset, workspaceId, restoredRequests = [], onChange = () => {}, metric = () => {}, fallbackModel = async () => null } = {}) {
   let creating;
@@ -34,7 +38,7 @@ export function createVoiceAgentSession(api, { sessionId = null, preset, workspa
   const unfinished = (task) => ["accepted", "running", "waiting", "unknown"].includes(task.status);
   const snapshot = () => ({ sessionId, running: observedRunning || [...requests.values()].some(unfinished), utterance, error, version,
     requestId: latestRequest, cursor,
-    tasks: [...requests.values()].map(({ requestId, turn, status, utterance: reply, error: taskError }) => ({ requestId, turn, status, text: reply?.silent ? "" : reply?.text || "", error: taskError })),
+    tasks: [...requests.values()].map(({ requestId, turn, status, utterance: reply, error: taskError }) => ({ requestId, turn, status, step: reply?.step ?? null, text: reply?.silent ? "" : reply?.text || "", error: taskError })),
   });
   const ensure = async () => {
     if (sessionId) return sessionId;
