@@ -223,8 +223,12 @@ Improvements, in order of value for effort (none implemented yet):
   compare candidates in the same invocation.
 - Regression: `scripts/voice-eval/regress.sh <model-id> ...` runs this checkout's
   `dialogue.js` against `scripts/voice-eval/baselines/<model>.json` and exits 1
-  when a scenario lost two or more of its five runs, a scenario disappeared, or
-  the total fell by more than three runs per hundred. Run it before every
+  when a scenario's pass rate fell by 40 points (two of five runs), a scenario
+  disappeared, or the scenarios both ran lost more than three runs per hundred.
+  The same dialogue differs by up to three of five runs on one scenario, so a
+  flagged scenario is run again ten times and only a 30-point drop there counts.
+  Changes outside `dialogue.js` (the realtime gateway, the Agent prompt) are not
+  covered: they need a release and a field test. Run it before every
   dialogue change ships, on each model a device may meet (today Qwen3.5-9B on a
   memory-sliced card and Qwen3.6-35B-A3B on a time-sliced one: they fail
   different scenarios), and refresh the baseline with `--update` after a

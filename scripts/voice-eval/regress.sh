@@ -42,7 +42,20 @@ for model in "${models[@]}"; do
     node "$here/compare.mjs" "$baseline"
     echo "baseline updated: $baseline"
   elif [ -f "$baseline" ]; then
-    node "$here/compare.mjs" "$baseline" "$dir/candidate.json" --failures --gate || status=1
+    if ! report=$(node "$here/compare.mjs" "$baseline" "$dir/candidate.json" --failures --gate); then
+      printf '%s\n' "$report"
+      # One 5-run pass is noisy: a flagged scenario has to fail again over ten runs to count.
+      flagged=$(printf '%s\n' "$report" | sed -n 's/^flagged: //p')
+      if [ -n "$flagged" ]; then
+        echo "re-running $flagged ten times"
+        "$here/remote.sh" "$ns/$pod" "$dir/again" "candidate=$root/packages/core/voice/dialogue.js" -- --runs 10 --only "$flagged" --model "$model" >/dev/null
+        node "$here/compare.mjs" "$baseline" "$dir/again/candidate.json" --failures --gate --only-shared || status=1
+      else
+        status=1
+      fi
+    else
+      printf '%s\n' "$report"
+    fi
   else
     node "$here/compare.mjs" "$dir/candidate.json" --failures
     echo "no baseline for $model yet; rerun with --update to keep this one" >&2
