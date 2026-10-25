@@ -50,5 +50,6 @@ spec:
     - Les appareils vocaux se rattrapent quand le modèle appelle un outil que l'appareil n'a pas, attendent la fin d'une pause après « euh » ou un mot inachevé et consignent quelle part de chaque prise ressemblait à une voix.
     - Les appareils vocaux consignent les parties du prompt de l'Agent qui changent d'une requête à l'autre, pour comprendre pourquoi certaines démarrent lentement.
     - Les appareils vocaux consignent quel message antérieur d'une requête de l'Agent a changé, pour comprendre pourquoi la première requête après une recherche démarre lentement.
+    - Les appareils vocaux n'ajoutent plus de ligne de langue à chaque tour dans le prompt du dialogue, afin de réutiliser son préfixe en cache à chaque appel ; le modèle choisit la langue de réponse.
 
-    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.91)
+    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.92)
