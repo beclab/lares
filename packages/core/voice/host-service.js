@@ -3,6 +3,7 @@ import { createVoiceRecords } from "./records.js";
 import { createVoiceDialogue, cleanDictation, voiceChat } from "./dialogue.js";
 import { readConfig, validateConfigPatch } from "./config.js";
 import { listModels } from "../router/stt.js";
+import { defaultChatTarget } from "../router/default-route.js";
 import { validatedRealtimeModels } from "./realtime.js";
 import { VOICE_PRESETS } from "./options.js";
 import { voiceCapabilities } from "./capabilities.js";
@@ -120,6 +121,7 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
         preset: scope.authorizedBinding?.agentPreset || env.LARES_VOICE_AGENT_PRESET || undefined, workspaceId: scope.authorizedBinding?.workspaceId || env.LARES_VOICE_WORKSPACE_ID || undefined, restoredRequests,
         onChange: () => service.advance(scope),
         metric: (fields) => metric({ voiceId: scope.id, ...fields }),
+        fallbackModel: () => defaultChatTarget({ env }),
       });
       await scope.session.open();
       if (scope.epoch !== epoch) throw failure("voice_session_closed", 409);

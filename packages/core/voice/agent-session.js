@@ -2,11 +2,12 @@ import { mintRpcId } from "../larepass/rpc.js";
 import { createSessionFollow } from "../larepass/mux.js";
 import { createInboxTracker } from "../larepass/queue.js";
 import { reduceUtterance } from "./speech.js";
+import { ROUTER_PROVIDER_ID } from "../router/models.js";
 
 export const SPOKEN_PROMPT = "This is a voice conversation. Keep user-facing answers concise and natural for speech. Do not read reasoning or tool payloads aloud. Preserve the task's factual results and use the user's language.";
 
 /** dsh opens a turn before claiming input; rpcId associates input with that open turn. */
-export function createVoiceAgentSession(api, { sessionId = null, preset, workspaceId, restoredRequests = [], onChange = () => {}, metric = () => {} } = {}) {
+export function createVoiceAgentSession(api, { sessionId = null, preset, workspaceId, restoredRequests = [], onChange = () => {}, metric = () => {}, fallbackModel = async () => null } = {}) {
   let creating;
   let following;
   let closed = false;
@@ -127,7 +128,19 @@ export function createVoiceAgentSession(api, { sessionId = null, preset, workspa
         try {
           await ensure();
           await follow();
-          await api.prompt({ sessionId, requestId, mode: mode === "steer" ? "steer" : "queue", content: [{ type: "text", text }] }, following.signal);
+          const send = () => api.prompt({ sessionId, requestId, mode: mode === "steer" ? "steer" : "queue", content: [{ type: "text", text }] }, following.signal);
+          try {
+            await send();
+          } catch (cause) {
+            // A Session keeps the model its last request used. Once Router stops serving it (an
+            // engine stopped for a GPU-mode change), every hand-off fails until the Session moves to
+            // what Router's default-chat answers with now; the refused prompt was never recorded.
+            const model = cause?.code === "session/model-unavailable" ? await fallbackModel() : null;
+            if (!model) throw cause;
+            await api.selectModel({ sessionId, provider: ROUTER_PROVIDER_ID, model });
+            metric({ stage: "agent_model_fallback", requestId, model });
+            await send();
+          }
           return snapshot();
         } catch (cause) {
           task.status = "unknown"; task.error = "submission_outcome_unknown"; version++;

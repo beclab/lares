@@ -205,3 +205,12 @@ test("a route seeded before Router reported efforts picks them up on the next bo
     assert.deepEqual(profile.models, DECLARED);
   });
 });
+
+test("the boot default follows Router's default-chat when the catalog lists it", () => {
+  withHome((dir) => {
+    writeFileSync(join(dir, "settings.yaml"), 'agent-default-model:\n  provider: olares-router\n  model: "Qwen/chat"\n');
+    assert.equal(bootstrapLaresSettings(dir, seed({ defaultChat: "Qwen/other" })).model, "Qwen/other");
+    assert.equal(readSettings(dir)["agent-default-model"].model, "Qwen/other");
+    assert.equal(bootstrapLaresSettings(dir, seed({ defaultChat: "gone/model" })).model, "Qwen/other");
+  });
+});

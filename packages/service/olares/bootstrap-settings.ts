@@ -55,6 +55,8 @@ export interface LaresSettingsSeed {
   /** Last authorized catalog returned at boot. */
   catalog: RouterModelEntry[];
   catalogLoaded?: boolean;
+  /** The model Router's default-chat targets at boot; the default for new sessions follows it. */
+  defaultChat?: string | null;
   /** The local shim endpoint pi-ai calls (chat completions and /models). */
   baseURL: string;
 }
@@ -191,7 +193,7 @@ function pinDefaultModel(doc: Document, seed: LaresSettingsSeed): string | null 
     provider: readString(doc, ["agent-default-model", "provider"]) ?? PROVIDER,
     model: readString(doc, ["agent-default-model", "model"]) ?? "",
   };
-  const next = seed.catalogLoaded === false ? current : resolveDefaultSelection(current, declarableModels(seed));
+  const next = seed.catalogLoaded === false ? current : resolveDefaultSelection(current, declarableModels(seed), seed.defaultChat);
   if (next !== current) doc.setIn(["agent-default-model"], next);
   else if (!current.model) {
     doc.setIn(["agent-default-model", "provider"], current.provider);

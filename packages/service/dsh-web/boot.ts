@@ -13,6 +13,7 @@ import {
 import { seedOlaresSkills } from "../olares/skills-seed.js";
 import { seedWorkspaceAgents } from "../dsh/agents-seed.js";
 import { identityPrompt } from "@olares/lares-core/brand/identity";
+import { defaultChatTarget } from "@olares/lares-core/router/default-route";
 import {
   ensureLaresWebProfile,
   installProfileDeps,
@@ -49,10 +50,12 @@ export async function bootLaresWeb(): Promise<void> {
 
   let catalogModels: RouterModelEntry[] = [];
   let catalogLoaded = false;
+  let defaultChat: string | null = null;
   try {
     catalogModels = await fetchRouterModels(env);
     catalogLoaded = true;
-    console.log(`[lares] Router catalog: ${catalogModels.length} model(s)`);
+    defaultChat = await defaultChatTarget();
+    console.log(`[lares] Router catalog: ${catalogModels.length} model(s)${defaultChat ? `, default-chat → ${defaultChat}` : ""}`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.warn(`[lares] Router model sync skipped: ${message}`);
@@ -62,6 +65,7 @@ export async function bootLaresWeb(): Promise<void> {
     catalog: catalogModels,
     baseURL: llmBase,
     catalogLoaded,
+    defaultChat,
   });
   if (bootstrapped.changed) {
     const route = bootstrapped.routeSeeded ? "seeded" : "updated";
