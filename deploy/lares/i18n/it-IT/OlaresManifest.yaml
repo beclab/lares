@@ -52,5 +52,6 @@ spec:
     - I dispositivi vocali registrano quale messaggio precedente di una richiesta dell'Agent è cambiato, per capire perché la prima richiesta dopo una ricerca parte lenta.
     - I dispositivi vocali non aggiungono più una riga sulla lingua a ogni turno nel prompt del dialogo, così il prefisso in cache viene riusato a ogni chiamata; la lingua della risposta la sceglie il modello.
     - L'Agent di un dispositivo vocale non rilegge più i lunghi risultati degli strumenti dei turni precedenti, come una ricerca web, quindi la richiesta successiva parte prima.
+    - L'Agent di un dispositivo vocale usa solo gli strumenti che gli servono (comandi e skill, ricerca web, promemoria), quindi ogni richiesta ha circa 6k token in meno; le app di Lares, compresa la voce sul telefono, mantengono tutti gli strumenti.
 
-    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.93)
+    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.94)

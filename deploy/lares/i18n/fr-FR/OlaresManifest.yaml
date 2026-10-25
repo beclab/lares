@@ -52,5 +52,6 @@ spec:
     - Les appareils vocaux consignent quel message antérieur d'une requête de l'Agent a changé, pour comprendre pourquoi la première requête après une recherche démarre lentement.
     - Les appareils vocaux n'ajoutent plus de ligne de langue à chaque tour dans le prompt du dialogue, afin de réutiliser son préfixe en cache à chaque appel ; le modèle choisit la langue de réponse.
     - L'Agent d'un appareil vocal ne relit plus les longs résultats d'outils des tours précédents, comme une recherche web : la requête suivante démarre plus tôt.
+    - L'Agent d'un appareil vocal n'utilise que les outils dont il a besoin (commandes et skills, recherche web, rappels) : chaque requête compte environ 6k tokens de moins ; les applications Lares, y compris la voix sur mobile, gardent tous les outils.
 
-    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.93)
+    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.94)
