@@ -9,7 +9,7 @@ test it are in [voice-runtime](voice-runtime.md#device-voice-through-router-reac
 | On pptest03 | Version | Note |
 | --- | --- | --- |
 | Lares | 0.26.83 (upload source) | Silero device gate, echo word check, settled-words and short-take endpoints, hass-cli 0.0.2 |
-| reachymini | 0.1.7 (upload source) | `lares` dialect, ReSpeaker USB access; main says 0.1.6 |
+| reachymini | 0.1.8 (upload source) | `lares` dialect, ReSpeaker USB access, camera stills as YCbCr JPEG (tag v0.1.8) |
 | Qwen3-ASR 0.6B | 1.0.2 (market.test) | engine v1.1.33, `ENGINE_MAX_CONCURRENCY=3`; the one in use |
 | Qwen3-ASR 1.7B | 1.0.30 (market.test) | stopped: no card with 12 Gi free |
 | sglang Qwen3.5-9B | 1.0.4 (market.test) | thinking off at launch |

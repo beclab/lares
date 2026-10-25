@@ -84,6 +84,25 @@ announcement queued behind the camera reply. 0.26.79 ends such takes on settled
 words; hass-cli 0.0.2 (0.26.81) gives everyday control a two-command path and is
 not yet measured on the robot.
 
+**The camera's colours were lost in its JPEG, not its lens.** Every camera look
+came back as "too blurry", "the picture went green" or "green light and blurry
+outlines". A frame captured in the robot pod through the app's own path
+(daemon -> WebRTC -> `appsrc(BGR) -> videoconvert -> jpegenc`) looked right in
+a viewer, but its JPEG was in the RGB colour space: component ids `R`, `G`, `B`
+(82, 71, 66), 4:4:4, no JFIF marker, because jpegenc accepts BGR and nothing was
+converted. Viewers and PIL honour those ids; the vision model's decoder read the
+planes as Y, Cb, Cr, which turns the frame into a bright green field with magenta
+streaks where the lights are (reproduced by decoding it that way: 99% of pixels
+green-dominant). The same frame re-encoded as YCbCr was described correctly, so
+camera, transport and Lares (which forwards `input_image` untouched) were all
+fine. reachymini 0.1.8 (beclab/olares-reachymini `afcfe9e`, tag v0.1.8) patches
+reachy-mini 1.12.0 at build time to link videoconvert to jpegenc through
+`video/x-raw,format=I420`, so stills are YCbCr 4:2:0 and about 114 KB instead of
+270-330 KB; after it the robot named the cola bottle in the user's hand. Frames
+are still dark in a bright room: auto exposure meters on the monitor and the
+ceiling lights in view. Raising contrast to 32 and backlight compensation to 6
+made it darker, and the defaults (contrast 1, backlight 2) were restored.
+
 ### Working on it
 
 - Eval: `node scripts/voice-eval/run.mjs --runs 5 [--only a,b] [--dialogue ../../packages/core/voice/dialogue.next.js]`
@@ -106,17 +125,17 @@ not yet measured on the robot.
 - Agent latency for home control with hass-cli 0.0.2 has not been measured on the robot.
 - The eval's overall pass rate fell from about 91% to 80–85% after sglang 1.0.4;
   not investigated.
-- The camera answer said the image was too blurry to tell; the robot camera's
-  frame quality was not checked.
+- Camera frames are dark when bright lights or a monitor are in view (auto
+  exposure); a device that only says it will look ("Let me take a look") without
+  calling the camera was seen once, in English after a restart.
 - model-console does not re-probe capacity when the engine pod is replaced, and
   Router does not re-read a card that changes after the app turned running.
 - Router: the default-realtime category was repointed to
   `lares-reachy/voice-assistant` automatically; Router's docs describe an
   openai-compatible provider while its Realtime path requires type `openai`.
-- `olares-reachymini` main still says 0.1.6 while 0.1.7 is on Docker Hub and
-  pptest03; the next release there is 0.1.8. Its pod adds group 0 to
-  `supplementalGroups` to reach the ReSpeaker's USB nodes; a device-specific
-  group would be narrower.
+- `olares-reachymini` 0.1.8 is released from main (tag v0.1.8, images built by
+  its publish workflow). Its pod adds group 0 to `supplementalGroups` to reach
+  the ReSpeaker's USB nodes; a device-specific group would be narrower.
 - PR 67 contains `f74b4bf`, the source half of the hands-free short-take fix,
   pushed by another session under a "publish Lares 0.26.79" message; `b9e431d`
   carries its tests and explanation.
