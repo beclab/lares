@@ -51,5 +51,6 @@ spec:
     - Los dispositivos de voz registran qué partes del prompt del Agent cambian entre peticiones, para averiguar por qué algunas tardan en empezar.
     - Los dispositivos de voz registran qué mensaje anterior de una petición del Agent cambió, para averiguar por qué la primera petición tras una búsqueda tarda en empezar.
     - Los dispositivos de voz ya no añaden una línea de idioma por turno al prompt del diálogo, para reutilizar su prefijo en caché en cada llamada; el idioma de la respuesta lo decide el modelo.
+    - El Agent de un dispositivo de voz ya no vuelve a leer resultados largos de herramientas de turnos anteriores, como una búsqueda web, así que la petición siguiente empieza antes.
 
-    [Notas de la versión](https://github.com/beclab/lares/releases/tag/v0.26.92)
+    [Notas de la versión](https://github.com/beclab/lares/releases/tag/v0.26.93)

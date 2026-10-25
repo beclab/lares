@@ -51,5 +51,6 @@ spec:
     - I dispositivi vocali registrano quali parti del prompt dell'Agent cambiano tra le richieste, per capire perché alcune partono lente.
     - I dispositivi vocali registrano quale messaggio precedente di una richiesta dell'Agent è cambiato, per capire perché la prima richiesta dopo una ricerca parte lenta.
     - I dispositivi vocali non aggiungono più una riga sulla lingua a ogni turno nel prompt del dialogo, così il prefisso in cache viene riusato a ogni chiamata; la lingua della risposta la sceglie il modello.
+    - L'Agent di un dispositivo vocale non rilegge più i lunghi risultati degli strumenti dei turni precedenti, come una ricerca web, quindi la richiesta successiva parte prima.
 
-    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.92)
+    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.93)

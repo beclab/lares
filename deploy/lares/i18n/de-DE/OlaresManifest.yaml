@@ -51,5 +51,6 @@ spec:
     - Sprachgeräte protokollieren, welche Teile des Agent-Prompts sich zwischen Anfragen ändern, um langsame Starts zu klären.
     - Sprachgeräte protokollieren, welche frühere Nachricht einer Agent-Anfrage sich geändert hat, um langsame Starts nach einer Suche zu klären.
     - Sprachgeräte fügen dem Dialog-Prompt keine Sprachzeile pro Zug mehr hinzu, damit sein zwischengespeichertes Präfix bei jedem Aufruf wiederverwendet wird; die Antwortsprache wählt das Modell.
+    - Der Agent eines Sprachgeräts liest lange Werkzeugergebnisse früherer Züge, etwa eine Websuche, nicht mehr erneut, sodass die Anfrage nach einer Suche schneller startet.
 
-    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.92)
+    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.93)
