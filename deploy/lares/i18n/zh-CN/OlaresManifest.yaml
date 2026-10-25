@@ -48,5 +48,6 @@ spec:
     - 语音设备从语音合成的第一段音频就开始说话，接任务的应答更快；Agent 借助 hass-cli 0.0.3 用更少的步骤开灯。
     - 打开边写边读且 GPU 为显存切分时，语音设备可以在回复还在生成时就开始说话。
     - 即使之前的回复只是口头说在操作，或用户说还没做成，语音设备也会把开灯等家居设备请求交给 Lares。
+    - Agent 跟随 Router 的 default-chat 所用的模型；语音设备上次用的模型停止后，仍能继续把任务交给 Lares。
 
-    [版本说明](https://github.com/beclab/lares/releases/tag/v0.26.85)
+    [版本说明](https://github.com/beclab/lares/releases/tag/v0.26.86)
