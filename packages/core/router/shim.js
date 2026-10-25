@@ -224,14 +224,21 @@ async function enrichGenerationPoll(up, res, req, env, cancellation, deps) {
   sendJson(res, status, enriched);
 }
 
-// A per-process observer of chat requests by dsh Session id; the voice host installs one to see
-// what a device-driven Agent sends its model.
-let requestTrace = null;
+// Per-process hooks on chat requests by dsh Session id, installed by the voice host: `rewrite`
+// may return other messages for a device-driven Agent, and `trace` sees what is finally sent.
+let requestTrace = null, requestRewrite = null;
 export function setRequestTrace(trace) { requestTrace = trace; }
-const traceChat = (headers, body) => {
+export function setRequestRewrite(rewrite) { requestRewrite = rewrite; }
+const prepareChat = (headers, body) => {
   const sessionId = headers["x-session-id"];
-  if (!requestTrace || typeof sessionId !== "string") return;
-  try { requestTrace(sessionId, JSON.parse(body.toString("utf8")).messages); } catch {}
+  if ((!requestTrace && !requestRewrite) || typeof sessionId !== "string") return body;
+  try {
+    const request = JSON.parse(body.toString("utf8"));
+    const messages = requestRewrite?.(sessionId, request.messages);
+    if (messages && messages !== request.messages) { request.messages = messages; body = Buffer.from(JSON.stringify(request)); }
+    requestTrace?.(sessionId, request.messages);
+  } catch {}
+  return body;
 };
 
 export function proxyToRouter(req, res, env = process.env, deps = {}) {
@@ -264,7 +271,7 @@ export function proxyToRouter(req, res, env = process.env, deps = {}) {
       }
       if (method === "POST" && suffix.replace(/\/+$/, "") === "chat/completions") {
         body = adaptGeminiChatBuffer(body);
-        traceChat(req.headers, body);
+        body = prepareChat(req.headers, body);
       }
       headers["content-length"] = String(body.length);
     }
