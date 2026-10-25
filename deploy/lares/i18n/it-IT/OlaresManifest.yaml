@@ -47,5 +47,6 @@ spec:
     - L'Agent segue il modello con cui risponde default-chat in Router, e un dispositivo vocale continua a passare attività a Lares dopo che il modello usato per ultimo si ferma.
     - I dispositivi vocali scattano una nuova foto quando si chiede di guardare di nuovo, rispondono da soli ai saluti, passano a Lares i cambi di luce annunciati e riferiscono i risultati brevi come li ha dati Lares.
     - I dispositivi vocali non tagliano più una richiesta a metà parola, uniscono una richiesta ripresa dopo una pausa, mantengono brevi le risposte parlate e gli annunci dell'Agent e registrano ciò che sentono durante una risposta.
+    - I dispositivi vocali si riprendono quando il modello chiama uno strumento che il dispositivo non ha, aspettano la fine di una pausa dopo «ehm» o una parola incompleta e registrano quanta parte di ogni ripresa sembrava una voce.
 
-    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.88)
+    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.89)

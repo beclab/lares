@@ -51,5 +51,6 @@ spec:
     - Agent 跟随 Router 的 default-chat 所用的模型；语音设备上次用的模型停止后，仍能继续把任务交给 Lares。
     - 语音设备在被要求再看一次时会重新拍照，自己回应问候，把口头答应的开关灯交给 Lares，并按 Lares 的原话播报简短结果。
     - 语音设备不再在用户说到一半时截断请求，停顿后接着说的话会合成一句；Agent 的语音回答和播报更简短，并记录播报期间听到的声音。
+    - 模型调用设备没有的工具时，语音设备能自行恢复；在“呃”或没说完的词之后停顿时会多等一会；并记录每段录音中有多少像人声。
 
-    [版本说明](https://github.com/beclab/lares/releases/tag/v0.26.88)
+    [版本说明](https://github.com/beclab/lares/releases/tag/v0.26.89)
