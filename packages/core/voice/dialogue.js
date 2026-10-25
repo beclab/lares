@@ -228,15 +228,10 @@ export function createVoiceDialogue({ config, agent = false, owner, context = []
       steps = text === null ? steps + 1 : 0;
       const cue = announce ? { role: "system", content: device.length ? `${ANNOUNCE} ${DEVICE_ANNOUNCE}` : ANNOUNCE } : text === null && device.length ? { role: "system", content: CONTINUE } : null;
       const lastWords = text ?? [...messages].reverse().find((item) => item.role === "user" && typeof item.content === "string")?.content;
-      // Only when the language is at risk: an announcement has no new words to follow, and a model
-      // keeps the language of its own last reply. Said every turn, the line pulls a small model toward
-      // answering in words instead of calling the tool it was asked for.
-      const lastReply = [...messages].reverse().find((item) => item.role === "assistant" && typeof item.content === "string" && item.content.trim())?.content;
-      const spoken = device.length ? languageOf(lastWords) : null;
-      const language = spoken && (text === null || languageOf(lastReply) !== spoken) ? spoken : null;
-      // Said in this turn's system prompt: a note after the user's words makes the last thing the model
-      // reads "reply in Chinese", and it answers in words instead of calling the tool the user asked for.
-      const lead = language ? { ...messages[0], content: `${messages[0].content}\nThe user's latest message is in ${language}. Reply in ${language}.` } : messages[0];
+      // The system prompt is the same on every call, so the engine keeps its cached prefix. A
+      // per-turn "the user's latest message is in Chinese" line changed it, and every announcement
+      // re-read the whole prompt; which language to answer in is left to the model and its ASR.
+      const lead = messages[0];
       const transient = [cue].filter(Boolean);
       const plainResult = announce && device.length ? verbatim(lastTask, lastWords) : null;
       if (plainResult) {

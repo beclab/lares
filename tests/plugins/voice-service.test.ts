@@ -210,7 +210,7 @@ test("device tools end the step, answer through outputs and give up unanswered c
   assert.equal(dialogue.toolOutput("c1", '{"ok":true}'), true);
   assert.deepEqual(await dialogue.reply(null, "t2"), { text: "Done.", calls: [] });
   // The per-turn language hint follows; the call and its output come before the continuation's cue.
-  const turn = requests[1].messages.filter((item: any) => !/latest message is in/.test(String(item.content)));
+  const turn = requests[1].messages;
   assert.deepEqual(turn.slice(-3).map((item: any) => [item.role, item.tool_call_id ?? null]), [["assistant", null], ["tool", "c1"], ["user", null]]);
   assert.match(turn.at(-1).content, /from the device result above in one short sentence/);
   await dialogue.reply("again", "t3");
@@ -416,28 +416,17 @@ test("past the step limit a call the model makes anyway is dropped and its words
   assert.deepEqual(await dialogue.reply(null, "c2"), { text: "Done for now.", calls: [] });
 });
 
-test("a device turn names the language of the user's last words, also when announcing a task", async () => {
+test("a device turn sends the same system prompt every time, announcements included, so its prefix stays cached", async () => {
   const requests: any[] = [];
   const context = [{ role: "user", text: "Hello, please open the lights." }, { role: "assistant", text: "Done, lights on." }];
   const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", context, submit: async () => ({ status: "pending" }), chat: async (request: any) => { requests.push(structuredClone(request)); return { role: "assistant", content: "好的" }; } });
   dialogue.setClientTools([MOVE]);
   await dialogue.reply("你能把灯关了吗？", "t1");
-  const hint = (request: any) => request.messages.map((item: any) => String(item.content)).find((content: string) => /latest message is in/.test(content));
-  assert.match(hint(requests[0]), /in Chinese\. Reply in Chinese\./);
-  dialogue.observeTask({ requestId: "r1", status: "completed", text: "Light is off." });
+  dialogue.observeTask({ requestId: "r1", status: "completed", text: "## Light\n- off" });
   await dialogue.reply(null, "task:r1", undefined, undefined, { announce: true });
-  assert.match(hint(requests.at(-1)), /in Chinese/);
-  // The hint is for one turn only and never stays in history.
   await dialogue.reply("Thanks!", "t2");
-  assert.equal(requests.at(-1).messages.filter((item: any) => /latest message is in/.test(String(item.content))).length, 1);
-  assert.match(hint(requests.at(-1)), /in English/);
-});
-
-test("sessions without device tools get no language hint", async () => {
-  const requests: any[] = [];
-  const dialogue = createVoiceDialogue({ config: {}, owner: "alice", chat: async (request: any) => { requests.push(request); return { role: "assistant", content: "ok" }; } });
-  await dialogue.reply("你好", "t1");
-  assert.ok(!requests[0].messages.some((item: any) => /latest message is in/.test(String(item.content))));
+  assert.equal(new Set(requests.map((request: any) => request.messages[0].content)).size, 1);
+  assert.ok(!requests.some((request: any) => request.messages.some((item: any) => /latest message is in/.test(String(item.content)))));
 });
 
 test("a run is acknowledged before the Agent starts, and history keeps the real submission", async () => {
