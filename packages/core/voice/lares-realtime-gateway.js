@@ -276,7 +276,9 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
           send({ type: "response.output_audio_transcript.delta", ...part, delta: `${separator(current.sentences.at(-1)?.text, sentence)}${sentence}` });
           // A slice has to reach the player before synthesize continues, so a
           // caller that pauses after the first slice can still be interrupted.
-          const audio = await synthesize(sentence, scope, (pcm) => playOut(current, pcm));
+          // A device starts speaking at the engine's first chunk; Lares's own clients keep whole
+          // sentences until streamed speech has been accepted there.
+          const audio = await synthesize(sentence, scope, (pcm) => playOut(current, pcm), { stream: listening().mode === "device" });
           if (current.abort.signal.aborted || closed) return;
           if (audio) await playOut(current, audio);
           current.sentences.push({ text: sentence, endMs: current.outputMs });

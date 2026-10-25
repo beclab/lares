@@ -93,14 +93,15 @@ export function createRouterAudio(config) {
         cancel() { cancelled = true; socket?.terminate(); },
       };
     },
-    async synthesize(text, scope, onChunk) {
+    /** `stream` asks Router's TTS to yield as it synthesizes (see synthesizeStream). */
+    async synthesize(text, scope, onChunk, { stream = false } = {}) {
       const settings = { ...structuredClone(config()), ...scope.voiceOverrides?.voice && { voice: scope.voiceOverrides.voice } };
       const model = pickTtsModelId(await listModels(), settings.ttsModel) || settings.ttsModel || "default-tts";
       const chunks = [];
       let convert = null;
       const write = async (pcm) => { if (onChunk) await onChunk(pcm); else chunks.push(pcm); };
       let pending = Buffer.alloc(0);
-      const result = await synthesizeStream({ text, model, voice: settings.voice || ttsVoiceForModel(settings, model), signal: scope.outputAbort?.signal, headers: routerSession(scope),
+      const result = await synthesizeStream({ text, model, voice: settings.voice || ttsVoiceForModel(settings, model), signal: scope.outputAbort?.signal, headers: routerSession(scope), stream,
         onFormat: (format) => { convert = createPcmResampler(format.sampleRate, 24000); },
       }, async (chunk) => {
         const joined = Buffer.concat([pending, chunk]);

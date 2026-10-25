@@ -910,3 +910,36 @@ test("model default omits the voice and each new readout binds an independent co
   assert.deepEqual(voices, [undefined, undefined]);
   await speakFromConfig("New reply.", options); assert.equal(voices.at(-1), "next");
 });
+
+test("a streamed sentence asks the engine to yield, and a silent stream falls back to a whole one", async (t) => {
+  const bodies: any[] = [];
+  t.mock.method(globalThis, "fetch", async (_url: string, init: { body: string, signal: AbortSignal }) => {
+    const body = JSON.parse(init.body);
+    bodies.push(body);
+    const headers = { "content-type": "audio/L16", "x-audio-sample-rate": "24000" };
+    if (!body.stream) return new Response(new Uint8Array([3, 0, 4, 0]), { headers });
+    // An engine whose streaming generator never yields: headers, then nothing until aborted.
+    const stream = new ReadableStream({ start(controller) { init.signal.addEventListener("abort", () => controller.error(init.signal.reason)); } });
+    return new Response(stream, { headers });
+  });
+  const chunks: Buffer[] = [];
+  const started = Date.now();
+  const outcome = await synthesizeStream({ text: "你好", model: "qwen3-tts", stream: true, firstAudioMs: 50 }, (chunk) => { chunks.push(chunk); });
+  assert.deepEqual(bodies.map((body) => body.stream), [true, undefined]);
+  assert.deepEqual([...Buffer.concat(chunks)], [3, 0, 4, 0]);
+  assert.equal(outcome.streamed, true);
+  assert.ok(Date.now() - started < 1000);
+});
+
+test("a stream that has started speaking is not requested again when it breaks", async (t) => {
+  let calls = 0;
+  t.mock.method(globalThis, "fetch", async () => {
+    calls += 1;
+    const stream = new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array([1, 0])); setTimeout(() => controller.error(new Error("reset")), 10); } });
+    return new Response(stream, { headers: { "content-type": "audio/L16", "x-audio-sample-rate": "24000" } });
+  });
+  const chunks: Buffer[] = [];
+  await assert.rejects(synthesizeStream({ text: "你好", model: "qwen3-tts", stream: true, firstAudioMs: 50 }, (chunk) => { chunks.push(chunk); }));
+  assert.equal(calls, 1);
+  assert.equal(chunks.length, 1);
+});

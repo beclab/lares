@@ -961,3 +961,24 @@ test("with a speech model a phrase quieter than its first syllable is still a ph
     assert.equal(fixture.calls.transcribed.length, 1);
   } finally { client.close(); await fixture.stop(); }
 });
+
+test("a device's reply is synthesized as a stream, a Lares client's still sentence by sentence", async () => {
+  const run = async (acknowledging: boolean) => {
+    const asked: any[] = [];
+    const fixture = await serve({ synthesize: async (_text: string, _scope: any, _onChunk: any, options: any) => { asked.push(options?.stream === true); return Buffer.alloc(2400); } });
+    const client = connect(fixture.port, "voice-chat");
+    try {
+      await until(client, (event) => event.type === "response.done", (event) => {
+        if (event.type === "session.created") {
+          if (acknowledging) client.send(JSON.stringify({ type: "lares.playback.progress", item_id: null, played_ms: 0 }));
+          client.send(JSON.stringify({ type: "session.update", session: { audio: { input: { turn_detection: { type: "server_vad" } } } } }));
+        }
+        if (event.type === "session.updated") client.send(JSON.stringify({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] } }));
+        if (event.type === "response.output_audio.delta" && acknowledging) client.send(JSON.stringify({ type: "lares.playback.completed", item_id: event.item_id }));
+      });
+      return asked;
+    } finally { client.close(); await fixture.stop(); }
+  };
+  assert.deepEqual(await run(false), [true]);
+  assert.deepEqual(await run(true), [false]);
+});
