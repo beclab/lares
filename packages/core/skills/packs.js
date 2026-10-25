@@ -12,7 +12,7 @@ export const OFFICIAL_PACKS = [
     optional: true,
     cli: {
       package: "@olares/hass-cli",
-      version: "0.0.2",
+      version: "0.0.3",
       bin: "hass-cli",
       listArgs: ["skill", "list"],
       showArgs: (name) => ["skill", "show", name],

@@ -50,7 +50,7 @@ test("hass-cli uses npm global-prefix layout so the executable lands in prefix/b
   const args = packInstallArgs(OFFICIAL_PACKS[0]);
   assert.equal(args.includes("--global"), true);
   assert.equal(args.includes("--prefix"), true);
-  assert.equal(args.at(-1), "@olares/hass-cli@0.0.2");
+  assert.equal(args.at(-1), "@olares/hass-cli@0.0.3");
 });
 
 test("repairCliBin makes a mode-644 shim behind an existing symlink executable", () => {
