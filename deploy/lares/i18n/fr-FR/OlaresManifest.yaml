@@ -46,5 +46,6 @@ spec:
     - Les appareils vocaux transmettent à Lares une demande concernant une lumière ou un autre appareil de la maison même si une réponse précédente l'annonçait seulement, et quand l'utilisateur dit que ce n'est toujours pas fait.
     - L'Agent suit le modèle avec lequel répond default-chat dans Router, et un appareil vocal continue de confier des tâches à Lares après l'arrêt du dernier modèle utilisé.
     - Les appareils vocaux prennent une nouvelle photo quand on leur demande de regarder à nouveau, répondent eux-mêmes aux salutations, confient à Lares les changements de lumière annoncés et annoncent les résultats courts tels que Lares les a donnés.
+    - Les appareils vocaux ne coupent plus une demande au milieu d'un mot, réunissent une demande poursuivie après une pause, gardent courtes les réponses parlées et les annonces de l'Agent et consignent ce qu'ils entendent pendant une réponse.
 
-    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.87)
+    [Notes de version](https://github.com/beclab/lares/releases/tag/v0.26.88)

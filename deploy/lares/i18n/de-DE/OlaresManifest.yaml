@@ -46,5 +46,6 @@ spec:
     - Sprachgeräte geben eine Anfrage für ein Licht oder ein anderes Hausgerät auch dann an Lares weiter, wenn eine frühere Antwort sie nur angekündigt hat oder der Nutzer sagt, dass noch nichts passiert ist.
     - Der Agent folgt dem Modell, mit dem default-chat im Router antwortet, und ein Sprachgerät gibt weiter Aufgaben an Lares, nachdem das zuletzt genutzte Modell gestoppt wurde.
     - Sprachgeräte machen ein neues Bild, wenn sie noch einmal hinsehen sollen, beantworten Begrüßungen selbst, geben angekündigte Lichtänderungen an Lares weiter und sagen kurze Ergebnisse so an, wie Lares sie gemeldet hat.
+    - Sprachgeräte schneiden eine Anfrage nicht mehr mitten im Wort ab, verbinden eine nach einer Pause fortgesetzte Anfrage, halten gesprochene Antworten und Ansagen des Agent kurz und protokollieren, was sie während einer Antwort hören.
 
-    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.87)
+    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.88)

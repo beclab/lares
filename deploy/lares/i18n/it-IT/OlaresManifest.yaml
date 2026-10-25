@@ -46,5 +46,6 @@ spec:
     - I dispositivi vocali passano a Lares una richiesta per una luce o un altro dispositivo di casa anche se una risposta precedente diceva solo che era in corso, e quando l'utente dice che non è ancora successo.
     - L'Agent segue il modello con cui risponde default-chat in Router, e un dispositivo vocale continua a passare attività a Lares dopo che il modello usato per ultimo si ferma.
     - I dispositivi vocali scattano una nuova foto quando si chiede di guardare di nuovo, rispondono da soli ai saluti, passano a Lares i cambi di luce annunciati e riferiscono i risultati brevi come li ha dati Lares.
+    - I dispositivi vocali non tagliano più una richiesta a metà parola, uniscono una richiesta ripresa dopo una pausa, mantengono brevi le risposte parlate e gli annunci dell'Agent e registrano ciò che sentono durante una risposta.
 
-    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.87)
+    [Note di rilascio](https://github.com/beclab/lares/releases/tag/v0.26.88)
