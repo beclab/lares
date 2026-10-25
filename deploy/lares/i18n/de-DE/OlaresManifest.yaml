@@ -53,5 +53,6 @@ spec:
     - Sprachgeräte fügen dem Dialog-Prompt keine Sprachzeile pro Zug mehr hinzu, damit sein zwischengespeichertes Präfix bei jedem Aufruf wiederverwendet wird; die Antwortsprache wählt das Modell.
     - Der Agent eines Sprachgeräts liest lange Werkzeugergebnisse früherer Züge, etwa eine Websuche, nicht mehr erneut, sodass die Anfrage nach einer Suche schneller startet.
     - Der Agent eines Sprachgeräts nutzt nur die Werkzeuge, die ein Sprachgerät braucht (Befehle und Skills, Websuche, Erinnerungen), sodass jede Anfrage etwa 6k Token kürzer ist; die Lares-Apps, auch die Sprachsteuerung am Telefon, behalten alle Werkzeuge.
+    - Home-Assistant-Skills nutzen hass-cli 0.0.4: Es akzeptiert mehrere Einstellungen in einem Argument, nennt das nächstliegende Gerät, wenn eines nicht gefunden wird, und beschreibt das Einstellen der Lichtfarbe, sodass der Agent ein Licht in weniger Schritten ändert.
 
-    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.94)
+    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.95)

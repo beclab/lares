@@ -53,5 +53,6 @@ spec:
     - Los dispositivos de voz ya no añaden una línea de idioma por turno al prompt del diálogo, para reutilizar su prefijo en caché en cada llamada; el idioma de la respuesta lo decide el modelo.
     - El Agent de un dispositivo de voz ya no vuelve a leer resultados largos de herramientas de turnos anteriores, como una búsqueda web, así que la petición siguiente empieza antes.
     - El Agent de un dispositivo de voz solo usa las herramientas que necesita (comandos y skills, búsqueda web, recordatorios), así que cada petición tiene unos 6k tokens menos; las apps de Lares, incluida la voz en el móvil, conservan todas las herramientas.
+    - Las skills de Home Assistant usan hass-cli 0.0.4, que acepta varios ajustes en un argumento, indica el dispositivo más parecido cuando no encuentra uno y explica cómo cambiar el color de una luz, así que el Agent cambia una luz en menos pasos.
 
-    [Notas de la versión](https://github.com/beclab/lares/releases/tag/v0.26.94)
+    [Notas de la versión](https://github.com/beclab/lares/releases/tag/v0.26.95)

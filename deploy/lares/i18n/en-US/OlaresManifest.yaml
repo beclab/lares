@@ -57,5 +57,6 @@ spec:
     - Voice devices no longer add a per-turn language line to the dialogue's prompt, so its cached prefix is reused on every call; the reply language follows the model.
     - A voice device's Agent no longer re-reads long tool results from earlier turns, such as a web search, so the request after a lookup starts sooner.
     - A voice device's Agent works with only the tools a voice device needs (commands and skills, web search, reminders), so each of its requests is about 6k tokens shorter; Lares's own apps, voice on the phone included, keep every tool.
+    - Home Assistant skills use hass-cli 0.0.4, which accepts several settings in one argument, names the closest device when one is not found and documents setting a light's colour, so the Agent changes a light in fewer steps.
 
-    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.94)
+    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.95)
