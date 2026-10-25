@@ -53,15 +53,18 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
     const operation = (scope.voiceSerial || Promise.resolve()).catch(() => {}).then(async () => {
       if (!scope.active || scope.voiceAbort.signal.aborted) throw failure("voice_session_closed", 409);
       if (text !== null) scope.submitMode = mode === "steer" ? "steer" : "queue";
-      scope.voiceState.running = true; scope.voiceState.error = null; scope.voiceState.version++;
+      scope.voiceState.running = true; scope.voiceState.error = null; scope.voiceState.live = null; scope.voiceState.version++;
       const turnId = task ? `result:${task.requestId}` : requestId;
       const fields = task ? { taskTurn: task.turn } : {};
       const taskOf = () => task?.requestId ?? records.read(ownerOf(scope), keyOf(scope)).records.find((row) => row.id === `${scope.id}:${requestId}:user`)?.taskId ?? null;
       if (text !== null) append(scope, "user", text, requestId);
       try {
         if (task) scope.dialogue.observeTask(task);
-        const reply = await scope.dialogue.reply(text, requestId, scope.voiceAbort.signal, task ? undefined : (partial) => {
-          append(scope, "assistant", partial, turnId, taskOf(), { status: "streaming", ...fields });
+        const reply = await scope.dialogue.reply(text, requestId, scope.voiceAbort.signal, task ? undefined : (partial, { call = 0, delegated = false } = {}) => {
+          // The words being written right now, for a device that reads them while they are written.
+          const live = scope.voiceState.live?.key === requestId && scope.voiceState.live.call === call ? scope.voiceState.live : { key: requestId, call, text: "", delegated: false };
+          scope.voiceState.live = { ...live, ...(partial === null ? {} : { text: partial }), delegated: live.delegated || delegated };
+          if (partial !== null) append(scope, "assistant", partial, turnId, taskOf(), { status: "streaming", ...fields });
         }, { announce: Boolean(task) });
         if (reply.text) append(scope, "assistant", reply.text, turnId, taskOf(), fields);
         summarize(scope);
@@ -123,7 +126,7 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
       scope.recordKey = keyOf(scope);
       scope.voiceResults = []; scope.summaryError = null;
       scope.active = true; scope.readAloud = body.readAloud === true;
-      scope.voiceState = { version: 0, running: false, utterance: null, error: null };
+      scope.voiceState = { version: 0, running: false, utterance: null, live: null, error: null };
       scope.voiceRequests = new Map(); scope.deliveredTasks = new Set(restoredRequests.map((item) => item.requestId));
       scope.dialogue = !scope.voiceCaps.relay ? null : createVoiceDialogue({ config: scope.voiceConfig, agent: scope.voiceCaps.agent, owner: scope.owner, context: history.summary?.recent || [], summary: history.summary?.text || "", chat: chatFor(scope),
         submit: async (text, requestId, operation) => {

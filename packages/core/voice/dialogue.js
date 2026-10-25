@@ -44,7 +44,7 @@ const answerOf = (content) => {
  * `reasoningEffort` is Router's public reasoning knob (Router ADR-48); "none" turns a thinking
  * model's reasoning off. A model that does not accept the value is asked again without it.
  */
-export async function voiceChat({ messages, model = "default-chat", owner, signal, tools, toolChoice = "auto", maxCalls = 1, onDelta, maxTokens = 1024, reasoningEffort, headers, env = process.env, fetch: request = globalThis.fetch }) {
+export async function voiceChat({ messages, model = "default-chat", owner, signal, tools, toolChoice = "auto", maxCalls = 1, onDelta, onTool, maxTokens = 1024, reasoningEffort, headers, env = process.env, fetch: request = globalThis.fetch }) {
   const post = (effort) => request(`${routerGatewayUrl(env)}/chat/completions`, {
     method: "POST", signal: AbortSignal.any([AbortSignal.timeout(45_000), ...(signal ? [signal] : [])]),
     headers: { ...headers, "content-type": "application/json", ...routerAuthHeaders(env.LARES_ROUTER_API_KEY, env.OLARES_APP_ID, owner) },
@@ -75,7 +75,7 @@ export async function voiceChat({ messages, model = "default-chat", owner, signa
             if (!Number.isInteger(item.index) || item.index < 0 || item.index >= maxCalls) throw new Error("voice_tool_limit");
             const call = calls[item.index] ||= { id: "", type: "function", function: { name: "", arguments: "" } };
             if (item.id) call.id += item.id;
-            if (item.function?.name) call.function.name += item.function.name;
+            if (item.function?.name) { call.function.name += item.function.name; onTool?.(call.function.name); }
             if (item.function?.arguments) call.function.arguments += item.function.arguments;
             if (call.function.arguments.length > 20000) throw new Error("voice_tool_invalid");
           }
@@ -183,6 +183,14 @@ export function createVoiceDialogue({ config, agent = false, owner, context = []
       if (busy) throw Object.assign(new Error("voice_turn_busy"), { status: 409 });
       settle();
       busy = true;
+      // Every chat call writes its words from scratch. A live reader is told which call the words
+      // belong to and when that call starts delegating to the Agent, whose words are never the reply.
+      let chats = 0;
+      const live = () => {
+        if (!onDelta) return {};
+        const call = chats++;
+        return { onDelta: (partial) => onDelta(partial, { call }), onTool: (name) => onDelta(null, { call, delegated: name === "ask_lares" }) };
+      };
       steps = text === null ? steps + 1 : 0;
       const cue = announce ? { role: "system", content: ANNOUNCE } : text === null && device.length ? { role: "system", content: CONTINUE } : null;
       const lastWords = text ?? [...messages].reverse().find((item) => item.role === "user" && typeof item.content === "string")?.content;
@@ -203,7 +211,7 @@ export function createVoiceDialogue({ config, agent = false, owner, context = []
         const limited = steps >= MAX_STEPS;
         // Voice turns run with reasoning off: a thinking model otherwise spends the whole token budget
         // and seconds of latency before it says anything.
-        let answer = await chat({ messages: wire(next), model: config.chatModel, owner, signal, tools: tools.length ? tools : undefined, ...(limited ? { toolChoice: "none" } : {}), maxCalls, onDelta, reasoningEffort: "none" });
+        let answer = await chat({ messages: wire(next), model: config.chatModel, owner, signal, tools: tools.length ? tools : undefined, ...(limited ? { toolChoice: "none" } : {}), maxCalls, ...live(), reasoningEffort: "none" });
         // Past the step limit tools were refused; a model that calls one anyway still gets its words spoken.
         if (limited && answer.tool_calls?.length) answer = { role: "assistant", content: typeof answer.content === "string" ? answer.content : "" };
         const owed = [];
@@ -227,11 +235,11 @@ export function createVoiceDialogue({ config, agent = false, owner, context = []
             // The same tools as the call that delegated: a chat template renders them ahead of the
             // conversation, so dropping ask_lares here turned a cached prefix (about 5k tokens on
             // sglang) into a full prefill. Calling it again is handled below.
-            const follow = { messages: wire(device.length && operation === "run" ? [...next, { role: "system", content: ACKNOWLEDGE }] : next), model: config.chatModel, owner, signal, tools: tools.length ? tools : undefined, maxCalls, onDelta, reasoningEffort: "none" };
-            answer = await chat(follow);
+            const follow = { messages: wire(device.length && operation === "run" ? [...next, { role: "system", content: ACKNOWLEDGE }] : next), model: config.chatModel, owner, signal, tools: tools.length ? tools : undefined, maxCalls, reasoningEffort: "none" };
+            answer = await chat({ ...follow, ...live() });
             // A small model sometimes asks for ask_lares again although it just ran. One more call that may
             // not use tools gets its words; anything it still calls is dropped instead of failing the turn.
-            if (answer.tool_calls?.length && !answer.tool_calls.every(declared)) answer = await chat({ ...follow, toolChoice: "none" });
+            if (answer.tool_calls?.length && !answer.tool_calls.every(declared)) answer = await chat({ ...follow, ...live(), toolChoice: "none" });
             if (answer.tool_calls?.length && !answer.tool_calls.every(declared)) answer = { role: "assistant", content: typeof answer.content === "string" ? answer.content : "" };
             if (answer.tool_calls?.length) {
               if (answer.tool_calls.length > maxCalls) throw new Error("voice_tool_limit");

@@ -982,3 +982,109 @@ test("a device's reply is synthesized as a stream, a Lares client's still senten
   assert.deepEqual(await run(false), [true]);
   assert.deepEqual(await run(true), [false]);
 });
+
+// A device (no playback reports, server_vad) that types one turn; `live` drives what the dialogue has written so far.
+async function readWhileWriting({ streaming = true, acknowledging = false, prompt, onSynth }: any) {
+  const spoken: string[] = [];
+  const state: any = { live: null };
+  const fixture = await serve({
+    streaming: () => streaming,
+    synthesize: async (text: string) => { spoken.push(text); onSynth?.(text); return Buffer.alloc(2400); },
+  }, { state: () => ({ live: state.live }), prompt: (_scope: any, body: any) => prompt(body, state) });
+  const client = connect(fixture.port, "voice-chat");
+  const done = until(client, (event) => event.type === "response.done", (event) => {
+    if (event.type === "session.created") {
+      if (acknowledging) client.send(JSON.stringify({ type: "lares.playback.progress", item_id: null, played_ms: 0 }));
+      client.send(JSON.stringify({ type: "session.update", session: { audio: { input: { turn_detection: { type: "server_vad" } } } } }));
+    }
+    if (event.type === "session.updated") client.send(JSON.stringify({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] } }));
+    if (event.type === "response.output_audio.delta" && acknowledging) client.send(JSON.stringify({ type: "lares.playback.completed", item_id: event.item_id }));
+  });
+  return { spoken, state, done, async close() { client.close(); await fixture.stop(); } };
+}
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+test("with read-while-writing a device hears closed sentences while the dialogue writes, the first held until the second", async () => {
+  let finish: any;
+  const run = await readWhileWriting({ prompt: (body: any, state: any) => new Promise((resolve) => {
+    finish = () => resolve({ utterance: { key: body.requestId, text: "第一句。第二句。第三句。", calls: [{ call_id: "call_1", name: "nod", arguments: "{}" }], done: true, silent: false } });
+    state.live = { key: body.requestId, call: 0, text: "第一句。第二", delegated: false };
+  }) });
+  try {
+    await wait(400);
+    assert.deepEqual(run.spoken, [], "a lone first sentence waits");
+    run.state.live = { ...run.state.live, text: "第一句。第二句。第三" };
+    await wait(400);
+    assert.deepEqual(run.spoken, ["第一句。", "第二句。"]);
+    finish();
+    const events = await run.done;
+    assert.deepEqual(run.spoken, ["第一句。", "第二句。", "第三句。"]);
+    const types = events.map((event) => event.type);
+    assert.ok(types.indexOf("response.output_audio.delta") < types.indexOf("response.function_call_arguments.done"), "calls follow the first words");
+    const last = events.find((event) => event.type === "response.done");
+    assert.equal(last.response.status, "completed");
+    assert.deepEqual(last.response.output.map((item: any) => item.call_id), ["call_1"]);
+    assert.equal(events.find((event) => event.type === "response.output_audio_transcript.done").transcript, "第一句。第二句。第三句。");
+  } finally { await run.close(); }
+});
+
+test("words written before a delegation are never read; the acknowledgment call that follows is", async () => {
+  let finish: any;
+  const run = await readWhileWriting({ prompt: (body: any, state: any) => new Promise((resolve) => {
+    finish = () => resolve({ utterance: { key: body.requestId, text: "我去问问。马上回来。稍等。", calls: [], done: true, silent: false } });
+    state.live = { key: body.requestId, call: 0, text: "好的。我", delegated: false };
+  }) });
+  try {
+    await wait(300);
+    run.state.live = { ...run.state.live, delegated: true };
+    await wait(300);
+    assert.deepEqual(run.spoken, []);
+    run.state.live = { key: run.state.live.key, call: 1, text: "我去问问。马上回来。稍", delegated: false };
+    await wait(300);
+    assert.deepEqual(run.spoken, ["我去问问。", "马上回来。"]);
+    finish();
+    await run.done;
+    assert.deepEqual(run.spoken, ["我去问问。", "马上回来。", "稍等。"]);
+  } finally { await run.close(); }
+});
+
+test("a one-sentence reply is read once it is finished, as before", async () => {
+  const run = await readWhileWriting({ prompt: async (body: any, state: any) => {
+    state.live = { key: body.requestId, call: 0, text: "好的", delegated: false };
+    await wait(300);
+    return { utterance: { key: body.requestId, text: "好的。", calls: [], done: true, silent: false } };
+  } });
+  try { await run.done; assert.deepEqual(run.spoken, ["好的。"]); } finally { await run.close(); }
+});
+
+test("a turn that fails after its first sentences leaves them said and the reply incomplete", async () => {
+  let fail: any;
+  const run = await readWhileWriting({ prompt: (body: any, state: any) => new Promise((_resolve, reject) => {
+    fail = () => reject(Object.assign(new Error("voice_tool_forbidden"), { code: "voice_tool_forbidden" }));
+    state.live = { key: body.requestId, call: 0, text: "第一句。第二句。第三", delegated: false };
+  }) });
+  try {
+    await wait(400);
+    fail();
+    const events = await run.done;
+    assert.deepEqual(run.spoken, ["第一句。", "第二句。"]);
+    assert.equal(events.find((event) => event.type === "response.done").response.status, "incomplete");
+  } finally { await run.close(); }
+});
+
+test("without read-while-writing, or for a Lares client, a reply is still read once it is finished", async () => {
+  for (const options of [{ streaming: false }, { streaming: true, acknowledging: true }]) {
+    let finish: any;
+    const run = await readWhileWriting({ ...options, prompt: (body: any, state: any) => new Promise((resolve) => {
+      finish = () => resolve({ utterance: { key: body.requestId, text: "第一句。第二句。", calls: [], done: true, silent: false } });
+      state.live = { key: body.requestId, call: 0, text: "第一句。第二句。第三", delegated: false };
+    }) });
+    try {
+      await wait(400);
+      assert.deepEqual(run.spoken, [], JSON.stringify(options));
+      finish();
+      await run.done;
+      assert.deepEqual(run.spoken, ["第一句。第二句。"], JSON.stringify(options));
+    } finally { await run.close(); }
+  }
+});

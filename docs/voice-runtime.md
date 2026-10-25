@@ -157,7 +157,7 @@ agents-js has the same defaults), stage by stage:
 | --- | --- | --- |
 | End of turn | Silero plus a text end-of-turn model: waits `min_delay` 0.3 s when the model says the turn is complete, up to `max_delay` 2.5 s when not (0.5/3.0 s without the model); `dynamic` mode learns the user's pauses (`voice/turn.py`, `voice/audio_recognition.py`) | Fixed 500 ms of silence, or 1 s after ASR stops finding new words |
 | Preemptive generation | On by default: the LLM starts on each changed STT final transcript, before the end-of-turn delay; reused at commit only if transcript, chat context, tools and tool choice are unchanged; TTS and tools wait for the commit | None: the dialogue starts after the take commits |
-| LLM to TTS | Token stream into a sentence tokenizer (blingfire, `min_sentence_len` 20); the next segment's TTS starts while the previous one plays | Whole reply first, then sentence by sentence; device TTS streams from 0.26.83 |
+| LLM to TTS | Token stream into a sentence tokenizer (blingfire, `min_sentence_len` 20); the next segment's TTS starts while the previous one plays | Whole reply first, then sentence by sentence; device TTS streams from 0.26.83. With read-while-writing on a MemorySlice card, closed sentences are spoken while the dialogue writes (see item 6) |
 | Interruption | 0.5 s of speech pauses playback; with no words within `false_interruption_timeout` 2 s it resumes; interruptions ignored during `aec_warmup_duration` 3 s after the agent starts speaking; echo is left to AEC, transcripts are not compared | Speech that clears the reply's echo for 500 ms and that Silero hears as a voice, then up to 1.5 s for ASR words, compared with the reply; only then playback stops |
 | Tools | The voice LLM speaks and calls tools in one reply; tool results trigger a follow-up (`max_tool_steps` 3); optional `with_filler` and a `BackgroundAudioPlayer` thinking sound; `say(audio=...)` plays pre-synthesized audio | A separate acknowledgment call, then the dsh Agent (its own LLM and an about 18k-token prompt) |
 | Latency metrics | Per turn: `end_of_turn_delay`, `transcription_delay`, LLM `ttft`, TTS `ttfb`, `playback_latency`, `e2e_latency` | `device-take` only (take length, ending, levels) |
@@ -185,7 +185,16 @@ Improvements, in order of value for effort (none implemented yet):
    short phrase per language instead of an LLM call, from pre-synthesized audio
    (`say(audio=...)` in LiveKit).
 6. **Stream the dialogue's text into TTS** instead of waiting for the whole
-   reply; worth more as replies get longer.
+   reply; worth more as replies get longer. Implemented for device sessions
+   behind the existing read-while-writing setting (`streamingEnabled()`: saved
+   `streaming` and a MemorySlice card); on TimeSlice a device stays serial.
+   Measured on pptest03 (RTX 5090 Laptop, TimeSlice, 2026-10-25): TTS
+   overlapping decode cut Qwen3.6-35B-A3B from 159 to 15-20 tok/s, so time
+   slicing must not overlap them, while a 23-token median device reply takes
+   0.15-0.5 s to write anyway. The first sentence waits for the second or for
+   the chat call to end, and a call that starts `ask_lares` releases nothing
+   more, so words written before a delegation are not read; device calls follow
+   the first words instead of preceding them. Not yet tried on the robot.
 7. **Interruption.** Turn on the ReSpeaker's echo cancellation with the playback
    reference, which is what LiveKit relies on and would let the 1.5 s word
    check shrink; ignore interruptions for the first seconds of a reply, as

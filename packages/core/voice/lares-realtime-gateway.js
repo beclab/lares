@@ -5,7 +5,7 @@ import { echoVerdict } from "./echo.js";
 import { createNoiseGate, createSpeechEndpoint, frameRms } from "./endpoint.js";
 import { pcmSamples } from "./realtime-audio.js";
 import { createPlayoutClock, PLAYOUT_LEAD_MS, SOCKET_FUSE_BYTES } from "./playout-clock.js";
-import { speechSegments } from "./script.js";
+import { createSpeechSegmenter, speechSegments } from "./script.js";
 import { bindRouterSession } from "../router/session-alias.js";
 import { REALTIME_MODEL_PRESETS, voiceCapabilities } from "./capabilities.js";
 import { listeningPolicy } from "./listening.js";
@@ -28,6 +28,8 @@ const BARGE_IN_LIMIT_MS = 10_000;
 // Room echo outlasts the last sample a client was sent by roughly this much.
 const ECHO_TAIL_MS = 400;
 const TICKET_MS = 30_000;
+// How often a reply read while it is written is checked for new sentences.
+const LIVE_POLL_MS = 100;
 // A device's camera frame arrives as one data URL; everything else stays far below this.
 const MAX_FRAME = 512 * 1024;
 const IMAGE_URL = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/;
@@ -77,7 +79,7 @@ export function joinSpoken(parts) {
  * `lares-realtime-v1` (docs/realtime-protocol.md) on one endpoint. Bearer voice-key callers get a
  * scope owned by the socket; ticket sockets attach to the Lares client's open voice scope.
  */
-export function createLaresRealtimeGateway({ service, config, transcribe, synthesize, openTranscription, detectSpeech, speechGate, keys, hostOwner = "", hostAudio, busyDefault = () => "queue", bargeIn = () => process.env.LARES_VOICE_BARGE_IN === "1", segment = speechSegments, onError = () => {}, onOpen = () => {}, metric = () => {}, limit = 64, playbackAckGraceMs = 60_000 }) {
+export function createLaresRealtimeGateway({ service, config, transcribe, synthesize, openTranscription, detectSpeech, speechGate, keys, hostOwner = "", hostAudio, busyDefault = () => "queue", bargeIn = () => process.env.LARES_VOICE_BARGE_IN === "1", segment = speechSegments, createSegmenter = createSpeechSegmenter, streaming = () => false, onError = () => {}, onOpen = () => {}, metric = () => {}, limit = 64, playbackAckGraceMs = 60_000 }) {
   const server = new WebSocketServer({ noServer: true, maxPayload: MAX_FRAME, perMessageDeflate: false, handleProtocols: (values) => values.has("lares-voice") ? "lares-voice" : false });
   const clients = new Map();
   const tickets = new Map();
@@ -241,24 +243,30 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
         sentAt = Date.now();
       }
     };
-    const respond = async (text, origin, key, input, calls = []) => {
-      if (response) cancel("cancelled");
-      const current = { id: `resp_${randomUUID()}`, itemId: `item_${randomUUID()}`, origin, key, inputMs: input, outputMs: 0, sentences: [], abort: new AbortController(), suspended: null, done: false, message: Boolean(text), calls: [] };
-      response = current;
-      if (current.message) lastSpoken = { text, origin, key };
-      const part = { response_id: current.id, item_id: current.itemId, output_index: 0, content_index: 0 };
-      send({ type: "response.created", response: { id: current.id, object: "realtime.response", status: "in_progress", output: [], metadata: { lares: { origin } } } });
-      if (current.message) send({ type: "response.output_item.added", response_id: current.id, output_index: 0, item: { id: current.itemId, object: "realtime.item", type: "message", role: "assistant", status: "in_progress", content: [] } });
-      // Calls go out before the speech so a gesture can accompany the words it belongs to.
-      calls.forEach((call, index) => {
-        const outputIndex = index + (current.message ? 1 : 0);
+    const emitCalls = (current, calls) => {
+      for (const call of calls) {
+        const outputIndex = current.calls.length + (current.message ? 1 : 0);
         const item = { id: `item_${randomUUID()}`, object: "realtime.item", type: "function_call", status: "completed", name: call.name, call_id: call.call_id, arguments: call.arguments };
         send({ type: "response.output_item.added", response_id: current.id, output_index: outputIndex, item: { ...item, status: "in_progress", arguments: "" } });
         send({ type: "response.function_call_arguments.done", response_id: current.id, item_id: item.id, output_index: outputIndex, call_id: call.call_id, name: call.name, arguments: call.arguments });
         send({ type: "response.output_item.done", response_id: current.id, output_index: outputIndex, item });
         send({ type: "conversation.item.done", item });
         current.calls.push(item);
-      });
+      }
+    };
+    // `live` reads a reply while the dialogue is still writing it: its items are sentences and, once
+    // the dialogue has finished, the reply's calls.
+    const respond = async (text, origin, key, input, calls = [], live = null) => {
+      if (response) cancel("cancelled");
+      const current = { id: `resp_${randomUUID()}`, itemId: `item_${randomUUID()}`, origin, key, inputMs: input, outputMs: 0, sentences: [], abort: new AbortController(), suspended: null, done: false, message: Boolean(text), calls: [] };
+      response = current;
+      if (current.message && !live) lastSpoken = { text, origin, key };
+      const part = { response_id: current.id, item_id: current.itemId, output_index: 0, content_index: 0 };
+      send({ type: "response.created", response: { id: current.id, object: "realtime.response", status: "in_progress", output: [], metadata: { lares: { origin } } } });
+      if (current.message) send({ type: "response.output_item.added", response_id: current.id, output_index: 0, item: { id: current.itemId, object: "realtime.item", type: "message", role: "assistant", status: "in_progress", content: [] } });
+      // Calls go out before the speech so a gesture can accompany the words it belongs to. A reply
+      // read while it is written only knows its calls at the end, so they follow its first words.
+      emitCalls(current, calls);
       if (!current.message) { finish(current, "completed"); return; }
       if (!audioOutput) {
         current.sentences = [{ text, endMs: 0 }];
@@ -267,10 +275,14 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
         finish(current, "completed");
         return;
       }
-      const sentences = segment(text).filter((value) => value.trim());
+      const sentences = live ? [] : segment(text).filter((value) => value.trim());
+      const items = live ? live.items : (sentences.length ? sentences : [text]).map((sentence) => ({ text: sentence }));
       scope.outputAbort = current.abort;
       try {
-        for (const sentence of sentences.length ? sentences : [text]) {
+        for await (const item of items) {
+          if (current.abort.signal.aborted || closed) return;
+          if (item.calls) { emitCalls(current, item.calls); continue; }
+          const sentence = item.text;
           if (current.suspended && await current.suspended.wait === "stop") return;
           if (current.abort.signal.aborted || closed) return;
           send({ type: "response.output_audio_transcript.delta", ...part, delta: `${separator(current.sentences.at(-1)?.text, sentence)}${sentence}` });
@@ -295,9 +307,76 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       if (current.abort.signal.aborted || closed) return;
       send({ type: "response.output_audio_transcript.done", ...part, transcript: joinSpoken(current.sentences.map((sentence) => sentence.text)) });
       send({ type: "response.output_audio.done", ...part });
-      finish(current, "completed");
+      finish(current, live?.status ?? "completed");
     };
-    const speak = (text, origin, key, input, calls) => { void respond(text, origin, key, input, calls).catch((cause) => report(cause)); };
+    const speak = (text, origin, key, input, calls, live) => { void respond(text, origin, key, input, calls, live).catch((cause) => report(cause)); };
+
+    /**
+     * Read-while-writing for a device: once the GPU lets the dialogue and speech models run side by
+     * side (`streaming`), a reply's closed sentences are spoken while the dialogue is still writing.
+     * The first sentence waits for the second, or for the call to end, because a model sometimes says
+     * a few words before it delegates to the Agent, and those words are never the reply. A call that
+     * starts delegating releases nothing more.
+     */
+    const readsWhileWriting = () => audioOutput && listening().mode === "device" && streaming() === true;
+    const followLive = (key, input) => {
+      const segmenter = createSegmenter();
+      const queue = [];
+      let wake = null, call = 0, held = [], started = false, ended = false, timer = null;
+      const live = { status: "completed", items: (async function* items() {
+        while (true) {
+          while (queue.length) { const item = queue.shift(); if (item.end) return; yield item; }
+          await new Promise((resolve) => { wake = resolve; });
+          wake = null;
+        }
+      })() };
+      const push = (item) => { queue.push(item); wake?.(); };
+      const release = () => {
+        if (!held.length) return;
+        if (!started) { started = true; lastReply = key; speak(held[0], "turn", key, input, [], live); }
+        for (const text of held) push({ text });
+        held = [];
+      };
+      const take = (texts) => {
+        held.push(...texts.filter((text) => text.trim()));
+        if (started || held.length >= 2) release();
+      };
+      const read = (text, done) => {
+        try { take([...segmenter.update(text, { done }), ...(done ? [] : segmenter.flush())]); }
+        catch { ended = true; }
+      };
+      const poll = () => {
+        if (ended || closed) return;
+        const state = service.state(scope)?.live;
+        if (!state || state.key !== key) return;
+        // A new chat call starts from scratch: anything held from the previous one was never the reply.
+        if (state.call !== call) { call = state.call; held = []; segmenter.reset(); }
+        if (state.delegated) { held = []; return; }
+        read(state.text, false);
+      };
+      timer = setInterval(poll, LIVE_POLL_MS);
+      const end = (status) => {
+        clearInterval(timer);
+        live.status = status;
+        push({ end: true });
+      };
+      return {
+        get started() { return started; },
+        /** The dialogue has finished: speak the rest of its words, then its calls. */
+        finish(utterance) {
+          clearInterval(timer);
+          if (!started) { ended = true; return false; }
+          if (!ended && utterance?.text) read(utterance.text, true);
+          release();
+          if (utterance?.text) lastSpoken = { text: utterance.text, origin: "turn", key };
+          if (utterance?.calls?.length) push({ calls: utterance.calls });
+          end("completed");
+          return true;
+        },
+        /** The turn failed or was taken back: keep what was said, mark the reply incomplete. */
+        stop() { ended = true; if (started) end("incomplete"); else clearInterval(timer); },
+      };
+    };
 
     // Turns.
     const observeTasks = () => {
@@ -317,13 +396,20 @@ export function createLaresRealtimeGateway({ service, config, transcribe, synthe
       const running = scope.session?.snapshot().running === true;
       const mode = running ? busyTurn || busyDefault() : undefined;
       let state;
+      const live = readsWhileWriting() ? followLive(requestId, input) : null;
       try { state = text === null ? await service.proceed(scope, { requestId }) : await service.prompt(scope, { text, requestId, ...(mode ? { mode } : {}) }); }
+      catch (cause) { live?.stop(); throw cause; }
       finally { observeTasks(); }
-      if (closed) return;
+      if (closed) { live?.stop(); return; }
       if (epoch !== generation) {
+        live?.stop();
         // Interrupted before the task was confirmed: take the submission back when dsh still allows it.
         if (!turn.accepted) await service.withdraw?.(scope, requestId).catch(() => {});
         return;
+      }
+      if (live) {
+        if (state.utterance?.key !== requestId || !speakableUtterance(state.utterance)) live.stop();
+        else if (live.finish(state.utterance)) return;
       }
       // A snapshot taken while the answer is still streaming only has the first
       // sentence. Speaking that and remembering the key drops the rest.

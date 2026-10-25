@@ -40,7 +40,7 @@ import {
   openRealtimeHostAudio,
 } from "@olares/lares-core/voice/service";
 import { bluetoothRequest, ensureBluetoothReady } from "@olares/lares-core/voice/link";
-import { gpuAppAction, gpuModePayload, readingModePayload, saveSlicePlan, speechGpu, streamingEnabled, switchReadingMode } from "@olares/lares-core/voice/gpu-mode";
+import { gpuAppAction, gpuModePayload, observeSpeechGpu, readingModePayload, saveSlicePlan, speechGpu, streamingEnabled, switchReadingMode } from "@olares/lares-core/voice/gpu-mode";
 import { routerEndUser } from "@olares/lares-core/router/gateway";
 import { SPOKEN_PROMPT } from "@olares/lares-core/voice/agent-session";
 import { writeReport } from "@olares/lares-core/log/report";
@@ -381,8 +381,8 @@ export function apply(ctx) {
     const unified = createLaresRealtimeGateway({ service: voiceHost, config: readConfig, ...createRouterAudio(readConfig), keys: voiceKeys, hostOwner: routerEndUser(),
       hostAudio: openRealtimeHostAudio, busyDefault: () => busyEnterDefault(ctx),
       onError: (cause, scope) => writeReport({ scope: "voice", event: "realtime-error", voiceId: scope.id, code: cause?.code || cause?.message || "voice_failed" }),
-      onOpen: (fields) => writeReport({ scope: "voice", event: "realtime-open", ...fields }),
-      speechGate: createSileroGate,
+      onOpen: (fields) => { void observeSpeechGpu(); writeReport({ scope: "voice", event: "realtime-open", ...fields }); },
+      speechGate: createSileroGate, streaming: () => streamingEnabled(),
       metric: (fields) => writeReport({ scope: "voice", ...fields }) });
     realtime = registerRealtime(ctx, voiceHost, unified);
     const unpublish = publishRealtimeUpgrade((req, socket, head) => unified.upgrade(req, socket, head));
