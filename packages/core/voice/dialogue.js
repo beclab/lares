@@ -34,10 +34,10 @@ const filler = (text) => {
 };
 // A device turn is routed before anything is said. Left to choose between words and tools, a small
 // model answered "能把它变成白色吗？" with "将灯光调整为白色中。" and no call, and keyword checks on
-// its words only caught the phrasings already seen. Only the device's own camera and movements stay
-// with the dialogue; everything else is the Agent's to do and to say (docs/voice-runtime.md, "Routing
-// a device turn").
-const ROUTE = { type: "function", function: { name: "route", description: "Choose who handles the user's latest words.", parameters: { type: "object", properties: { route: { type: "string", enum: ["lares", "camera", "motion"], description: "camera: the robot must look to answer. motion: move the head, show an emotion, dance, or stop doing so. lares: everything else, including greetings, small talk, questions, home devices, weather, news, time, reminders and schedules." } }, required: ["route"] } } };
+// its words only caught the phrasings already seen. The route then fixes the turn's tool choice: Lares
+// work must call ask_lares, words alone may call nothing (docs/voice-runtime.md, "Routing a device turn").
+const ROUTE = { type: "function", function: { name: "route", description: "Choose who handles the user's latest words.", parameters: { type: "object", properties: { route: { type: "string", enum: ["lares", "camera", "motion", "speak"], description: "camera: the robot must look to answer. motion: move the head, show an emotion, dance, or stop doing so. speak: only a greeting, thanks, goodbye, or a question about the robot itself. lares: everything else, including home devices, weather, news, time, reminders, schedules, questions and anything you are unsure of." } }, required: ["route"] } } };
+const ROUTED_TOOL = { lares: "ask_lares", camera: "camera" };
 const routeOf = (answer) => {
   try { return JSON.parse(answer.tool_calls?.find((call) => call.function?.name === "route")?.function?.arguments || "{}").route; } catch { return undefined; }
 };
@@ -164,7 +164,6 @@ export function createVoiceDialogue({ config, agent = false, owner, context = []
     },
     /** Caller instructions append to the system prompt; they never replace it. */
     setInstructions(text, limit = 2000) { extra = String(text || "").slice(0, limit); messages = [system(), ...messages.slice(1)]; },
-    instructions: () => extra,
     /** Tools a device declared, in Realtime function shape; an empty list withdraws them. */
     setClientTools(tools) {
       device = tools.map(({ name, description, parameters }) => ({ type: "function", function: { name, ...(description ? { description } : {}), parameters: parameters || { type: "object", properties: {} } } }));
@@ -239,16 +238,10 @@ export function createVoiceDialogue({ config, agent = false, owner, context = []
         const route = device.length && agent && text !== null && tools.length
           ? routeOf(await chat({ messages: wire(next), model: config.chatModel, owner, signal, tools: [...tools, ROUTE], toolChoice: { type: "function", function: { name: "route" } }, maxTokens: 40, reasoningEffort: "none" }).catch((cause) => { if (signal?.aborted) throw cause; return {}; })) || "lares"
           : null;
-        if (route === "lares") {
-          // The Agent reads the user's own words; it answers, and its words are what the device says.
-          const call = { id: `route_${requestId}`.slice(0, 128), type: "function", function: { name: "ask_lares", arguments: JSON.stringify({ operation: "run", task: text }) } };
-          const result = await submit(text, requestId, "run");
-          messages = [messages[0], ...next.slice(1).filter((item) => !transient.includes(item)), { role: "assistant", content: null, tool_calls: [call] }, { role: "tool", tool_call_id: call.id, content: JSON.stringify(result) }];
-          return { text: "", calls: [], task: result?.requestId || null };
-        }
+        const forced = tools.some((tool) => tool.function.name === ROUTED_TOOL[route]) ? ROUTED_TOOL[route] : null;
         // Voice turns run with reasoning off: a thinking model otherwise spends the whole token budget
         // and seconds of latency before it says anything.
-        const first = { messages: wire(next), model: config.chatModel, owner, signal, tools: tools.length ? tools : undefined, ...(limited ? { toolChoice: "none" } : route === "camera" && device.some((tool) => tool.function.name === "camera") ? { toolChoice: { type: "function", function: { name: "camera" } } } : {}), maxCalls, reasoningEffort: "none" };
+        const first = { messages: wire(next), model: config.chatModel, owner, signal, tools: tools.length ? tools : undefined, ...(limited || route === "speak" ? { toolChoice: "none" } : forced ? { toolChoice: { type: "function", function: { name: forced } } } : {}), maxCalls, reasoningEffort: "none" };
         let answer = await chat({ ...first, ...live() });
         // A small model sometimes calls a tool by a name it made up, or ask_lares where there is no Agent;
         // on the robot that ended the turn as "Voice operation failed". A device turn is asked once more

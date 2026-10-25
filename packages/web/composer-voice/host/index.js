@@ -45,7 +45,7 @@ import {
 import { bluetoothRequest, ensureBluetoothReady } from "@olares/lares-core/voice/link";
 import { gpuAppAction, gpuModePayload, observeSpeechGpu, readingModePayload, saveSlicePlan, speechGpu, streamingEnabled, switchReadingMode } from "@olares/lares-core/voice/gpu-mode";
 import { routerEndUser } from "@olares/lares-core/router/gateway";
-import { DEVICE_PERSONA_PROMPT, DEVICE_SPOKEN_PROMPT, SPOKEN_PROMPT } from "@olares/lares-core/voice/agent-session";
+import { DEVICE_SPOKEN_PROMPT, SPOKEN_PROMPT } from "@olares/lares-core/voice/agent-session";
 import { writeReport } from "@olares/lares-core/log/report";
 
 export const name = "lares-composer-voice";
@@ -404,10 +404,7 @@ export function apply(ctx) {
     promptCtx.systemPrompt.section({ name: "app:spoken-reply", order: 9800, text: (assembly) => {
       const id = assembly.scope?.id, device = Boolean(voiceHost?.drivesDevice(id)), voice = voiceSessionPrompt(id);
       if (device || voice) promptTrace.rule(id, device, voice);
-      if (!device) return voice ? SPOKEN_PROMPT : "";
-      // The Agent now answers a device's small talk too, so it speaks as the device's persona.
-      const persona = voiceHost.devicePersona?.(id);
-      return `${SPOKEN_PROMPT} ${DEVICE_SPOKEN_PROMPT}${persona ? `\n${DEVICE_PERSONA_PROMPT}\n${persona}` : ""}`;
+      return device ? `${SPOKEN_PROMPT} ${DEVICE_SPOKEN_PROMPT}` : voice ? SPOKEN_PROMPT : "";
     } });
   });
   ctx.on("system-prompt/assemble", async (_assembly, context, next) => {

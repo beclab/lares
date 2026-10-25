@@ -535,10 +535,6 @@ test("only an Agent Session a device's dialogue drives is told its answers are s
     assert.equal(service.drivesDevice("agent-device"), true);
     assert.equal(service.drivesDevice("agent-plain"), false);
     assert.equal(service.drivesDevice(undefined), false);
-    // The device's persona follows its Agent, and no other session gets one.
-    service.instructions(device, "You are Reachy Mini.");
-    assert.equal(service.devicePersona("agent-device"), "You are Reachy Mini.");
-    assert.equal(service.devicePersona("agent-plain"), "");
   } finally { h.close(); }
 });
 
@@ -567,122 +563,29 @@ test("a Lares client's session still refuses a tool it never offered", async () 
   await assert.rejects(dialogue.reply("search", "t1"), /voice_tool_forbidden/);
 });
 
-
-test("a device turn routed to Lares hands over the user's own words and says nothing itself", async () => {
-  const submitted: any[] = [];
-  const requests: any[] = [];
-  routing = "lares";
-  try {
-    const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", submit: async (...args: any[]) => { submitted.push(args); return { status: "pending", requestId: "t1:delegate" }; },
-      chat: async (request: any) => { requests.push(structuredClone(request)); return isRoute(request) ? routeTo(request) : { role: "assistant", content: "灯已打开。" }; } });
-    dialogue.setClientTools([MOVE, CAMERA]);
-    assert.deepEqual(await dialogue.reply("能把它变成白色吗？", "t1", undefined, () => {}), { text: "", calls: [], task: "t1:delegate" });
-    assert.deepEqual(submitted, [["能把它变成白色吗？", "t1", "run"]]);
-    assert.equal(requests.length, 1);
-    // The route call offers the turn's own tools too, so their rendered prefix stays the same.
-    assert.deepEqual(requests[0].tools.map((tool: any) => tool.function.name), ["ask_lares", "move_head", "camera", "route"]);
-    await dialogue.reply("谢谢。", "t2");
-    assert.ok(requests[1].messages.some((item: any) => item.tool_calls?.[0]?.function.name === "ask_lares"));
-  } finally { routing = "motion"; }
+test("a device turn routed to Lares must call ask_lares, words alone may call nothing, and the camera route forces the camera", async () => {
+  const cases: [string, any][] = [["lares", { type: "function", function: { name: "ask_lares" } }], ["speak", "none"], ["camera", { type: "function", function: { name: "camera" } }], ["motion", undefined]];
+  for (const [route, choice] of cases) {
+    routing = route;
+    try {
+      const { dialogue, requests } = deviceDialogue([{ role: "assistant", content: "好的。" }]);
+      await dialogue.reply("能把它变成白色吗？", "t1");
+      assert.deepEqual(requests[0].toolChoice, choice, route);
+      // The tool list matches the route call's, so the rendered prefix stays cached.
+      assert.deepEqual(requests[0].tools.map((tool: any) => tool.function.name), ["ask_lares", "move_head", "camera"]);
+    } finally { routing = "motion"; }
+  }
 });
 
-test("a camera route forces the camera, a failed route call goes to Lares, and other sessions never route", async () => {
-  routing = "camera";
-  try {
-    const { dialogue, requests } = deviceDialogue([{ role: "assistant", content: null, tool_calls: [call("cam", "camera")] }]);
-    assert.deepEqual((await dialogue.reply("你再看看，它不是杯子。", "t1")).calls.map((item) => item.name), ["camera"]);
-    assert.deepEqual(requests[0].toolChoice, { type: "function", function: { name: "camera" } });
-  } finally { routing = "motion"; }
-  const submitted: any[] = [];
-  const failing = createVoiceDialogue({ config: {}, agent: true, owner: "alice", submit: async (...args: any[]) => { submitted.push(args); return { status: "pending", requestId: "t1:delegate" }; },
-    chat: async (request: any) => { if (isRoute(request)) throw new Error("voice_chat_failed"); return { role: "assistant", content: "ok" }; } });
+test("a failed route call sends the turn to Lares, and sessions without device tools never route", async () => {
+  const requests: any[] = [];
+  const failing = createVoiceDialogue({ config: {}, agent: true, owner: "alice", submit: async () => ({ status: "pending" }),
+    chat: async (request: any) => { if (isRoute(request)) throw new Error("voice_chat_failed"); requests.push(request); return { role: "assistant", content: "好的。" }; } });
   failing.setClientTools([MOVE]);
-  assert.equal((await failing.reply("开灯", "t1")).task, "t1:delegate");
+  await failing.reply("开灯", "t1");
+  assert.deepEqual(requests[0].toolChoice, { type: "function", function: { name: "ask_lares" } });
   const phone: any[] = [];
   const plain = createVoiceDialogue({ config: {}, agent: true, owner: "alice", submit: async () => ({ status: "pending" }), chat: async (request: any) => { phone.push(request); return { role: "assistant", content: "好的。" }; } });
   await plain.reply("开灯", "t1");
   assert.ok(phone.every((request) => !isRoute(request)));
-});
-
-test("a device hears the Agent's first sentence while it writes and its answer when the task ends", async () => {
-  const h = store();
-  routing = "lares";
-  const service = createVoiceHostService({ create: async () => ({ sessionId: "s1" }) }, { records: h.records, config: () => ({ preset: "assistant" }),
-    chat: async (request: any) => isRoute(request) ? routeTo(request) : { role: "assistant", content: "announced" } });
-  const scope: any = { id: "device", owner: "alice", authorizedBinding: { clientTools: true } };
-  let task: any = null;
-  try {
-    await service.open(scope, {});
-    service.tools(scope, [MOVE]);
-    scope.session = { snapshot: () => ({ running: Boolean(task), sessionId: "s1", cursor: 0, tasks: task ? [task] : [] }), submit: async () => ({ sessionId: "s1" }), close: async () => {} };
-    const turn = service.prompt(scope, { text: "开灯并调成白色", requestId: "one" });
-    await new Promise((resolve) => setTimeout(resolve, 5));
-    const heard: string[] = [];
-    const step = (fields: any) => { task = { requestId: "one:delegate", turn: 1, status: "running", step: 1, text: "", error: null, ...fields }; service.advance(scope); heard.push(scope.voiceState.live?.text ?? ""); };
-    step({ text: "好的，我来" });
-    step({ text: "好的，我来开灯。正在" });
-    step({ step: 2, text: "" });
-    step({ step: 3, text: "让我试试另一个命令。" });
-    step({ step: 4, status: "completed", text: "灯已打开，白色。" });
-    const state: any = await turn;
-    assert.deepEqual(heard, ["", "好的，我来开灯。", "好的，我来开灯。", "好的，我来开灯。", "好的，我来开灯。灯已打开，白色。"]);
-    assert.equal(state.utterance.text, "好的，我来开灯。灯已打开，白色。");
-    service.advance(scope);
-    await scope.voiceSerial;
-    assert.equal(service.state(scope).utterance.key, "one");
-  } finally { routing = "motion"; h.close(); }
-});
-
-test("a routed task that fails is left for the dialogue to announce", async () => {
-  const h = store();
-  routing = "lares";
-  const requests: any[] = [];
-  const service = createVoiceHostService({ create: async () => ({ sessionId: "s1" }) }, { records: h.records, config: () => ({ preset: "assistant" }),
-    chat: async (request: any) => { if (isRoute(request)) return routeTo(request); requests.push(request); return { role: "assistant", content: "没能开灯。" }; } });
-  const scope: any = { id: "device", owner: "alice", authorizedBinding: { clientTools: true } };
-  let task: any = null;
-  try {
-    await service.open(scope, {});
-    service.tools(scope, [MOVE]);
-    scope.session = { snapshot: () => ({ running: Boolean(task), sessionId: "s1", cursor: 0, tasks: task ? [task] : [] }), submit: async () => ({ sessionId: "s1" }), close: async () => {} };
-    const turn = service.prompt(scope, { text: "开灯", requestId: "one" });
-    await new Promise((resolve) => setTimeout(resolve, 5));
-    task = { requestId: "one:delegate", turn: 1, status: "failed", step: 1, text: "", error: "voice_agent_failed" };
-    service.advance(scope);
-    assert.equal((await turn as any).utterance.text, "");
-    service.advance(scope);
-    await scope.voiceSerial;
-    assert.equal(service.state(scope).utterance.text, "没能开灯。");
-    assert.equal(requests.length, 1);
-  } finally { routing = "motion"; h.close(); }
-});
-
-test("talking over a device turn that reads out the Agent ends it, and the result is announced once", async () => {
-  const h = store();
-  routing = "lares";
-  const announced: any[] = [];
-  const service = createVoiceHostService({ create: async () => ({ sessionId: "s1" }) }, { records: h.records, config: () => ({ preset: "assistant" }),
-    chat: async (request: any) => { if (isRoute(request)) return routeTo(request); announced.push(request); return { role: "assistant", content: "灯开好了。" }; } });
-  const scope: any = { id: "device", owner: "alice", authorizedBinding: { clientTools: true } };
-  let tasks: any[] = [];
-  try {
-    await service.open(scope, {});
-    service.tools(scope, [MOVE]);
-    scope.session = { snapshot: () => ({ running: tasks.length > 0, sessionId: "s1", cursor: 0, tasks }), submit: async () => ({ sessionId: "s1" }), close: async () => {} };
-    const first = service.prompt(scope, { text: "开灯", requestId: "one" });
-    await new Promise((resolve) => setTimeout(resolve, 5));
-    tasks = [{ requestId: "one:delegate", turn: 1, status: "running", step: 1, text: "好的。", error: null }];
-    service.advance(scope);
-    service.release(scope);
-    assert.equal((await first as any).utterance.text, "");
-    // The words that steered the same Agent turn hear its answer; the first task is not announced again.
-    const second = service.prompt(scope, { text: "调成白色", requestId: "two" });
-    await new Promise((resolve) => setTimeout(resolve, 5));
-    tasks = [{ requestId: "one:delegate", turn: 1, status: "completed", step: 3, text: "灯已打开，白色。", error: null }, { requestId: "two:delegate", turn: 1, status: "completed", step: 3, text: "灯已打开，白色。", error: null }];
-    service.advance(scope);
-    assert.equal((await second as any).utterance.text, "灯已打开，白色。");
-    service.advance(scope);
-    await scope.voiceSerial;
-    assert.equal(announced.length, 0);
-  } finally { routing = "motion"; h.close(); }
 });

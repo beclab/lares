@@ -231,9 +231,16 @@ keeps small talk at about 1 s and makes a misroute either slower (sent to
 Lares) or, for a narrow speak route, rare. C cannot claim an action it did not
 take, because only the Agent can act and the dialogue no longer speaks for it;
 it costs small-talk latency and needs the device persona in the Agent's prompt.
-Lares ships C: the Agent's first sentence is spoken while it writes and its
-answer when the task ends, with no acknowledgement or announcement written by
-the dialogue model.
+C shipped in 0.26.99/0.26.100 (the Agent's first sentence spoken while it
+wrote, its answer when the task ended, the device persona in its prompt) and
+was worse on the robot: "你好" came back as "我是 Lares" (the Agent's own
+identity outweighed the persona), a fresh Agent session given only the raw
+"把灯打开，然后调整成绿色" asked which light instead of listing them, and
+"我只有一盏灯" was answered "调成绿色了" with no tool call, a raw entity id and
+unasked advice. 0.26.101 ships B instead: the route call fixes the turn's tool
+choice (lares must call ask_lares, so the dialogue still writes the task from
+context; speak may call nothing; camera must call the camera), and
+acknowledgements and announcements stay with the dialogue.
 
 ### Working on it
 
