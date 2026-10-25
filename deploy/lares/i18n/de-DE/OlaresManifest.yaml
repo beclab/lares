@@ -55,5 +55,6 @@ spec:
     - Der Agent eines Sprachgeräts nutzt nur die Werkzeuge, die ein Sprachgerät braucht (Befehle und Skills, Websuche, Erinnerungen), sodass jede Anfrage etwa 6k Token kürzer ist; die Lares-Apps, auch die Sprachsteuerung am Telefon, behalten alle Werkzeuge.
     - Home-Assistant-Skills nutzen hass-cli 0.0.4: Es akzeptiert mehrere Einstellungen in einem Argument, nennt das nächstliegende Gerät, wenn eines nicht gefunden wird, und beschreibt das Einstellen der Lichtfarbe, sodass der Agent ein Licht in weniger Schritten ändert.
     - Home-Assistant-Skills nutzen hass-cli 0.0.5: Das Zielgerät wird mit --entity angegeben, und bei einem Tippfehler nennt es den richtigen Befehl, sodass der Agent Lichter in weniger Schritten schaltet.
+    - Ein Sprachgerät spricht keine Worte mehr aus, die vor dem Schalten von Lichtern oder der Kamera ersetzt wurden, und bittet bei Unverständlichem kurz um Wiederholung.
 
-    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.96)
+    [Versionshinweise](https://github.com/beclab/lares/releases/tag/v0.26.97)

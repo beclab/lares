@@ -7,14 +7,14 @@ metadata:
   title: Lares
   description: Chat on Olares, wired to Router
   icon: https://app.cdn.olares.com/appstore/lares/icon_new.png
-  version: 0.26.96
+  version: 0.26.97
   categories:
     - agents
   tags:
     - framework
     - personal-assistant
 spec:
-  versionName: "0.26.96"
+  versionName: "0.26.97"
   runAsUser: true
   fullDescription: |
     Lares is a chat app on Olares.
@@ -72,8 +72,9 @@ spec:
     - A voice device's Agent works with only the tools a voice device needs (commands and skills, web search, reminders), so each of its requests is about 6k tokens shorter; Lares's own apps, voice on the phone included, keep every tool.
     - Home Assistant skills use hass-cli 0.0.4, which accepts several settings in one argument, names the closest device when one is not found and documents setting a light's colour, so the Agent changes a light in fewer steps.
     - Home Assistant skills use hass-cli 0.0.5, which takes the device to act on as --entity and says the right command when one is mistyped, so the Agent turns lights off and on in fewer steps.
+    - A voice device no longer hears words that were replaced before the lights or camera were used, and when it cannot make out what was said it asks you to repeat it in a few words.
 
-    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.96)
+    [Release notes](https://github.com/beclab/lares/releases/tag/v0.26.97)
   developer: luolong
   submitter: Olares
   locale:
