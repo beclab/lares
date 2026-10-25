@@ -245,7 +245,10 @@ test("a delegation batched with a device call still lets the dialogue speak abou
   dialogue.setClientTools([MOVE]);
   assert.deepEqual(await dialogue.reply("light", "t1"), { text: "Turning it on.", calls: [{ call_id: "dev", name: "move_head", arguments: "{}" }] });
   assert.deepEqual(submitted, [["turn on the light", "t1", "run"]]);
-  assert.deepEqual(requests[1].tools.map((tool: any) => tool.function.name), ["move_head"]);
+  // The follow-up offers exactly the tools the delegating call had, so a chat template that renders
+  // tools ahead of the conversation keeps the cached prefix.
+  assert.deepEqual(requests[1].tools.map((tool: any) => tool.function.name), requests[0].tools.map((tool: any) => tool.function.name));
+  assert.deepEqual(requests[1].tools.map((tool: any) => tool.function.name), ["ask_lares", "move_head"]);
   // The device call was answered with a placeholder already, so its real output arrives late.
   assert.equal(dialogue.toolOutput("dev", "{}"), false);
 });

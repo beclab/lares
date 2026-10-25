@@ -224,7 +224,10 @@ export function createVoiceDialogue({ config, agent = false, owner, context = []
             next.push(outcome);
             // The model has not seen the task status yet; device calls from the same batch are already sent.
             for (const call of calls) next.push({ role: "tool", tool_call_id: call.call_id, content: SENT });
-            const follow = { messages: wire(device.length && operation === "run" ? [...next, { role: "system", content: ACKNOWLEDGE }] : next), model: config.chatModel, owner, signal, tools: device.length ? device : undefined, maxCalls, onDelta, reasoningEffort: "none" };
+            // The same tools as the call that delegated: a chat template renders them ahead of the
+            // conversation, so dropping ask_lares here turned a cached prefix (about 5k tokens on
+            // sglang) into a full prefill. Calling it again is handled below.
+            const follow = { messages: wire(device.length && operation === "run" ? [...next, { role: "system", content: ACKNOWLEDGE }] : next), model: config.chatModel, owner, signal, tools: tools.length ? tools : undefined, maxCalls, onDelta, reasoningEffort: "none" };
             answer = await chat(follow);
             // A small model sometimes asks for ask_lares again although it just ran. One more call that may
             // not use tools gets its words; anything it still calls is dropped instead of failing the turn.
