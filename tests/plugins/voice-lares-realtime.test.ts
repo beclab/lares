@@ -33,10 +33,10 @@ async function serve(options: any = {}, overrides: any = {}) {
 function connect(port: number, model: string, headers: any = {}) {
   return new WebSocket(`ws://127.0.0.1:${port}/api/lares/voice/realtime?model=${model}`, { headers: { authorization: `Bearer ${KEY}`, ...headers } });
 }
-function until(client: WebSocket, predicate: (event: any, events: any[]) => boolean, onEvent: (event: any) => void = () => {}) {
+function until(client: WebSocket, predicate: (event: any, events: any[]) => boolean, onEvent: (event: any) => void = () => {}, timeoutMs = 3000) {
   const events: any[] = [];
   return new Promise<any[]>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`timeout: ${events.map((e) => e.type).join(",")}`)), 3000);
+    const timer = setTimeout(() => reject(new Error(`timeout: ${events.map((e) => e.type).join(",")}`)), timeoutMs);
     client.on("error", reject);
     client.on("message", (raw) => {
       const event = JSON.parse(raw.toString()); events.push(event); onEvent(event);
@@ -675,6 +675,35 @@ test("a device is interrupted only once Router's VAD confirms a person spoke ove
   assert.equal(echo.calls.transcribed.length, 0);
 });
 
+test("what the microphone heard during a device's reply is reported once the reply is over", async () => {
+  const second = (amplitude: number) => { const pcm = Buffer.alloc(48000); for (let i = 0; i < 24000; i++) pcm.writeInt16LE(i % 2 ? amplitude : -amplitude, i * 2); return pcm.toString("base64"); };
+  const metrics: any[] = [];
+  // A one-second reply; the device's echo is all the microphone hears while it plays.
+  const fixture = await serve({ synthesize: async () => Buffer.alloc(48000), detectSpeech: async () => 0, metric: (fields: any) => metrics.push(fields) });
+  const client = connect(fixture.port, "voice-chat");
+  try {
+    await new Promise<void>((resolve, reject) => {
+      client.on("error", reject);
+      client.on("message", (raw) => {
+        const event = JSON.parse(raw.toString());
+        if (event.type === "session.created") client.send(JSON.stringify({ type: "session.update", session: { audio: { input: { turn_detection: { type: "server_vad" } } } } }));
+        if (event.type === "session.updated") client.send(JSON.stringify({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] } }));
+        if (event.type === "response.done") {
+          client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: second(300) }));
+          // After the reply and its echo tail, the next frame closes the report.
+          setTimeout(() => { client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: second(300) })); setTimeout(resolve, 200); }, 2500);
+        }
+      });
+    });
+    const report = metrics.find((fields) => fields.event === "device-reply-listen");
+    assert.ok(report, "no reply listen report");
+    assert.ok(report.ms >= 900, `${report.ms} ms`);
+    assert.equal(report.barges, 0);
+    assert.equal(report.voicedMs, 0);
+    assert.ok(report.max > 0.005 && report.max < 0.02, `${report.max}`);
+  } finally { client.close(); await fixture.stop(); }
+});
+
 test("a session holds one ASR stream at a time: the next take streams once the previous one is read", async () => {
   let release: () => void = () => {};
   const gate = new Promise<void>((resolve) => { release = resolve; });
@@ -897,12 +926,80 @@ test("a device take ends once ASR stops finding new words, though voices go on a
       if (event.type === "session.created") client.send(JSON.stringify({ type: "session.update", session: { audio: { input: { turn_detection: { type: "server_vad" } } } } }));
       // 50 ms of "voice" every 50 ms, for as long as the take stays open.
       if (event.type === "session.updated") pump = setInterval(() => client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: chunk(6000) })), 50);
-    });
+    }, 7000);
     assert.equal(events.find((event) => event.type === "conversation.item.input_audio_transcription.completed").transcript, "帮我开灯");
     const take = metrics.find((fields) => fields.event === "device-take");
     assert.equal(take.ended, "words");
-    assert.ok(take.ms < 3500 && Date.now() - started < 4000, `${take.ms} ms`);
+    // With a voice still heard the words must hold for 2.5 s, not 1 s: ASR also stalls mid-word.
+    assert.ok(take.ms >= 3000 && take.ms < 5500 && Date.now() - started < 6500, `${take.ms} ms`);
   } finally { clearInterval(pump); client.close(); await fixture.stop(); }
+});
+
+test("ASR repeating its words for a second while the speaker is mid-word does not end the take", async () => {
+  const chunk = (amplitude: number) => { const pcm = Buffer.alloc(2400); for (let i = 0; i < 1200; i++) pcm.writeInt16LE(i % 2 ? amplitude : -amplitude, i * 2); return pcm.toString("base64"); };
+  const metrics: any[] = [];
+  // "could you change the color f" stays for 1.5 s of voice, then the rest arrives; the voice stops at 3 s.
+  const openTranscription = async (_scope: any, onPartial: (text: string) => void) => {
+    let bytes = 0, steps = 0, heard = "";
+    return { write(pcm: Buffer) { bytes += pcm.length; while (bytes >= (steps + 1) * 24000) { steps += 1; heard = steps < 5 ? "could you change the color f" : "could you change the color for me to yellow"; onPartial(heard); } }, async finish() { return heard; }, cancel() {} };
+  };
+  const fixture = await serve({ speechGate: async () => fakeSpeechGate(), openTranscription, metric: (fields: any) => metrics.push(fields) });
+  const client = connect(fixture.port, "voice-chat");
+  try {
+    await until(client, (event) => event.type === "conversation.item.input_audio_transcription.completed", (event) => {
+      if (event.type === "session.created") client.send(JSON.stringify({ type: "session.update", session: { audio: { input: { turn_detection: { type: "server_vad" } } } } }));
+      // Paced like a microphone: 50 ms chunks every 50 ms, so the words-settled clock runs in real time.
+      if (event.type === "session.updated") {
+        const amplitudes = [...Array(60).fill(6000), ...Array(20).fill(300)];
+        const pump = setInterval(() => { const next = amplitudes.shift(); if (next === undefined) clearInterval(pump); else client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: chunk(next) })); }, 50);
+      }
+    }, 9000);
+    // Until the voice and its trailing quiet are over, so a take cut at "color f" would have shown.
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    assert.deepEqual(fixture.calls.prompts.map((body: any) => body.text), ["could you change the color for me to yellow"]);
+    assert.equal(metrics.filter((fields) => fields.event === "device-take").length, 1);
+  } finally { client.close(); await fixture.stop(); }
+});
+
+test("a device take whose speaker is talking again when its words come back waits and joins the next one", async () => {
+  const chunk = (amplitude: number) => { const pcm = Buffer.alloc(2400); for (let i = 0; i < 1200; i++) pcm.writeInt16LE(i % 2 ? amplitude : -amplitude, i * 2); return pcm.toString("base64"); };
+  let takes = 0;
+  // Each take's words come back 400 ms after it ends; the speaker resumes 200 ms after the first.
+  const openTranscription = async () => {
+    const take = ++takes;
+    return { write() {}, async finish() { await new Promise((resolve) => setTimeout(resolve, 400)); return take === 1 ? "search Beijing" : "weather today"; }, cancel() {} };
+  };
+  const fixture = await serve({ speechGate: async () => fakeSpeechGate(), openTranscription });
+  const client = connect(fixture.port, "voice-chat");
+  const send = (amplitudes: number[]) => { for (const amplitude of amplitudes) client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: chunk(amplitude) })); };
+  try {
+    await until(client, (event, events) => events.filter((item) => item.type === "conversation.item.input_audio_transcription.completed").length === 2, (event) => {
+      if (event.type === "session.created") client.send(JSON.stringify({ type: "session.update", session: { audio: { input: { turn_detection: { type: "server_vad" } } } } }));
+      if (event.type === "session.updated") {
+        send([...Array(20).fill(6000), ...Array(12).fill(300)]);
+        setTimeout(() => send([...Array(20).fill(6000), ...Array(12).fill(300)]), 50);
+      }
+    }, 7000);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.deepEqual(fixture.calls.prompts.map((body: any) => body.text), ["search Beijing weather today"]);
+  } finally { client.close(); await fixture.stop(); }
+});
+
+test("held words are still answered when what followed them was only a knock", async () => {
+  const chunk = (amplitude: number) => { const pcm = Buffer.alloc(2400); for (let i = 0; i < 1200; i++) pcm.writeInt16LE(i % 2 ? amplitude : -amplitude, i * 2); return pcm.toString("base64"); };
+  const openTranscription = async () => ({ write() {}, async finish() { await new Promise((resolve) => setTimeout(resolve, 300)); return "turn on the light"; }, cancel() {} });
+  const fixture = await serve({ speechGate: async () => fakeSpeechGate(), openTranscription });
+  const client = connect(fixture.port, "voice-chat");
+  const send = (amplitudes: number[]) => { for (const amplitude of amplitudes) client.send(JSON.stringify({ type: "input_audio_buffer.append", audio: chunk(amplitude) })); };
+  try {
+    await until(client, (event) => event.type === "input_audio_buffer.cleared", (event) => {
+      if (event.type === "session.created") client.send(JSON.stringify({ type: "session.update", session: { audio: { input: { turn_detection: { type: "server_vad" } } } } }));
+      // A phrase, then a 100 ms knock while its words are still coming back, then quiet.
+      if (event.type === "session.updated") { send([...Array(20).fill(6000), ...Array(12).fill(300)]); setTimeout(() => send([6000, 6000, ...Array(20).fill(300)]), 50); }
+    }, 7000);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.deepEqual(fixture.calls.prompts.map((body: any) => body.text), ["turn on the light"]);
+  } finally { client.close(); await fixture.stop(); }
 });
 
 test("a knock that opens a device take is dropped after half a second of quiet, and the next phrase is heard", async () => {
