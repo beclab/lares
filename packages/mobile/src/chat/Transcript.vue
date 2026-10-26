@@ -28,7 +28,7 @@
       </button>
     </li>
     <li
-      v-for="{ row, index, inProcess } in shown(block)"
+      v-for="{ row, index, inProcess, settled } in shown(block)"
       :key="row.id || row.key || index"
       class="lares-log__item"
       :data-type="row.type"
@@ -87,7 +87,7 @@
           <button type="button" class="lares-message-stop" @click="$emit('stop-speaking')">{{ t(playbackChrome.stopLabel) }}</button>
         </div>
         <LaresMessageActions
-          v-if="!inProcess && !row.pending"
+          v-if="settled && !inProcess && !row.pending"
           :text="row.text"
           :reaction="reactions[actionKey(index)] || ''"
           :metrics="row.metrics || null"

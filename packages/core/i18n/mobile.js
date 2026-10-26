@@ -177,6 +177,8 @@ export const ZH = {
   "desktop.commands": "命令",
   "desktop.noCommands": "这个会话没有可用命令",
   "permission.title": "权限",
+  "permission.default": "默认会话权限",
+  "permission.default.hint": "之后新建的会话使用这个权限。",
   // Preset keys arrive from the host as kebab ids; the words live here.
   "permission.read-only": "只读",
   "permission.read-only.hint": "只读文件；写入和风险命令需要确认。",
@@ -397,6 +399,8 @@ export const EN = {
   "desktop.commands": "Commands",
   "desktop.noCommands": "No commands for this session",
   "permission.title": "Permission",
+  "permission.default": "Default session permission",
+  "permission.default.hint": "New sessions start with this permission.",
   "permission.read-only": "Read Only",
   "permission.read-only.hint": "Read files only; writes and risky commands require approval.",
   "permission.workspace-write": "Workspace Write",

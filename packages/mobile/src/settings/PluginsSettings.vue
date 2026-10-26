@@ -1,17 +1,19 @@
 <template>
-  <section class="lares-plugins" :aria-busy="busy">
-    <h2>{{ t('settings.nav') }}</h2>
-    <article v-for="pack in packs" :key="pack.id" class="lares-plugins__card">
-      <h3>{{ t(`pack.${pack.id}.title`) }}</h3>
-      <p>{{ t(`pack.${pack.id}.intro`) }}</p>
-      <button type="button" :disabled="busy || !state" @click="toggle(pack)">{{ t(busy === pack.id ? 'plugin.pending' : !status(pack.id).downloaded ? 'settings.download' : status(pack.id).enabled ? 'settings.disable' : 'settings.enable') }}</button>
-      <template v-if="pack.id === 'ha'">
+  <section class="lares-plugins" :data-device="device" :aria-busy="busy ? 'true' : 'false'">
+    <section v-for="pack in packs" :key="pack.id" class="lares-plugins__group">
+      <h2>{{ t(`pack.${pack.id}.title`) }}</h2>
+      <article class="lares-plugins__card">
+      <div class="lares-plugins__head">
+        <p>{{ t(`pack.${pack.id}.intro`) }}</p>
+        <button type="button" :disabled="busy || !state" @click="toggle(pack)">{{ t(busy === pack.id ? 'plugin.pending' : !status(pack.id).downloaded ? 'settings.download' : status(pack.id).enabled ? 'settings.disable' : 'settings.enable') }}</button>
+      </div>
+      <div v-if="pack.id === 'ha'" class="lares-plugins__body">
         <p>{{ status('ha').connection?.server || t('settings.tokenHint') }}</p>
         <label>{{ t('settings.server') }}<input v-model="server" type="url" :disabled="Boolean(busy)" autocomplete="off" /></label>
         <label>{{ t('settings.tokenLabel') }}<input v-model="token" type="password" :disabled="Boolean(busy)" autocomplete="off" /></label>
-        <button type="button" :disabled="Boolean(busy) || !server || !token" @click="saveHa">{{ t('settings.tokenSave') }}</button>
-      </template>
-      <template v-else-if="pack.id === 'google-workspace'">
+        <button type="button" class="is-primary" :disabled="Boolean(busy) || !server || !token" @click="saveHa">{{ t('settings.tokenSave') }}</button>
+      </div>
+      <div v-else-if="pack.id === 'google-workspace'" class="lares-plugins__body">
         <p v-if="!status(pack.id).downloaded">{{ t('google.installFirst') }}</p>
         <template v-else>
           <p role="status">{{ t(`google.status.${google.status || 'unconfigured'}`, { email: google.email || '' }) }}</p>
@@ -38,8 +40,9 @@
             <button type="button" :disabled="Boolean(busy) || !callback.trim()" @click="complete">{{ t('google.complete') }}</button>
           </div>
         </template>
-      </template>
-    </article>
+      </div>
+      </article>
+    </section>
     <p v-if="error" role="alert">{{ error }}</p>
   </section>
 </template>
@@ -50,7 +53,7 @@ import { googleClientFile } from '@olares/lares-core/skills/client';
 import { EN, ZH } from '@olares/lares-core/i18n/skills';
 import { t as translate } from '@olares/lares-core/i18n/t';
 export default {
-  props: { client: { type: Object, required: true }, locale: { type: String, default: 'en' } },
+  props: { client: { type: Object, required: true }, locale: { type: String, default: 'en' }, device: { type: String, default: 'mobile' } },
   data() { return { packs: markRaw(OFFICIAL_PACKS), state: null, busy: '', error: '', server: '', token: '', email: '', callback: '', authorization: null }; },
   computed: {
     google() { return this.status('google-workspace').connection || {}; },
@@ -84,12 +87,29 @@ export default {
 };
 </script>
 <style scoped>
-.lares-plugins { display: grid; gap: 16px; min-width: 0; }
-.lares-plugins__card { display: grid; gap: 12px; border: 1px solid var(--lares-border, #ddd); border-radius: 12px; padding: 16px; min-width: 0; overflow-wrap: anywhere; }
-.lares-plugins p { font-size: 14px; line-height: 1.5; }
-.lares-plugins label { display: grid; gap: 6px; margin: 8px 0; }
-.lares-plugins input { min-width: 0; width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid var(--lares-border, #ccc); border-radius: 8px; color: inherit; background: transparent; }
-.lares-plugins button { width: fit-content; padding: 10px 14px; border: 1px solid var(--lares-border, #ccc); border-radius: 8px; color: inherit; background: transparent; cursor: pointer; }
-.lares-plugins button:disabled { opacity: .5; cursor: default; }
+.lares-plugins { display: flex; flex-direction: column; gap: 20px; min-width: 0; color: var(--q-ink-1); }
+.lares-plugins[data-device="desktop"] { gap: 16px; }
+.lares-plugins__group { display: flex; flex-direction: column; gap: 8px; }
+.lares-plugins__card { display: flex; flex-direction: column; gap: 12px; border: 1px solid var(--q-separator); border-radius: 16px; padding: 16px; min-width: 0; overflow-wrap: anywhere; }
+.lares-plugins__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.lares-plugins__body { display: flex; flex-direction: column; gap: 12px; padding-top: 12px; border-top: 1px solid var(--q-separator); }
+.lares-plugins h2 { margin: 0; color: var(--q-ink-1); font-size: 18px; font-weight: 500; line-height: 24px; }
+.lares-plugins[data-device="desktop"] h2 { font-size: 16px; }
+.lares-plugins p,
+.lares-plugins a { margin: 0; color: var(--q-ink-3); font-size: 15px; line-height: 22px; }
+.lares-plugins a { color: var(--q-blue-default); }
+.lares-plugins [role="alert"] { color: var(--q-orange-default); }
+.lares-plugins label { display: flex; flex-direction: column; gap: 8px; min-width: 0; color: var(--q-ink-2); font-size: 15px; line-height: 22px; }
+.lares-plugins input { box-sizing: border-box; width: 100%; min-width: 0; height: 32px; padding: 0 12px; border: 1px solid var(--q-separator); border-radius: 8px; background: transparent; color: var(--q-ink-1); font: inherit; font-size: 15px; }
+.lares-plugins input[type="file"] { height: auto; padding: 8px 0; border: 0; }
+.lares-plugins button { flex: none; min-height: 36px; border: 1px solid var(--q-separator); border-radius: 12px; padding: 0 14px; background: transparent; color: inherit; font: inherit; font-size: 15px; line-height: 20px; cursor: pointer; }
+.lares-plugins button.is-primary { border: 0; background: var(--q-blue-alpha); color: var(--q-blue-default); font-weight: 500; }
+.lares-plugins button:disabled { opacity: .45; cursor: default; }
+.lares-plugins button.is-primary:disabled { border: 1px solid var(--q-separator); background: transparent; color: inherit; font-weight: 400; }
+.lares-plugins button:focus-visible,
+.lares-plugins input:focus-visible { outline: 2px solid var(--q-blue-default); outline-offset: 2px; }
 .lares-plugins__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 560px) {
+  .lares-plugins__head { flex-direction: column; align-items: flex-start; gap: 12px; }
+}
 </style>
