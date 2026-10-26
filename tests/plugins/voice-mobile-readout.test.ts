@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createSentencePlayer, readoutState } from "../../packages/core/voice/speech.js";
 import { playAudioStream, startTranscriptionStream } from "../../packages/core/voice/stream-client.js";
-import { voiceCallFailure, voiceIndicatorPresentation, voiceInputPresentation, voicePanelPresentation, voicePlaybackChrome } from "../../packages/core/voice/presentation.js";
+import { voiceCallFailure, voiceIndicatorPresentation, voiceInputPresentation, voicePanelPresentation, voicePlaybackChrome, voiceVisibleError } from "../../packages/core/voice/presentation.js";
 import { createVoiceConversation } from "../../packages/core/voice/conversation.js";
 
 const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -575,6 +575,7 @@ test("a dropped continuous call stays quiet; hold is the way back", () => {
     assert.equal(ui.error, null);
     assert.equal(ui.label, "dictation.hold");
     assert.equal(voiceCallFailure(view), null);
+    assert.equal(voiceVisibleError(view), null);
     assert.equal(voiceIndicatorPresentation(view).visible, false);
     assert.equal(voiceIndicatorPresentation(view).error, null);
     assert.notEqual(ui.status, "error.voice_disconnected");
@@ -601,6 +602,7 @@ test("recovery and idle endings are quiet; hold stays the way back", () => {
   for (const error of ["voice_recovery_expired", "voice_idle_timeout"]) {
     const view = { visible: true, mode: "continuous", snapshot: { connection: "closed", error, playback: "idle" } };
     assert.equal(voiceCallFailure(view), null);
+    assert.equal(voiceVisibleError(view), null);
     assert.equal(voicePanelPresentation(view).error, null);
     assert.equal(voiceInputPresentation(view).label, "dictation.hold");
   }

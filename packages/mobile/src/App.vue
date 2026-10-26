@@ -135,6 +135,7 @@ import { playAudioStream, createStreamingCapture } from "@olares/lares-core/voic
 import { voiceHeaders, wavBlob } from "@olares/lares-core/voice/client";
 import { browserPlays } from "@olares/lares-core/voice/playback";
 import { speakProblemText, speakToggleNotice } from "@olares/lares-core/voice/problem";
+import { voiceVisibleError } from "@olares/lares-core/voice/presentation";
 import { appendDraftMentions } from "@olares/lares-core/files/mention";
 import { FileIntake, partitionDocumentsBySize, splitComposerFiles } from "@olares/lares-core/files/intake";
 import {
@@ -597,7 +598,7 @@ export default {
     this.voicePanelUnsub = this.voicePanel.subscribe(() => {
       const view = this.voicePanel.getSnapshot(); this.voicePanelState = view;
       this.voiceCall = view.snapshot?.connection === "closed" ? null : view.snapshot;
-      this.voicePhase = view.snapshot?.capture || "idle"; this.voiceError = view.error || view.snapshot?.error || "";
+      this.voicePhase = view.snapshot?.capture || "idle"; this.voiceError = voiceVisibleError(view) || "";
       // The call no longer owns the answer: a cancelled take gives it back.
       if (this.voiceSuspended && view.snapshot?.connection !== "open") this.resumeSuspendedReadout();
     });

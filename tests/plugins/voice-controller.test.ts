@@ -123,7 +123,27 @@ test("idle expiry releases voice without cancelling business work", async () => 
   const timeout = [...scheduled.values()][0]; timeout(); await flush();
   assert.equal(controller.getSnapshot().connection, "closed");
   assert.equal(controller.getSnapshot().sessionId, "bound");
+  assert.equal(controller.getSnapshot().error, null);
   assert.equal(expired, "voice_idle_timeout"); assert.equal(cancelled, 0);
+});
+
+test("a recovery window ends by closing the call, without an error", async () => {
+  const scheduled = new Map<number, () => void>();
+  let key = 0, expired = "";
+  const controller = createVoiceController({
+    input: { capture: () => new Promise(() => {}), cancel() {} }, output: { stop() {} },
+    agent: { create: async () => "session", submit: async () => {}, running: async () => false, cancel() {} },
+    schedule: (callback: () => void) => { scheduled.set(++key, callback); return key; }, unschedule: (id: number) => scheduled.delete(id),
+    onExpired: (code: string) => { expired = code; },
+  });
+  await controller.start({ sessionId: "bound", continuous: true });
+  await controller.disconnect("voice_idle_timeout");
+  assert.equal(controller.getSnapshot().connection, "paused");
+  assert.equal(controller.getSnapshot().error, null);
+  const timeout = [...scheduled.values()][0]; timeout(); await flush();
+  assert.equal(expired, "voice_recovery_expired");
+  assert.equal(controller.getSnapshot().connection, "closed");
+  assert.equal(controller.getSnapshot().error, null);
 });
 
 test("a take dropped for transient contention keeps the call open", async () => {

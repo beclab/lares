@@ -1,5 +1,5 @@
 import { createInterruptionGuard } from "./interruption.js";
-import { isTransientVoiceError, voiceErrorCode } from "./errors.js";
+import { isQuietVoiceEnding, isTransientVoiceError, voiceErrorCode } from "./errors.js";
 import { mintRpcId } from "../larepass/rpc.js";
 
 /** Device, agent and playback ports are injected; UI frameworks own no turn state. */
@@ -14,7 +14,6 @@ export function createVoiceController({ input, agent, output, voiceId = mintRpcI
   const expire = async (code) => {
     await controller.disconnect();
     await onExpired(code);
-    change({ error: code });
   };
   const touch = () => {
     unschedule(idleTimer);
@@ -188,7 +187,7 @@ export function createVoiceController({ input, agent, output, voiceId = mintRpcI
         recoveryTimer.unref?.();
       }
       epoch += 1;
-      change({ connection: code ? "paused" : "closed", error: code });
+      change({ connection: code ? "paused" : "closed", error: code && !isQuietVoiceEnding(code) ? code : null });
       await Promise.allSettled([cancelInput(), stopPlayback()]);
     },
     async resume({ shouldResume = () => true, resumeListening = !manualTurns } = {}) {

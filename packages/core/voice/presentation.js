@@ -1,3 +1,5 @@
+import { isQuietVoiceEnding } from "./errors.js";
+
 /** Stable status keys keep waveform/timer updates out of live announcements. */
 export function voicePanelPresentation(view) {
   const capture = view.snapshot?.capture;
@@ -6,22 +8,20 @@ export function voicePanelPresentation(view) {
   const preview = view.mode === "single" && ["preview", "processing"].includes(view.stage);
   const preparing = view.busy || capture === "recording" && view.snapshot?.inputReady === false;
   const recording = capture === "recording" && !preparing;
-  const error = visibleCallError(view);
+  const error = voiceVisibleError(view);
   const phase = view.cancelArmed ? "cancel" : error ? "error" : processing ? "processing" : transcribing ? "transcribing" : preparing ? "preparing" : recording ? "recording" : preview ? "preview" : view.snapshot && view.snapshot.playback !== "idle" ? "speaking" : view.snapshot?.agent === "running" ? "working" : "waiting";
   const status = error ? `error.${error}` : ({ cancel: "gesture.cancelRelease", processing: "dictation.processing", transcribing: "mic.transcribing", preparing: "mic.preparing", recording: "call.listening", preview: "dictation.preview", speaking: "dictation.speaking", working: "call.working", waiting: view.mode === "continuous" ? "gesture.waiting" : "dictation.preview" })[phase];
   return { phase, status, preview, recording, pending: processing || transcribing || preparing, error };
 }
 
-const QUIET_ENDINGS = new Set(["voice_recovery_expired", "voice_idle_timeout"]);
-
 /**
  * Recovery, idle, and a dropped continuous socket are not failures.
- * Hold-to-speak and send open the call again, so the composer stays quiet.
+ * Hold-to-speak and send open the call again, so every composer surface stays quiet.
  * A muted dictation is not a listen session.
  */
-function visibleCallError(view) {
+export function voiceVisibleError(view) {
   const reported = view?.error || view?.snapshot?.error;
-  if (!reported || QUIET_ENDINGS.has(reported)) return null;
+  if (!reported || isQuietVoiceEnding(reported)) return null;
   if (view.mode === "continuous" && reported === "voice_disconnected") return null;
   return reported === "voice_disconnected" && view.snapshot?.outputMuted ? "voice_background" : reported;
 }
@@ -34,7 +34,7 @@ export function voiceCallFailure(view) {
   if (!view?.visible || view.mode !== "continuous") return null;
   const ui = voicePanelPresentation(view);
   if (!ui.error) return null;
-  const recoverable = view.snapshot?.connection === "paused" && !QUIET_ENDINGS.has(ui.error);
+  const recoverable = view.snapshot?.connection === "paused" && !isQuietVoiceEnding(ui.error);
   return { code: ui.error, action: recoverable ? "resume" : "restart" };
 }
 
@@ -66,7 +66,7 @@ export function voiceDictationPresentation(view, now = Date.now()) {
 }
 
 export function voiceIndicatorPresentation(view, settingsError = null) {
-  const error = visibleCallError(view) || view.readAloudError || settingsError;
+  const error = voiceVisibleError(view) || view.readAloudError || settingsError;
   const continuous = view.mode === "continuous";
   const active = view.visible && (view.snapshot?.connection === "open" || view.busy && !view.snapshot);
   return {
