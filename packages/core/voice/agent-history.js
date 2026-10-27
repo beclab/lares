@@ -52,9 +52,37 @@ export function keepDeviceTools(tools, allowed = DEVICE_AGENT_TOOLS) {
  */
 export const DEVICE_AGENT_TEMPERATURE = 0.2;
 
-/** The request a device's Agent sends: earlier tool results compacted, and its own temperature. */
+/**
+ * A device's web_search results, cut to the first `sources` sources of `chars` characters each. One
+ * search for 北京天气 returned 8 sources of 1.3-2.4k characters (15k in all, page menus included), and
+ * the Agent's answer re-read them: 6 s on pptest03. Replayed with 5 x 600 the weather answer kept its
+ * temperatures 10/10 and the Agent took 1.3 s instead of 2.3 s. The cut is deterministic, so a cached
+ * prefix stays valid. A result without a source list is left alone.
+ */
+export function capSearchResults(messages, { sources = 5, chars = 600 } = {}) {
+  if (!Array.isArray(messages)) return messages;
+  const searches = new Set();
+  for (const message of messages) for (const call of message?.tool_calls || []) if (call?.function?.name === "web_search") searches.add(call.id);
+  if (!searches.size) return messages;
+  let changed = false;
+  const next = messages.map((message) => {
+    if (message?.role !== "tool" || !searches.has(message.tool_call_id) || typeof message.content !== "string") return message;
+    const at = message.content.indexOf("\nSources:\n");
+    if (at < 0) return message;
+    const head = message.content.slice(0, at + "\nSources:\n".length);
+    const items = message.content.slice(head.length).split(/\n(?=- \[)/);
+    const kept = items.slice(0, sources).map((item) => (item.length > chars ? `${item.slice(0, chars)} …` : item));
+    const content = head + kept.join("\n");
+    if (content === message.content) return message;
+    changed = true;
+    return { ...message, content };
+  });
+  return changed ? next : messages;
+}
+
+/** The request a device's Agent sends: earlier tool results compacted, searches capped, and its own temperature. */
 export function deviceAgentRequest(request) {
   if (!request || typeof request !== "object") return request;
   const { messages } = compactEarlierToolResults(request.messages);
-  return { ...request, messages, temperature: DEVICE_AGENT_TEMPERATURE };
+  return { ...request, messages: capSearchResults(messages), temperature: DEVICE_AGENT_TEMPERATURE };
 }

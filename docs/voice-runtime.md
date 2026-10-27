@@ -39,6 +39,31 @@ anything long or formatted, now including emoji, into one sentence. A clean sgla
 restart did not change the first-step rate (1/6 executed), so engine state was not
 the cause.
 
+## Where a device lookup spends its time (2026-10-27)
+
+Reachy on 0.26.109, from the end of speech to the spoken result: a light turn about
+9 s (Agent 4.4 s over five calls), a weather turn about 12.5 s. ASR streams while the
+user speaks and TTS streams its first audio, so neither adds much after the take
+ends. The weather Agent's final call read a 30k-token prompt, about 9.4k of it the
+search result (8 sources, 15k characters with page menus), and wrote a 381-token
+markdown report the dialogue then cut to one sentence: 6.1 s.
+
+Replayed with the real search result (10 runs each, timed one at a time):
+
+| Variant | Weather | Weather after a light turn | Light on / off / colour |
+| --- | --- | --- | --- |
+| 0.26.109 | 2.3 s, 174 tokens | 3.3 s | 30/30 each |
+| + "Give only what the user asked for, in at most two short sentences." | 1.1 s | 3.0 s | on 29/30, off 27/30 |
+| Search results cut to 5 sources x 600 characters | 1.3 s | 2.5 s | unchanged |
+| Both | 0.8 s | 2.0 s | off 26/30 |
+
+The brevity sentence brought back replies that only say the action, so it was not
+kept (a next-token measurement had shown it harmless; the end-to-end replay did
+not). Tavily's basic and advanced search return the same 8 long sources, and dsh's
+`searchMaxResults` only caps the count, so 0.26.110 cuts `web_search` results in a
+device's request rewrite (`capSearchResults`): all 13 cases at their earlier rates
+over 20 runs, temperatures in every weather answer.
+
 ## Weather after a light turn: the device Agent looked in Home Assistant (2026-10-27)
 
 On 0.26.108 Reachy asked for Beijing's weather after turning on the light. Its
