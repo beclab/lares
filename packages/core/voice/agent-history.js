@@ -5,16 +5,23 @@
  * message are replaced by a one-line note once they pass `limit` characters. The Agent's own
  * answers stay, so a follow-up still has the turn's conclusion.
  *
+ * Results of the tools in `keep` stay whole: a skill's instructions are what later turns act on.
+ * With ha-lighting compacted away after the first light turn, "把灯变成黄色" took 10 wrong hass-cli
+ * commands and 12 s; with it kept, the first command was the skill's own `color_name` example.
+ * A Session loads each skill once, so this does not grow with the conversation.
+ *
  * The rewrite is deterministic: a result is shortened the first time it falls behind a user
  * message and reads the same from then on, so the engine's prefix cache holds across later turns.
  */
-export function compactEarlierToolResults(messages, { limit = 1500 } = {}) {
+export function compactEarlierToolResults(messages, { limit = 1500, keep = ["skill"] } = {}) {
   if (!Array.isArray(messages)) return { messages, compacted: 0 };
   let lastUser = -1;
   for (let i = messages.length - 1; i >= 0; i--) if (messages[i]?.role === "user") { lastUser = i; break; }
+  const kept = new Set();
+  for (const message of messages) for (const call of message?.tool_calls || []) if (keep.includes(call?.function?.name)) kept.add(call.id);
   let compacted = 0;
   const next = messages.map((message, index) => {
-    if (index >= lastUser || message?.role !== "tool") return message;
+    if (index >= lastUser || message?.role !== "tool" || kept.has(message.tool_call_id)) return message;
     const text = typeof message.content === "string" ? message.content : JSON.stringify(message.content ?? "");
     if (text.length <= limit) return message;
     compacted++;

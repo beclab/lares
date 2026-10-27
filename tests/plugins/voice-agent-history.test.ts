@@ -27,6 +27,22 @@ test("only long tool results from before the latest user message are shortened, 
   assert.equal(compactEarlierToolResults([{ role: "user", content: "hi" }]).compacted, 0);
 });
 
+test("an earlier skill result stays whole, so later turns still have its instructions", () => {
+  const skill = "<skill_content name=\"ha-lighting\">" + "example ".repeat(400);
+  const history = [
+    { role: "system", content: "rules" },
+    { role: "user", content: "开灯" },
+    { role: "assistant", content: null, tool_calls: [{ id: "c-skill", type: "function", function: { name: "skill", arguments: "{\"name\":\"ha-lighting\"}" } }] },
+    { role: "tool", tool_call_id: "c-skill", content: skill },
+    ...turn("weather", long).slice(1),
+    { role: "user", content: "把灯变成黄色" },
+  ];
+  const { messages, compacted } = compactEarlierToolResults(history);
+  assert.equal(messages[3].content, skill);
+  assert.equal(compacted, 1);
+  assert.match(messages[5].content, /omitted/);
+});
+
 test("the shim sends Router the rewritten request of a Session the rewrite claims: compacted history and the device temperature", async () => {
   const seen: any[] = [];
   const router = createServer((req, res) => {

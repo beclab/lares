@@ -39,6 +39,21 @@ anything long or formatted, now including emoji, into one sentence. A clean sgla
 restart did not change the first-step rate (1/6 executed), so engine state was not
 the cause.
 
+## A colour change that took 12 s: compacted skill instructions (2026-10-27)
+
+On 0.26.106 "能帮我把灯变成黄色吗" (the second turn of a glasses Session) spent 12.0 s in
+the Agent: ten wrong hass-cli commands (`--color_temp`, JSON in `--arguments`,
+`service` without `call`), then `service --help` and `service describe` before
+`hs_color` worked. Turning the light on or off in the same Session took 1.5-2 s.
+The first turn had loaded `ha-lighting`, whose examples include
+`--data '{"entity_id":…,"color_name":"yellow"}'`, but the device rewrite
+(`compactEarlierToolResults`) replaced that 3,817-character result with a one-line
+note once it fell behind the next user message. Replaying the second turn's first
+step: with the skill result kept, 5/5 wrote the skill's `color_name` command; as
+sent, 5/5 wrote `light/turn_on --entity … --color_temp 2000`. 0.26.107 keeps `skill`
+results whole; other long results are still compacted. The dsh Session log itself
+was never changed, only what each request sends.
+
 ## Device session without device tools: glasses on pptest03 (2026-10-27)
 
 Glass Assistant (Rokid, or Meta glasses through the Olares Meta Voice phone app)
