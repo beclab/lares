@@ -9,6 +9,15 @@ export const SPOKEN_PROMPT = "This is a voice conversation. Keep user-facing ans
 // says a short plain result as written and turns anything longer or formatted into one sentence: the
 // device rule that also banned markdown, lists, advice and offers (0.26.88-0.26.105) made Qwen3.5-9B
 // end after "好的，我帮您关灯。" instead of calling the skill (P 0.42 against 0.15 without it).
+// Asked for the weather after a light turn, a device's Agent looked for a weather entity in Home
+// Assistant, cycled through invented names for minutes at temperature 0.2, or answered that a weather
+// integration had to be installed; replayed, it searched 1-2/10 at any temperature and 10/10 with this.
+export const DEVICE_AGENT_PROMPT = "Weather, news and other facts about the outside world come from web_search; Home Assistant only holds the user's own devices.";
+
+/** The spoken-reply rule of an Agent Session: a device's adds where outside facts come from. */
+export function spokenReplyRule({ device = false, voice = false } = {}) {
+  return device ? `${DEVICE_AGENT_PROMPT} ${SPOKEN_PROMPT}` : voice ? SPOKEN_PROMPT : "";
+}
 
 /** dsh opens a turn before claiming input; rpcId associates input with that open turn. */
 export function createVoiceAgentSession(api, { sessionId = null, preset, workspaceId, restoredRequests = [], onChange = () => {}, metric = () => {}, fallbackModel = async () => null } = {}) {

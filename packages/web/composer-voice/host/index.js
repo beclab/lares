@@ -45,7 +45,7 @@ import {
 import { bluetoothRequest, ensureBluetoothReady } from "@olares/lares-core/voice/link";
 import { gpuAppAction, gpuModePayload, observeSpeechGpu, readingModePayload, saveSlicePlan, speechGpu, streamingEnabled, switchReadingMode } from "@olares/lares-core/voice/gpu-mode";
 import { routerEndUser } from "@olares/lares-core/router/gateway";
-import { SPOKEN_PROMPT } from "@olares/lares-core/voice/agent-session";
+import { DEVICE_AGENT_PROMPT, spokenReplyRule } from "@olares/lares-core/voice/agent-session";
 import { writeReport } from "@olares/lares-core/log/report";
 
 export const name = "lares-composer-voice";
@@ -404,7 +404,7 @@ export function apply(ctx) {
     promptCtx.systemPrompt.section({ name: "app:spoken-reply", order: 9800, text: (assembly) => {
       const id = assembly.scope?.id, device = Boolean(voiceHost?.drivesDevice(id)), voice = voiceSessionPrompt(id);
       if (device || voice) promptTrace.rule(id, device, voice);
-      return device || voice ? SPOKEN_PROMPT : "";
+      return spokenReplyRule({ device, voice });
     } });
   });
   ctx.on("system-prompt/assemble", async (_assembly, context, next) => {
@@ -412,7 +412,7 @@ export function apply(ctx) {
     const id = context.agent?.id;
     if (!id || !voiceHost?.drivesDevice(id)) return assembly;
     const device = { ...assembly, tools: keepDeviceTools(assembly.tools) };
-    promptTrace.assembled(id, device, { deviceRule: device.sections.some((section) => section.name === "app:spoken-reply" && String(section.text).includes(SPOKEN_PROMPT)) });
+    promptTrace.assembled(id, device, { deviceRule: device.sections.some((section) => section.name === "app:spoken-reply" && String(section.text).includes(DEVICE_AGENT_PROMPT)) });
     return device;
   }, { prepend: true });
   // Whole model requests are traced where they leave for Router, in the LLM shim.

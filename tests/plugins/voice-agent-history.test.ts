@@ -4,6 +4,7 @@ import { once } from "node:events";
 import test from "node:test";
 import { compactEarlierToolResults, DEVICE_AGENT_TEMPERATURE, DEVICE_AGENT_TOOLS, deviceAgentRequest, keepDeviceTools } from "@olares/lares-core/voice/agent-history";
 import { proxyToRouter, setRequestRewrite, setRequestTrace } from "@olares/lares-core/router/shim";
+import { DEVICE_AGENT_PROMPT, SPOKEN_PROMPT, spokenReplyRule } from "@olares/lares-core/voice/agent-session";
 
 const long = "result ".repeat(400);
 const turn = (text: string, result: string) => [
@@ -84,4 +85,11 @@ test("a device's Agent keeps home control, lookups and reminders, and nothing el
   assert.deepEqual(keepDeviceTools(all).map((tool) => tool.name), ["bash", "read", "schedule_create", "schedule_delete", "schedule_list", "schedule_update", "skill", "web_fetch", "web_search"]);
   assert.equal(DEVICE_AGENT_TOOLS.length, 9);
   assert.deepEqual(keepDeviceTools([{ type: "function", function: { name: "bash" } }, { type: "function", function: { name: "write" } }]).length, 1);
+});
+
+test("a device's Agent is told outside facts come from web_search; Lares's own voice clients keep the plain spoken rule", () => {
+  assert.equal(spokenReplyRule({ device: true }), `${DEVICE_AGENT_PROMPT} ${SPOKEN_PROMPT}`);
+  assert.match(spokenReplyRule({ device: true, voice: true }), /web_search/);
+  assert.equal(spokenReplyRule({ voice: true }), SPOKEN_PROMPT);
+  assert.equal(spokenReplyRule({}), "");
 });

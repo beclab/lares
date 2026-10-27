@@ -39,6 +39,37 @@ anything long or formatted, now including emoji, into one sentence. A clean sgla
 restart did not change the first-step rate (1/6 executed), so engine state was not
 the cause.
 
+## Weather after a light turn: the device Agent looked in Home Assistant (2026-10-27)
+
+On 0.26.108 Reachy asked for Beijing's weather after turning on the light. Its
+Agent never searched: it looked for a weather entity in Home Assistant (there is
+none), then called `weather.get_forecast` on six invented `sensor.weather_*`
+names in a cycle, 287 steps in 282 s, until Lares was restarted; a later light
+request waited behind it. Closing a voice session does not cancel a dsh turn.
+
+A local suite replays first and second turns against sglang with the 0.26.108
+Agent prompt and tools, answering tool calls from a simulated pptest03 (real
+skill files, recorded light and sensor lists, no weather entity, canned web
+results). Temperature 0.2 against 0.4-1.0 (10 runs each): 0.2 is the only one
+with every light, colour and lookup case 10/10; weather after a light turn failed
+at every temperature (0-2/10), looping at low ones and answering "install a
+weather integration" at high ones. With "Weather, news and other facts about the
+outside world come from web_search; Home Assistant only holds the user's own
+devices." in a device Agent's prompt (0.26.109), 20 runs each at 0.2:
+
+| Case | Without | With |
+| --- | --- | --- |
+| on, off, yellow, news, reminder, time, off/news after a light turn | 20/20 each | 20/20 each |
+| weather | 19/20 | 20/20 |
+| weather after a light turn | 0/20 | 20/20 |
+| is the light on | 15/20 | 13/20 |
+| air conditioner, curtains after a light turn (neither exists) | 0/20, 1/20 | 0/20, 0/20 |
+
+Still open, with or without the sentence: asked for a device that does not
+exist, the Agent guesses entity names (`climate.bedroom_1`, `_2`, ...) until its
+step limit instead of saying so, and a status check sometimes repeats the same
+query; a repeated-call guard would catch the second, not the first.
+
 ## Glasses turn-offs answered "好的，关灯。" without ask_lares (2026-10-27)
 
 In one glasses Session on 0.26.107, three of four turn-off requests got "好的，关灯。"
