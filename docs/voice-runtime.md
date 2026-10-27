@@ -10,11 +10,12 @@ came back as "请问您需要开启的是哪个区域的灯光？" and no turn r
 `ask_lares`, because the device rules and checks were keyed on declared tools.
 
 Now the key decides (`createVoiceDialogue({ device })` from
-`voiceCaps.clientTools`): a `clientTools` key gets the device rules without the
-gesture sentences, plus "never ask which one yourself" for an unnamed device; the
-claimed-action retry, no tools for fillers and greetings, the short
-acknowledgment, brief announcements and the Agent's device answer rule. With
-tools declared the prompt is byte-identical to before.
+`voiceCaps.clientTools`): a `clientTools` key runs Reachy's device logic unchanged,
+declared tools or not, with the same rule text. Devices differ only by profile
+(caller instructions) and declared tools; the glasses send their own profile.
+The eval table below was measured with an earlier variant (rules without the
+gesture sentences, plus "never ask which one"), which was dropped to keep one
+logic for every device.
 
 Live eval on default-chat (Qwen3.5-9B AWQ), 5 runs per case, the field history
 included (`field-*`: the session's own earlier turns):
@@ -26,6 +27,12 @@ included (`field-*`: the session's own earlier turns):
 | Unclear chatter answered in a few words | 2/5 | 5/5 | 5/5 |
 | Plain light requests (4 cases: zh ×2, a named room, en) | 20/20 | named room 3/5, en 3/5 | 17/20; the two cases that missed then 10/10 |
 | All 11 cases | 42/55 | 42/55 | 49/55 |
+
+With Reachy's rule text unchanged (0.26.105), the same 11 cases scored 48/55
+without a profile and 47/55 with the glasses' profile: every Chinese light case
+5/5, "你只有一个" after two clarifying replies 1–2/5. The device Agent can still
+stop after "好的，我帮您打开灯。" without a tool call (1 of 2 live turn-on requests
+on 2026-10-27, read-only light queries 3/3), as on the robot on 2026-10-25.
 
 The Reachy subset (nod, light-on, light-after-ack, light-still-off, light-off-en,
 3 runs) scored 13/15 with both the old and the new file, missing different cases.

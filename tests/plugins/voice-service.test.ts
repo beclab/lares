@@ -253,7 +253,7 @@ test("a delegation batched with a device call still lets the dialogue speak abou
   assert.equal(dialogue.toolOutput("dev", "{}"), false);
 });
 
-test("a device key without declared tools follows the device rules, and a claimed light is sent to ask_lares", async () => {
+test("a device key without declared tools follows the same device rules, and a claimed light is sent to ask_lares", async () => {
   const requests: any[] = [];
   const submitted: any[] = [];
   const answers: any[] = [
@@ -268,8 +268,8 @@ test("a device key without declared tools follows the device rules, and a claime
   assert.deepEqual(submitted, [["开灯", "t1", "run"]]);
   const prompt = requests[0].messages[0].content;
   assert.match(prompt, /Saying an action does not perform it/);
-  assert.match(prompt, /never ask which one yourself/);
-  assert.doesNotMatch(prompt, /nod|Gestures/);
+  // The same rules a robot with tools gets: devices differ only by profile and declared tools.
+  assert.match(prompt, /Gestures are device tool calls/);
   assert.deepEqual(requests[0].tools.map((tool: any) => tool.function.name), ["ask_lares"]);
   assert.equal(requests[0].maxCalls, 1);
   // The words that claimed the light were not a call, so the reply was asked again with ask_lares required.
