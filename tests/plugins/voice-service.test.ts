@@ -253,6 +253,33 @@ test("a delegation batched with a device call still lets the dialogue speak abou
   assert.equal(dialogue.toolOutput("dev", "{}"), false);
 });
 
+test("a device key without declared tools follows the device rules, and a claimed light is sent to ask_lares", async () => {
+  const requests: any[] = [];
+  const submitted: any[] = [];
+  const answers: any[] = [
+    { role: "assistant", content: "正在为您开灯。" },
+    { role: "assistant", content: null, tool_calls: [call("own", "ask_lares", '{"operation":"run","task":"开灯"}')] },
+    { role: "assistant", content: "好的。" },
+    { role: "assistant", content: "你好！" },
+  ];
+  const dialogue = createVoiceDialogue({ config: {}, agent: true, device: true, owner: "alice", submit: async (...args: any[]) => { submitted.push(args); return { status: "pending" }; }, chat: async (request: any) => { requests.push(structuredClone(request)); return answers.shift(); } });
+  assert.ok(dialogue.isDevice() && !dialogue.hasClientTools());
+  assert.deepEqual(await dialogue.reply("你能帮我开一下灯吗？", "t1"), { text: "好的。", calls: [] });
+  assert.deepEqual(submitted, [["开灯", "t1", "run"]]);
+  const prompt = requests[0].messages[0].content;
+  assert.match(prompt, /Saying an action does not perform it/);
+  assert.match(prompt, /never ask which one yourself/);
+  assert.doesNotMatch(prompt, /nod|Gestures/);
+  assert.deepEqual(requests[0].tools.map((tool: any) => tool.function.name), ["ask_lares"]);
+  assert.equal(requests[0].maxCalls, 1);
+  // The words that claimed the light were not a call, so the reply was asked again with ask_lares required.
+  assert.deepEqual(requests[1].toolChoice, { type: "function", function: { name: "ask_lares" } });
+  assert.match(requests[2].messages.at(-1).content, /Lares has started on that/);
+  // A greeting heard by a device is answered without tools.
+  await dialogue.reply("你好", "t2");
+  assert.equal(requests[3].tools, undefined);
+});
+
 test("without device tools the dialogue prompt and tools stay exactly as before", async () => {
   const requests: any[] = [];
   const dialogue = createVoiceDialogue({ config: {}, agent: true, owner: "alice", chat: async (request: any) => { requests.push(request); return { role: "assistant", content: "ok" }; } });
@@ -585,7 +612,7 @@ test("a Lares client's announcement still goes through the dialogue model", asyn
   assert.equal(requests.length, 2);
 });
 
-test("only an Agent Session a device's dialogue drives is told its answers are spoken by a device", async () => {
+test("only an Agent Session a device key's dialogue drives is told its answers are spoken by a device", async () => {
   const h = store();
   const service = createVoiceHostService({ create: async () => ({ sessionId: "s1" }) }, { records: h.records, config: () => ({ preset: "assistant" }), chat: async () => ({ role: "assistant", content: "ok" }) });
   const plain: any = { id: "plain", owner: "alice" }, device: any = { id: "device", owner: "alice", authorizedBinding: { clientTools: true } };
@@ -593,7 +620,9 @@ test("only an Agent Session a device's dialogue drives is told its answers are s
     await service.open(plain, {}); await service.open(device, {});
     plain.session = { snapshot: () => ({ running: false, sessionId: "agent-plain", tasks: [] }), close: async () => {} };
     device.session = { snapshot: () => ({ running: false, sessionId: "agent-device", tasks: [] }), close: async () => {} };
-    assert.equal(service.drivesDevice("agent-device"), false, "no device tools declared yet");
+    // The key makes it a device, declared tools or not (glasses declare none).
+    assert.ok(device.dialogue.isDevice() && !device.dialogue.hasClientTools());
+    assert.equal(service.drivesDevice("agent-device"), true);
     service.tools(device, [MOVE]);
     assert.equal(service.drivesDevice("agent-device"), true);
     assert.equal(service.drivesDevice("agent-plain"), false);

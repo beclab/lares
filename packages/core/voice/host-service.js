@@ -87,7 +87,7 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
   const service = {
     /** Whether a device's dialogue drives this Agent Session now, so what it writes ends up spoken by that device. */
     drivesDevice(sessionId) {
-      return Boolean(sessionId) && [...scopes].some((scope) => scope.active && scope.dialogue?.hasClientTools() && scope.session?.snapshot().sessionId === sessionId);
+      return Boolean(sessionId) && [...scopes].some((scope) => scope.active && scope.dialogue?.isDevice() && scope.session?.snapshot().sessionId === sessionId);
     },
     async clean(scope, text, options = {}) {
       if (typeof text !== "string" || text.length > 16000) throw failure("voice_input_invalid", 400);
@@ -134,7 +134,7 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
       scope.active = true; scope.readAloud = body.readAloud === true;
       scope.voiceState = { version: 0, running: false, utterance: null, live: null, error: null };
       scope.voiceRequests = new Map(); scope.deliveredTasks = new Set(restoredRequests.map((item) => item.requestId));
-      scope.dialogue = !scope.voiceCaps.relay ? null : createVoiceDialogue({ config: scope.voiceConfig, agent: scope.voiceCaps.agent, owner: scope.owner, context: history.summary?.recent || [], summary: history.summary?.text || "", chat: chatFor(scope),
+      scope.dialogue = !scope.voiceCaps.relay ? null : createVoiceDialogue({ config: scope.voiceConfig, agent: scope.voiceCaps.agent, device: scope.voiceCaps.clientTools, owner: scope.owner, context: history.summary?.recent || [], summary: history.summary?.text || "", chat: chatFor(scope),
         submit: async (text, requestId, operation) => {
           if (operation === "status") return scope.session.snapshot();
           const id = `${requestId}:delegate`;
@@ -209,8 +209,8 @@ export function createVoiceHostService(api, { env = process.env, metric = () => 
       // Pending business work does not block the next speech turn.
       if (!scope.voiceResults?.length || scope.voiceInputActive) return;
       const task = scope.voiceResults.shift();
-      // A device that declared tools hears results through the dialogue, which may act on them.
-      if (scope.dialogue.hasClientTools()) { void converse(scope, { requestId: `task:${task.requestId}`, text: null, task }).catch(() => {}); return; }
+      // A device hears results through the dialogue, which says them briefly and may act on them.
+      if (scope.dialogue.isDevice()) { void converse(scope, { requestId: `task:${task.requestId}`, text: null, task }).catch(() => {}); return; }
       scope.dialogue.observeTask(task);
       const text = task.status === "completed" ? task.text : `Task ${task.status}: ${task.error || ""}`;
       scope.voiceState.utterance = { key: `task:${task.requestId}`, turn: ++scope.voiceState.version, step: 0, text, done: true, silent: false };

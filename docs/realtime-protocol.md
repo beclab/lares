@@ -241,6 +241,15 @@ may, and only on `voice-chat` or `voice-assistant`, whose voice dialogue model
 answers first. Ticket sockets and other keys keep the behaviour above, and
 `session.lares.capabilities.client_tools` says which applies.
 
+Such a key makes the session a device session whether or not it declares any
+tools, as a pair of glasses that only listens and speaks does not. The dialogue
+then follows the device rules: home control, lookups and schedules go to
+`ask_lares` even when no room or device is named, replies are one short
+sentence, a reply that claims a home action without calling `ask_lares` is asked
+again with the call required, fillers and greetings get no tools, finished tasks
+are announced briefly through the dialogue, and the Agent answers for a device.
+Gesture rules and device calls apply only once tools are declared.
+
 - **Declaring.** `session.update` takes `tools` (≤ 64 functions, unique names,
   never `ask_lares`) and `tool_choice` (`"auto"` or `"none"`). The dialogue
   model sees them beside `ask_lares` and is told to call them directly.

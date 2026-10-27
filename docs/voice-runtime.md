@@ -1,5 +1,36 @@
 # Voice runtime
 
+## Device session without device tools: glasses on pptest03 (2026-10-27)
+
+Glass Assistant (Rokid, or Meta glasses through the Olares Meta Voice phone app)
+reaches Lares through Router model `lares-glass/voice-assistant`. It declares no
+tools and commits each take itself (push-to-talk mode). On 0.26.102, with a key
+without `clientTools`, it got the plain dialogue prompt: "你能帮我开一下灯吗？"
+came back as "请问您需要开启的是哪个区域的灯光？" and no turn reached
+`ask_lares`, because the device rules and checks were keyed on declared tools.
+
+Now the key decides (`createVoiceDialogue({ device })` from
+`voiceCaps.clientTools`): a `clientTools` key gets the device rules without the
+gesture sentences, plus "never ask which one yourself" for an unnamed device; the
+claimed-action retry, no tools for fillers and greetings, the short
+acknowledgment, brief announcements and the Agent's device answer rule. With
+tools declared the prompt is byte-identical to before.
+
+Live eval on default-chat (Qwen3.5-9B AWQ), 5 runs per case, the field history
+included (`field-*`: the session's own earlier turns):
+
+| Case | Plain prompt | Glass caller instructions only | Device key (this change) |
+| --- | --- | --- | --- |
+| Light after the field history | 4/5 | 5/5 | 5/5, 5/5 |
+| "你只有一个" after two clarifying replies | 2/5 | 2/5 | 3/5, 3/5 |
+| Unclear chatter answered in a few words | 2/5 | 5/5 | 5/5 |
+| Plain light requests (4 cases: zh ×2, a named room, en) | 20/20 | named room 3/5, en 3/5 | 17/20; the two cases that missed then 10/10 |
+| All 11 cases | 42/55 | 42/55 | 49/55 |
+
+The Reachy subset (nod, light-on, light-after-ack, light-still-off, light-off-en,
+3 runs) scored 13/15 with both the old and the new file, missing different cases.
+The open problem is the glasses' microphone: people talking nearby become turns.
+
 ## Device voice through Router: Reachy Mini on pptest03 (2026-10-24/25)
 
 Reachy Mini talks to Lares through Router, with its own tools (head, emotions,
