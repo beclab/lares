@@ -57,8 +57,8 @@ const requiredTool = (text, answer, tools) => {
 // came back as "柔和的白色". A long or formatted one still needs the dialogue to shorten it.
 const verbatim = (task, lastWords) => {
   const said = typeof task?.text === "string" ? task.text.trim() : "";
-  // Formatting, quoted names and device ids ("Aqara lumi.light.agl003") are for the dialogue to smooth over.
-  if (task?.status !== "completed" || !said || /[#*`|\n"“”「」]|[a-z0-9]+[._][a-z0-9]/i.test(said)) return null;
+  // Formatting, emoji, quoted names and device ids ("Aqara lumi.light.agl003") are for the dialogue to smooth over.
+  if (task?.status !== "completed" || !said || /[#*`|\n"“”「」]|\p{Extended_Pictographic}|[a-z0-9]+[._][a-z0-9]/iu.test(said)) return null;
   if ([...said.replace(/\s/g, "")].length > 40 || said.split(/\s+/).length > 20) return null;
   const spoken = languageOf(lastWords);
   return spoken && languageOf(said) === spoken ? said : null;

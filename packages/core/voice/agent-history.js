@@ -35,3 +35,19 @@ export function keepDeviceTools(tools, allowed = DEVICE_AGENT_TOOLS) {
   if (!Array.isArray(tools)) return tools;
   return tools.filter((tool) => allowed.includes(tool?.name ?? tool?.function?.name));
 }
+
+/**
+ * Sampling for a device's Agent. Asked to turn a light on or off, Qwen3.5-9B first says "好的，我帮您关灯。"
+ * and then either calls the ha-lighting skill or ends there; the engine sampled that choice at the
+ * model's default temperature of 1.0, so a light changed in about half of fresh Sessions. Replayed
+ * on pptest03 (2026-10-27), 0.2 ran skill, lookup and the service call 10/10 for on and for off;
+ * 0 was as reliable but repeats itself more readily on long tasks.
+ */
+export const DEVICE_AGENT_TEMPERATURE = 0.2;
+
+/** The request a device's Agent sends: earlier tool results compacted, and its own temperature. */
+export function deviceAgentRequest(request) {
+  if (!request || typeof request !== "object") return request;
+  const { messages } = compactEarlierToolResults(request.messages);
+  return { ...request, messages, temperature: DEVICE_AGENT_TEMPERATURE };
+}

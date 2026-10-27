@@ -10,7 +10,7 @@ import { createSileroGate } from "@olares/lares-core/voice/silero";
 import { createVoiceHostService } from "@olares/lares-core/voice/host-service";
 import { createAgentPromptTrace } from "@olares/lares-core/voice/agent-prompt-trace";
 import { setRequestRewrite, setRequestTrace } from "@olares/lares-core/router/shim";
-import { compactEarlierToolResults, keepDeviceTools } from "@olares/lares-core/voice/agent-history";
+import { deviceAgentRequest, keepDeviceTools } from "@olares/lares-core/voice/agent-history";
 import { registerRealtime } from "./realtime.js";
 /**
  * Voice-input Host routes under /api/lares/voice (STT via /llm/v1 shim).
@@ -45,7 +45,7 @@ import {
 import { bluetoothRequest, ensureBluetoothReady } from "@olares/lares-core/voice/link";
 import { gpuAppAction, gpuModePayload, observeSpeechGpu, readingModePayload, saveSlicePlan, speechGpu, streamingEnabled, switchReadingMode } from "@olares/lares-core/voice/gpu-mode";
 import { routerEndUser } from "@olares/lares-core/router/gateway";
-import { DEVICE_SPOKEN_PROMPT, SPOKEN_PROMPT } from "@olares/lares-core/voice/agent-session";
+import { SPOKEN_PROMPT } from "@olares/lares-core/voice/agent-session";
 import { writeReport } from "@olares/lares-core/log/report";
 
 export const name = "lares-composer-voice";
@@ -404,7 +404,7 @@ export function apply(ctx) {
     promptCtx.systemPrompt.section({ name: "app:spoken-reply", order: 9800, text: (assembly) => {
       const id = assembly.scope?.id, device = Boolean(voiceHost?.drivesDevice(id)), voice = voiceSessionPrompt(id);
       if (device || voice) promptTrace.rule(id, device, voice);
-      return device ? `${SPOKEN_PROMPT} ${DEVICE_SPOKEN_PROMPT}` : voice ? SPOKEN_PROMPT : "";
+      return device || voice ? SPOKEN_PROMPT : "";
     } });
   });
   ctx.on("system-prompt/assemble", async (_assembly, context, next) => {
@@ -412,10 +412,10 @@ export function apply(ctx) {
     const id = context.agent?.id;
     if (!id || !voiceHost?.drivesDevice(id)) return assembly;
     const device = { ...assembly, tools: keepDeviceTools(assembly.tools) };
-    promptTrace.assembled(id, device, { deviceRule: device.sections.some((section) => section.name === "app:spoken-reply" && String(section.text).includes(DEVICE_SPOKEN_PROMPT)) });
+    promptTrace.assembled(id, device, { deviceRule: device.sections.some((section) => section.name === "app:spoken-reply" && String(section.text).includes(SPOKEN_PROMPT)) });
     return device;
   }, { prepend: true });
   // Whole model requests are traced where they leave for Router, in the LLM shim.
   setRequestTrace((sessionId, messages) => { if (voiceHost?.drivesDevice(sessionId)) promptTrace.request(sessionId, messages); });
-  setRequestRewrite((sessionId, messages) => voiceHost?.drivesDevice(sessionId) ? compactEarlierToolResults(messages).messages : messages);
+  setRequestRewrite((sessionId, request) => voiceHost?.drivesDevice(sessionId) ? deviceAgentRequest(request) : request);
 }

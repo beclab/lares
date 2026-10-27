@@ -225,7 +225,8 @@ async function enrichGenerationPoll(up, res, req, env, cancellation, deps) {
 }
 
 // Per-process hooks on chat requests by dsh Session id, installed by the voice host: `rewrite`
-// may return other messages for a device-driven Agent, and `trace` sees what is finally sent.
+// may return another request (messages, sampling) for a device-driven Agent, and `trace` sees the
+// messages finally sent.
 let requestTrace = null, requestRewrite = null;
 export function setRequestTrace(trace) { requestTrace = trace; }
 export function setRequestRewrite(rewrite) { requestRewrite = rewrite; }
@@ -233,9 +234,9 @@ const prepareChat = (headers, body) => {
   const sessionId = headers["x-session-id"];
   if ((!requestTrace && !requestRewrite) || typeof sessionId !== "string") return body;
   try {
-    const request = JSON.parse(body.toString("utf8"));
-    const messages = requestRewrite?.(sessionId, request.messages);
-    if (messages && messages !== request.messages) { request.messages = messages; body = Buffer.from(JSON.stringify(request)); }
+    let request = JSON.parse(body.toString("utf8"));
+    const rewritten = requestRewrite?.(sessionId, request);
+    if (rewritten && rewritten !== request) { request = rewritten; body = Buffer.from(JSON.stringify(request)); }
     requestTrace?.(sessionId, request.messages);
   } catch {}
   return body;

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createServer, request as httpRequest } from "node:http";
 import { once } from "node:events";
 import test from "node:test";
-import { compactEarlierToolResults, DEVICE_AGENT_TOOLS, keepDeviceTools } from "@olares/lares-core/voice/agent-history";
+import { compactEarlierToolResults, DEVICE_AGENT_TEMPERATURE, DEVICE_AGENT_TOOLS, deviceAgentRequest, keepDeviceTools } from "@olares/lares-core/voice/agent-history";
 import { proxyToRouter, setRequestRewrite, setRequestTrace } from "@olares/lares-core/router/shim";
 
 const long = "result ".repeat(400);
@@ -27,7 +27,7 @@ test("only long tool results from before the latest user message are shortened, 
   assert.equal(compactEarlierToolResults([{ role: "user", content: "hi" }]).compacted, 0);
 });
 
-test("the shim sends Router the rewritten messages of a Session the rewrite claims", async () => {
+test("the shim sends Router the rewritten request of a Session the rewrite claims: compacted history and the device temperature", async () => {
   const seen: any[] = [];
   const router = createServer((req, res) => {
     const chunks: Buffer[] = [];
@@ -36,7 +36,7 @@ test("the shim sends Router the rewritten messages of a Session the rewrite clai
   });
   const proxy = createServer((req, res) => proxyToRouter(req, res, { LLM_GATEWAY_URL: `http://127.0.0.1:${(router.address() as { port: number }).port}/v1`, OLARES_APP_ID: "lares" }));
   const traced: any[] = [];
-  setRequestRewrite((sessionId: string, messages: any[]) => sessionId === "device" ? compactEarlierToolResults(messages).messages : messages);
+  setRequestRewrite((sessionId: string, request: any) => sessionId === "device" ? deviceAgentRequest(request) : request);
   setRequestTrace((sessionId: string, messages: any[]) => traced.push([sessionId, messages.length]));
   const send = (sessionId: string) => new Promise<void>((resolve, reject) => {
     const body = JSON.stringify({ model: "m", messages: [...turn("weather", long), { role: "user", content: "light" }] });
@@ -53,6 +53,8 @@ test("the shim sends Router the rewritten messages of a Session the rewrite clai
     assert.match(device.request.messages[2].content, /omitted/);
     assert.equal(device.length, Buffer.byteLength(JSON.stringify(device.request)));
     assert.equal(other.request.messages[2].content, long);
+    assert.equal(device.request.temperature, DEVICE_AGENT_TEMPERATURE);
+    assert.equal(other.request.temperature, undefined);
     assert.deepEqual(traced, [["device", 5], ["other", 5]]);
   } finally {
     setRequestRewrite(null); setRequestTrace(null);

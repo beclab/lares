@@ -1,5 +1,44 @@
 # Voice runtime
 
+## Why a device Agent said "好的，我帮您关灯。" and stopped (2026-10-27)
+
+Both devices send the Agent byte-identical requests (system prompt, the nine
+`keepDeviceTools` tools, user message); Reachy only looked more reliable because
+one robot connection keeps one Agent Session for 10-28 turns, and after the first
+`skill(ha-lighting)` later light turns go straight to `bash`. Each glasses
+connection opens a new Session, so every light request is a first step.
+
+At that step Qwen3.5-9B (sglang 0.5.18, `qwen3_coder` parser, thinking off) says one
+sentence and then picks `\n\n` + `<tool_call>` or `<|im_end|>`; the raw output of a
+failed turn is the sentence and `<|im_end|>`, nothing lost by the parser. Next-token
+probabilities after the sentence, measured with the assistant prefix filled in:
+
+| Device Agent prompt | P(end) after "好的，我帮您打开灯。" | after "好的，我帮您关灯。" |
+| --- | --- | --- |
+| `SPOKEN_PROMPT` + `DEVICE_SPOKEN_PROMPT` (0.26.88-0.26.105) | 0.28 | 0.42 |
+| `SPOKEN_PROMPT` only | 0.15 | 0.15 |
+| only its "no markdown, headings, lists, links, citations, emoji" | 0.34 | 0.36 |
+| only its "no advice or follow-up offers" | 0.30 | 0.36 |
+| only "at most two short sentences", "small voice device" or units | 0.13-0.18 | 0.17-0.21 |
+
+The engine sampled at the model's default temperature 1.0 (no temperature in its
+`generation_config`, none in the Agent's request). A recorded light turn replayed
+step by step with its tool results (light set to the opposite state):
+
+| Prompt, temperature | On | Off |
+| --- | --- | --- |
+| with `DEVICE_SPOKEN_PROMPT`, 1.0 | 3/10 | — |
+| with `DEVICE_SPOKEN_PROMPT`, 0 | 10/10 | 0/5 |
+| `SPOKEN_PROMPT` only, 0.2 | 10/10 | 10/10 |
+| only the length and units sentences, 0.2 | 10/10 | 8/10 |
+
+0.26.106 gives a device's Agent `SPOKEN_PROMPT` only and temperature 0.2
+(`deviceAgentRequest`, through the shim's request rewrite). Its formatting is left
+to the device dialogue, which says a short plain result as written and turns
+anything long or formatted, now including emoji, into one sentence. A clean sglang
+restart did not change the first-step rate (1/6 executed), so engine state was not
+the cause.
+
 ## Device session without device tools: glasses on pptest03 (2026-10-27)
 
 Glass Assistant (Rokid, or Meta glasses through the Olares Meta Voice phone app)

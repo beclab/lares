@@ -589,7 +589,7 @@ test("a model that still refuses the required tool keeps its words, and ordinary
   assert.equal(plain.requests.length + light.requests.length, 2);
 });
 
-test("a short task result is announced as the Agent wrote it; long, formatted or other-language results are not", async () => {
+test("a short task result is announced as the Agent wrote it; long, formatted, emoji or other-language results are not", async () => {
   const announce = async (result: string, asked = "帮我调成白色的") => {
     const { dialogue, requests } = deviceDialogue([{ role: "assistant", content: "好的" }]);
     await dialogue.reply(asked, "t1");
@@ -600,6 +600,8 @@ test("a short task result is announced as the Agent wrote it; long, formatted or
   assert.deepEqual(await announce("好的，灯光已经调整为明亮的白色，亮度已经调低了（50%）。"), { text: "好的，灯光已经调整为明亮的白色，亮度已经调低了（50%）。", calls: 1 });
   assert.equal((await announce("已为您关闭灯 \"Aqara lumi.light.agl003\"。")).calls, 2);
   assert.equal((await announce("## 北京今日热点\n1. 马拉松")).calls, 2);
+  // The device Agent no longer has a no-emoji rule; a reader would say "✅" aloud.
+  assert.equal((await announce("✅ 已关灯。")).calls, 2);
   assert.equal((await announce("The lights are now bright white.")).calls, 2);
 });
 
