@@ -2,5 +2,5 @@ apiVersion: v2
 name: lares
 description: Lares chat on Olares, wired to Router
 type: application
-version: 0.26.108
-appVersion: "0.26.108"
+version: 0.26.109
+appVersion: "0.26.109"
