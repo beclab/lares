@@ -39,6 +39,31 @@ anything long or formatted, now including emoji, into one sentence. A clean sgla
 restart did not change the first-step rate (1/6 executed), so engine state was not
 the cause.
 
+## Glasses turn-offs answered "好的，关灯。" without ask_lares (2026-10-27)
+
+In one glasses Session on 0.26.107, three of four turn-off requests got "好的，关灯。"
+from the dialogue and never reached the Agent; every request that did reach it ran
+in under 2 s. Replays inside the Lares pod, with the Session's recorded replies,
+real `ask_lares` calls, task results and the host's own pending results (prompt
+2,844 tokens against 2,822 live):
+
+- The dialogue sampled at the engine's default 1.0 and missed now and then; once a
+  reply without a call was in history, the next light request copied it. With the
+  live history up to "请你关一下灯。", whose previous turn had answered "好的，关灯。",
+  it went to `ask_lares` 2/20 at 0.2 and 14/20 at 1.0.
+- Replaying the whole Session with every reply generated, 0.2 sent all seven earlier
+  light requests 8/8 (1.0 missed five times among them); the last, a repeat of a
+  turn-off that had just run, went 4/8.
+- Restored turns came back as text, so an earlier delegation read as "已请求关灯，请稍等。"
+  alone: "能帮我关下灯吗？" went 13/20 with them restored, 19/20 without.
+- Trimming past 49 messages dropped every tool call. Folding the acknowledgment into
+  the call message or leaving it out of history made no measurable difference.
+
+0.26.108: a device dialogue samples at 0.2, a trim cuts at a user turn and keeps
+whole exchanges, and a device restores a delegated turn as its `ask_lares` call,
+pending result, reply, task result and announcement. Lares's own clients keep the
+text-only restore and send no temperature.
+
 ## A colour change that took 12 s: compacted skill instructions (2026-10-27)
 
 On 0.26.106 "能帮我把灯变成黄色吗" (the second turn of a glasses Session) spent 12.0 s in

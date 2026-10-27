@@ -589,6 +589,72 @@ test("a model that still refuses the required tool keeps its words, and ordinary
   assert.equal(plain.requests.length + light.requests.length, 2);
 });
 
+test("a long dialogue is trimmed at a user turn and keeps its ask_lares calls, so history still shows how a request was sent", async () => {
+  const requests: any[] = [];
+  let n = 0;
+  const dialogue = createVoiceDialogue({ config: {}, agent: true, device: true, owner: "alice",
+    submit: async () => ({ status: "pending" }),
+    chat: async (request: any) => {
+      requests.push(structuredClone(request));
+      // Every turn delegates, then says a word: four messages a turn.
+      return requests.length % 2 ? { role: "assistant", content: null, tool_calls: [call(`c${++n}`, "ask_lares", '{"operation":"run","task":"turn on the light"}')] } : { role: "assistant", content: "好的。" };
+    } });
+  for (let i = 0; i < 14; i++) await dialogue.reply(`开灯 ${i}`, `t${i}`);
+  const sent = requests.at(-1).messages;
+  assert.ok(sent.length < 49);
+  assert.equal(sent[1].role, "user");
+  assert.ok(sent.some((item: any) => item.tool_calls?.[0]?.function?.name === "ask_lares"));
+  const ids = new Set(sent.flatMap((item: any) => (item.tool_calls || []).map((c: any) => c.id)));
+  assert.ok(sent.filter((item: any) => item.role === "tool").every((item: any) => ids.has(item.tool_call_id)));
+});
+
+test("a device dialogue samples at 0.2 on every call; other dialogues send no temperature", async () => {
+  const sampled = async (device: boolean) => {
+    const requests: any[] = [];
+    const answers: any[] = [
+      { role: "assistant", content: null, tool_calls: [call("own", "ask_lares", '{"operation":"run","task":"turn off the light"}')] },
+      { role: "assistant", content: "好的。" },
+    ];
+    const dialogue = createVoiceDialogue({ config: {}, agent: true, device, owner: "alice", submit: async () => ({ status: "pending" }), chat: async (request: any) => { requests.push(request); return answers.shift() ?? { role: "assistant", content: "ok" }; } });
+    await dialogue.reply("关灯", "t1");
+    return requests.map((request: any) => request.temperature);
+  };
+  assert.deepEqual(await sampled(true), [0.2, 0.2]);
+  assert.deepEqual(await sampled(false), [undefined, undefined]);
+  // voiceChat passes it on to Router only when given.
+  const bodies: any[] = [];
+  const fetch = async (_url: string, init: any) => { bodies.push(JSON.parse(init.body)); return new Response(JSON.stringify({ choices: [{ message: { role: "assistant", content: "ok" } }] }), { status: 200 }); };
+  await voiceChat({ messages: [], temperature: 0.2, fetch, env: { LLM_GATEWAY_URL: "http://router/v1" } } as any);
+  await voiceChat({ messages: [], fetch, env: { LLM_GATEWAY_URL: "http://router/v1" } } as any);
+  assert.equal(bodies[0].temperature, 0.2);
+  assert.equal("temperature" in bodies[1], false);
+});
+
+test("a device dialogue restores a delegated turn as its ask_lares call, result and announcement, not as words alone", async () => {
+  const requests: any[] = [];
+  const context = [
+    { role: "user", text: "能帮我关灯吗？", taskId: "r1:delegate" },
+    { role: "assistant", text: "已请求关灯。", taskId: "r1:delegate" },
+    { role: "task", text: "Turn off the lights.", taskId: "r1:delegate" },
+    { role: "task", text: '{"requestId":"r1:delegate","status":"completed","text":"灯已关闭。"}', taskId: "r1:delegate" },
+    { role: "assistant", text: "灯已关闭。", taskId: "r1:delegate" },
+    { role: "user", text: "谢谢" },
+    { role: "assistant", text: "不客气。" },
+  ];
+  const restored = (device: boolean) => {
+    const dialogue = createVoiceDialogue({ config: {}, agent: true, device, owner: "alice", context, submit: async () => ({}), chat: async (request: any) => { requests.push(request); return { role: "assistant", content: "ok" }; } });
+    return dialogue.reply("你好啊", "t1").then(() => requests.at(-1).messages.slice(1, -1));
+  };
+  const device = await restored(true);
+  assert.deepEqual(device.map((item: any) => item.role), ["user", "assistant", "tool", "assistant", "user", "assistant", "user", "assistant"]);
+  assert.equal(device[1].tool_calls[0].function.name, "ask_lares");
+  assert.equal(JSON.parse(device[1].tool_calls[0].function.arguments).task, "Turn off the lights.");
+  assert.equal(device[2].tool_call_id, device[1].tool_calls[0].id);
+  assert.match(device[4].content, /Authorized Lares task result/);
+  // Lares's own clients keep the text-only restore.
+  assert.deepEqual((await restored(false)).map((item: any) => item.role), ["user", "assistant", "assistant", "user", "assistant"]);
+});
+
 test("a short task result is announced as the Agent wrote it; long, formatted, emoji or other-language results are not", async () => {
   const announce = async (result: string, asked = "帮我调成白色的") => {
     const { dialogue, requests } = deviceDialogue([{ role: "assistant", content: "好的" }]);
