@@ -1,6 +1,32 @@
 import { primePlaybackContext } from "@olares/lares-core/voice/pcm-player";
 
-const SILENT_WAV = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
+/**
+ * 16-bit silence at the playback clock. iOS keeps one hardware rate; the old
+ * 8 kHz unlock left the iPhone speaker resampling the readout into a buzz.
+ */
+function unlockClip(sampleRate) {
+  const rate = Number.isInteger(sampleRate) && sampleRate >= 8000 && sampleRate <= 192000 ? sampleRate : 48000;
+  const dataBytes = 128 * 2;
+  const bytes = new Uint8Array(44 + dataBytes);
+  const view = new DataView(bytes.buffer);
+  const text = (offset, value) => { for (let i = 0; i < value.length; i += 1) view.setUint8(offset + i, value.charCodeAt(i)); };
+  text(0, "RIFF");
+  view.setUint32(4, 36 + dataBytes, true);
+  text(8, "WAVE");
+  text(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, rate, true);
+  view.setUint32(28, rate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  text(36, "data");
+  view.setUint32(40, dataBytes, true);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
+  return `data:audio/wav;base64,${btoa(binary)}`;
+}
 
 /**
  * One element, unlocked inside the gesture that asks the question (a voice
@@ -22,9 +48,9 @@ export function createAnswerPlayer() {
   };
   return {
     unlock() {
-      primePlaybackContext();
+      const context = primePlaybackContext();
       if (!audio || !audio.paused) return;
-      audio.src = SILENT_WAV;
+      audio.src = unlockClip(context?.sampleRate);
       void audio.play().catch(() => {});
     },
     /** Resolves when the clip ends (true), or is stopped or fails (false). */

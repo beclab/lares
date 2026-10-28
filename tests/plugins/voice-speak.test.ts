@@ -612,6 +612,50 @@ test("a send tap unlocks the phone player without cutting an answer still playin
   }
 });
 
+test("the phone unlock clip uses the playback clock, not an 8 kHz silent wav", async () => {
+  const sources: string[] = [];
+  class FakeAudio {
+    paused = true;
+    src = "";
+    async play() { sources.push(this.src); this.paused = false; }
+    pause() { this.paused = true; }
+  }
+  class Context {
+    sampleRate = 48000;
+    state = "running";
+    destination = {};
+    audioWorklet = { addModule: async () => {} };
+    async resume() {}
+    async close() { this.state = "closed"; }
+  }
+  const saved = { Audio: globalThis.Audio, AudioContext: (globalThis as any).AudioContext, AudioWorkletNode: (globalThis as any).AudioWorkletNode };
+  Object.assign(globalThis, { Audio: FakeAudio, AudioContext: Context, AudioWorkletNode: class {} });
+  let primed: { sampleRate?: number, state: string, close?: () => Promise<void> } | null = null;
+  try {
+    const { createAnswerPlayer } = await import("../../packages/mobile/src/chat/playback.js");
+    const { primePlaybackContext } = await import("@olares/lares-core/voice/pcm-player");
+    primed = primePlaybackContext();
+    if (primed && primed.sampleRate !== 48000) {
+      await primed.close?.();
+      primed.state = "closed";
+      primed = primePlaybackContext();
+    }
+    assert.equal(primed?.sampleRate, 48000);
+    const player = createAnswerPlayer();
+    player.unlock();
+    const bytes = Uint8Array.from(atob(sources.at(-1)!.split(",")[1]), (char) => char.charCodeAt(0));
+    const view = new DataView(bytes.buffer);
+    assert.equal(view.getUint16(20, true), 1);
+    assert.equal(view.getUint16(22, true), 1);
+    assert.equal(view.getUint32(24, true), 48000);
+    assert.equal(view.getUint16(34, true), 16);
+    assert.ok(view.getUint32(40, true) > 0);
+  } finally {
+    await primed?.close?.();
+    Object.assign(globalThis, saved);
+  }
+});
+
 function fakeHeadset(log: string[], write: () => Promise<void> = async () => {}) {
   return {
     skipped: false,

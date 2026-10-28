@@ -4,7 +4,7 @@ class LaresPcmPlayer extends AudioWorkletProcessor {
   constructor(options) {
     super(); this.queue = []; this.offset = 0; this.frames = 0; this.reported = 0;
     this.rate = options.processorOptions.inputRate;
-    const outputRate = options.processorOptions.outputRate || sampleRate;
+    const outputRate = sampleRate || options.processorOptions.outputRate;
     this.step = this.rate / outputRate;
     this.preroll = options.processorOptions.preroll || 0;
     this.paused = false; this.queued = 0; this.finished = false; this.started = false; this.starved = false;
@@ -17,8 +17,10 @@ class LaresPcmPlayer extends AudioWorkletProcessor {
     };
   }
   process(inputs, outputs) {
-    const out = outputs[0][0];
-    out.fill(0);
+    const channels = outputs[0];
+    const out = channels[0];
+    for (let c = 0; c < channels.length; c++) channels[c].fill(0);
+    const mirror = () => { for (let c = 1; c < channels.length; c++) channels[c].set(out); };
     if (this.paused) return true;
     // A late first packet must not open a hole inside the first syllable.
     if (!this.started && !this.finished && this.queued < this.preroll) return true;
@@ -29,7 +31,7 @@ class LaresPcmPlayer extends AudioWorkletProcessor {
       }
       const head = this.queue[0];
       if (!head) {
-        if (this.finished) { this.port.postMessage({ type: 'progress', frames: this.frames }); this.port.postMessage({ type: 'done' }); return false; }
+        if (this.finished) { this.port.postMessage({ type: 'progress', frames: this.frames }); this.port.postMessage({ type: 'done' }); mirror(); return false; }
         if (this.started && !this.starved) this.port.postMessage({ type: 'underrun' });
         this.starved = true; continue;
       }
@@ -46,6 +48,7 @@ class LaresPcmPlayer extends AudioWorkletProcessor {
       out[i] = head[at] * (1 - fraction) + (next ?? head[at]) * fraction;
       this.offset += this.step;
     }
+    mirror();
     const played = this.frames + Math.min(this.queue[0]?.length || 0, Math.floor(this.offset));
     if (played - this.reported >= this.rate * 0.05) { this.reported = played; this.port.postMessage({ type: 'progress', frames: played }); }
     return true;

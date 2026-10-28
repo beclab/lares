@@ -30,6 +30,17 @@ test("PCM playback resampling is independent of transport chunk boundaries", () 
   }
 });
 
+test("mono speech is written to every output channel", () => {
+  const { worker, send } = player(24000, 48000);
+  send({ type: "audio", samples: Float32Array.of(0.25, -0.5) });
+  const left = new Float32Array(4);
+  const right = new Float32Array(4);
+  worker.process([], [[left, right]]);
+  for (let i = 0; i < left.length; i += 1) assert.ok(Math.abs(left[i] - right[i]) < 1e-6);
+  assert.ok(Math.abs(left[0] - 0.25) < 1e-6);
+  assert.ok(Math.abs(right[0] - 0.25) < 1e-6);
+});
+
 test("a late neighboring sample pauses interpolation without consuming or repeating it", () => {
   const { worker, events, send } = player(24000, 48000);
   send({ type: "audio", samples: Float32Array.of(.1) });

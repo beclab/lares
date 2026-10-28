@@ -41,6 +41,18 @@ function ensureWorklet(ctx) {
   return tracked;
 }
 
+/** One silent frame runs the audio unit at this context's rate before another clip can retune iOS. */
+function commitPlaybackClock(context) {
+  try {
+    if (typeof context?.createBuffer !== "function" || typeof context.createBufferSource !== "function" || !context.destination || !context.sampleRate) return;
+    const buffer = context.createBuffer(1, 1, context.sampleRate);
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    source.connect(context.destination);
+    source.start();
+  } catch { /* Resuming the context is the unlock. */ }
+}
+
 /** Optional gesture prewarming must never block a text submission. Playback reports failures at start. */
 export function primePlaybackContext(Context = globalThis.AudioContext || globalThis.webkitAudioContext) {
   if (!Context || globalThis.isSecureContext === false) return null;
@@ -50,6 +62,7 @@ export function primePlaybackContext(Context = globalThis.AudioContext || global
     const resume = primed.resume?.();
     if (resume && typeof resume.catch === "function") resume.catch(() => {});
     ensureWorklet(primed).catch(() => {});
+    commitPlaybackClock(primed);
     return primed;
   } catch {
     const failed = primed;
@@ -61,7 +74,7 @@ export function primePlaybackContext(Context = globalThis.AudioContext || global
 }
 
 export function createPcmStreamPlayer({ onProgress = () => {}, onMetric = () => {}, context: Context = globalThis.AudioContext || globalThis.webkitAudioContext } = {}) {
-  let context, node, resolve, reject, played = 0, accepted = 0, rate = 0, generation = 0, pendingByte = null, paused = false, owned = false;
+  let context, node, resolve, reject, played = 0, accepted = 0, rate = 0, generation = 0, pendingByte = null, paused = false, owned = false, settled = false;
   let tail = Promise.resolve();
   const waiters = new Set();
   const wake = () => { for (const listen of [...waiters]) listen(); };
@@ -111,7 +124,7 @@ export function createPcmStreamPlayer({ onProgress = () => {}, onMetric = () => 
   };
   return {
     async start({ sampleRate, channels, encoding }) {
-      stop(); played = 0; accepted = 0;
+      stop(); played = 0; accepted = 0; settled = false;
       if (!Context || globalThis.isSecureContext === false) throw new Error(browserAudioErrorCode());
       if (channels !== 1 || encoding !== "pcm_s16le" || !Number.isInteger(sampleRate) || sampleRate < 8000 || sampleRate > 192000) throw new Error("voice_audio_format");
       rate = sampleRate;
@@ -130,13 +143,13 @@ export function createPcmStreamPlayer({ onProgress = () => {}, onMetric = () => 
       }
       node = new AudioWorkletNode(opened, "lares-pcm-player", {
         processorOptions: { inputRate: sampleRate, outputRate: opened.sampleRate || sampleRate, preroll: Math.round(sampleRate * 0.2) },
-        numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [1],
+        numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2],
       });
       node.port.onmessage = ({ data }) => {
         if (epoch !== generation) return;
         if (data.type === "progress") { played = data.frames; onProgress(played); wake(); }
         if (data.type === "started" || data.type === "underrun") onMetric({ stage: `playback_${data.type}` });
-        if (data.type === "done") { resolve?.(); resolve = reject = null; }
+        if (data.type === "done") { settled = true; resolve?.(); resolve = reject = null; }
       };
       node.connect(opened.destination);
     },
@@ -185,7 +198,7 @@ export function createPcmStreamPlayer({ onProgress = () => {}, onMetric = () => 
     finish() {
       const epoch = generation;
       return tail.catch(() => {}).then(() => {
-        if (epoch !== generation || !node) return;
+        if (epoch !== generation || !node || settled) return;
         if (pendingByte !== null) throw new Error("voice_audio_format");
         return new Promise((done, fail) => { resolve = done; reject = fail; node.port.postMessage({ type: "finish" }); });
       });

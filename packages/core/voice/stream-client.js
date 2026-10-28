@@ -2,8 +2,7 @@ import { postReport } from "../log/report.js";
 import { PCM_CAPTURE_WORKLET } from "./pcm-worklet.js";
 import { createPcmResampler } from "./realtime-audio.js";
 import { createPcmStreamPlayer } from "./pcm-player.js";
-import { wavBlob } from "./client.js";
-import { createBrowserPlayer } from "./browser-playback.js";
+import { wavPcm } from "./client.js";
 import { browserAudioErrorCode, requireAudioWorklet } from "./browser-audio.js";
 
 export function browserAudioSocket(ticket) {
@@ -65,18 +64,17 @@ export async function playAudioStream(options) {
   let skipFrames = 0;
   let lastError = null;
   let paused = false;
-  const controls = { player: null, connection: null, file: null, ready: false };
+  const controls = { player: null, connection: null, ready: false };
   options.controls?.({
     get canPause() { return controls.ready; },
     pause() {
       if (!controls.ready || paused) return;
-      paused = true; controls.player?.pause(); controls.file?.pause();
+      paused = true; controls.player?.pause();
       if (controls.connection?.readyState === 1) controls.connection.send(JSON.stringify({ type: "pause" }));
     },
     resume() {
       if (!controls.ready || !paused) return;
       paused = false; controls.player?.resume();
-      void controls.file?.resume()?.catch?.(() => controls.connection?.close());
       if (controls.connection?.readyState === 1) controls.connection.send(JSON.stringify({ type: "resume" }));
     },
   });
@@ -90,7 +88,6 @@ export async function playAudioStream(options) {
     }
     const connection = await openAudioStream({ ...options, operation: "tts" });
     if (!connection) throw new Error("voice_stream_failed");
-    const file = createBrowserPlayer();
     let progressNoted = false, progressBlocked = false;
     let lastProgressAt = Date.now(), gapReported = false, gapAt = 0, formatNoted = false;
     let chain = Promise.resolve(), complete = false, ending = false, firstReceived = false, ready = false, segmentIndex = -1;
@@ -113,7 +110,6 @@ export async function playAudioStream(options) {
     });
     controls.player = player;
     controls.connection = connection;
-    controls.file = file;
     controls.ready = false;
     const ack = (frames) => {
       if (connection.readyState !== 1) {
@@ -158,7 +154,7 @@ export async function playAudioStream(options) {
           logged = true;
           reject(error);
         };
-        const cancelled = () => { player.stop(); file.stop(); fail(new Error("voice_cancelled")); };
+        const cancelled = () => { player.stop(); fail(new Error("voice_cancelled")); };
         options.signal?.addEventListener("abort", cancelled, { once: true });
         connection.addEventListener("message", ({ data }) => {
           if (typeof data !== "string" && !firstReceived) { firstReceived = true; streamMetric(options, { stage: "playback_first_received", durationMs: Date.now() - started }); }
@@ -185,8 +181,14 @@ export async function playAudioStream(options) {
             }
             else if (event.type === "file") {
               // A whole-file answer cannot be offset-skipped; a reconnect plays it again.
-              ready = controls.ready = true; options.onStatus?.("playing");
-              await file.play(wavBlob(event.audio));
+              // Render it on the same clock as streamed PCM. A 24 kHz WAV through
+              // the media element makes the iPhone speaker buzz.
+              const clip = wavPcm(event.audio);
+              await player.start({ sampleRate: clip.sampleRate, channels: 1, encoding: "pcm_s16le" });
+              ready = controls.ready = true; lastProgressAt = Date.now(); options.onStatus?.("playing");
+              if (paused) player.pause();
+              await player.write(clip.pcm);
+              await player.finish();
               if (connection.readyState === 1) connection.send(JSON.stringify({ type: "file.done" }));
             }
             else if (event.type === "error") throw new Error(event.code || "voice_stream_failed");
@@ -215,8 +217,8 @@ export async function playAudioStream(options) {
     } finally {
       clearInterval(gapWatch);
       if (typeof document !== "undefined" && document.removeEventListener) document.removeEventListener("visibilitychange", noteVisibility);
-      if (controls.player === player) { controls.player = null; controls.connection = null; controls.file = null; controls.ready = false; }
-      player.stop(); file.stop(); connection.close();
+      if (controls.player === player) { controls.player = null; controls.connection = null; controls.ready = false; }
+      player.stop(); connection.close();
     }
   }
   throw lastError || new Error("voice_disconnected");
