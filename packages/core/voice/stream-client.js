@@ -121,7 +121,9 @@ export async function playAudioStream(options) {
     let noteVisibility = null;
     try {
     connection = await openAudioStream({ ...options, operation: "tts" });
-    if (!connection) throw new Error("voice_stream_failed");
+    // The host answered: this reply has no stream. That is not a dropped
+    // playback, so it is not retried and not reported as one.
+    if (!connection) throw Object.assign(new Error("voice_stream_failed"), { unsupported: true });
     let progressNoted = false, progressBlocked = false;
     let lastProgressAt = Date.now(), gapReported = false, gapAt = 0, formatNoted = false;
     let chain = Promise.resolve(), complete = false, ending = false, firstReceived = false, ready = false, segmentIndex = -1;
@@ -243,7 +245,7 @@ export async function playAudioStream(options) {
         skipFrames += player?.playedFrames() || 0;
         continue;
       }
-      if (error?.message !== "voice_cancelled") {
+      if (error?.message !== "voice_cancelled" && !error?.unsupported) {
         streamMetric(options, { stage: "playback_failed", code: error?.message || "voice_playback_failed", durationMs: Date.now() - started });
       }
       throw error;
