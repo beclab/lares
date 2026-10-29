@@ -92,6 +92,7 @@
       @hold-start="onHoldStart"
       @voice-action="onVoiceAction"
       @close-model="modelSheet = false"
+      @choose-permission="choosePermission"
       @choose-model="chooseModel"
       @close-effort="effortSheet = false"
       @choose-effort="chooseEffort"
@@ -102,6 +103,7 @@
       @pick-command="pickCommand"
       @toggle-speak="toggleSpeak"
       @dismiss-speak="speakNotice = ''"
+      @answer-approval="answerApproval"
     />
     <LaresVoicePanel v-if="voicePanelState" :view="voicePanelState" :t="t"
       @close="runVoicePanel('close')" @edit="voicePanel.edit($event)" @preset="voicePanel.selectPreset($event, true).catch(() => {})"
@@ -117,7 +119,7 @@ import { subscribeVoiceSettings } from "@olares/lares-core/larepass/settings";
 import { createVoicePanel } from "@olares/lares-core/voice/panel";
 import { mergeVoiceTranscript, subscribeVoiceHistory } from "@olares/lares-core/voice/projection";
 import LaresVoicePanel from "./chat/VoicePanel.vue";
-import { pickHostPorts } from "@olares/lares-core/larepass/host";
+import { pickHostPorts, isTransportFault } from "@olares/lares-core/larepass/host";
 import { connectChat } from "./runtime.js";
 import { createT } from "./i18n.js";
 import { failText, withPendingUser } from "./chat/format.js";
@@ -133,6 +135,7 @@ import { playAudioStream, createStreamingCapture } from "@olares/lares-core/voic
 import { voiceHeaders, wavBlob } from "@olares/lares-core/voice/client";
 import { browserPlays } from "@olares/lares-core/voice/playback";
 import { speakProblemText, speakToggleNotice } from "@olares/lares-core/voice/problem";
+import { voiceVisibleError } from "@olares/lares-core/voice/presentation";
 import { appendDraftMentions } from "@olares/lares-core/files/mention";
 import { FileIntake, partitionDocumentsBySize, splitComposerFiles } from "@olares/lares-core/files/intake";
 import {
@@ -154,6 +157,7 @@ import {
   effortSwitchSelection,
 } from "@olares/lares-core/router/session-model";
 import { messageFromCode } from "@olares/lares-core/i18n/t";
+import { presentApproval } from "@olares/lares-core/larepass/approval";
 import { parseAskUserQuestions, singleSelectAnswer } from "@olares/lares-core/larepass/questions";
 import { applyCommand } from "@olares/lares-core/larepass/commands";
 import { permissionOption, presetDescription, presetLabel } from "@olares/lares-core/larepass/permissions";
@@ -594,7 +598,7 @@ export default {
     this.voicePanelUnsub = this.voicePanel.subscribe(() => {
       const view = this.voicePanel.getSnapshot(); this.voicePanelState = view;
       this.voiceCall = view.snapshot?.connection === "closed" ? null : view.snapshot;
-      this.voicePhase = view.snapshot?.capture || "idle"; this.voiceError = view.error || view.snapshot?.error || "";
+      this.voicePhase = view.snapshot?.capture || "idle"; this.voiceError = voiceVisibleError(view) || "";
       // The call no longer owns the answer: a cancelled take gives it back.
       if (this.voiceSuspended && view.snapshot?.connection !== "open") this.resumeSuspendedReadout();
     });
@@ -636,7 +640,7 @@ export default {
       if (document.hidden) {
         // A locked screen or an app switch is a pause, not the end of the
         // answer: stopping here marks the utterance read and it never resumes.
-        if (this.reader.canPause && this.reader.pause()) this.voiceReadoutPaused = true;
+        if (this.reader.pause()) this.voiceReadoutPaused = true;
         void this.voicePanel.pause().catch(() => {});
         return;
       }
@@ -644,13 +648,13 @@ export default {
       if (this.voiceReadoutPaused) { this.voiceReadoutPaused = false; this.reader.resume(); }
     };
     this.voicePageHideHandler = () => {
-      if (this.reader.canPause && this.reader.pause()) this.voiceReadoutPaused = true;
+      if (this.reader.pause()) this.voiceReadoutPaused = true;
       void this.voicePanel.pause().catch(() => {});
     };
     this.voicePageShowHandler = () => {
       if (this.voiceReadoutPaused) { this.voiceReadoutPaused = false; this.reader.resume(); }
     };
-    this.voiceOfflineHandler = () => { this.stopReadout(); void this.voicePanel.pause().catch(() => {}); };
+    this.voiceOfflineHandler = () => { void this.voicePanel.pause().catch(() => {}); };
     window.addEventListener("offline", this.voiceOfflineHandler);
     document.addEventListener("visibilitychange", this.voiceVisibilityHandler);
     window.addEventListener("pagehide", this.voicePageHideHandler);
@@ -785,7 +789,7 @@ export default {
       this.queue = snap.queue ?? [];
       this.question = snap.question || null;
       if (!this.question) this.questionBusy = false;
-      this.approval = snap.approval || null;
+      this.approval = presentApproval(snap.approval, snap.items, this.locale);
       if (!this.approval) this.approvalBusy = false;
       if (this.pendingUser && snap.items.some((row) => row.type === "user" && row.text === this.pendingUser)) {
         this.pendingUser = "";
@@ -1327,20 +1331,27 @@ export default {
       const view = this.voicePanel.getSnapshot();
       if (view.busy) return;
       if (view.visible && view.mode === "single") { if (view.snapshot?.capture === "recording") await this.voicePanel.finish().catch(() => {}); return; }
-      await this.voicePanel.pause().catch(() => {});
       await this.voicePanel.open({ mode: "single", sessionId: this.sessionId || null, preset: preset && preset !== "default" ? preset : undefined, configSnapshot: this.voiceSettings.config }).catch(() => {});
     },
-    async onHoldStart() {
+    onHoldStart() {
       this.voicePanel.arm();
       if (this.voicePanelState?.mode === "single" && this.voicePanelState.raw) {
-        await this.voicePanel.open({ mode: "single", sessionId: this.sessionId || null });
-        return;
+        return this.voicePanel.open({ mode: "single", sessionId: this.sessionId || null });
       }
-      const settings = await this.runtime.settings.voice(false, { diagnostics: false });
+      const settings = this.voiceSettings;
+      if (!settings) return this.openVoiceFromSettings();
       this.voiceDefaultMode = settings.config.mobileMode;
       const available = laresVoiceAvailability(settings, !this.modelBlocked);
       if (!(this.voiceDefaultMode === "single" ? available.dictation : available.conversation)) { this.voiceError = "voice_model_unavailable"; return; }
-      await this.voicePanel.open({ mode: this.voiceDefaultMode, sessionId: this.sessionId || null });
+      return this.voicePanel.open({ mode: this.voiceDefaultMode, sessionId: this.sessionId || null, configSnapshot: settings.config });
+    },
+    async openVoiceFromSettings() {
+      const settings = await this.runtime.settings.voice(false, { diagnostics: false });
+      this.voiceSettings = markRaw(settings);
+      this.voiceDefaultMode = settings.config.mobileMode;
+      const available = laresVoiceAvailability(settings, !this.modelBlocked);
+      if (!(this.voiceDefaultMode === "single" ? available.dictation : available.conversation)) { this.voiceError = "voice_model_unavailable"; return; }
+      return this.voicePanel.open({ mode: this.voiceDefaultMode, sessionId: this.sessionId || null, configSnapshot: settings.config });
     },
     onVoiceAction({ action, value }) {
       if (action === "start" || action === "end" || action === "close") this.speakNotice = "";
@@ -1350,7 +1361,7 @@ export default {
       if (["holdStart", "holdEnd", "finish", "start", "close", "end"].includes(action)) void Promise.resolve(this.voicePanel[action](value)).catch(() => {});
     },
     runVoicePanel(action) { void this.voicePanel[action]().catch(() => {}); },
-    async createMobileVoiceConversation({ mode, onTranscript, onDevice, config }) {
+    async createMobileVoiceConversation({ mode, onTranscript, onDevice, config, preparation }) {
       config = laresVoiceConfig(config, mode);
       const settings = { config };
       const continuous = mode === "continuous";
@@ -1362,7 +1373,7 @@ export default {
         return createUnifiedConversation({ request: (path, options) => this.runtime.voiceRequest(path, options), socket: (ticket) => this.runtime.voiceSocket(ticket),
           device: captureSource("mobile", config.device), readAloud: continuous && config.speak, preset: config.preset, presentationSession: true,
           endpointSilenceMs: config.endpointSilenceMs, idleTimeoutMs: config.idleTimeoutMs, recoveryTimeoutMs: config.recoveryTimeoutMs,
-          onTranscript: continuous ? null : onTranscript, mode: () => resolveSubmitMode(this.running, false, true, this.busyEnter),
+          onTranscript: continuous ? null : onTranscript, mode: () => resolveSubmitMode(this.running, false, true, this.busyEnter), preparation,
           transcribe: (blob, signal) => this.runtime.transcribe(blob, config.language, signal, config.model) });
       }
       let conversation;
@@ -1384,7 +1395,7 @@ export default {
         readAloud: continuous && settings.config.speak,
         preset: settings.config.preset, backend: settings.config.backend, endpointSilenceMs: settings.config.endpointSilenceMs, idleTimeoutMs: settings.config.idleTimeoutMs, recoveryTimeoutMs: settings.config.recoveryTimeoutMs,
         presentationSession: true,
-        onTranscript: continuous ? null : onTranscript,
+        onTranscript: continuous ? null : onTranscript, preparation,
         mode: () => resolveSubmitMode(this.running, false, true, this.busyEnter),
         playback: { get canPause() { return reader.canPause; }, get key() { return reader.key; }, pause: () => reader.pause(), resume: () => reader.resume(), stop: () => { reader.stop(); this.player.stop(); } },
         onReply: (reply) => { const value = speakable(reply, config.streaming === true); if (value) reader.follow(value); },
@@ -1642,7 +1653,8 @@ export default {
             this.draft = text;
             this.draftImages = images;
           }
-          this.failed = sent.error?.message || sent.error?.code || "send";
+          const fault = sent.error?.message || sent.error?.code || "send";
+          if (!isTransportFault(fault)) this.failed = fault;
         } else {
           for (const image of images) URL.revokeObjectURL(image.previewUrl);
         }
@@ -1654,7 +1666,8 @@ export default {
           this.draft = text;
           this.draftImages = images;
         }
-        this.failed = err instanceof Error ? err.message : "attachment";
+        const fault = err instanceof Error ? err.message : "attachment";
+        if (!isTransportFault(fault)) this.failed = fault;
       } finally {
         this.sending = false;
       }
@@ -1685,7 +1698,8 @@ export default {
       try {
         const stopped = await this.runtime.cancel();
         if (!stopped.ok) {
-          this.failed = stopped.error?.message || stopped.error?.code || "cancel";
+          const fault = stopped.error?.message || stopped.error?.code || "cancel";
+          if (!isTransportFault(fault)) this.failed = fault;
         }
       } finally {
         this.stopping = false;

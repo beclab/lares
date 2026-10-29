@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createSpeechEndpoint, frameRms } from "@olares/lares-core/voice/endpoint";
+import { createNoiseGate, createSpeechEndpoint, frameRms } from "@olares/lares-core/voice/endpoint";
 
 const FRAME = 32;
 
@@ -75,4 +75,31 @@ test("a noisy room does not count as speech, and quiet speech still ends the tak
   for (let i = 0; i < 8; i += 1) audio.feed(0.01);
   assert.equal(ended, 1);
   endpoint.stop();
+});
+
+test("a floor learned from a loud empty take fades once the room quietens", () => {
+  const gate = createNoiseGate();
+  gate.learn([0.03, 0.03, 0.05, 0.03]);
+  // The room's loud moments, with margin, are not a voice.
+  assert.equal(gate.voiced(0.05, false, 40), false);
+  assert.equal(gate.voiced(0.07, false, 40), true);
+  // Two quiet minutes later a quiet speaker is heard again.
+  for (let i = 0; i < 3000; i++) gate.voiced(0.001, false, 40);
+  assert.equal(gate.voiced(0.01, false, 40), true);
+});
+
+test("a take whose voice never reaches a phrase is abandoned after the silence, not held", () => {
+  const knock = createSpeechEndpoint({ silenceMs: 500 });
+  for (let i = 0; i < 3; i++) assert.equal(knock.push(1, 0.2, 32), false); // 96 ms of voice
+  for (let i = 0; i < 15; i++) knock.push(0, 0.01, 32);
+  assert.equal(knock.abandoned(), false);
+  knock.push(0, 0.01, 32); // 512 ms of quiet
+  assert.equal(knock.abandoned(), true);
+  // A phrase ends the normal way and is never abandoned.
+  const phrase = createSpeechEndpoint({ silenceMs: 500 });
+  for (let i = 0; i < 20; i++) phrase.push(1, 0.2, 32);
+  let ended = false;
+  for (let i = 0; i < 20 && !ended; i++) ended = phrase.push(0, 0.01, 32);
+  assert.equal(ended, true);
+  assert.equal(phrase.abandoned(), false);
 });

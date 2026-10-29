@@ -1,6 +1,35 @@
-# Lares voice session handoff — 2026-10-19
+# Lares voice session handoff — 2026-10-25
 
-## Latest continuation — 2026-10-19
+## Device voice (Reachy Mini through Router) — 2026-10-25
+
+Continue on `feat/ha-connection-leaked-tool-call` (PR 67). Lares 0.26.83 is
+running on pptest03 and the robot ran end to end on 2026-10-25: it speaks about
+1–2 s after a request, and a light switches in 4–8 s with 2–3 Agent calls once
+the HA skill is loaded. What it does, what was learned getting there, the
+measured timings and how to test it are in
+[voice-runtime](voice-runtime.md#device-voice-through-router-reachy-mini-on-pptest03-2026-102425).
+
+| On pptest03 | Version | Note |
+| --- | --- | --- |
+| Lares | 0.26.83 (upload source) | Silero device gate, echo word check, settled-words and short-take endpoints, streamed device speech, hass-cli 0.0.3 |
+| reachymini | 0.1.8 (upload source) | `lares` dialect, ReSpeaker USB access, camera stills as YCbCr JPEG (tag v0.1.8) |
+| hass-cli | 0.0.3 (npm) | one skill per request with its own quick control; short descriptions (beclab/hass-cli#2) |
+| Qwen3-ASR 0.6B | 1.0.2 (market.test) | engine v1.1.33, `ENGINE_MAX_CONCURRENCY=3`; the one in use |
+| Qwen3-ASR 1.7B | 1.0.30 (market.test) | stopped: no card with 12 Gi free |
+| sglang Qwen3.5-9B | 1.0.4 (market.test) | thinking off at launch; the dialogue and the Agent both use it |
+
+Next, by expected gain: find why the Agent's first call misses sglang's cache
+after a minute between tasks (diff two captured requests), give voice tasks a
+dsh preset with about ten tools, and give the Home Assistant lights Chinese
+friendly names (an HA setting, not code). ASR's language is unset in voice
+settings, so Qwen3-ASR sometimes writes Chinese in Traditional characters and
+the dialogue follows; not changed. Full suite: 1130 pass; the two known failures
+(`actual dsh adapter sends Router identifiers…`, `actual session catalog waits
+for default initialization…`) predate this work. Do not run the voice eval while
+someone tests the robot: it shares sglang and TTS and doubled every latency in
+one test.
+
+## Continuation — 2026-10-19
 
 This section supersedes the historical closeout below. Continue on
 `codex/voice-startup-latency`; current product revision is `c14e8bc`.

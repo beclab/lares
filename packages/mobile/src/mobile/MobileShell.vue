@@ -130,13 +130,23 @@
             @answer="forwardAnswer"
           />
           <LaresDesktopQueue
+            tone="mobile"
             :items="state.queue"
             :running="state.running"
             :busy="state.queueBusy"
             :t="t"
             @action="(itemId, action) => $emit('queue-action', itemId, action)"
           />
+          <div v-if="state.approval" class="lares-mobile-shell__approval">
+            <LaresApprovalCard
+              :approval="state.approval"
+              :busy="state.approvalBusy"
+              :t="t"
+              @answer="$emit('answer-approval', $event)"
+            />
+          </div>
           <LaresComposer
+            v-else
             ref="composer"
             :draft="state.draft"
             :sending="state.sending"
@@ -202,6 +212,33 @@
           @click="$emit('choose-effort', row.id)"
         />
       </template>
+      <template v-if="state.permissionRows.length">
+        <p class="lares-shell__heading">{{ t("permission.title") }}</p>
+        <LaresSettingRow
+          v-for="row in state.permissionRows"
+          :key="row.value"
+          :label="row.label"
+          :hint="row.hint"
+          :checked="row.value === state.permissionCurrent"
+          :disabled="state.permissionBusy"
+          @click="pickPermission(row.value)"
+        />
+        <div v-if="accessConfirm" class="lares-shell__access">
+          <p>{{ t("access.confirm.description") }}</p>
+          <label>
+            <input v-model="accessAcknowledged" type="checkbox" />
+            <span>{{ t("access.confirm.acknowledge") }}</span>
+          </label>
+          <div class="lares-shell__access-actions">
+            <button type="button" @click="cancelAccess">{{ t("access.confirm.cancel") }}</button>
+            <button
+              type="button"
+              :disabled="!accessAcknowledged || state.permissionBusy"
+              @click="confirmAccess"
+            >{{ t("access.confirm.enable") }}</button>
+          </div>
+        </div>
+      </template>
       <template #footer>
         <button type="button" class="lares-shell__refresh" @click="state.refreshModels()">{{ t('agent.refresh') }}</button>
       </template>
@@ -231,6 +268,7 @@
 import LaresChatBar from "../chat/ChatBar.vue";
 import LaresHistoryPanel from "../chat/HistoryPanel.vue";
 import LaresTranscript from "../chat/Transcript.vue";
+import LaresApprovalCard from "../chat/ApprovalCard.vue";
 import LaresComposer from "../chat/Composer.vue";
 import LaresDesktopQueue from "../desktop/DesktopQueue.vue";
 import LaresPreview from "../preview/Preview.vue";
@@ -245,6 +283,7 @@ export default {
     LaresChatBar,
     LaresHistoryPanel,
     LaresTranscript,
+    LaresApprovalCard,
     LaresComposer,
     LaresDesktopQueue,
     LaresPreview,
@@ -266,9 +305,9 @@ export default {
   },
   emits: [
     "history", "create", "toggle-speak", "close-history", "pick-session", "retry", "open-file",
-    "answer", "update-draft", "send", "queue-action", "open-model", "open-effort", "files",
+    "answer", "answer-approval", "update-draft", "send", "queue-action", "open-model", "open-effort", "files",
     "voice", "voice-action", "hold-start", "hold-end", "close-model", "choose-model",
-    "close-effort", "choose-effort", "close-preview",
+    "close-effort", "choose-effort", "choose-permission", "close-preview",
     "open-commands", "open-references", "pick-command", "remove-image",
     "refresh-workspaces", "browse-workspaces", "browse-directory",
     "close-directory", "choose-directory", "create-folder", "toggle-hidden",
@@ -277,7 +316,12 @@ export default {
     "dismiss-speak",
   ],
   data() {
-    return { composerMode: "text" };
+    return { composerMode: "text", accessConfirm: false, accessAcknowledged: false };
+  },
+  watch: {
+    "state.modelSheet"(open) {
+      if (!open) this.cancelAccess();
+    },
   },
   computed: {
     newSessionHero() {
@@ -295,6 +339,25 @@ export default {
     },
   },
   methods: {
+    pickPermission(value) {
+      if (!value || value === this.state.permissionCurrent || this.state.permissionBusy) return;
+      if (value === "danger-full-access") {
+        this.accessAcknowledged = false;
+        this.accessConfirm = true;
+        return;
+      }
+      this.cancelAccess();
+      this.$emit("choose-permission", value);
+    },
+    cancelAccess() {
+      this.accessConfirm = false;
+      this.accessAcknowledged = false;
+    },
+    confirmAccess() {
+      if (!this.accessAcknowledged || this.state.permissionBusy) return;
+      this.cancelAccess();
+      this.$emit("choose-permission", "danger-full-access");
+    },
     forwardAnswer(label, row) {
       this.$emit("answer", label, row);
     },
@@ -333,6 +396,11 @@ export default {
   min-height: 0;
   flex: 1;
   flex-direction: column;
+}
+
+.lares-mobile-shell__approval {
+  flex: none;
+  margin: 0 16px 12px;
 }
 
 .lares-shell__status,
@@ -416,5 +484,61 @@ export default {
   font-size: 14px;
   font-weight: 500;
   line-height: 18px;
+}
+
+.lares-shell__access {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 8px 16px 16px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--q-background-3);
+  color: var(--q-ink-2);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.lares-shell__access p {
+  margin: 0;
+}
+
+.lares-shell__access label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.lares-shell__access input {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  margin: 1px 0 0;
+}
+
+.lares-shell__access-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.lares-shell__access-actions button {
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: transparent;
+  color: var(--q-ink-2);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.lares-shell__access-actions button:last-child {
+  background: var(--q-blue-alpha);
+  color: var(--q-blue-default);
+}
+
+.lares-shell__access-actions button:disabled {
+  opacity: 0.45;
 }
 </style>

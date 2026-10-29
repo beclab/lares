@@ -327,8 +327,20 @@ export function createSentencePlayer({ send, play, halt, silence, fail = () => {
     },
     get key() { return current?.key; },
     get canPause() { return current?.controls?.canPause === true; },
-    pause() { if (!current?.controls?.canPause) return false; current.controls.pause(); emitOutput({ key: current.key, status: "confirming" }); return true; },
-    resume() { if (!current?.controls?.canPause) return false; current.controls.resume(); emitOutput({ key: current.key, status: "playing" }); return true; },
+    pause() {
+      if (!current?.controls) return false;
+      // The socket may be down between attempts. The pause still has to stick,
+      // or the replacement socket starts playing under a locked screen.
+      current.controls.pause();
+      emitOutput({ key: current.key, status: "confirming" });
+      return true;
+    },
+    resume() {
+      if (!current?.controls) return false;
+      current.controls.resume();
+      emitOutput({ key: current.key, status: "playing" });
+      return true;
+    },
     /**
      * Stop the current audio without marking the answer read. A voice take
      * that is cancelled must be able to bring the same answer back; a take

@@ -30,6 +30,17 @@ test("PCM playback resampling is independent of transport chunk boundaries", () 
   }
 });
 
+test("mono speech is written to every output channel", () => {
+  const { worker, send } = player(24000, 48000);
+  send({ type: "audio", samples: Float32Array.of(0.25, -0.5) });
+  const left = new Float32Array(4);
+  const right = new Float32Array(4);
+  worker.process([], [[left, right]]);
+  for (let i = 0; i < left.length; i += 1) assert.ok(Math.abs(left[i] - right[i]) < 1e-6);
+  assert.ok(Math.abs(left[0] - 0.25) < 1e-6);
+  assert.ok(Math.abs(right[0] - 0.25) < 1e-6);
+});
+
 test("a late neighboring sample pauses interpolation without consuming or repeating it", () => {
   const { worker, events, send } = player(24000, 48000);
   send({ type: "audio", samples: Float32Array.of(.1) });
@@ -61,6 +72,19 @@ test("playback holds the first samples until a short buffer arrives, then plays 
   assert.ok(Math.abs(out[1] - 0.3) < 1e-6);
 });
 
+test("playback keeps a long buffer instead of treating it as overflow", () => {
+  const { worker, events, send } = player(24000, 48000);
+  const total = 24000 * 6;
+  for (let at = 0; at < total; at += 2400) send({ type: "audio", samples: new Float32Array(Math.min(2400, total - at)) });
+  assert.equal(events.some((event) => event.type === "error"), false);
+  send({ type: "finish" });
+  let active = true;
+  for (let i = 0; active && i < 20000; i++) active = worker.process([], [[new Float32Array(128)]]);
+  assert.equal(active, false);
+  assert.equal(events.at(-1).type, "done");
+  assert.equal(events.findLast((event) => event.type === "progress").frames, total);
+});
+
 test("a finished utterance shorter than the buffer still plays at the source clock", () => {
   const { worker, send } = player(24000, 48000, { preroll: 4800 });
   send({ type: "audio", samples: Float32Array.of(0.5) });
@@ -71,6 +95,54 @@ test("a finished utterance shorter than the buffer still plays at the source clo
   assert.ok(Math.abs(out[1] - 0.5) < 1e-6);
 });
 
+
+test("a long reply waits for the speaker instead of failing when the queue is full", async () => {
+  const { createPcmStreamPlayer, PLAYBACK_QUEUE_SECONDS } = await import("@olares/lares-core/voice/pcm-player");
+  const original = (globalThis as any).AudioWorkletNode;
+  const posted: number[] = [];
+  let node: { port: { onmessage: ((event: { data: { type: string, frames?: number } }) => void) | null } } | null = null;
+  class Context {
+    state = "running";
+    destination = {};
+    audioWorklet = { addModule: async () => {} };
+    async resume() {}
+    async close() { this.state = "closed"; }
+  }
+  class Node {
+    port = {
+      onmessage: null as ((event: { data: { type: string, frames?: number } }) => void) | null,
+      postMessage: (data: { type: string, samples?: Float32Array }) => { if (data.type === "audio" && data.samples) posted.push(data.samples.length); },
+    };
+    connect() {}
+    disconnect() {}
+    constructor() { node = this; }
+  }
+  (globalThis as any).AudioWorkletNode = Node;
+  const player = createPcmStreamPlayer({ context: Context });
+  const rate = 24000;
+  const budget = rate * PLAYBACK_QUEUE_SECONDS;
+  try {
+    await player.start({ sampleRate: rate, channels: 1, encoding: "pcm_s16le" });
+    const writing = player.write(new Uint8Array(rate * 2 * (PLAYBACK_QUEUE_SECONDS + 2)));
+    await Promise.resolve();
+    assert.equal(posted.reduce((sum, count) => sum + count, 0), budget);
+    let settled = false;
+    writing.then(() => { settled = true; }, () => { settled = true; });
+    await Promise.resolve();
+    assert.equal(settled, false);
+    node?.port.onmessage?.({ data: { type: "progress", frames: rate * 2 } });
+    await writing;
+    assert.equal(posted.reduce((sum, count) => sum + count, 0), rate * (PLAYBACK_QUEUE_SECONDS + 2));
+    const extra = player.write(new Uint8Array(2));
+    await Promise.resolve();
+    player.stop();
+    await assert.rejects(extra, /voice_cancelled/);
+  } finally {
+    player.stop();
+    if (original === undefined) delete (globalThis as any).AudioWorkletNode;
+    else (globalThis as any).AudioWorkletNode = original;
+  }
+});
 
 test("browser PCM writes preserve odd-byte packet boundaries and release the context", async () => {
   const { createPcmStreamPlayer } = await import("@olares/lares-core/voice/pcm-player");

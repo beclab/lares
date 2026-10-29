@@ -2,8 +2,9 @@ import { postReport } from "../log/report.js";
 import { PCM_CAPTURE_WORKLET } from "./pcm-worklet.js";
 import { createPcmResampler } from "./realtime-audio.js";
 import { createPcmStreamPlayer } from "./pcm-player.js";
-import { wavBlob } from "./client.js";
-import { createBrowserPlayer } from "./browser-playback.js";
+import { wavPcm } from "./client.js";
+import { browserAudioErrorCode, requireAudioWorklet } from "./browser-audio.js";
+import { isTransportFault } from "../larepass/host.js";
 
 export function browserAudioSocket(ticket) {
   const url = new URL("/api/lares/voice/stream", globalThis.location.href); url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
@@ -45,18 +46,45 @@ function clientFacts() {
   };
 }
 
-const RECONNECT_ATTEMPTS = 3;
 const RECONNECT_DELAY_MS = 400;
+const RECONNECT_DELAY_CAP_MS = 5_000;
 
-/** A phone can lose the socket (lock screen, app switch, Wi-Fi/cellular) mid-answer. */
+/**
+ * A phone loses the socket or the next ticket request together (lock screen,
+ * app switch, Wi-Fi/cellular). Either one is the same blip. The caller aborting
+ * is what ends the answer; a fixed handful of retries is shorter than the blip.
+ */
 function reconnectable(error) {
-  const code = error?.message;
-  return code === "voice_disconnected";
+  return error?.message === "voice_disconnected" || isTransportFault(error);
+}
+
+function waitToReconnect(signal, delay) {
+  return new Promise((resolve) => {
+    let timer = 0;
+    const finish = () => {
+      clearTimeout(timer);
+      if (typeof document !== "undefined") document.removeEventListener("visibilitychange", onVisible);
+      signal?.removeEventListener("abort", finish);
+      resolve();
+    };
+    const onVisible = () => { if (!document.hidden) finish(); };
+    signal?.addEventListener("abort", finish, { once: true });
+    // Dialing while the WebView is frozen only fails again. Wait until it is back,
+    // then give the radio a moment.
+    if (typeof document !== "undefined" && document.hidden) {
+      document.addEventListener("visibilitychange", onVisible);
+      return;
+    }
+    timer = setTimeout(finish, delay);
+  });
 }
 
 export async function playAudioStream(options) {
   const started = Date.now();
-  const attempts = Math.max(1, Number(options.reconnectAttempts) || RECONNECT_ATTEMPTS);
+  // A caller can cap attempts. Otherwise the answer stays open until it finishes
+  // or the caller aborts: a lock-screen blip outlasts a few quick retries.
+  const capped = Number.isFinite(Number(options.reconnectAttempts));
+  const attempts = capped ? Math.max(1, Number(options.reconnectAttempts)) : Infinity;
   const reconnectDelay = Number.isFinite(options.reconnectDelayMs) ? Math.max(0, options.reconnectDelayMs) : RECONNECT_DELAY_MS;
   // Frames already rendered before the current socket. A reconnected socket
   // replays the answer from its first segment; dropping this prefix keeps the
@@ -64,18 +92,17 @@ export async function playAudioStream(options) {
   let skipFrames = 0;
   let lastError = null;
   let paused = false;
-  const controls = { player: null, connection: null, file: null, ready: false };
+  const controls = { player: null, connection: null, ready: false };
   options.controls?.({
     get canPause() { return controls.ready; },
     pause() {
-      if (!controls.ready || paused) return;
-      paused = true; controls.player?.pause(); controls.file?.pause();
+      if (paused) return;
+      paused = true; controls.player?.pause();
       if (controls.connection?.readyState === 1) controls.connection.send(JSON.stringify({ type: "pause" }));
     },
     resume() {
-      if (!controls.ready || !paused) return;
+      if (!paused) return;
       paused = false; controls.player?.resume();
-      void controls.file?.resume()?.catch?.(() => controls.connection?.close());
       if (controls.connection?.readyState === 1) controls.connection.send(JSON.stringify({ type: "resume" }));
     },
   });
@@ -84,12 +111,19 @@ export async function playAudioStream(options) {
     if (attempt > 0) {
       if (options.signal?.aborted) throw new Error("voice_cancelled");
       streamMetric(options, { stage: "playback_reconnect", attempt, skipFrames, code: lastError?.message || "voice_disconnected", ...clientFacts() });
-      await new Promise((resolve) => setTimeout(resolve, reconnectDelay));
+      const delay = Math.min(reconnectDelay * 2 ** Math.min(attempt - 1, 4), RECONNECT_DELAY_CAP_MS);
+      await waitToReconnect(options.signal, delay);
       if (options.signal?.aborted) throw new Error("voice_cancelled");
     }
-    const connection = await openAudioStream({ ...options, operation: "tts" });
-    if (!connection) throw new Error("voice_stream_failed");
-    const file = createBrowserPlayer();
+    let connection = null;
+    let player = null;
+    let gapWatch = null;
+    let noteVisibility = null;
+    try {
+    connection = await openAudioStream({ ...options, operation: "tts" });
+    // The host answered: this reply has no stream. That is not a dropped
+    // playback, so it is not retried and not reported as one.
+    if (!connection) throw Object.assign(new Error("voice_stream_failed"), { unsupported: true });
     let progressNoted = false, progressBlocked = false;
     let lastProgressAt = Date.now(), gapReported = false, gapAt = 0, formatNoted = false;
     let chain = Promise.resolve(), complete = false, ending = false, firstReceived = false, ready = false, segmentIndex = -1;
@@ -99,7 +133,7 @@ export async function playAudioStream(options) {
     let skipBytes = skipFrames * 2;
     let skippedFrames = 0;
     let skipAckAt = 0;
-    const player = createPcmStreamPlayer({
+    player = createPcmStreamPlayer({
       onProgress: (frames) => {
         lastProgressAt = Date.now();
         if (gapReported) { gapReported = false; streamMetric(options, { stage: "playback_gap_end", frames: skipFrames + frames, gapMs: Date.now() - gapAt, ...clientFacts(), context: player.contextState() }); }
@@ -112,7 +146,6 @@ export async function playAudioStream(options) {
     });
     controls.player = player;
     controls.connection = connection;
-    controls.file = file;
     controls.ready = false;
     const ack = (frames) => {
       if (connection.readyState !== 1) {
@@ -126,7 +159,7 @@ export async function playAudioStream(options) {
       }
       if (!progressNoted) { progressNoted = true; streamMetric(options, { stage: "playback_progress_sent", frames }); }
     };
-    const writeAudio = (bytes) => {
+    const writeAudio = async (bytes) => {
       let chunk = bytes;
       if (skipBytes > 0) {
         const drop = Math.min(skipBytes, chunk.length);
@@ -136,20 +169,19 @@ export async function playAudioStream(options) {
         chunk = chunk.subarray(drop);
         if (!chunk.length) return;
       }
-      player.write(chunk);
+      await player.write(chunk);
     };
-    const gapWatch = setInterval(() => {
+    gapWatch = setInterval(() => {
       if (!ready || paused || complete || gapReported || Date.now() - lastProgressAt < 4000) return;
       gapReported = true;
       gapAt = lastProgressAt;
       streamMetric(options, { stage: "playback_gap", gapMs: Date.now() - lastProgressAt, frames: skipFrames + player.playedFrames(), ...clientFacts(), context: player.contextState(), sampleRate: player.sampleRate() });
     }, 1000);
     gapWatch.unref?.();
-    const noteVisibility = () => {
+    noteVisibility = () => {
       if (ready && !complete) streamMetric(options, { stage: "playback_visibility", frames: skipFrames + player.playedFrames(), paused, ...clientFacts(), context: player.contextState() });
     };
     if (typeof document !== "undefined" && document.addEventListener) document.addEventListener("visibilitychange", noteVisibility);
-    try {
       await new Promise((resolve, reject) => {
         let logged = false;
         const fail = (error) => {
@@ -157,7 +189,7 @@ export async function playAudioStream(options) {
           logged = true;
           reject(error);
         };
-        const cancelled = () => { player.stop(); file.stop(); fail(new Error("voice_cancelled")); };
+        const cancelled = () => { player.stop(); fail(new Error("voice_cancelled")); };
         options.signal?.addEventListener("abort", cancelled, { once: true });
         connection.addEventListener("message", ({ data }) => {
           if (typeof data !== "string" && !firstReceived) { firstReceived = true; streamMetric(options, { stage: "playback_first_received", durationMs: Date.now() - started }); }
@@ -168,7 +200,7 @@ export async function playAudioStream(options) {
           }
           chain = chain.then(async () => {
             if (options.signal?.aborted) throw new Error("voice_cancelled");
-            if (typeof data !== "string") { writeAudio(new Uint8Array(data)); return; }
+            if (typeof data !== "string") { await writeAudio(new Uint8Array(data)); return; }
             if (event.type === "segment") {
               if (event.index !== segmentIndex + 1) throw new Error("voice_reply_sequence");
               segmentIndex = event.index;
@@ -184,8 +216,14 @@ export async function playAudioStream(options) {
             }
             else if (event.type === "file") {
               // A whole-file answer cannot be offset-skipped; a reconnect plays it again.
-              ready = controls.ready = true; options.onStatus?.("playing");
-              await file.play(wavBlob(event.audio));
+              // Render it on the same clock as streamed PCM. A 24 kHz WAV through
+              // the media element makes the iPhone speaker buzz.
+              const clip = wavPcm(event.audio);
+              await player.start({ sampleRate: clip.sampleRate, channels: 1, encoding: "pcm_s16le" });
+              ready = controls.ready = true; lastProgressAt = Date.now(); options.onStatus?.("playing");
+              if (paused) player.pause();
+              await player.write(clip.pcm);
+              await player.finish();
               if (connection.readyState === 1) connection.send(JSON.stringify({ type: "file.done" }));
             }
             else if (event.type === "error") throw new Error(event.code || "voice_stream_failed");
@@ -204,18 +242,18 @@ export async function playAudioStream(options) {
     } catch (error) {
       lastError = error;
       if (reconnectable(error) && attempt < attempts - 1) {
-        skipFrames += player.playedFrames();
+        skipFrames += player?.playedFrames() || 0;
         continue;
       }
-      if (error?.message !== "voice_cancelled") {
+      if (error?.message !== "voice_cancelled" && !error?.unsupported) {
         streamMetric(options, { stage: "playback_failed", code: error?.message || "voice_playback_failed", durationMs: Date.now() - started });
       }
       throw error;
     } finally {
       clearInterval(gapWatch);
-      if (typeof document !== "undefined" && document.removeEventListener) document.removeEventListener("visibilitychange", noteVisibility);
-      if (controls.player === player) { controls.player = null; controls.connection = null; controls.file = null; controls.ready = false; }
-      player.stop(); file.stop(); connection.close();
+      if (noteVisibility && typeof document !== "undefined" && document.removeEventListener) document.removeEventListener("visibilitychange", noteVisibility);
+      if (player && controls.player === player) { controls.player = null; controls.connection = null; controls.ready = false; }
+      player?.stop(); connection?.close();
     }
   }
   throw lastError || new Error("voice_disconnected");
@@ -287,7 +325,9 @@ export async function createStreamingCapture(stream, options) {
   };
   try {
     const Context = globalThis.AudioContext || globalThis.webkitAudioContext;
+    if (!Context || globalThis.isSecureContext === false) throw new Error(browserAudioErrorCode());
     context = new Context();
+    requireAudioWorklet(context);
     const url = URL.createObjectURL(new Blob([PCM_CAPTURE_WORKLET], { type: "text/javascript" }));
     try { await context.audioWorklet.addModule(url); await context.resume(); } finally { URL.revokeObjectURL(url); }
     if (options.signal?.aborted) throw new Error("voice_cancelled");

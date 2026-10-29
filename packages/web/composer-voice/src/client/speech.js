@@ -88,11 +88,11 @@ export function SpeechPlayer({ sessionId, conversation, suspended = false }) {
     // of marking it read, and the resume runs when the page is back.
     const hidden = () => {
       if (!document.hidden) { if (paused.current) { paused.current = false; reader.current.resume(); } return; }
-      if (reader.current.canPause && reader.current.pause()) paused.current = true;
+      if (reader.current.pause()) paused.current = true;
     };
     const escape = event => { if (event.key === "Escape" && !event.defaultPrevented && !event.target?.closest?.("[data-voice-shortcut-recorder]")) stop(); };
-    document.addEventListener("visibilitychange", hidden); globalThis.addEventListener("offline", stop); globalThis.addEventListener("keydown", escape);
-    return () => { document.removeEventListener("visibilitychange", hidden); globalThis.removeEventListener("offline", stop); globalThis.removeEventListener("keydown", escape); };
+    document.addEventListener("visibilitychange", hidden); globalThis.addEventListener("keydown", escape);
+    return () => { document.removeEventListener("visibilitychange", hidden); globalThis.removeEventListener("keydown", escape); };
   }, []);
 
   useEffect(() => {

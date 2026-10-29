@@ -1,5 +1,5 @@
 import { createInterruptionGuard } from "./interruption.js";
-import { isTransientVoiceError, voiceErrorCode } from "./errors.js";
+import { isQuietVoiceEnding, isRecoverableTakeFault, isTransientVoiceError, voiceErrorCode } from "./errors.js";
 import { mintRpcId } from "../larepass/rpc.js";
 
 /** Device, agent and playback ports are injected; UI frameworks own no turn state. */
@@ -14,7 +14,6 @@ export function createVoiceController({ input, agent, output, voiceId = mintRpcI
   const expire = async (code) => {
     await controller.disconnect();
     await onExpired(code);
-    change({ error: code });
   };
   const touch = () => {
     unschedule(idleTimer);
@@ -50,6 +49,15 @@ export function createVoiceController({ input, agent, output, voiceId = mintRpcI
   const interruption = createInterruptionGuard({ output, now, schedule, unschedule,
     onState: playback => change({ playback }), onError: error => change({ error }) });
   const interruptible = () => state.continuous && !manualTurns && input.capabilities?.bargeIn === true && input.capabilities?.echoTested === true && output.canPause === true;
+  // Output and microphone share one link: while a reply that cannot be
+  // interrupted is on its way or playing, a take would only send the speaker
+  // back to ASR, and the Host rejects those frames. The open microphone itself
+  // degrades the speaker on phones, so it is released too; the next take reopens it.
+  const restInput = async () => {
+    if (interruptible()) return;
+    if (take) await cancelInput();
+    if (state.playback !== "idle" && !take) input.rest?.();
+  };
   const stopPlayback = async () => {
     interruption.cancel();
     const started = now();
@@ -74,6 +82,9 @@ export function createVoiceController({ input, agent, output, voiceId = mintRpcI
       // recording; it must not turn that take into a one-shot dictation.
       const text = String(await input.capture({ signal: run.abort.signal, continuous: state.continuous, manual: manualTurns, onReady: () => { if (live(run)) change({ inputReady: true }); }, onLevel: (level) => { if (live(run)) change({ inputLevel: Math.max(0, Math.min(1, level)) }); }, onSpeech: () => {
         if (live(run)) { touch(); change({ userSpeaking: true }); if (interruptible() && state.playback !== "idle") interruption.suspect(); }
+      }, onDropped: () => {
+        // A cough or a knock: no words, so a reply paused on suspicion resumes as it would after silence.
+        if (live(run)) { interruption.speechEnded(); interruption.final(""); change({ userSpeaking: false }); }
       }, onTranscribing: () => { if (live(run)) { interruption.speechEnded(); change({ capture: "transcribing", userSpeaking: false }); } } }) ?? "").trim();
       if (!live(run)) return;
       report("recognition", run.started, { turnId: run.id });
@@ -94,10 +105,9 @@ export function createVoiceController({ input, agent, output, voiceId = mintRpcI
     } catch (error) {
       if (live(run)) {
         const code = voiceErrorCode(error) || "voice_failed";
-        if (isTransientVoiceError(code)) {
-          // The take lost a race with the previous turn or with a reply that
-          // still owns the shared audio link. Drop only this take: the call
-          // stays open and the composer returns to listening for the next one.
+        if (isTransientVoiceError(code) || (state.continuous && isRecoverableTakeFault(code))) {
+          // The take lost a race, or this utterance of a continuous call failed.
+          // Drop only this take: the call stays open and the next hold records again.
           interruption.cancel();
           report("take-dropped", run.started, { turnId: run.id, code });
           change({ capture: "idle", userSpeaking: false, inputLevel: null });
@@ -154,8 +164,9 @@ export function createVoiceController({ input, agent, output, voiceId = mintRpcI
       if (state.sessionId) await agent.cancel(state.sessionId);
     },
     observeAgent(running, playbackExpected = false) {
-      if (playbackExpected && take && !interruptible()) void cancelInput();
+      const arriving = playbackExpected && state.playback === "idle";
       change({ agent: running ? "running" : "idle", ...(playbackExpected ? { playback: "pending" } : {}) });
+      if (arriving) void restInput();
       if (!manualTurns && !running && state.continuous) void listen();
     },
     observePlayback(playing) {
@@ -163,12 +174,9 @@ export function createVoiceController({ input, agent, output, voiceId = mintRpcI
       if (playing !== (state.playback === "playing")) touch();
       // The next reply that actually renders clears the previous audio failure.
       if (playing && playbackError) { playbackError = null; change({ error: null }); }
+      const arriving = playing && state.playback === "idle";
       change({ playback: playing ? "playing" : "idle" });
-      // Output and microphone share one link. As soon as audio is rendered, a
-      // take that is still recording would only send the speaker back to ASR,
-      // and the Host rejects those frames. Stop it here instead of waiting for
-      // the next agent poll.
-      if (playing && take && !interruptible()) void cancelInput();
+      if (arriving) void restInput();
       if (!manualTurns && state.continuous && (!playing || interruptible())) void listen();
     },
     async pause() {
@@ -185,7 +193,7 @@ export function createVoiceController({ input, agent, output, voiceId = mintRpcI
         recoveryTimer.unref?.();
       }
       epoch += 1;
-      change({ connection: code ? "paused" : "closed", error: code });
+      change({ connection: code ? "paused" : "closed", error: code && !isQuietVoiceEnding(code) ? code : null });
       await Promise.allSettled([cancelInput(), stopPlayback()]);
     },
     async resume({ shouldResume = () => true, resumeListening = !manualTurns } = {}) {

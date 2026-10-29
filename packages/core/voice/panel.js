@@ -168,9 +168,25 @@ export function createVoicePanel({ create, complete, loadConfig = async () => ({
       if (state.busy) return Promise.resolve();
       cancelPreparation();
       const snapshot = configSnapshot ? structuredClone(configSnapshot) : null;
-      if (mode === "single" && snapshot && !(sessionId === state.sessionId ? state.raw : drafts.get(sessionId)?.raw)) inputPreparation = prepareInput(snapshot);
-      const token = ++intent; emit({ visible: true });
+      const held = sessionId === state.sessionId ? state.raw : drafts.get(sessionId)?.raw;
+      if (!(mode === "single" && held)) inputPreparation = prepareInput(snapshot || {});
+      const mic = inputPreparation;
+      const token = ++intent;
+      // The composer stays on text until the microphone is actually open.
+      if (!mic) emit({ visible: true });
       return enqueue(async () => {
+        if (mic) {
+          try { await mic.opened(); }
+          catch (error) {
+            if (inputPreparation === mic) cancelPreparation();
+            if (token !== intent) return;
+            const code = error.code || error.message || "voice_failed";
+            if (code !== "voice_cancelled") emit({ visible: false, error: code });
+            return;
+          }
+          if (token !== intent) return;
+          emit({ visible: true, error: null });
+        }
         if (sessionId !== state.sessionId || mode !== state.mode) {
           try { await pause(); } finally { await end(); save(); const held = drafts.get(sessionId); config = held?.config || null; emit({ sessionId, mode, raw: mode === "single" ? held?.raw || "" : "", draft: mode === "single" ? held?.draft || "" : "", edited: mode === "single" && (held?.edited || false), preset: held?.preset || "raw", stage: mode === "single" && held?.raw ? "preview" : "idle" }); }
         }
@@ -188,7 +204,7 @@ export function createVoicePanel({ create, complete, loadConfig = async () => ({
       return enqueue(async () => { try { await pause(); } finally { await end(); save(); const held = drafts.get(sessionId); config = held?.config || null; emit({ sessionId, raw: held?.raw || "", draft: held?.draft || "", edited: held?.edited || false, preset: held?.preset || "raw", stage: held?.raw ? "preview" : "idle" }); } });
     },
     close() { intent++; cancelPreparation(); cancelProcessing(); emit({ visible: false, holding: false, cancelArmed: false }); if (state.mode === "continuous") void call?.controller.cancelRecording(); return enqueue(pause); },
-    pause() { intent++; cancelPreparation(); cancelProcessing(); emit({ holding: false, cancelArmed: false }); if (state.mode === "continuous") void call?.controller.cancelRecording(); return enqueue(pause); },
+    pause() { intent++; if (!state.inputActive) cancelPreparation(); cancelProcessing(); emit({ holding: false, cancelArmed: false }); if (state.mode === "continuous") void call?.controller.cancelRecording(); return enqueue(pause); },
     start() { armOutput(); const token = ++intent; return enqueue(() => prepare(token)); },
     openReadout() {
       if (state.mode !== "continuous") return Promise.resolve();
@@ -219,6 +235,21 @@ export function createVoicePanel({ create, complete, loadConfig = async () => ({
       if (state.busy || state.holding || state.snapshot?.capture === "transcribing") return Promise.resolve();
       const token = ++intent; emit({ holding: true, cancelArmed: false });
       return enqueue(async () => {
+        // A hold interrupts the reply. Stop it before the microphone reopens:
+        // an open microphone puts a phone's speaker back in the call session.
+        await call?.controller.stopPlayback();
+        if (token !== intent || !state.holding) return;
+        if (inputPreparation?.borrow) {
+          try { await inputPreparation.borrow(); }
+          catch (error) {
+            cancelPreparation();
+            if (token !== intent) return;
+            const code = error.code || error.message || "voice_failed";
+            if (code !== "voice_cancelled") emit({ visible: false, holding: false, cancelArmed: false, error: code });
+            else emit({ visible: false, holding: false, cancelArmed: false });
+            return;
+          }
+        }
         await prepare(token);
         if (token !== intent || !state.holding || !state.visible) return;
         await call?.controller.stopPlayback();

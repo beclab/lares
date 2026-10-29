@@ -1,47 +1,67 @@
 <template>
   <div v-if="view.value" class="lares-voice-preferences">
-    <label v-if="device === 'desktop'" class="lares-voice-preferences__field">
-      <span>{{ t('preferences.dictationStyle') }}</span>
-      <LaresSelect :value="view.value.config.dictationPreset" :sections="presetSections" :disabled="guardView.selecting || Boolean(view.pending.dictationPreset)" @select="choosePreset" />
-    </label>
-    <LaresSettingRow
-      v-else
-      :label="t('preferences.dictationStyle')"
-      :value="t(`dictation.${view.value.config.dictationPreset}`)"
-      chevron
-      boxed
-      :disabled="guardView.selecting || Boolean(view.pending.dictationPreset)"
-      @click="sheet = 'preset'"
-    />
-    <p v-if="view.errors.dictationPreset" role="alert">{{ t('settings.saveFailed') }}</p>
-    <p v-if="view.value.config.dictationPreset === 'raw'">{{ t('dictation.noLlm') }}</p>
-    <div v-else class="lares-voice-preferences__editor">
-      <label v-if="device === 'desktop'" class="lares-voice-preferences__field">
-        <span>{{ t('dictation.model') }}</span>
-        <LaresSelect :value="profile.model" :sections="modelSections" :disabled="profilePending" @select="chooseModel" />
-      </label>
-      <LaresSettingRow
-        v-else
-        :label="t('dictation.model')"
-        :value="modelLabel"
-        chevron
-        boxed
-        :disabled="profilePending"
-        @click="sheet = 'model'"
-      />
+    <template v-if="device === 'desktop'">
       <label class="lares-voice-preferences__field">
-        <span>{{ t('dictation.instructions') }}</span>
-        <textarea ref="instructions" :value="profile.instructions" :disabled="profilePending" rows="6" maxlength="8000" @input="preferences.edit(view.value.config.dictationPreset, { instructions: $event.target.value })" />
+        <span>{{ t('preferences.dictationStyle') }}</span>
+        <LaresSelect :value="view.value.config.dictationPreset" :sections="presetSections" :disabled="guardView.selecting || Boolean(view.pending.dictationPreset)" @select="choosePreset" />
       </label>
-      <div class="lares-voice-preferences__actions">
-        <button type="button" :disabled="profilePending" @click="preferences.restore(view.value.config.dictationPreset)">{{ t('dictation.reset') }}</button>
-        <template v-if="preferences.dirty(view.value.config.dictationPreset)">
-          <button type="button" :disabled="profilePending" @click="preferences.discard([view.value.config.dictationPreset])">{{ t('preferences.cancel') }}</button>
-          <button type="button" class="is-primary" :disabled="profilePending" @click="saveProfile">{{ t(profilePending ? 'preferences.saving' : 'preferences.save') }}</button>
-        </template>
+      <p v-if="view.errors.dictationPreset" role="alert">{{ t('settings.saveFailed') }}</p>
+      <p v-if="view.value.config.dictationPreset === 'raw'">{{ t('dictation.noLlm') }}</p>
+      <div v-else class="lares-voice-preferences__editor">
+        <label class="lares-voice-preferences__field">
+          <span>{{ t('dictation.model') }}</span>
+          <LaresSelect :value="profile.model" :sections="modelSections" :disabled="profilePending" @select="chooseModel" />
+        </label>
+        <label class="lares-voice-preferences__field">
+          <span>{{ t('dictation.instructions') }}</span>
+          <textarea ref="instructions" :value="profile.instructions" :disabled="profilePending" rows="6" maxlength="8000" @input="preferences.edit(view.value.config.dictationPreset, { instructions: $event.target.value })" />
+        </label>
+        <div class="lares-voice-preferences__actions">
+          <button type="button" :disabled="profilePending" @click="preferences.restore(view.value.config.dictationPreset)">{{ t('dictation.reset') }}</button>
+          <template v-if="preferences.dirty(view.value.config.dictationPreset)">
+            <button type="button" :disabled="profilePending" @click="preferences.discard([view.value.config.dictationPreset])">{{ t('preferences.cancel') }}</button>
+            <button type="button" class="is-primary" :disabled="profilePending" @click="saveProfile">{{ t(profilePending ? 'preferences.saving' : 'preferences.save') }}</button>
+          </template>
+        </div>
+        <p v-if="view.errors[`profile:${view.value.config.dictationPreset}`]" role="alert">{{ t('settings.saveFailed') }}</p>
       </div>
-      <p v-if="view.errors[`profile:${view.value.config.dictationPreset}`]" role="alert">{{ t('settings.saveFailed') }}</p>
-    </div>
+    </template>
+    <template v-else>
+      <h3 class="lares-voice-preferences__section">{{ t('settings.stt.title') }}</h3>
+      <div class="lares-voice-preferences__block">
+        <slot name="lead" />
+        <LaresSettingRow
+          :label="t('preferences.dictationStyle')"
+          :value="t(`dictation.${view.value.config.dictationPreset}`)"
+          :hint="view.value.config.dictationPreset === 'raw' ? t('dictation.noLlm') : ''"
+          chevron
+          :disabled="guardView.selecting || Boolean(view.pending.dictationPreset)"
+          @click="sheet = 'preset'"
+        />
+        <p v-if="view.errors.dictationPreset" role="alert">{{ t('settings.saveFailed') }}</p>
+        <div v-if="view.value.config.dictationPreset !== 'raw'" class="lares-voice-preferences__editor">
+          <LaresSettingRow
+            :label="t('dictation.model')"
+            :value="modelLabel"
+            chevron
+            :disabled="profilePending"
+            @click="sheet = 'model'"
+          />
+          <label class="lares-voice-preferences__field">
+            <span>{{ t('dictation.instructions') }}</span>
+            <textarea ref="instructions" :value="profile.instructions" :disabled="profilePending" rows="6" maxlength="8000" @input="preferences.edit(view.value.config.dictationPreset, { instructions: $event.target.value })" />
+          </label>
+          <div class="lares-voice-preferences__actions">
+            <button type="button" :disabled="profilePending" @click="preferences.restore(view.value.config.dictationPreset)">{{ t('dictation.reset') }}</button>
+            <template v-if="preferences.dirty(view.value.config.dictationPreset)">
+              <button type="button" :disabled="profilePending" @click="preferences.discard([view.value.config.dictationPreset])">{{ t('preferences.cancel') }}</button>
+              <button type="button" class="is-primary" :disabled="profilePending" @click="saveProfile">{{ t(profilePending ? 'preferences.saving' : 'preferences.save') }}</button>
+            </template>
+          </div>
+          <p v-if="view.errors[`profile:${view.value.config.dictationPreset}`]" role="alert">{{ t('settings.saveFailed') }}</p>
+        </div>
+      </div>
+    </template>
     <TtsSettings :preferences="preferences" :view="view" :t="t" :fetcher="ttsFetch" :device="device" />
     <section v-if="device === 'desktop'" class="lares-voice-preferences__shortcuts">
       <h3>{{ t('preferences.shortcuts') }}</h3>
@@ -175,6 +195,11 @@ export default {
 <style scoped>
 .lares-voice-preferences { display: flex; flex-direction: column; gap: 12px; min-width: 0; color: var(--q-ink-1); font-size: 15px; line-height: 22px; }
 .lares-voice-preferences h3 { margin: 4px 0 0; color: var(--q-ink-3); font-size: 14px; font-weight: 500; line-height: 18px; }
+.lares-voice-preferences__section { margin: 0; }
+.lares-voice-preferences__block { display: flex; flex-direction: column; border: 1px solid var(--q-separator); border-radius: 20px; overflow: hidden; }
+.lares-voice-preferences__block :deep(.lares-set-row) { min-height: 64px; }
+.lares-voice-preferences__block > [role="alert"] { padding: 0 16px 12px; }
+.lares-voice-preferences__block .lares-voice-preferences__editor { padding: 12px 16px 16px; border-top: 1px solid var(--q-separator); }
 .lares-voice-preferences p { margin: 0; color: var(--q-ink-3); font-size: 15px; line-height: 22px; }
 .lares-voice-preferences [role="alert"] { color: var(--q-orange-default); }
 .lares-voice-preferences__field { display: flex; flex-direction: column; gap: 8px; min-width: 0; }

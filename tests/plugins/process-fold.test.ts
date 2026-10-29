@@ -67,6 +67,32 @@ test("a settled turn folds reasoning and tool calls behind one header", () => {
   assert.equal(processFoldLabel(en, fold), "Completed in 2s");
 });
 
+test("reply chrome waits until the turn settles, not until one assistant message lands", () => {
+  const mid = foldTranscript([
+    { type: "turn/start", seq: 1, time: 1_000, data: { turn: 1 } },
+    { type: "user/message", seq: 2, data: { content: [{ type: "text", text: "hi" }], source: { kind: "user" } } },
+    { type: "assistant/message", seq: 3, data: { turn: 1, message: { content: [{ type: "text", text: "looking" }] } } },
+    { type: "tool/call", seq: 4, data: { turn: 1, callId: "c1", name: "read", arguments: "{}" } },
+  ]);
+  assert.equal(mid.running, true);
+  const live = transcriptBlocks(mid.items, { running: true });
+  const answer = live.find((block) => block.row?.type === "assistant");
+  assert.equal(answer.row.pending, undefined);
+  assert.equal(answer.settled, false);
+
+  const done = foldTranscript(events({ kind: "completed" }));
+  const closed = transcriptBlocks(done.items, { running: done.running });
+  assert.equal(closed.find((block) => block.row?.type === "assistant").settled, true);
+
+  const next = [
+    ...done.items,
+    { type: "user", text: "again", turn: 2 },
+    { type: "assistant", text: "still going", turn: 2 },
+  ];
+  const answers = transcriptBlocks(next, { running: true }).filter((block) => block.row?.type === "assistant");
+  assert.deepEqual(answers.map((block) => block.settled), [true, false]);
+});
+
 test("a running turn with a reply folds finished work and keeps the clock", () => {
   const open = foldTranscript(events());
   assert.equal(open.running, true);

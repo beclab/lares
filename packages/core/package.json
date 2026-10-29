@@ -1,6 +1,6 @@
 {
   "name": "@olares/lares-core",
-  "version": "0.15.32",
+  "version": "0.15.41",
   "description": "Lares 共享业务核心：Router、workspace、文件/媒体、Olares 身份（无 UI、无平台壳）",
   "type": "module",
   "repository": {
@@ -13,6 +13,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "files": [
+    "agent",
     "brand",
     "drive",
     "entrance",
@@ -96,6 +97,7 @@
     "./files/deliverables": "./files/deliverables.js",
     "./files/published-tools": "./files/published-tools.js",
     "./files/published-turn-data": "./files/published-turn-data.js",
+    "./agent/leaked-tool-call": "./agent/leaked-tool-call.js",
     "./files/produced-gate": "./files/produced-gate.js",
     "./files/produced-mentions": "./files/produced-mentions.js",
     "./files/disposition": "./files/disposition.js",
@@ -122,6 +124,7 @@
     "./voice/client": "./voice/client.js",
     "./voice/recorder": "./voice/recorder.js",
     "./voice/endpoint": "./voice/endpoint.js",
+    "./voice/echo": "./voice/echo.js",
     "./voice/speech": "./voice/speech.js",
     "./voice/script": "./voice/script.js",
     "./voice/pcm": "./voice/pcm.js",
@@ -174,11 +177,19 @@
     "./larepass/permissions": "./larepass/permissions.js",
     "./larepass/commands": "./larepass/commands.js",
     "./larepass/queue": "./larepass/queue.js",
+    "./larepass/approval": "./larepass/approval.js",
     "./larepass/references": "./larepass/references.js",
     "./larepass/submission-settings": "./larepass/submission-settings.js",
     "./larepass/turn-metrics": "./larepass/turn-metrics.js",
     "./larepass/context-occupancy": "./larepass/context-occupancy.js",
     "./skills/packs": "./skills/packs.js",
+    "./skills/connection": "./skills/connection.js",
+    "./skills/google": "./skills/google.js",
+    "./skills/google-install": {
+      "types": "./skills/google-install.d.ts",
+      "default": "./skills/google-install.js"
+    },
+    "./skills/process": "./skills/process.js",
     "./skills/state": {
       "types": "./skills/state.d.ts",
       "default": "./skills/state.js"
@@ -205,7 +216,9 @@
     "./voice/internal-upgrade": "./voice/internal-upgrade.js",
     "./router/session-alias": "./router/session-alias.js",
     "./voice/lares-realtime-gateway": "./voice/lares-realtime-gateway.js",
+    "./voice/listening": "./voice/listening.js",
     "./voice/router-audio": "./voice/router-audio.js",
+    "./voice/silero": "./voice/silero.js",
     "./voice/protocol-client": "./voice/protocol-client.js",
     "./voice/unified-conversation": "./voice/unified-conversation.js",
     "./voice/presentation": "./voice/presentation.js",
@@ -225,6 +238,12 @@
     "./router/default-selection": {
       "types": "./router/default-selection.d.ts",
       "default": "./router/default-selection.js"
+    },
+    "./voice/agent-prompt-trace": "./voice/agent-prompt-trace.js",
+    "./voice/agent-history": "./voice/agent-history.js",
+    "./router/default-route": {
+      "types": "./router/default-route.d.ts",
+      "default": "./router/default-route.js"
     },
     "./voice/vad": "./voice/vad.js",
     "./voice/errors": "./voice/errors.js"

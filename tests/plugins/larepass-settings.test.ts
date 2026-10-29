@@ -5,6 +5,7 @@ import {
   rememberedSettings,
   resetHostSettingsCache,
 } from "@olares/lares-core/larepass/settings";
+import { permissionDefaults } from "@olares/lares-core/larepass/permissions";
 import {
   conversationSettings,
   resolveSubmitMode,
@@ -174,4 +175,85 @@ test("conversation preference refuses read-only writes and preserves state on co
     assert.equal(rememberedSettings().conversation.busyEnter, "queue");
     assert.equal(rememberedSettings().conversation.revision, 7);
   }
+});
+
+test("permissionDefaults keeps a stored preset and drops custom from the new-session choices", () => {
+  const catalog = {
+    defaultPreset: "workspace-write",
+    defaultOptions: [
+      { value: "read-only" },
+      { value: "workspace-write" },
+      { value: "custom" },
+    ],
+  };
+  assert.deepEqual(permissionDefaults({
+    writable: true,
+    namespaces: [{ ns: "permission", value: { defaultPreset: "read-only" }, revision: 2 }],
+  }, catalog), {
+    current: "read-only",
+    options: [{ value: "read-only" }, { value: "workspace-write" }],
+    revision: 2,
+    writable: true,
+  });
+  assert.equal(permissionDefaults({
+    writable: true,
+    namespaces: [{ ns: "permission", value: {}, revision: 1 }],
+  }, catalog).current, "workspace-write");
+});
+
+test("default session permission is read from the catalog and written with settings.mutate", async () => {
+  resetHostSettingsCache();
+  const calls = [];
+  const settings = createHostSettings(async (path, init = {}) => {
+    calls.push(path);
+    if (path === "/api/settings/describe") {
+      return ok({
+        type: "server-response",
+        rpcId: init.body.rpcId,
+        result: {
+          ok: true,
+          value: {
+            writable: true,
+            namespaces: [{ ns: "permission", value: { defaultPreset: "workspace-write" }, revision: 7 }],
+          },
+        },
+      });
+    }
+    if (path === "/api/permissionPresets/catalog") {
+      assert.deepEqual(init.body.payload.args, {});
+      return ok({
+        type: "server-response",
+        rpcId: init.body.rpcId,
+        result: {
+          ok: true,
+          value: {
+            defaultPreset: "workspace-write",
+            defaultOptions: [{ value: "read-only" }, { value: "workspace-write" }, { value: "danger-full-access" }],
+          },
+        },
+      });
+    }
+    if (path === "/api/settings/mutate") {
+      assert.deepEqual(init.body.payload.args, {
+        ns: "permission",
+        ops: [{ op: "set", path: ["defaultPreset"], value: "read-only" }],
+        expectedRevision: 7,
+      });
+      return ok({
+        type: "server-response",
+        rpcId: init.body.rpcId,
+        result: { ok: true, value: { ns: "permission", value: { defaultPreset: "read-only" }, revision: 8 } },
+      });
+    }
+    return { ok: false, status: 404, body: { error: { message: path } } };
+  });
+  const loaded = await settings.permission();
+  assert.equal(loaded.current, "workspace-write");
+  assert.deepEqual(loaded.options.map((option) => option.value), ["read-only", "workspace-write", "danger-full-access"]);
+  const saved = await settings.setDefaultPermission("read-only");
+  assert.equal(saved.current, "read-only");
+  assert.equal(saved.revision, 8);
+  assert.equal(rememberedSettings().permission.current, "read-only");
+  assert.ok(calls.includes("/api/permissionPresets/catalog"));
+  assert.ok(calls.includes("/api/settings/mutate"));
 });

@@ -16,6 +16,9 @@ test("voice keys store only hashes, verify by Bearer and take revocation without
     assert.ok(!readFileSync(path, "utf8").includes(issued.key));
     assert.equal(store.list()[0].hash, undefined);
     assert.equal(store.verify(`Bearer ${issued.key}`)?.sessionId, "session-1");
+    assert.equal(store.verify(`Bearer ${issued.key}`)?.clientTools, false);
+    const device = store.issue({ name: "Reachy", models: ["voice-assistant"], clientTools: true });
+    assert.equal(store.verify(`Bearer ${device.key}`)?.clientTools, true);
     assert.equal(store.verify(issued.key), null);
     const flipped = issued.key.endsWith("A") ? "B" : "A";
     assert.equal(store.verify(`Bearer ${issued.key.slice(0, -1)}${flipped}`), null);
@@ -33,6 +36,7 @@ test("voice keys reject unknown models and malformed names", () => {
     assert.throws(() => store.issue({ name: "x", models: ["gpt-realtime"] }), { code: "voice_key_invalid" });
     assert.throws(() => store.issue({ name: "", models: ["voice-chat"] }), { code: "voice_key_invalid" });
     assert.throws(() => store.issue({ name: "a\nb", models: ["voice-chat"] }), { code: "voice_key_invalid" });
+    assert.throws(() => store.issue({ name: "x", models: ["voice-chat"], clientTools: "yes" }), { code: "voice_key_invalid" });
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -49,5 +53,5 @@ test("voice keys client issues, lists and revokes through one request port", asy
   assert.equal((await client.issue({ name: " Router ", models: ["voice-chat"] })).key, "lvk_x");
   assert.deepEqual(await client.list(), [{ id: "k1" }]);
   await assert.rejects(client.revoke("k1"), /voice_key_failed/);
-  assert.deepEqual(calls[0], ["/api/lares/voice/keys", "POST", { name: "Router", models: ["voice-chat"] }]);
+  assert.deepEqual(calls[0], ["/api/lares/voice/keys", "POST", { name: "Router", models: ["voice-chat"], clientTools: false }]);
 });

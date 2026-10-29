@@ -128,6 +128,19 @@ export function noteSpeechGpu(gpu) {
   seenGpu = gpu ?? null;
 }
 
+let asking = null;
+
+/**
+ * Asks for the card once when nothing has asked yet, so a device session knows
+ * whether it may read while writing before anyone opens the settings page.
+ * A failed ask is retried by the next session.
+ */
+export function observeSpeechGpu(options = {}) {
+  if (seenGpu !== undefined || asking) return asking;
+  asking = speechGpu(options).catch(() => null).finally(() => { asking = null; });
+  return asking;
+}
+
 /**
  * Read-while-writing only while the saved mode asks for it and the card is
  * memory-sliced. Time slicing cannot keep the language model and speech model

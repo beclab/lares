@@ -38,6 +38,19 @@ function withHome(body: (dir: string) => void): void {
   }
 }
 
+test("seeded compat only names switches dsh will import", () => {
+  const source = readFileSync(new URL("../../node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js", import.meta.url), "utf8");
+  const gateStart = source.indexOf("const COMPLETIONS_COMPAT_GATE = {");
+  const gate = source.slice(gateStart, source.indexOf("};", gateStart));
+  withHome((dir) => {
+    bootstrapLaresSettings(dir, seed());
+    const compat = readSettings(dir)["llm-pi-ai"].providers["olares-router"].compat;
+    for (const key of Object.keys(compat)) {
+      assert.match(gate, new RegExp(`${key}: "offer"`));
+    }
+  });
+});
+
 test("seeds the first authorized chat model, then leaves the document alone", () => {
   withHome((dir) => {
     const first = bootstrapLaresSettings(dir, seed());
@@ -50,7 +63,7 @@ test("seeds the first authorized chat model, then leaves the document alone", ()
     assert.equal(profile.api, "openai-completions");
     assert.equal(profile.baseURL, "http://127.0.0.1:8080/llm/v1");
     assert.equal(profile.apiKeyEnv, "LARES_ROUTER_SHIM_KEY");
-    assert.deepEqual(profile.compat, { supportsReasoningEffort: true, supportsStore: false, sendSessionAffinityHeaders: true, sessionAffinityFormat: "openrouter" });
+    assert.deepEqual(profile.compat, { supportsReasoningEffort: true, supportsStore: false });
     assert.equal(profile.retryPolicy.maxRetries, 12);
     assert.equal(profile.retryPolicy.backoff.maxDelayMs, 60_000);
     assert.deepEqual(profile.models, DECLARED);
@@ -94,7 +107,7 @@ test("an existing route keeps the user's endpoint but follows the Router catalog
     const profile = readSettings(dir)["llm-pi-ai"].providers["olares-router"];
     assert.equal(profile.displayName, "My Router");
     assert.equal(profile.baseURL, "http://127.0.0.1:9999/llm/v1");
-    assert.deepEqual(profile.compat, { supportsReasoningEffort: true, supportsStore: false, sendSessionAffinityHeaders: true, sessionAffinityFormat: "openrouter" });
+    assert.deepEqual(profile.compat, { supportsReasoningEffort: true, supportsStore: false });
     // The retry policy is how Router behaves, not a user preference.
     assert.equal(profile.retryPolicy.maxRetries, 12);
     assert.deepEqual(profile.models, DECLARED);
@@ -188,7 +201,16 @@ test("a route seeded before Router reported efforts picks them up on the next bo
     );
     bootstrapLaresSettings(dir, seed());
     const profile = readSettings(dir)["llm-pi-ai"].providers["olares-router"];
-    assert.deepEqual(profile.compat, { supportsReasoningEffort: true, supportsStore: false, sendSessionAffinityHeaders: true, sessionAffinityFormat: "openrouter" });
+    assert.deepEqual(profile.compat, { supportsReasoningEffort: true, supportsStore: false });
     assert.deepEqual(profile.models, DECLARED);
+  });
+});
+
+test("the boot default follows Router's default-chat when the catalog lists it", () => {
+  withHome((dir) => {
+    writeFileSync(join(dir, "settings.yaml"), 'agent-default-model:\n  provider: olares-router\n  model: "Qwen/chat"\n');
+    assert.equal(bootstrapLaresSettings(dir, seed({ defaultChat: "Qwen/other" })).model, "Qwen/other");
+    assert.equal(readSettings(dir)["agent-default-model"].model, "Qwen/other");
+    assert.equal(bootstrapLaresSettings(dir, seed({ defaultChat: "gone/model" })).model, "Qwen/other");
   });
 });

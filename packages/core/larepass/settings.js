@@ -1,5 +1,6 @@
 import { createSnapshotStore } from "../tools/async.js";
 import { callRpc } from "./chat.js";
+import { PERMISSION_SETTINGS_NS, permissionDefaults } from "./permissions.js";
 import {
   CONVERSATION_SETTINGS_NAMESPACE,
   busyEnterBehavior,
@@ -12,6 +13,7 @@ const voiceListeners = new Set();
 export function subscribeVoiceSettings(listener) { voiceListeners.add(listener); const current = voiceStore.peek(); if (current) listener(current); return () => voiceListeners.delete(listener); }
 const searchStore = createSnapshotStore();
 const conversationStore = createSnapshotStore();
+const permissionStore = createSnapshotStore();
 const conversationListeners = new Set();
 
 function publishConversation(value) {
@@ -55,6 +57,7 @@ export function rememberedSettings() {
     voice: voiceStore.peek(),
     search: searchStore.peek(),
     conversation: conversationStore.peek(),
+    permission: permissionStore.peek(),
   };
 }
 
@@ -63,6 +66,7 @@ export function resetHostSettingsCache() {
   voiceStore.remember(null);
   searchStore.remember(null);
   conversationStore.remember(null);
+  permissionStore.remember(null);
 }
 
 export function createHostSettings(request) {
@@ -163,6 +167,35 @@ export function createHostSettings(request) {
       return publishConversation({
         busyEnter: busyEnterBehavior(next.value?.busyEnter),
         revision: Number.isInteger(next.revision) ? next.revision : undefined,
+        writable: true,
+      });
+    },
+    async permission(options = {}) {
+      return permissionStore.load(async () => {
+        const [described, catalog] = await Promise.all([
+          callRpc(request, "settings.describe"),
+          callRpc(request, "permissionPresets.catalog"),
+        ]);
+        return permissionDefaults(
+          rpcValue(described, "settings.describe"),
+          rpcValue(catalog, "permissionPresets.catalog"),
+        );
+      }, options);
+    },
+    async setDefaultPermission(preset) {
+      const current = await this.permission();
+      if (!current.writable) throw new Error("settings are read-only");
+      if (!current.options.some((option) => option.value === preset)) throw new Error("unknown preset");
+      const next = rpcValue(await callRpc(request, "settings.mutate", {
+        ns: PERMISSION_SETTINGS_NS,
+        ops: [{ op: "set", path: ["defaultPreset"], value: preset }],
+        ...(current.revision === undefined ? {} : { expectedRevision: current.revision }),
+      }), "settings.mutate");
+      const stored = typeof next?.value?.defaultPreset === "string" ? next.value.defaultPreset : preset;
+      return permissionStore.remember({
+        ...current,
+        current: stored,
+        revision: Number.isInteger(next?.revision) ? next.revision : current.revision,
         writable: true,
       });
     },

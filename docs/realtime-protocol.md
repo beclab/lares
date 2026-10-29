@@ -45,8 +45,9 @@ Design rules:
 - The backend (Lares ASR → Agent → TTS, or a forwarded native Realtime model)
   is invisible to clients.
 
-Non-goals: SIP, client-defined tools, overriding `instructions`, telephony
-audio formats. WebRTC is not in v1, but session and event semantics do not
+Non-goals: SIP, replacing `instructions`, telephony audio formats. Tools a
+device declares are a capability the owner grants per key; see
+[Device tools](#device-tools). WebRTC is not in v1, but session and event semantics do not
 depend on WebSocket, so WebRTC or a LiveKit room can be added later as a
 second transport. See [Unsupported capabilities](#unsupported-capabilities-and-error-codes)
 and [LiveKit Agents mapping](#mapping-to-livekit-agents).
@@ -58,17 +59,19 @@ One endpoint: `GET /api/lares/voice/realtime?model=<model>`, WebSocket upgrade.
 | Caller | Authentication | Entry |
 | --- | --- | --- |
 | Lares desktop and mobile | `POST /api/lares/voice/realtime/ticket` returns a single-use ticket valid for 30 s; connect with subprotocols `lares-voice, lares-ticket.<ticket>`. Browsers cannot set headers, so the ticket stays | Olares entrance; the platform has authenticated the user |
-| Router and other server-side callers | `Authorization: Bearer <lares voice key>` | The `webhook-internal` entrance (`authLevel: internal`, port 8081). The per-user namespace's NetworkPolicy refuses direct Service traffic from shared apps |
+| Router and other server-side callers | `Authorization: Bearer <lares voice key>` | The `webhook-internal` app entrance (`authLevel: internal`, port 8081), published at `<appid>1.<user zone>`. The per-user namespace's NetworkPolicy refuses direct Service traffic from shared apps |
 
 Voice keys:
 
 - The Lares owner issues and revokes keys in Lares settings. Only a hash is
   stored. A key is bound to a list of allowed models and may pin `sessionId` /
-  `workspaceId`.
+  `workspaceId`. `clientTools: true` lets its caller declare
+  [device tools](#device-tools); keys default to `false`.
 - The caller identity is the key owner. Identity headers such as
   `x-caller-appid` and `X-BFL-USER` are ignored.
 - Router stores the key as an ordinary encrypted provider credential with base
-  URL `https://<webhook-internal entrance host>/api/lares/voice` and appends
+  URL `https://<appid>1.<user zone>/api/lares/voice` (the `webhook-internal`
+  entrance; for example `https://489966aa1.alice.olares.com/api/lares/voice`) and appends
   `/realtime?model=`. The 8081 listener forwards only that WebSocket path to
   this handler; everything else there stays the webhook API or 404.
 - Access control on Router's side (model allowlists, quotas) belongs to Router.
@@ -111,7 +114,8 @@ Configurable `session.update` fields (anything else returns `error`):
 | `audio.input.transcription.language` | BCP-47, such as `zh`, `en` | Optional; auto-detected when omitted |
 | `audio.output.voice` | Lares voice ID | Optional; unknown voices return an error |
 | `output_modalities` | `["audio"]` or `["text"]` | `["text"]` disables read-aloud and still returns text |
-| `instructions` | String, ≤ 2000 characters | chat only; appended after Lares system policy, never replacing it. Rejected for assistant / direct |
+| `instructions` | String, ≤ 2000 characters (≤ 8000 for a device-tools key) | chat, or chat / assistant on a device-tools key; appended after Lares system policy, never replacing it. Rejected otherwise |
+| `tools`, `tool_choice` | Realtime function tools; `"auto"` or `"none"` | Device-tools keys only, see [Device tools](#device-tools); any other caller gets `unsupported_parameter` |
 | `lares.context_id` | Opaque string | Resumes the same owner's history; only before the first turn |
 | `lares.echo_cancellation` | Boolean, default `true` | Whether the client cancels echo; see [Turns, interruption and truncate](#turns-interruption-and-truncate) |
 | `lares.busy_turn` | `"queue"` or `"steer"` | Optional override for a user turn arriving while the Agent runs. Defaults to the owner's saved busy-Enter preference (`core/larepass/submission-settings.js`); idle turns always queue |
@@ -141,8 +145,8 @@ Any OpenAI client event not listed returns `error` with code
 | `input_audio_buffer.clear` | Yes | Drops uncommitted audio |
 | `response.cancel` | Yes | Stops generation and synthesis of the current reply. It does **not** cancel background Agent tasks; use `lares.task.cancel` |
 | `conversation.item.truncate` | Yes | `audio_end_ms` must be the position the client actually played |
-| `response.create` | Partial | Empty parameters only: speaks the last reply again without resubmitting anything to the Agent, so a retry never repeats side effects. `instructions`, `tools`, `input` and similar parameters return an error |
-| `conversation.item.create` | Partial | Only `role:"user"` `input_text`, equivalent to saying a sentence in text. No assistant / system messages or `function_call_output` |
+| `response.create` | Partial | Empty parameters only: speaks the last reply again without resubmitting anything to the Agent, so a retry never repeats side effects. `instructions`, `tools`, `input` and similar parameters return an error. In a device-tools session it asks for a reply instead, as in OpenAI |
+| `conversation.item.create` | Partial | Only `role:"user"` `input_text`, equivalent to saying a sentence in text. No assistant / system messages. A device-tools session also takes `function_call_output` and `input_image`, and its items only add context |
 | `conversation.item.delete`, `conversation.item.retrieve` | No | Lares owns history |
 | `output_audio_buffer.clear` | No | WebRTC only |
 
@@ -158,10 +162,11 @@ conversation.
 | Event | When | Difference |
 | --- | --- | --- |
 | `session.created`, `session.updated` | After connect / update | Also carry `lares.capabilities`, `lares.context_id` |
-| `input_audio_buffer.speech_started`, `speech_stopped` | server_vad detects start / end | Energy + VAD endpointing, not semantic_vad |
+| `input_audio_buffer.speech_started`, `speech_stopped` | server_vad detects start / end | Energy endpointing against the room's noise floor, not semantic_vad. Before speech only about 300 ms of pre-roll is kept, and a take that reaches 60 s is committed rather than refused |
 | `input_audio_buffer.committed`, `cleared` | After commit / clear | None |
 | `conversation.item.input_audio_transcription.delta` | Streaming ASR has partial results | Optional, depends on the ASR model |
 | `conversation.item.input_audio_transcription.completed` | Recognition done | Final result in transcription sessions; cleaned text when cleanup ran |
+| `conversation.item.input_audio_transcription.failed` | A device take ASR could not read | Device mode only, in place of an `error`: the take is dropped and listening goes on. Other clients still get `error` |
 | `conversation.item.done` | User / assistant item finalized | None |
 | `response.created` | Reply starts | `response.metadata.lares.origin` is `turn` (answering the user) or `task` (announcing a finished Agent task) |
 | `response.output_item.added`, `output_item.done` | Assistant item starts / ends | None |
@@ -172,16 +177,18 @@ conversation.
 | `conversation.item.truncated` | After truncate applies | None |
 | `error` | Any failure | See [error codes](#unsupported-capabilities-and-error-codes) |
 
-Never sent: `response.function_call_arguments.*`, `rate_limits.updated`,
-`output_audio_buffer.*` (WebRTC only). Agent-internal tool calls are not
-exposed as function calls.
+Never sent: `rate_limits.updated`, `output_audio_buffer.*` (WebRTC only), and
+`response.function_call_arguments.delta`. Agent-internal tool calls are not
+exposed as function calls; only calls to [device tools](#device-tools) are.
 
 ## Lares extension events
 
 Three groups only: playback acknowledgement, Agent tasks and host device. When
-a standard client sends no playback acknowledgement, the server treats audio as
-played once sent; conversation still works, but truncate and half-duplex
-protection are imprecise.
+a standard client sends no playback acknowledgement, the server assumes it plays
+what it was sent in real time; `response.cancel` or `conversation.item.truncate`
+from the client ends that estimate, and truncate stays approximate. What the
+server does with the microphone meanwhile depends on the client's
+[listening mode](#listening-modes).
 
 | Event | Direction | Fields | Replaces |
 | --- | --- | --- | --- |
@@ -225,6 +232,83 @@ Host device mode: the Olares host microphone and speaker (including Bluetooth)
 capture and play audio; no audio crosses the WebSocket. Only ticket-based Lares
 clients can enable it, by requesting `device:"host"` for the ticket. Voice key
 callers cannot.
+
+## Device tools
+
+A device such as a robot can declare tools that run on the device itself, the
+way an OpenAI Realtime client does. Only a key issued with `clientTools: true`
+may, and only on `voice-chat` or `voice-assistant`, whose voice dialogue model
+answers first. Ticket sockets and other keys keep the behaviour above, and
+`session.lares.capabilities.client_tools` says which applies.
+
+Such a key makes the session a device session whether or not it declares any
+tools, as a pair of glasses that only listens and speaks does not. Every device
+session runs the same device logic: the same device rules (home control, lookups
+and schedules go to `ask_lares`; one short sentence), the retry for a reply that
+claims a home action without calling `ask_lares`, no tools for fillers and
+greetings, brief announcements through the dialogue, and the Agent answering for
+a device. Devices differ only by their profile (`instructions`) and the tools
+they declare.
+
+- **Declaring.** `session.update` takes `tools` (≤ 64 functions, unique names,
+  never `ask_lares`) and `tool_choice` (`"auto"` or `"none"`). The dialogue
+  model sees them beside `ask_lares` and is told to call them directly.
+- **Calls.** A response may carry a spoken message and function calls. Calls
+  are sent first (`response.output_item.added` of type `function_call`, then
+  `response.function_call_arguments.done` and `response.output_item.done`), so
+  a gesture can accompany its words. `response.done` lists them in `output`.
+- **Results.** The device sends `conversation.item.create` with a
+  `function_call_output` for the same `call_id`, and `response.create` when it
+  wants the model to go on. A tool that needs no follow-up sends only the
+  output. A camera frame goes in a user message with one `input_image` data URL
+  (JPEG, PNG or WebP, under 512 KB), and only the newest frame stays in context.
+- **Item semantics.** In these sessions `conversation.item.create` only adds
+  context, and `response.create` starts a reply, queued while a turn is still
+  running. Spoken turns still reply on their own.
+- **Limits.** At most 8 calls per response. After three continuations without
+  new user input the model must answer in words. A call that never gets an
+  output is recorded as failed when the next step starts, and a late output for
+  it is ignored.
+- **Agent results.** In these sessions a finished `ask_lares` task is not read
+  out verbatim. The dialogue model announces it and may call device tools as it
+  does, or stay silent if it already said everything.
+- **Delegation.** `ask_lares` hands the Agent the user's transcript first,
+  followed by the dialogue's restatement, so a follow-up such as a bare city
+  name keeps the context earlier turns settled.
+
+Device calls and their outputs live only in the dialogue context. They are not
+written to Lares session records.
+
+## Listening modes
+
+Lares's own clients and a device speak the same protocol but listen in
+different ways, and the server applies each rule to one mode only
+(`core/voice/listening.js`).
+
+| Mode | Who | How a take ends | While a reply plays |
+| --- | --- | --- | --- |
+| Push-to-talk | Lares phone (hold, release) and desktop (tap, tap again) | The client commits (`turn_detection: null`) | Half duplex: the client reports playback and does not send audio |
+| Hands-free | Lares headset, continuous | `server_vad`, with playback reports; a take whose voice never adds up to 250 ms is dropped with `input_audio_buffer.cleared`, which the client treats as no words | Half duplex, unless `LARES_VOICE_BARGE_IN=1` turns on suspend-and-resolve barge-in |
+| Device | A robot that hears its room all the time: `server_vad`, no playback reports | Silero VAD in Lares, frame by frame (32 ms): a take starts when the model hears a voice and ends after 500 ms without one, or once streaming ASR has heard 1 s more of it without a new word (people talking across the room are voices too), and closes after 10 s at most. A take whose voice never adds up to 250 ms (a cough, a knock) is dropped after 500 ms of quiet with `input_audio_buffer.cleared`. A fan, a motor or a microphone's gain is not a voice however loud it is | **Full duplex**: speech that stands out from the reply's echo for 500 ms and that the model hears as a voice is a candidate. Its first words from streaming ASR (at most 1.5 s) are compared with what the device is saying: the reply's own words are its echo and are dropped, anything else is a person. Only a person sends `input_audio_buffer.speech_started`, which the device takes as "stop playing". The reply is truncated to what was heard, and the speech becomes the next turn |
+
+A device that sets `lares.echo_cancellation: false` cannot tell its own reply
+from the user, so it stays half duplex: input is dropped quietly until the
+reply has played, plus about 400 ms of room echo. When Router's VAD cannot
+answer, a take or a barge-in goes through as if it held speech. When the speech model cannot load, a device falls back to loudness: a take
+opens when the room's level is cleared, Router's VAD (`default-vad`) checks
+each take and each barge-in afterwards, and a take it finds empty teaches the
+gate the room's loud moments (95th-percentile frame level plus 20%, halving
+every 30 s). The model runs on `onnxruntime-web` with the Silero v5 weights
+`@ricky0123/vad-web` already ships; it is loaded once per process, with state
+per session.
+
+Every session holds at most one ASR request at a time: a take that starts
+while the previous one is still being transcribed is buffered and streamed
+once that finishes. When Router answers that the ASR model is busy (503 or
+429), the stream handshake and the batch fallback each retry after 0.4 s and
+1.2 s before the take fails.
+`session.lares.capabilities.barge_in` reports whether the session can be
+interrupted.
 
 ## Turns, interruption and truncate
 
@@ -332,8 +416,8 @@ a native Realtime model directly.
 
 | Capability | Why not |
 | --- | --- |
-| Client-defined `tools` / function calling | The Lares Agent provides tools; external tools must not drive the personal Agent |
-| Overriding `instructions`, injecting assistant / system history | Would bypass Lares policy and session records |
+| Client-defined `tools` without the device-tools grant | The Lares Agent provides tools; a caller's tools must not drive the personal Agent unless the owner granted it |
+| Replacing `instructions`, injecting assistant / system history | Would bypass Lares policy and session records |
 | `semantic_vad` | v1 has server_vad only; `turn_detection.type` is extensible for a turn detector model later |
 | WebRTC, SIP, sideband | v1 is WS only; WebRTC / LiveKit room can be a later transport with the same events. No SIP or sideband |
 | g711 and other formats, rates other than 24 kHz | Telephony, unrelated to Lares |
@@ -405,11 +489,13 @@ unwanted action.
 | One handler for Bearer keys and Lares tickets (`core/voice/lares-realtime-gateway.js`); native-backend tickets forward to Router through `realtime-gateway.js`, which speaks the same events | Live |
 | Session types, `session.update` fields, client and server events, `lares.*` extensions | Live |
 | Sentence-level truncate, chat `instructions`, `response.create`, item events, streaming transcription deltas (models with `stt_stream`) | Live |
+| Device tools on `clientTools` keys: declared tools, function call events, outputs, camera frames, announcements through the dialogue | Live |
 | Per-task withdraw and cancel through the dsh queue; busy turns follow the owner's busy-Enter preference | Live |
 | `X-Session-Id` on ASR, TTS, dialogue and Agent model calls | Live; dsh sends its session id and the `/llm/v1` shim swaps in the Realtime one while a keyed session drives it |
 | Host headset mode on ticket sockets | Live |
 | Lares desktop and mobile clients (`core/voice/unified-conversation.js`) | Live by default; `transport: "legacy"` keeps the pipeline endpoints |
-| Full-duplex barge-in | Code present; off unless `LARES_VOICE_BARGE_IN=1` and the client reports echo cancellation |
+| Device speech detection | Live: Silero in Lares decides when a take starts and ends; settled ASR words and a 250 ms floor end the rest. Loudness and Router's VAD only when the model cannot load |
+| Full-duplex barge-in | Device mode: live, confirmed by Silero and by the first ASR words not being the reply's own. Lares clients: code present; off unless `LARES_VOICE_BARGE_IN=1` and the client reports echo cancellation |
 | Removal of the pipeline session endpoints | After device acceptance (step 5) |
 
 Deployment gate: Router reaches Lares only through the internal entrance on

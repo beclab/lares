@@ -35,11 +35,12 @@ export function createVoiceKeyStore({ path = join(dirname(dshPluginConfigPath("v
       if (!name || name.length > 64 || /[\u0000-\u001f\u007f]/.test(name)) invalid("invalid key name");
       const models = Array.isArray(body.models) ? [...new Set(body.models)] : [];
       if (!models.length || models.some((model) => !VOICE_KEY_MODELS.includes(model))) invalid("invalid key models");
+      if (body.clientTools !== undefined && typeof body.clientTools !== "boolean") invalid("invalid clientTools");
       const keys = read();
       if (keys.length >= LIMIT) throw Object.assign(new Error("too many voice keys"), { code: "voice_key_limit", status: 409 });
       const id = randomBytes(8).toString("hex");
       const key = `lvk_${id}_${randomBytes(32).toString("base64url")}`;
-      const record = { id, name, models, sessionId: optional(body.sessionId, "sessionId"), workspaceId: optional(body.workspaceId, "workspaceId"), createdAt: new Date(now()).toISOString() };
+      const record = { id, name, models, clientTools: body.clientTools === true, sessionId: optional(body.sessionId, "sessionId"), workspaceId: optional(body.workspaceId, "workspaceId"), createdAt: new Date(now()).toISOString() };
       writeJsonFile(path, { keys: [...keys, { ...record, hash: digest(key).toString("hex") }] });
       return { ...record, key };
     },
@@ -50,7 +51,7 @@ export function createVoiceKeyStore({ path = join(dirname(dshPluginConfigPath("v
       writeJsonFile(path, { keys: next });
       return true;
     },
-    /** @returns {null | { id: string, name: string, models: string[], sessionId: string | null, workspaceId: string | null }} */
+    /** @returns {null | { id: string, name: string, models: string[], clientTools?: boolean, sessionId: string | null, workspaceId: string | null }} */
     verify(authorization) {
       const key = typeof authorization === "string" && authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
       const match = KEY.exec(key);

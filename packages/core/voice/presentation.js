@@ -1,3 +1,5 @@
+import { isQuietVoiceEnding, isRecoverableTakeFault, isTransientVoiceError } from "./errors.js";
+
 /** Stable status keys keep waveform/timer updates out of live announcements. */
 export function voicePanelPresentation(view) {
   const capture = view.snapshot?.capture;
@@ -6,42 +8,44 @@ export function voicePanelPresentation(view) {
   const preview = view.mode === "single" && ["preview", "processing"].includes(view.stage);
   const preparing = view.busy || capture === "recording" && view.snapshot?.inputReady === false;
   const recording = capture === "recording" && !preparing;
-  const error = visibleCallError(view);
+  const error = voiceVisibleError(view);
   const phase = view.cancelArmed ? "cancel" : error ? "error" : processing ? "processing" : transcribing ? "transcribing" : preparing ? "preparing" : recording ? "recording" : preview ? "preview" : view.snapshot && view.snapshot.playback !== "idle" ? "speaking" : view.snapshot?.agent === "running" ? "working" : "waiting";
   const status = error ? `error.${error}` : ({ cancel: "gesture.cancelRelease", processing: "dictation.processing", transcribing: "mic.transcribing", preparing: "mic.preparing", recording: "call.listening", preview: "dictation.preview", speaking: "dictation.speaking", working: "call.working", waiting: view.mode === "continuous" ? "gesture.waiting" : "dictation.preview" })[phase];
   return { phase, status, preview, recording, pending: processing || transcribing || preparing, error };
 }
 
-const QUIET_ENDINGS = new Set(["voice_recovery_expired", "voice_idle_timeout"]);
-
 /**
  * Recovery, idle, and a dropped continuous socket are not failures.
- * Hold-to-speak and send open the call again, so the composer stays quiet.
+ * Hold-to-speak and send open the call again, so every composer surface stays quiet.
  * A muted dictation is not a listen session.
  */
-function visibleCallError(view) {
+export function voiceVisibleError(view) {
   const reported = view?.error || view?.snapshot?.error;
-  if (!reported || QUIET_ENDINGS.has(reported)) return null;
-  if (view.mode === "continuous" && reported === "voice_disconnected") return null;
+  if (!reported || isQuietVoiceEnding(reported)) return null;
+  // A continuous call recovers by holding again. Announcing the failed take
+  // is the banner that looks like a broken voice button.
+  if (view.mode === "continuous" && (reported === "voice_disconnected" || isTransientVoiceError(reported) || isRecoverableTakeFault(reported))) return null;
   return reported === "voice_disconnected" && view.snapshot?.outputMuted ? "voice_background" : reported;
 }
 
 /**
- * A continuous call that has failed is one composer banner.
- * A paused session can still be resumed. Quiet endings have no banner.
+ * A continuous call that has failed for a reason the user must act on is one
+ * composer banner. A bad utterance, a dropped device, and a dropped socket are
+ * not: hold records the next one. Quiet endings have no banner.
  */
 export function voiceCallFailure(view) {
   if (!view?.visible || view.mode !== "continuous") return null;
   const ui = voicePanelPresentation(view);
   if (!ui.error) return null;
-  const recoverable = view.snapshot?.connection === "paused" && !QUIET_ENDINGS.has(ui.error);
+  const recoverable = view.snapshot?.connection === "paused" && !isQuietVoiceEnding(ui.error);
   return { code: ui.error, action: recoverable ? "resume" : "restart" };
 }
 
 /**
- * A voice call that is still playing keeps one strip at the composer until it
- * ends: status plus the control that stops it. The hold button is not that
- * strip. A chat readout stays on the assistant row that is being read.
+ * A voice call that is still playing keeps one strip until it ends: status
+ * plus the control that stops it. The hold button is not that strip. Clients
+ * render it under the assistant reply that owns playback. A chat readout stays
+ * on that same reply and is not this strip.
  */
 export function voicePlaybackChrome(view) {
   const playback = view?.snapshot?.playback;
@@ -65,7 +69,7 @@ export function voiceDictationPresentation(view, now = Date.now()) {
 }
 
 export function voiceIndicatorPresentation(view, settingsError = null) {
-  const error = visibleCallError(view) || view.readAloudError || settingsError;
+  const error = voiceVisibleError(view) || view.readAloudError || settingsError;
   const continuous = view.mode === "continuous";
   const active = view.visible && (view.snapshot?.connection === "open" || view.busy && !view.snapshot);
   return {

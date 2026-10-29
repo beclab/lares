@@ -1,3 +1,4 @@
+import { browserAudioErrorCode } from "./browser-audio.js";
 import {
   formatElapsed,
   isRecordingTooShort,
@@ -17,9 +18,11 @@ const DEVICE_AUDIO = {
 const CHUNK_MS = 250;
 
 function micFailure(err) {
+  if (typeof err?.message === "string" && /^voice_[a-z0-9_]+$/.test(err.message)) return err.message;
   const name = err?.name || "";
   if (name === "NotAllowedError" || name === "PermissionDeniedError") return "voice_permission_denied";
-  if (name === "SecurityError") return "voice_unsupported";
+  if (name === "NotFoundError" || name === "NotReadableError") return "voice_device_lost";
+  if (name === "SecurityError") return browserAudioErrorCode();
   return "voice_failed";
 }
 
@@ -32,13 +35,24 @@ async function openDeviceMic(mediaDevices) {
   }
 }
 
+/**
+ * iOS keeps the page in play-and-record while any microphone is open, and an
+ * echo-cancelled one makes every sound the page plays crackle (WebKit 326286).
+ * The type is set explicitly: once the microphone stops, iOS otherwise stays in
+ * the degraded session.
+ */
+function setAudioSession(session, type) {
+  try { if (session && session.type !== type) session.type = type; } catch { /* Older WebKit has no Audio Session API. */ }
+}
+
 /** Request permission in the user gesture; transfer ownership to exactly one recorder. */
 export function prepareBrowserCapture({ media, onTrace = () => {}, now = Date.now } = {}) {
-  let stream = null, cancelled = false, consumed = false;
+  let stream = null, cancelled = false, consumed = false, rested = false;
   const started = now();
   const devices = media?.mediaDevices ?? globalThis.navigator?.mediaDevices;
+  const session = media ? media.audioSession : globalThis.navigator?.audioSession;
   const ready = (async () => {
-    if (!devices?.getUserMedia) throw new Error("voice_unsupported");
+    if (!devices?.getUserMedia) throw new Error(globalThis.isSecureContext === false ? browserAudioErrorCode() : "voice_unsupported");
     const pending = openDeviceMic(devices);
     try { onTrace("permission-request", { durationMs: now() - started }); } catch { /* Telemetry is optional. */ }
     const next = await pending;
@@ -49,7 +63,31 @@ export function prepareBrowserCapture({ media, onTrace = () => {}, now = Date.no
   })();
   // Permission may fail while other initialization is still pending.
   void ready.catch(() => {});
+  const live = async () => {
+    try { await ready; }
+    catch (err) {
+      if (err instanceof Error && err.message.startsWith("voice_")) throw err;
+      throw new Error(micFailure(err));
+    }
+    if (consumed || cancelled || !stream) throw new Error("voice_cancelled");
+    if (!stream.getTracks().every((track) => track.readyState === "ended")) return stream;
+    // The session microphone rested or its device is gone. The next hold opens
+    // another one instead of failing the call. A playback session refuses
+    // capture, so a rested one asks from the session the first open used.
+    if (rested) { rested = false; setAudioSession(session, "auto"); }
+    let replaced;
+    try { replaced = await openDeviceMic(devices); }
+    catch (err) { throw new Error(micFailure(err)); }
+    if (cancelled) { replaced.getTracks().forEach((track) => track.stop()); throw new Error("voice_cancelled"); }
+    stream = replaced;
+    if (replaced.getTracks().every((track) => track.readyState === "ended")) throw new Error("voice_device_lost");
+    return replaced;
+  };
   return {
+    /** Resolves once the microphone is open. Does not take the stream. */
+    opened: live,
+    /** Another take of the same voice session. A dead device is replaced; a live one is reused. */
+    borrow: live,
     recording() {
       try { onTrace("ready", { durationMs: now() - started }); } catch { /* Telemetry is optional. */ }
     },
@@ -61,10 +99,21 @@ export function prepareBrowserCapture({ media, onTrace = () => {}, now = Date.no
       stream = null;
       return next;
     },
+    /** Release the session microphone while the call only plays; the next borrow reopens it. */
+    rest() {
+      if (cancelled || consumed || !stream) return;
+      stream.getTracks().forEach((track) => track.stop());
+      rested = true;
+      setAudioSession(session, "playback");
+      try { onTrace("rest", { durationMs: now() - started }); } catch { /* Telemetry is optional. */ }
+    },
     cancel() {
       cancelled = true;
       stream?.getTracks().forEach(track => track.stop());
       stream = null;
+      rested = false;
+      setAudioSession(session, "playback");
+      setAudioSession(session, "auto");
     },
   };
 }
@@ -79,6 +128,7 @@ export function createVoiceCapture({
   now = Date.now,
   media,
   preparation,
+  retainStream = false,
 }) {
   const mediaDevices = media?.mediaDevices ?? globalThis.navigator?.mediaDevices;
   const Recorder = media?.MediaRecorder ?? globalThis.MediaRecorder;
@@ -122,7 +172,9 @@ export function createVoiceCapture({
   const release = () => {
     detector?.stop?.();
     detector = null;
-    stream?.getTracks().forEach((track) => track.stop());
+    // A session microphone stays open for the next hold. Only a take that
+    // opened its own stream stops the tracks when the take ends.
+    if (!retainStream) stream?.getTracks().forEach((track) => track.stop());
     stream = null;
     recorder = null;
   };
@@ -241,7 +293,7 @@ export function createVoiceCapture({
     async start() {
       if (dead || phase === "preparing" || phase === "recording" || phase === "transcribing") return;
       if (typeof Recorder === "undefined" || !mediaDevices?.getUserMedia) {
-        preparation?.cancel();
+        if (!retainStream) preparation?.cancel();
         fail("voice_unsupported");
         return;
       }
@@ -253,9 +305,9 @@ export function createVoiceCapture({
       emit("preparing", { elapsed: 0, error: "" });
       let next;
       try {
-        next = await (preparation ? preparation.consume() : openDeviceMic(mediaDevices));
+        next = await (retainStream ? preparation.borrow() : preparation ? preparation.consume() : openDeviceMic(mediaDevices));
       } catch (err) {
-        preparation?.cancel();
+        if (!retainStream) preparation?.cancel();
         const code = micFailure(err);
         trace("mic-fail", { code, name: err?.name || "" });
         if (!dead) fail(code);
@@ -351,7 +403,7 @@ export function createVoiceCapture({
       }
     },
     dispose() {
-      preparation?.cancel();
+      if (!retainStream) preparation?.cancel();
       inputAbort?.abort();
       dead = true;
       cancel = true;
