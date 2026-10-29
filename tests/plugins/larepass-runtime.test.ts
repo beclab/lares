@@ -673,3 +673,27 @@ test("Host question and approval waterfalls surface on the snapshot and answer t
   runtime.dispose();
   client.socket.close();
 });
+
+test("a dropped mux retries without a send-failed banner", async () => {
+  const client = mockClient();
+  let muxes = 0;
+  const reader = (read) => ({ getReader: () => ({ read, releaseLock() {} }) });
+  client.openMux = async () => {
+    muxes += 1;
+    if (muxes === 1) {
+      return { ok: true, http: 200, body: reader(async () => { throw new Error("The network connection was lost."); }) };
+    }
+    return { ok: true, http: 200, body: reader(async () => ({ done: true })) };
+  };
+  const runtime = createChatRuntime(client);
+  await runtime.start();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(muxes, 1);
+  assert.equal(runtime.snapshot().failed, "");
+  for (let i = 0; i < 20 && muxes < 2; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  assert.ok(muxes >= 2);
+  assert.equal(runtime.snapshot().failed, "");
+  runtime.dispose();
+});

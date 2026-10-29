@@ -394,6 +394,27 @@ test("a socket that closes on its own is still voice_disconnected when retries a
   await assert.rejects(pending, (error: Error) => error.message === "voice_disconnected");
 });
 
+test("a ticket request lost with the network is retried and the answer still finishes", async () => {
+  let calls = 0;
+  let socket: ReturnType<typeof fakeSocket> | undefined;
+  const pending = playAudioStream({
+    text: "你好",
+    reconnectDelayMs: 0,
+    metric: () => {},
+    request: async () => {
+      calls += 1;
+      if (calls === 1) throw new Error("The network connection was lost.");
+      return { ok: true, body: { supported: true, ticket: "t" } };
+    },
+    socket: () => (socket = fakeSocket()),
+  });
+  for (let i = 0; i < 20 && !socket; i += 1) await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.ok(socket);
+  assert.equal(calls, 2);
+  socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "done" }) }));
+  assert.equal(await pending, true);
+});
+
 test("a suspended answer plays again after a cancelled voice take", async () => {
   let plays = 0;
   const ends: Array<() => void> = [];
@@ -652,9 +673,13 @@ test("a muted dictation disconnect does not ask the user to resume listening", (
   assert.equal(voicePanelPresentation(view).error, "voice_background");
 });
 
-test("a paused device failure can still be resumed from one banner", () => {
-  const view = { visible: true, mode: "continuous", snapshot: { connection: "paused", error: "voice_device_lost", playback: "idle" } };
-  assert.deepEqual(voiceCallFailure(view), { code: "voice_device_lost", action: "resume" });
+test("a paused device or transcription failure stays quiet; hold is the way back", () => {
+  for (const error of ["voice_device_lost", "voice_failed", "voice_timeout", "voice_no_input"]) {
+    const view = { visible: true, mode: "continuous", snapshot: { connection: "paused", error, playback: "idle" } };
+    assert.equal(voiceCallFailure(view), null);
+    assert.equal(voiceVisibleError(view), null);
+    assert.equal(voiceInputPresentation(view).label, "dictation.hold");
+  }
 });
 
 test("recovery and idle endings are quiet; hold stays the way back", () => {

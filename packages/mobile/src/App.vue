@@ -119,7 +119,7 @@ import { subscribeVoiceSettings } from "@olares/lares-core/larepass/settings";
 import { createVoicePanel } from "@olares/lares-core/voice/panel";
 import { mergeVoiceTranscript, subscribeVoiceHistory } from "@olares/lares-core/voice/projection";
 import LaresVoicePanel from "./chat/VoicePanel.vue";
-import { pickHostPorts } from "@olares/lares-core/larepass/host";
+import { pickHostPorts, isTransportFault } from "@olares/lares-core/larepass/host";
 import { connectChat } from "./runtime.js";
 import { createT } from "./i18n.js";
 import { failText, withPendingUser } from "./chat/format.js";
@@ -640,7 +640,7 @@ export default {
       if (document.hidden) {
         // A locked screen or an app switch is a pause, not the end of the
         // answer: stopping here marks the utterance read and it never resumes.
-        if (this.reader.canPause && this.reader.pause()) this.voiceReadoutPaused = true;
+        if (this.reader.pause()) this.voiceReadoutPaused = true;
         void this.voicePanel.pause().catch(() => {});
         return;
       }
@@ -648,13 +648,13 @@ export default {
       if (this.voiceReadoutPaused) { this.voiceReadoutPaused = false; this.reader.resume(); }
     };
     this.voicePageHideHandler = () => {
-      if (this.reader.canPause && this.reader.pause()) this.voiceReadoutPaused = true;
+      if (this.reader.pause()) this.voiceReadoutPaused = true;
       void this.voicePanel.pause().catch(() => {});
     };
     this.voicePageShowHandler = () => {
       if (this.voiceReadoutPaused) { this.voiceReadoutPaused = false; this.reader.resume(); }
     };
-    this.voiceOfflineHandler = () => { this.stopReadout(); void this.voicePanel.pause().catch(() => {}); };
+    this.voiceOfflineHandler = () => { void this.voicePanel.pause().catch(() => {}); };
     window.addEventListener("offline", this.voiceOfflineHandler);
     document.addEventListener("visibilitychange", this.voiceVisibilityHandler);
     window.addEventListener("pagehide", this.voicePageHideHandler);
@@ -1653,7 +1653,8 @@ export default {
             this.draft = text;
             this.draftImages = images;
           }
-          this.failed = sent.error?.message || sent.error?.code || "send";
+          const fault = sent.error?.message || sent.error?.code || "send";
+          if (!isTransportFault(fault)) this.failed = fault;
         } else {
           for (const image of images) URL.revokeObjectURL(image.previewUrl);
         }
@@ -1665,7 +1666,8 @@ export default {
           this.draft = text;
           this.draftImages = images;
         }
-        this.failed = err instanceof Error ? err.message : "attachment";
+        const fault = err instanceof Error ? err.message : "attachment";
+        if (!isTransportFault(fault)) this.failed = fault;
       } finally {
         this.sending = false;
       }
@@ -1696,7 +1698,8 @@ export default {
       try {
         const stopped = await this.runtime.cancel();
         if (!stopped.ok) {
-          this.failed = stopped.error?.message || stopped.error?.code || "cancel";
+          const fault = stopped.error?.message || stopped.error?.code || "cancel";
+          if (!isTransportFault(fault)) this.failed = fault;
         }
       } finally {
         this.stopping = false;

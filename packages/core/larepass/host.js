@@ -117,6 +117,14 @@ export function isAuthFailure(http) {
   return http === 401 || http === 403 || http === 301 || http === 302 || http === 303 || http === 307 || http === 308;
 }
 
+/** A blip the client is already retrying. Not a failed send and not a dead host. */
+const TRANSPORT_FAULT = /network connection was lost|failed to fetch|networkerror|load failed|internet connection appears to be offline|network request failed/i;
+
+export function isTransportFault(value) {
+  const message = typeof value === "string" ? value : value?.message || value?.code || "";
+  return TRANSPORT_FAULT.test(String(message));
+}
+
 export async function probeHost(request, path = MODELS_PATH) {
   try {
     const res = await request(path);

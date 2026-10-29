@@ -21,6 +21,24 @@ function microphone() {
   return { grant, stream, media, get opens() { return opens; }, get stops() { return stops; }, get starts() { return starts; } };
 }
 
+test("a dropped microphone is opened again on the next hold", async () => {
+  const tracks: { readyState: string, stop(): void }[] = [];
+  const media = { mediaDevices: { getUserMedia() {
+    const track = { readyState: "live", stop() { this.readyState = "ended"; } };
+    tracks.push(track);
+    return Promise.resolve({ getTracks: () => [track] });
+  } } };
+  const preparation = prepareBrowserCapture({ media });
+  const first = await preparation.opened();
+  assert.equal(tracks.length, 1);
+  tracks[0].readyState = "ended";
+  const second = await preparation.borrow();
+  assert.equal(tracks.length, 2);
+  assert.notEqual(second, first);
+  assert.equal(second.getTracks()[0], tracks[1]);
+  preparation.cancel();
+});
+
 test("permission starts synchronously, transfers one stream once, and releases on dispose", async () => {
   const mic = microphone(); const timings: any[] = [];
   const preparation = prepareBrowserCapture({ media: mic.media, onTrace: (stage, fields) => timings.push({ stage, ...fields }) });

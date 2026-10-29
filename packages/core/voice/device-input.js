@@ -34,7 +34,10 @@ export function createDeviceInput({ transcribe, onPhase = () => {}, endpoint = d
         const done = (text) => { clearTimeout(timer); signal?.removeEventListener("abort", cancel); settle = null; resolve(text); };
         const retainStream = continuous && typeof preparation?.borrow === "function";
         recorder = createVoiceCapture({ media, streamInput, preparation, retainStream, transcribe, submit: done, onStream: (stream) => {
-          for (const track of stream.getTracks()) track.addEventListener?.("ended", () => { settle = null; cancel(); reject(new Error("voice_device_lost")); }, { once: true });
+          for (const track of stream.getTracks()) track.addEventListener?.("ended", () => {
+            // The device dropped mid-take. End this utterance empty; the next hold opens another microphone.
+            if (settle) cancel();
+          }, { once: true });
           if (!automatic) return createInputMeter(stream, onLevel);
           return endpoint(stream, (heard = true) => { if (heard) recorder?.stop(); else { cancel(); done(""); } }, onSpeech, onLevel, { silenceMs: endpointSilenceMs, interruptionMs: echoTested ? 500 : 0 });
         }, onPhase(phase, extra) {

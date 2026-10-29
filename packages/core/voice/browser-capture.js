@@ -18,8 +18,10 @@ const DEVICE_AUDIO = {
 const CHUNK_MS = 250;
 
 function micFailure(err) {
+  if (typeof err?.message === "string" && /^voice_[a-z0-9_]+$/.test(err.message)) return err.message;
   const name = err?.name || "";
   if (name === "NotAllowedError" || name === "PermissionDeniedError") return "voice_permission_denied";
+  if (name === "NotFoundError" || name === "NotReadableError") return "voice_device_lost";
   if (name === "SecurityError") return browserAudioErrorCode();
   return "voice_failed";
 }
@@ -58,13 +60,21 @@ export function prepareBrowserCapture({ media, onTrace = () => {}, now = Date.no
       throw new Error(micFailure(err));
     }
     if (consumed || cancelled || !next) throw new Error("voice_cancelled");
-    if (next.getTracks().every((track) => track.readyState === "ended")) throw new Error("voice_device_lost");
-    return next;
+    if (!next.getTracks().every((track) => track.readyState === "ended")) return next;
+    // The device behind this session microphone is gone. The next hold opens
+    // another one instead of failing the call.
+    let replaced;
+    try { replaced = await openDeviceMic(devices); }
+    catch (err) { throw new Error(micFailure(err)); }
+    if (cancelled) { replaced.getTracks().forEach((track) => track.stop()); throw new Error("voice_cancelled"); }
+    stream = replaced;
+    if (replaced.getTracks().every((track) => track.readyState === "ended")) throw new Error("voice_device_lost");
+    return replaced;
   };
   return {
     /** Resolves once the microphone is open. Does not take the stream. */
     opened: live,
-    /** Another take of the same voice session. Does not open a second microphone. */
+    /** Another take of the same voice session. A dead device is replaced; a live one is reused. */
     borrow: live,
     recording() {
       try { onTrace("ready", { durationMs: now() - started }); } catch { /* Telemetry is optional. */ }

@@ -1,4 +1,4 @@
-import { isAuthFailure } from "./host.js";
+import { isAuthFailure, isTransportFault } from "./host.js";
 import { listNavigableSessions, summarizeSession } from "./chat.js";
 import {
   classifyRemoteEvent,
@@ -198,8 +198,12 @@ export function createChatRuntime(client) {
       if (dead) return;
       if (!history.ok) {
         if (sessionId !== state.sessionId) return;
+        const fault = history.error?.message || history.error?.code || "history";
+        // A blip while the loop is about to reconnect must not wipe the transcript
+        // or put a send-failed banner over a chat that is still open.
+        if (isTransportFault(fault)) return;
         cache.rememberHistory(sessionId, []);
-        state.failed = history.error?.message || history.error?.code || "history";
+        state.failed = fault;
         emit();
         return;
       }
@@ -225,8 +229,7 @@ export function createChatRuntime(client) {
       return "unauthorized";
     }
     if (!opened.ok || !opened.body) {
-      state.failed = opened.error?.message || `mux ${opened.http || opened.status || ""}`;
-      emit();
+      // listenLoop opens the socket again. This is not a failed send.
       return "error";
     }
     state.failed = "";
@@ -281,8 +284,7 @@ export function createChatRuntime(client) {
       }
     } catch (err) {
       if (dead || err?.name === "AbortError") return "stop";
-      state.failed = err instanceof Error ? err.message : String(err);
-      emit();
+      // The socket dropped. The loop retries; the shell must not call it a failed send.
       return "error";
     } finally {
       if (liveSocket === opened.body) {

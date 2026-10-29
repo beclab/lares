@@ -1,4 +1,4 @@
-import { isQuietVoiceEnding } from "./errors.js";
+import { isQuietVoiceEnding, isRecoverableTakeFault, isTransientVoiceError } from "./errors.js";
 
 /** Stable status keys keep waveform/timer updates out of live announcements. */
 export function voicePanelPresentation(view) {
@@ -22,13 +22,16 @@ export function voicePanelPresentation(view) {
 export function voiceVisibleError(view) {
   const reported = view?.error || view?.snapshot?.error;
   if (!reported || isQuietVoiceEnding(reported)) return null;
-  if (view.mode === "continuous" && reported === "voice_disconnected") return null;
+  // A continuous call recovers by holding again. Announcing the failed take
+  // is the banner that looks like a broken voice button.
+  if (view.mode === "continuous" && (reported === "voice_disconnected" || isTransientVoiceError(reported) || isRecoverableTakeFault(reported))) return null;
   return reported === "voice_disconnected" && view.snapshot?.outputMuted ? "voice_background" : reported;
 }
 
 /**
- * A continuous call that has failed is one composer banner.
- * A paused session can still be resumed. Quiet endings have no banner.
+ * A continuous call that has failed for a reason the user must act on is one
+ * composer banner. A bad utterance, a dropped device, and a dropped socket are
+ * not: hold records the next one. Quiet endings have no banner.
  */
 export function voiceCallFailure(view) {
   if (!view?.visible || view.mode !== "continuous") return null;

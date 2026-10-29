@@ -4,6 +4,7 @@ import { createPcmResampler } from "./realtime-audio.js";
 import { createPcmStreamPlayer } from "./pcm-player.js";
 import { wavPcm } from "./client.js";
 import { browserAudioErrorCode, requireAudioWorklet } from "./browser-audio.js";
+import { isTransportFault } from "../larepass/host.js";
 
 export function browserAudioSocket(ticket) {
   const url = new URL("/api/lares/voice/stream", globalThis.location.href); url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
@@ -45,18 +46,45 @@ function clientFacts() {
   };
 }
 
-const RECONNECT_ATTEMPTS = 3;
 const RECONNECT_DELAY_MS = 400;
+const RECONNECT_DELAY_CAP_MS = 5_000;
 
-/** A phone can lose the socket (lock screen, app switch, Wi-Fi/cellular) mid-answer. */
+/**
+ * A phone loses the socket or the next ticket request together (lock screen,
+ * app switch, Wi-Fi/cellular). Either one is the same blip. The caller aborting
+ * is what ends the answer; a fixed handful of retries is shorter than the blip.
+ */
 function reconnectable(error) {
-  const code = error?.message;
-  return code === "voice_disconnected";
+  return error?.message === "voice_disconnected" || isTransportFault(error);
+}
+
+function waitToReconnect(signal, delay) {
+  return new Promise((resolve) => {
+    let timer = 0;
+    const finish = () => {
+      clearTimeout(timer);
+      if (typeof document !== "undefined") document.removeEventListener("visibilitychange", onVisible);
+      signal?.removeEventListener("abort", finish);
+      resolve();
+    };
+    const onVisible = () => { if (!document.hidden) finish(); };
+    signal?.addEventListener("abort", finish, { once: true });
+    // Dialing while the WebView is frozen only fails again. Wait until it is back,
+    // then give the radio a moment.
+    if (typeof document !== "undefined" && document.hidden) {
+      document.addEventListener("visibilitychange", onVisible);
+      return;
+    }
+    timer = setTimeout(finish, delay);
+  });
 }
 
 export async function playAudioStream(options) {
   const started = Date.now();
-  const attempts = Math.max(1, Number(options.reconnectAttempts) || RECONNECT_ATTEMPTS);
+  // A caller can cap attempts. Otherwise the answer stays open until it finishes
+  // or the caller aborts: a lock-screen blip outlasts a few quick retries.
+  const capped = Number.isFinite(Number(options.reconnectAttempts));
+  const attempts = capped ? Math.max(1, Number(options.reconnectAttempts)) : Infinity;
   const reconnectDelay = Number.isFinite(options.reconnectDelayMs) ? Math.max(0, options.reconnectDelayMs) : RECONNECT_DELAY_MS;
   // Frames already rendered before the current socket. A reconnected socket
   // replays the answer from its first segment; dropping this prefix keeps the
@@ -68,12 +96,12 @@ export async function playAudioStream(options) {
   options.controls?.({
     get canPause() { return controls.ready; },
     pause() {
-      if (!controls.ready || paused) return;
+      if (paused) return;
       paused = true; controls.player?.pause();
       if (controls.connection?.readyState === 1) controls.connection.send(JSON.stringify({ type: "pause" }));
     },
     resume() {
-      if (!controls.ready || !paused) return;
+      if (!paused) return;
       paused = false; controls.player?.resume();
       if (controls.connection?.readyState === 1) controls.connection.send(JSON.stringify({ type: "resume" }));
     },
@@ -83,10 +111,16 @@ export async function playAudioStream(options) {
     if (attempt > 0) {
       if (options.signal?.aborted) throw new Error("voice_cancelled");
       streamMetric(options, { stage: "playback_reconnect", attempt, skipFrames, code: lastError?.message || "voice_disconnected", ...clientFacts() });
-      await new Promise((resolve) => setTimeout(resolve, reconnectDelay));
+      const delay = Math.min(reconnectDelay * 2 ** Math.min(attempt - 1, 4), RECONNECT_DELAY_CAP_MS);
+      await waitToReconnect(options.signal, delay);
       if (options.signal?.aborted) throw new Error("voice_cancelled");
     }
-    const connection = await openAudioStream({ ...options, operation: "tts" });
+    let connection = null;
+    let player = null;
+    let gapWatch = null;
+    let noteVisibility = null;
+    try {
+    connection = await openAudioStream({ ...options, operation: "tts" });
     if (!connection) throw new Error("voice_stream_failed");
     let progressNoted = false, progressBlocked = false;
     let lastProgressAt = Date.now(), gapReported = false, gapAt = 0, formatNoted = false;
@@ -97,7 +131,7 @@ export async function playAudioStream(options) {
     let skipBytes = skipFrames * 2;
     let skippedFrames = 0;
     let skipAckAt = 0;
-    const player = createPcmStreamPlayer({
+    player = createPcmStreamPlayer({
       onProgress: (frames) => {
         lastProgressAt = Date.now();
         if (gapReported) { gapReported = false; streamMetric(options, { stage: "playback_gap_end", frames: skipFrames + frames, gapMs: Date.now() - gapAt, ...clientFacts(), context: player.contextState() }); }
@@ -135,18 +169,17 @@ export async function playAudioStream(options) {
       }
       await player.write(chunk);
     };
-    const gapWatch = setInterval(() => {
+    gapWatch = setInterval(() => {
       if (!ready || paused || complete || gapReported || Date.now() - lastProgressAt < 4000) return;
       gapReported = true;
       gapAt = lastProgressAt;
       streamMetric(options, { stage: "playback_gap", gapMs: Date.now() - lastProgressAt, frames: skipFrames + player.playedFrames(), ...clientFacts(), context: player.contextState(), sampleRate: player.sampleRate() });
     }, 1000);
     gapWatch.unref?.();
-    const noteVisibility = () => {
+    noteVisibility = () => {
       if (ready && !complete) streamMetric(options, { stage: "playback_visibility", frames: skipFrames + player.playedFrames(), paused, ...clientFacts(), context: player.contextState() });
     };
     if (typeof document !== "undefined" && document.addEventListener) document.addEventListener("visibilitychange", noteVisibility);
-    try {
       await new Promise((resolve, reject) => {
         let logged = false;
         const fail = (error) => {
@@ -207,7 +240,7 @@ export async function playAudioStream(options) {
     } catch (error) {
       lastError = error;
       if (reconnectable(error) && attempt < attempts - 1) {
-        skipFrames += player.playedFrames();
+        skipFrames += player?.playedFrames() || 0;
         continue;
       }
       if (error?.message !== "voice_cancelled") {
@@ -216,9 +249,9 @@ export async function playAudioStream(options) {
       throw error;
     } finally {
       clearInterval(gapWatch);
-      if (typeof document !== "undefined" && document.removeEventListener) document.removeEventListener("visibilitychange", noteVisibility);
-      if (controls.player === player) { controls.player = null; controls.connection = null; controls.ready = false; }
-      player.stop(); connection.close();
+      if (noteVisibility && typeof document !== "undefined" && document.removeEventListener) document.removeEventListener("visibilitychange", noteVisibility);
+      if (player && controls.player === player) { controls.player = null; controls.connection = null; controls.ready = false; }
+      player?.stop(); connection?.close();
     }
   }
   throw lastError || new Error("voice_disconnected");

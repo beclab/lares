@@ -1,5 +1,5 @@
 import { createInterruptionGuard } from "./interruption.js";
-import { isQuietVoiceEnding, isTransientVoiceError, voiceErrorCode } from "./errors.js";
+import { isQuietVoiceEnding, isRecoverableTakeFault, isTransientVoiceError, voiceErrorCode } from "./errors.js";
 import { mintRpcId } from "../larepass/rpc.js";
 
 /** Device, agent and playback ports are injected; UI frameworks own no turn state. */
@@ -96,10 +96,9 @@ export function createVoiceController({ input, agent, output, voiceId = mintRpcI
     } catch (error) {
       if (live(run)) {
         const code = voiceErrorCode(error) || "voice_failed";
-        if (isTransientVoiceError(code)) {
-          // The take lost a race with the previous turn or with a reply that
-          // still owns the shared audio link. Drop only this take: the call
-          // stays open and the composer returns to listening for the next one.
+        if (isTransientVoiceError(code) || (state.continuous && isRecoverableTakeFault(code))) {
+          // The take lost a race, or this utterance of a continuous call failed.
+          // Drop only this take: the call stays open and the next hold records again.
           interruption.cancel();
           report("take-dropped", run.started, { turnId: run.id, code });
           change({ capture: "idle", userSpeaking: false, inputLevel: null });

@@ -165,6 +165,43 @@ test("a take dropped for transient contention keeps the call open", async () => 
   assert.equal(snap.capture, "recording");
 });
 
+test("a recognition failure on a continuous call drops the take and stays open", async () => {
+  for (const code of ["voice_failed", "voice_device_lost"]) {
+    let failTake: (error: Error) => void = () => {};
+    const controller = createVoiceController({
+      input: { capabilities: { listenWhileWorking: true }, capture: () => new Promise<string>((_resolve, reject) => { failTake = reject; }), cancel() {}, stop() {} },
+      output: { stop() {} },
+      agent: { create: async () => "s", submit: async () => {}, cancel() {}, running: async () => false },
+    });
+    await controller.start({ continuous: true, manual: true });
+    void controller.listen();
+    await flush();
+    failTake(Object.assign(new Error(code), { code }));
+    await flush(); await flush();
+    const snap = controller.getSnapshot();
+    assert.equal(snap.connection, "open", code);
+    assert.equal(snap.error, null, code);
+    assert.equal(snap.capture, "idle", code);
+    await controller.disconnect();
+  }
+});
+
+test("a recognition failure outside a call still pauses it", async () => {
+  let failTake: (error: Error) => void = () => {};
+  const controller = createVoiceController({
+    input: { capture: () => new Promise<string>((_resolve, reject) => { failTake = reject; }), cancel() {}, stop() {} },
+    output: { stop() {} },
+    agent: { create: async () => "s", submit: async () => {}, cancel() {}, running: async () => false },
+  });
+  await controller.start();
+  await flush();
+  failTake(Object.assign(new Error("voice_failed"), { code: "voice_failed" }));
+  await flush(); await flush();
+  assert.equal(controller.getSnapshot().connection, "paused");
+  assert.equal(controller.getSnapshot().error, "voice_failed");
+  await controller.disconnect();
+});
+
 test("a hard take error still pauses the call", async () => {
   let failTake: (error: Error) => void = () => {};
   const controller = createVoiceController({
