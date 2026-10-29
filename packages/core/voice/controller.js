@@ -49,6 +49,15 @@ export function createVoiceController({ input, agent, output, voiceId = mintRpcI
   const interruption = createInterruptionGuard({ output, now, schedule, unschedule,
     onState: playback => change({ playback }), onError: error => change({ error }) });
   const interruptible = () => state.continuous && !manualTurns && input.capabilities?.bargeIn === true && input.capabilities?.echoTested === true && output.canPause === true;
+  // Output and microphone share one link: while a reply that cannot be
+  // interrupted is on its way or playing, a take would only send the speaker
+  // back to ASR, and the Host rejects those frames. The open microphone itself
+  // degrades the speaker on phones, so it is released too; the next take reopens it.
+  const restInput = async () => {
+    if (interruptible()) return;
+    if (take) await cancelInput();
+    if (state.playback !== "idle" && !take) input.rest?.();
+  };
   const stopPlayback = async () => {
     interruption.cancel();
     const started = now();
@@ -155,8 +164,9 @@ export function createVoiceController({ input, agent, output, voiceId = mintRpcI
       if (state.sessionId) await agent.cancel(state.sessionId);
     },
     observeAgent(running, playbackExpected = false) {
-      if (playbackExpected && take && !interruptible()) void cancelInput();
+      const arriving = playbackExpected && state.playback === "idle";
       change({ agent: running ? "running" : "idle", ...(playbackExpected ? { playback: "pending" } : {}) });
+      if (arriving) void restInput();
       if (!manualTurns && !running && state.continuous) void listen();
     },
     observePlayback(playing) {
@@ -164,12 +174,9 @@ export function createVoiceController({ input, agent, output, voiceId = mintRpcI
       if (playing !== (state.playback === "playing")) touch();
       // The next reply that actually renders clears the previous audio failure.
       if (playing && playbackError) { playbackError = null; change({ error: null }); }
+      const arriving = playing && state.playback === "idle";
       change({ playback: playing ? "playing" : "idle" });
-      // Output and microphone share one link. As soon as audio is rendered, a
-      // take that is still recording would only send the speaker back to ASR,
-      // and the Host rejects those frames. Stop it here instead of waiting for
-      // the next agent poll.
-      if (playing && take && !interruptible()) void cancelInput();
+      if (arriving) void restInput();
       if (!manualTurns && state.continuous && (!playing || interruptible())) void listen();
     },
     async pause() {

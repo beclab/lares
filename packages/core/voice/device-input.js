@@ -57,6 +57,8 @@ export function createDeviceInput({ transcribe, onPhase = () => {}, endpoint = d
       });
     },
     stop: () => recorder?.stop(),
+    /** Nothing is captured until the next take; that take reopens the session microphone. */
+    rest: () => { if (!["preparing", "recording", "transcribing"].includes(recorder?.phase)) preparation?.rest?.(); },
     cancel,
   };
 }

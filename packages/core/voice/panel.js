@@ -235,6 +235,10 @@ export function createVoicePanel({ create, complete, loadConfig = async () => ({
       if (state.busy || state.holding || state.snapshot?.capture === "transcribing") return Promise.resolve();
       const token = ++intent; emit({ holding: true, cancelArmed: false });
       return enqueue(async () => {
+        // A hold interrupts the reply. Stop it before the microphone reopens:
+        // an open microphone puts a phone's speaker back in the call session.
+        await call?.controller.stopPlayback();
+        if (token !== intent || !state.holding) return;
         if (inputPreparation?.borrow) {
           try { await inputPreparation.borrow(); }
           catch (error) {

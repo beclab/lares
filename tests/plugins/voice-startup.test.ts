@@ -39,6 +39,31 @@ test("a dropped microphone is opened again on the next hold", async () => {
   preparation.cancel();
 });
 
+test("a rested session microphone plays through the playback session and reopens for the next take", async () => {
+  const tracks: { readyState: string, stop(): void }[] = [];
+  const types: string[] = [];
+  const audioSession = { get type() { return types.at(-1) ?? "auto"; }, set type(value: string) { types.push(value); } };
+  const media = { audioSession, mediaDevices: { getUserMedia() {
+    if (audioSession.type === "playback") return Promise.reject(Object.assign(new Error("capture is not allowed"), { name: "InvalidStateError" }));
+    const track = { readyState: "live", stop() { this.readyState = "ended"; } };
+    tracks.push(track);
+    return Promise.resolve({ getTracks: () => [track] });
+  } } };
+  const preparation = prepareBrowserCapture({ media });
+  await preparation.opened();
+  preparation.rest();
+  assert.equal(tracks[0].readyState, "ended");
+  assert.deepEqual(types, ["playback"]);
+  const next = await preparation.borrow();
+  assert.equal(next.getTracks()[0], tracks[1]);
+  assert.deepEqual(types, ["playback", "auto"]);
+  assert.equal(await preparation.borrow(), next, "a hold and its take share the reopened microphone");
+  assert.equal(tracks.length, 2);
+  preparation.cancel();
+  assert.equal(tracks[1].readyState, "ended");
+  assert.deepEqual(types, ["playback", "auto", "playback", "auto"]);
+});
+
 test("permission starts synchronously, transfers one stream once, and releases on dispose", async () => {
   const mic = microphone(); const timings: any[] = [];
   const preparation = prepareBrowserCapture({ media: mic.media, onTrace: (stage, fields) => timings.push({ stage, ...fields }) });
@@ -184,6 +209,22 @@ test("later holds reuse the microphone opened for the voice session", async () =
   assert.equal(mic.opens, 1); assert.equal(mic.stops, 0);
   preparation.cancel();
   assert.equal(mic.stops, 1);
+});
+
+test("a take that finished with words leaves the session microphone free to rest", async () => {
+  const mic = microphone();
+  const preparation = prepareBrowserCapture({ media: mic.media });
+  mic.grant.resolve(mic.stream);
+  await preparation.opened();
+  const input = createDeviceInput({ preparation, media: mic.media, transcribe: async () => "hi" });
+  const take = input.capture({ continuous: true, manual: true });
+  await new Promise((resolve) => setTimeout(resolve, 750));
+  input.stop();
+  assert.equal(await take, "hi");
+  assert.equal(mic.stops, 0);
+  input.rest();
+  assert.equal(mic.stops, 1);
+  preparation.cancel();
 });
 
 test("light capability loading ignores blocked diagnostics and retains last good capability on failure", async () => {

@@ -236,6 +236,32 @@ test("rendered audio cancels a take that is still recording", async () => {
   assert.equal(controller.getSnapshot().capture, "idle");
 });
 
+test("an uninterruptible reply rests the microphone after its take ends, and the next take opens it again", async () => {
+  const events: string[] = [];
+  let takes = 0;
+  const controller = createVoiceController({
+    input: { capabilities: { listenWhileWorking: true }, capture: ({ signal }: any) => { takes++; events.push("capture"); return new Promise<string>((resolve) => { signal.addEventListener("abort", () => resolve(""), { once: true }); }); }, cancel() { events.push("cancel"); }, stop() {}, rest() { events.push("rest"); } },
+    output: { stop() {} },
+    agent: { create: async () => "s", submit: async () => {}, cancel() {}, running: async () => false },
+  });
+  await controller.start({ continuous: true });
+  await flush();
+  controller.observeAgent(true, true);
+  await flush(); await flush();
+  assert.deepEqual(events, ["capture", "cancel", "rest"]);
+  controller.observeAgent(true, true);
+  controller.observePlayback(true);
+  controller.observeAgent(true, true);
+  await flush();
+  assert.deepEqual(events, ["capture", "cancel", "rest"]);
+  assert.equal(takes, 1);
+  controller.observeAgent(false);
+  controller.observePlayback(false);
+  await flush();
+  assert.equal(takes, 2);
+  await controller.disconnect();
+});
+
 test("a playback failure stays visible until a reply renders, not until listening", async () => {
   const controller = createVoiceController({
     input: { capabilities: { listenWhileWorking: true }, capture: () => new Promise<string>(() => {}), cancel() {}, stop() {} },
