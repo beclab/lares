@@ -43,8 +43,14 @@ export function createUnifiedConversation({ request, socket: openSocket = browse
   };
   const sessionBody = (sessionId) => ({ sessionId, readAloud, presentationSession, preset: onTranscript ? "dictation" : preset, backend: "pipeline" });
 
+  // A phone's playback only fails on the phone; the Host log is the one place a test can read it.
+  const report = (event) => {
+    metric(event);
+    const detail = [event.state, event.shared ? "shared" : null, event.code].filter(Boolean).join("/") || undefined;
+    void call("/session/metric", { stage: event.stage, durationMs: event.durationMs ?? 0, detail }).catch(() => {});
+  };
   // Reply playback: one PCM player per response, acknowledged back to the Host.
-  const player = createPlayer({ onProgress: (frames) => {
+  const player = createPlayer({ onMetric: report, onProgress: (frames) => {
     if (!reply || !protocol) return;
     reply.playedMs = frames / (RATE / 1000);
     if (Date.now() - (reply.reported || 0) >= PROGRESS_MS) { reply.reported = Date.now(); protocol.playbackProgress(reply.itemId, Math.round(reply.playedMs)); }
@@ -52,6 +58,7 @@ export function createUnifiedConversation({ request, socket: openSocket = browse
   const playback = {
     begin(event) {
       reply = { id: event.response?.id, itemId: null, text: "", audio: false, playedMs: 0, chain: Promise.resolve(), muted: false };
+      if (readAloud === true) controller.expectPlayback();
     },
     write(delta) {
       const current = reply;
@@ -249,7 +256,7 @@ export function createUnifiedConversation({ request, socket: openSocket = browse
 
   const controller = createVoiceController({ voiceId, input, idleTimeoutMs, recoveryTimeoutMs, onExpired: () => stop(),
     onTranscript: onTranscript ? async (value) => { await onTranscript(value); if (!continuous) await stop(); } : null,
-    metric: (event) => { metric(event); void call("/session/metric", { stage: event.stage, durationMs: event.durationMs }).catch(() => {}); },
+    metric: report,
     output: { get canPause() { return !headset; }, key: () => reply?.id, pause: () => player.pause?.(), resume: () => player.resume?.(), stop: () => playback.stop() },
     agent: {
       lazy: true,

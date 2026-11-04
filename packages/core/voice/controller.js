@@ -56,7 +56,7 @@ export function createVoiceController({ input, agent, output, voiceId = mintRpcI
   const restInput = async () => {
     if (interruptible()) return;
     if (take) await cancelInput();
-    if (state.playback !== "idle" && !take) input.rest?.();
+    if (state.playback !== "idle" && !take && input.rest) { input.rest(); report("input-rest", now(), { state: state.playback }); }
   };
   const stopPlayback = async () => {
     interruption.cancel();
@@ -168,6 +168,15 @@ export function createVoiceController({ input, agent, output, voiceId = mintRpcI
       change({ agent: running ? "running" : "idle", ...(playbackExpected ? { playback: "pending" } : {}) });
       if (arriving) void restInput();
       if (!manualTurns && !running && state.continuous) void listen();
+    },
+    /**
+     * A reply that will be read aloud was announced. Resting now switches a phone's audio session
+     * before the reply's first slice opens the player; switching while it opens silences the reply.
+     */
+    expectPlayback() {
+      if (state.playback !== "idle") return;
+      change({ playback: "pending" });
+      void restInput();
     },
     observePlayback(playing) {
       if (!playing) interruption.outputEnded();

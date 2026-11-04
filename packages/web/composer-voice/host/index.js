@@ -271,6 +271,8 @@ async function handleVoiceClose(req, res) {
   sendJson(res, 200, { closed: true });
 }
 
+const CLIENT_METRIC_STAGES = new Set(["recognition", "interrupt", "input-rest", "playback_context", "playback_started", "playback_underrun", "playback-error"]);
+
 const ROUTES = {
   "/stream/ticket": { POST: async (req, res) => sendJson(res, 200, await streams.ticket(scopeFor(req), await readJsonObject(req))) },
   "/realtime/ticket": { POST: async (req, res) => sendJson(res, 200, await realtime.ticket(scopeFor(req))) },
@@ -296,7 +298,9 @@ const ROUTES = {
   "/session/metric": { POST: async (req, res) => {
     const scope = scopeFor(req);
     const value = await readJsonObject(req);
-    if (["recognition", "interrupt"].includes(value.stage) && Number.isFinite(value.durationMs) && value.durationMs >= 0 && value.durationMs <= 3_600_000) writeReport({ scope: "voice", event: "metric", voiceId: scope.id, stage: value.stage, durationMs: value.durationMs });
+    // Playback stages are the only trace of whether a phone actually sounded a reply.
+    const detail = typeof value.detail === "string" ? value.detail.slice(0, 80) : undefined;
+    if (CLIENT_METRIC_STAGES.has(value.stage) && Number.isFinite(value.durationMs) && value.durationMs >= 0 && value.durationMs <= 3_600_000) writeReport({ scope: "voice", event: "metric", voiceId: scope.id, stage: value.stage, durationMs: value.durationMs, ...(detail ? { detail } : {}) });
     sendJson(res, 200, { ok: true });
   } },
   "/playback/status": { GET: (req, res) => sendJson(res, 200, playbackStatus(scopeFor(req))) },
