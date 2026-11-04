@@ -7,6 +7,10 @@ class LaresPcmPlayer extends AudioWorkletProcessor {
     const outputRate = sampleRate || options.processorOptions.outputRate;
     this.step = this.rate / outputRate;
     this.preroll = options.processorOptions.preroll || 0;
+    this.hold = this.preroll;
+    const cap = options.processorOptions.rebufferMax;
+    this.ceiling = typeof cap === 'number' ? cap : this.preroll;
+    this.stalls = 0;
     this.paused = false; this.queued = 0; this.finished = false; this.started = false; this.starved = false;
     this.port.onmessage = ({ data }) => {
       if (data.type === 'audio') {
@@ -22,8 +26,11 @@ class LaresPcmPlayer extends AudioWorkletProcessor {
     for (let c = 0; c < channels.length; c++) channels[c].fill(0);
     const mirror = () => { for (let c = 1; c < channels.length; c++) channels[c].set(out); };
     if (this.paused) return true;
-    // A late first packet must not open a hole inside the first syllable.
-    if (!this.started && !this.finished && this.queued < this.preroll) return true;
+    // A late packet must not open a hole. The same wait applies after a stall:
+    // splicing the next block onto the silence just written is the crackle.
+    // Count only samples still ahead of the playhead; a consumed block stays in
+    // queued until the read offset steps past it.
+    if (!this.started && !this.finished && this.queued - Math.floor(this.offset) < this.hold) return true;
     for (let i = 0; i < out.length; i++) {
       while (this.queue.length && this.offset >= this.queue[0].length) {
         const head = this.queue.shift(); this.offset -= head.length; this.queued -= head.length;
@@ -32,16 +39,14 @@ class LaresPcmPlayer extends AudioWorkletProcessor {
       const head = this.queue[0];
       if (!head) {
         if (this.finished) { this.port.postMessage({ type: 'progress', frames: this.frames }); this.port.postMessage({ type: 'done' }); mirror(); return false; }
-        if (this.started && !this.starved) this.port.postMessage({ type: 'underrun' });
-        this.starved = true; continue;
+        this.stall(); continue;
       }
       const at = Math.floor(this.offset), fraction = this.offset - at;
       // Interpolate across transport blocks; never clamp an unfinished block's edge.
       let next = head[at + 1];
       if (next === undefined) next = this.queue[1]?.[0];
       if (fraction > 0 && next === undefined && !this.finished) {
-        if (this.started && !this.starved) this.port.postMessage({ type: 'underrun' });
-        this.starved = true; break;
+        this.stall(); break;
       }
       if (!this.started) { this.started = true; this.port.postMessage({ type: 'started' }); }
       this.starved = false;
@@ -52,6 +57,15 @@ class LaresPcmPlayer extends AudioWorkletProcessor {
     const played = this.frames + Math.min(this.queue[0]?.length || 0, Math.floor(this.offset));
     if (played - this.reported >= this.rate * 0.05) { this.reported = played; this.port.postMessage({ type: 'progress', frames: played }); }
     return true;
+  }
+  stall() {
+    if (this.started && !this.starved) {
+      this.port.postMessage({ type: 'underrun' });
+      if (this.stalls > 0) this.hold = Math.min(this.ceiling, Math.max(this.hold * 2, this.preroll));
+      this.stalls++;
+      this.started = false;
+    }
+    this.starved = true;
   }
 }
 registerProcessor('lares-pcm-player', LaresPcmPlayer);

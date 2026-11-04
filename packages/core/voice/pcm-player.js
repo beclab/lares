@@ -142,7 +142,7 @@ export function createPcmStreamPlayer({ onProgress = () => {}, onMetric = () => 
         throw error;
       }
       node = new AudioWorkletNode(opened, "lares-pcm-player", {
-        processorOptions: { inputRate: sampleRate, outputRate: opened.sampleRate || sampleRate, preroll: Math.round(sampleRate * 0.2) },
+        processorOptions: { inputRate: sampleRate, outputRate: opened.sampleRate || sampleRate, preroll: Math.round(sampleRate * 0.2), rebufferMax: Math.round(sampleRate * 0.8) },
         numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2],
       });
       node.port.onmessage = ({ data }) => {

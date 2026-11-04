@@ -1089,8 +1089,10 @@ test("with a speech model a phrase quieter than its first syllable is still a ph
   } finally { client.close(); await fixture.stop(); }
 });
 
-test("a device's reply is synthesized as a stream, a Lares client's still sentence by sentence", async () => {
-  const run = async (acknowledging: boolean) => {
+test("a reply is synthesized as a stream in every listening mode", async () => {
+  // Device: server VAD and no playback reports. Hands-free: server VAD plus reports.
+  // Push-to-talk is the phone, including the moment before its first report arrives.
+  const run = async ({ acknowledging, automatic }: { acknowledging: boolean, automatic: boolean }) => {
     const asked: any[] = [];
     const fixture = await serve({ synthesize: async (_text: string, _scope: any, _onChunk: any, options: any) => { asked.push(options?.stream === true); return Buffer.alloc(2400); } });
     const client = connect(fixture.port, "voice-chat");
@@ -1098,25 +1100,142 @@ test("a device's reply is synthesized as a stream, a Lares client's still senten
       await until(client, (event) => event.type === "response.done", (event) => {
         if (event.type === "session.created") {
           if (acknowledging) client.send(JSON.stringify({ type: "lares.playback.progress", item_id: null, played_ms: 0 }));
-          client.send(JSON.stringify({ type: "session.update", session: { audio: { input: { turn_detection: { type: "server_vad" } } } } }));
+          if (automatic) client.send(JSON.stringify({ type: "session.update", session: { audio: { input: { turn_detection: { type: "server_vad" } } } } }));
+          else client.send(JSON.stringify({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] } }));
         }
-        if (event.type === "session.updated") client.send(JSON.stringify({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] } }));
+        if (automatic && event.type === "session.updated") client.send(JSON.stringify({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] } }));
         if (event.type === "response.output_audio.delta" && acknowledging) client.send(JSON.stringify({ type: "lares.playback.completed", item_id: event.item_id }));
       });
       return asked;
     } finally { client.close(); await fixture.stop(); }
   };
-  assert.deepEqual(await run(false), [true]);
-  assert.deepEqual(await run(true), [false]);
+  assert.deepEqual(await run({ acknowledging: false, automatic: true }), [true]);
+  assert.deepEqual(await run({ acknowledging: true, automatic: true }), [true]);
+  assert.deepEqual(await run({ acknowledging: true, automatic: false }), [true]);
+  assert.deepEqual(await run({ acknowledging: false, automatic: false }), [true]);
+});
+
+// A streamed sentence yields slices and returns nothing. An engine that never
+// yields comes back as one buffer. Either shape is the whole sentence once.
+async function spokenAudio({ acknowledging, automatic, synthesize, segment }: any) {
+  const fixture = await serve({ synthesize, ...(segment ? { segment } : {}) });
+  const client = connect(fixture.port, "voice-chat");
+  const deltas: Buffer[] = [];
+  const transcripts: string[] = [];
+  try {
+    const events = await until(client, (event) => event.type === "response.done", (event) => {
+      if (event.type === "response.output_audio.delta") deltas.push(Buffer.from(event.delta, "base64"));
+      if (event.type === "response.output_audio_transcript.delta") transcripts.push(event.delta);
+      if (event.type === "session.created") {
+        if (acknowledging) client.send(JSON.stringify({ type: "lares.playback.progress", item_id: null, played_ms: 0 }));
+        if (automatic) client.send(JSON.stringify({ type: "session.update", session: { audio: { input: { turn_detection: { type: "server_vad" } } } } }));
+        else client.send(JSON.stringify({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] } }));
+      }
+      if (automatic && event.type === "session.updated") client.send(JSON.stringify({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] } }));
+      if (event.type === "response.output_audio.delta" && acknowledging) client.send(JSON.stringify({ type: "lares.playback.completed", item_id: event.item_id }));
+    });
+    return { deltas, transcripts, events };
+  } finally { client.close(); await fixture.stop(); }
+}
+
+test("streamed slices and a whole-sentence fallback each play once, on a phone and on a device", async () => {
+  const slices = [Buffer.alloc(1000, 1), Buffer.alloc(1400, 2)];
+  const whole = Buffer.alloc(2400, 7);
+  const stream = async (_text: string, _scope: any, onChunk: any) => { for (const slice of slices) await onChunk(slice); return null; };
+  const fallback = async () => whole;
+  for (const client of [{ acknowledging: true, automatic: false }, { acknowledging: false, automatic: true }, { acknowledging: true, automatic: true }]) {
+    const streamed = await spokenAudio({ ...client, synthesize: stream });
+    assert.deepEqual(Buffer.concat(streamed.deltas), Buffer.concat(slices), JSON.stringify(client));
+    const filed = await spokenAudio({ ...client, synthesize: fallback });
+    assert.deepEqual(Buffer.concat(filed.deltas), whole, JSON.stringify(client));
+  }
+});
+
+test("a phone paces a streamed sentence, and the next sentence waits until that one has been handed over", async () => {
+  const order: string[] = [];
+  const fixture = await serve({
+    segment: () => ["One.", "Two."],
+    synthesize: async (text: string, _scope: any, onChunk: any) => {
+      order.push(`start:${text}`);
+      await onChunk(Buffer.alloc(text === "One." ? 240_000 : 2400, text === "One." ? 3 : 4));
+      order.push(`end:${text}`);
+      return null;
+    },
+  });
+  const client = connect(fixture.port, "voice-chat");
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  const events: any[] = [];
+  let deltas = 0;
+  let itemId: string | null = null;
+  client.on("message", (raw) => {
+    const event = JSON.parse(raw.toString());
+    events.push(event);
+    if (event.type === "response.output_item.added") itemId = event.item?.id || null;
+    if (event.type === "response.output_audio.delta") deltas += 1;
+  });
+  try {
+    await new Promise<void>((resolve) => client.once("open", resolve));
+    await sleep(60);
+    client.send(JSON.stringify({ type: "lares.playback.progress", item_id: null, played_ms: 0 }));
+    client.send(JSON.stringify({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] } }));
+    for (let i = 0; i < 100 && deltas === 0; i += 1) await sleep(20);
+    await sleep(250);
+    assert.deepEqual(order, ["start:One."]);
+    assert.ok(deltas > 0 && deltas <= 6, `sent ${deltas} chunks before any playout`);
+    assert.equal(events.some((event) => event.type === "response.done"), false);
+    for (let played = 1000; played <= 6000 && !events.some((event) => event.type === "response.done"); played += 1000) {
+      client.send(JSON.stringify({ type: "lares.playback.progress", item_id: itemId, played_ms: played }));
+      await sleep(40);
+    }
+    for (let i = 0; i < 100 && !events.some((event) => event.type === "response.done"); i += 1) await sleep(20);
+    assert.deepEqual(order, ["start:One.", "end:One.", "start:Two.", "end:Two."]);
+    const transcripts = events.filter((event) => event.type === "response.output_audio_transcript.delta").map((event) => event.delta);
+    assert.deepEqual(transcripts, ["One.", " Two."]);
+    assert.ok(events.some((event) => event.type === "response.done"));
+  } finally { client.terminate(); await fixture.stop(); }
+});
+
+test("cancelling while the first streamed sentence is still yielding does not synthesize the next, on a phone or a device", async () => {
+  for (const automatic of [false, true]) {
+    const started: string[] = [];
+    const fixture = await serve({
+      segment: () => ["One.", "Two."],
+      synthesize: async (text: string, scope: any, onChunk: any) => {
+        started.push(text);
+        await onChunk(Buffer.alloc(4800, 1));
+        await new Promise<void>((resolve) => {
+          const signal = scope.outputAbort.signal;
+          if (signal.aborted) return resolve();
+          signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+        return null;
+      },
+    });
+    const client = connect(fixture.port, "voice-chat");
+    try {
+      const events = await until(client, (event) => event.type === "response.done", (event) => {
+        if (event.type === "session.created") {
+          if (!automatic) client.send(JSON.stringify({ type: "lares.playback.progress", item_id: null, played_ms: 0 }));
+          if (automatic) client.send(JSON.stringify({ type: "session.update", session: { audio: { input: { turn_detection: { type: "server_vad" } } } } }));
+          else client.send(JSON.stringify({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] } }));
+        }
+        if (automatic && event.type === "session.updated") client.send(JSON.stringify({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] } }));
+        if (event.type === "response.output_audio.delta") client.send(JSON.stringify({ type: "response.cancel" }));
+      });
+      assert.deepEqual(started, ["One."], String(automatic));
+      assert.equal(events.find((event) => event.type === "response.done").response.status, "cancelled");
+    } finally { client.close(); await fixture.stop(); }
+  }
 });
 
 // A device (no playback reports, server_vad) that types one turn; `live` drives what the dialogue has written so far.
 async function readWhileWriting({ streaming = true, acknowledging = false, prompt, onSynth }: any) {
   const spoken: string[] = [];
+  const streams: boolean[] = [];
   const state: any = { live: null };
   const fixture = await serve({
     streaming: () => streaming,
-    synthesize: async (text: string) => { spoken.push(text); onSynth?.(text); return Buffer.alloc(2400); },
+    synthesize: async (text: string, _scope: any, _onChunk: any, options: any) => { spoken.push(text); streams.push(options?.stream === true); onSynth?.(text); return Buffer.alloc(2400); },
   }, { state: () => ({ live: state.live }), prompt: (_scope: any, body: any) => prompt(body, state) });
   const client = connect(fixture.port, "voice-chat");
   const done = until(client, (event) => event.type === "response.done", (event) => {
@@ -1127,7 +1246,7 @@ async function readWhileWriting({ streaming = true, acknowledging = false, promp
     if (event.type === "session.updated") client.send(JSON.stringify({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] } }));
     if (event.type === "response.output_audio.delta" && acknowledging) client.send(JSON.stringify({ type: "lares.playback.completed", item_id: event.item_id }));
   });
-  return { spoken, state, done, async close() { client.close(); await fixture.stop(); } };
+  return { spoken, streams, state, done, async close() { client.close(); await fixture.stop(); } };
 }
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -1146,6 +1265,7 @@ test("with read-while-writing a device hears closed sentences while the dialogue
     finish();
     const events = await run.done;
     assert.deepEqual(run.spoken, ["第一句。", "第二句。", "第三句。"]);
+    assert.deepEqual(run.streams, [true, true, true]);
     const types = events.map((event) => event.type);
     assert.ok(types.indexOf("response.output_audio.delta") < types.indexOf("response.function_call_arguments.done"), "calls follow the first words");
     const last = events.find((event) => event.type === "response.done");
@@ -1212,6 +1332,7 @@ test("without read-while-writing, or for a Lares client, a reply is still read o
       finish();
       await run.done;
       assert.deepEqual(run.spoken, ["第一句。第二句。"], JSON.stringify(options));
+      assert.deepEqual(run.streams, [true], JSON.stringify(options));
     } finally { await run.close(); }
   }
 });

@@ -56,6 +56,46 @@ test("a late neighboring sample pauses interpolation without consuming or repeat
   heard.forEach((sample, i) => assert.ok(Math.abs(sample - expected[i]) < 1e-6));
 });
 
+test("a gap waits for another preroll instead of splicing the next packet onto silence", () => {
+  const { worker, events, send } = player(24000, 48000, { preroll: 4, rebufferMax: 16 });
+  send({ type: "audio", samples: Float32Array.of(0.2, 0.4, 0.6, 0.8) });
+  const started = new Float32Array(8);
+  worker.process([], [[started]]);
+  assert.ok(Math.abs(started[0] - 0.2) < 1e-6);
+  for (let i = 0; i < 8; i++) worker.process([], [[new Float32Array(128)]]);
+  assert.equal(events.filter((event) => event.type === "underrun").length, 1);
+  assert.equal(worker.hold, 4);
+  send({ type: "audio", samples: Float32Array.of(0.1, 0.15) });
+  const held = new Float32Array(8);
+  worker.process([], [[held]]);
+  assert.equal(held[0], 0);
+  send({ type: "audio", samples: Float32Array.of(0.3, 0.5) });
+  const resumed = new Float32Array(8);
+  worker.process([], [[resumed]]);
+  // The playhead is still between the last old sample and the first new one.
+  assert.ok(Math.abs(resumed[0] - 0.45) < 1e-6);
+});
+
+test("a second gap waits for a deeper buffer, capped by rebufferMax", () => {
+  const { worker, events, send } = player(24000, 48000, { preroll: 4, rebufferMax: 8 });
+  const starve = () => { for (let i = 0; i < 6; i++) worker.process([], [[new Float32Array(128)]]); };
+  send({ type: "audio", samples: Float32Array.of(0.2, 0.4, 0.6, 0.8) });
+  worker.process([], [[new Float32Array(16)]]);
+  starve();
+  assert.equal(events.filter((event) => event.type === "underrun").length, 1);
+  assert.equal(worker.hold, 4);
+  send({ type: "audio", samples: Float32Array.of(0.2, 0.4, 0.6, 0.8) });
+  worker.process([], [[new Float32Array(16)]]);
+  starve();
+  assert.equal(events.filter((event) => event.type === "underrun").length, 2);
+  assert.equal(worker.hold, 8);
+  send({ type: "audio", samples: Float32Array.of(0.2, 0.4, 0.6, 0.8, 0.1, 0.1, 0.1, 0.1) });
+  worker.process([], [[new Float32Array(16)]]);
+  starve();
+  assert.equal(events.filter((event) => event.type === "underrun").length, 3);
+  assert.equal(worker.hold, 8);
+});
+
 test("playback holds the first samples until a short buffer arrives, then plays them at the source clock", () => {
   const { worker, events, send } = player(24000, 48000, { preroll: 4 });
   send({ type: "audio", samples: Float32Array.of(0.2, 0.4) });
