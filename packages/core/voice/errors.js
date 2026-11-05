@@ -33,6 +33,7 @@ export const RECOVERABLE_TAKE_FAULTS = Object.freeze([
   "voice_device_lost",
   "voice_no_input",
   "voice_too_short",
+  "voice_playback_stalled",
 ]);
 
 const TRANSIENT = new Set(TRANSIENT_VOICE_ERRORS);

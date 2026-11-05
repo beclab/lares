@@ -1,6 +1,6 @@
 import { createVoiceController } from "./controller.js";
 import { createDeviceInput } from "./device-input.js";
-import { createPcmStreamPlayer } from "./pcm-player.js";
+import { createPcmStreamPlayer, releasePrimedPlaybackContext } from "./pcm-player.js";
 import { createVoiceProtocolClient } from "./protocol-client.js";
 import { createStreamingCapture } from "./stream-client.js";
 import { isTransientVoiceError, transientVoiceError } from "./errors.js";
@@ -72,7 +72,6 @@ export function createUnifiedConversation({ request, socket: openSocket = browse
       }
       if (!current.audio) { current.audio = true; current.chain = current.chain.then(() => player.start({ sampleRate: RATE, channels: 1, encoding: "pcm_s16le" })); controller.observePlayback(true); }
       current.chain = current.chain.then(() => { if (reply === current) return player.write(decodeBase64(delta)); });
-      current.chain.catch(() => {});
     },
     async done() {
       const current = reply;
@@ -102,7 +101,9 @@ export function createUnifiedConversation({ request, socket: openSocket = browse
     async stop() {
       const current = reply;
       reply = null;
+      const heard = current?.playedMs > 0;
       player.stop();
+      if (current?.audio && !heard) releasePrimedPlaybackContext();
       if (!current || !protocol) return;
       protocol.stopOutput();
       if (current.itemId && current.audio) protocol.truncate(current.itemId, current.playedMs);
@@ -298,6 +299,7 @@ export function createUnifiedConversation({ request, socket: openSocket = browse
   const stop = async () => {
     disposed = true; clearTimeout(timer);
     player.stop(); reply = null;
+    releasePrimedPlaybackContext();
     await controller.disconnect();
     disconnectSocket();
     await call("/session/close", {}).catch(() => {});

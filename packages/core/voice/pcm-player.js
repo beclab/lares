@@ -53,6 +53,14 @@ function commitPlaybackClock(context) {
   } catch { /* Resuming the context is the unlock. */ }
 }
 
+/** Drop a shared primed context so the next reply opens a fresh clock instead of a silent one. */
+export function releasePrimedPlaybackContext() {
+  const failed = primed;
+  primed = null;
+  if (failed) worklets.delete(failed);
+  if (failed && failed.state !== "closed") void failed.close?.().catch(() => {});
+}
+
 /** Optional gesture prewarming must never block a text submission. Playback reports failures at start. */
 export function primePlaybackContext(Context = globalThis.AudioContext || globalThis.webkitAudioContext) {
   if (!Context || globalThis.isSecureContext === false) return null;
@@ -65,19 +73,51 @@ export function primePlaybackContext(Context = globalThis.AudioContext || global
     commitPlaybackClock(primed);
     return primed;
   } catch {
-    const failed = primed;
-    primed = null;
-    worklets.delete(failed);
-    try { Promise.resolve(failed?.close?.()).catch(() => {}); } catch { /* Prewarming is optional. */ }
+    releasePrimedPlaybackContext();
     return null;
   }
 }
 
+/** A WebView can report running while the worklet never renders; give up before the call hangs. */
+const PLAYBACK_STALL_MS = 2_500;
+
 export function createPcmStreamPlayer({ onProgress = () => {}, onMetric = () => {}, context: Context = globalThis.AudioContext || globalThis.webkitAudioContext } = {}) {
   let context, node, resolve, reject, played = 0, accepted = 0, rate = 0, generation = 0, pendingByte = null, paused = false, owned = false, settled = false;
   let tail = Promise.resolve();
+  let usingShared = false, heardOutput = false, stallTimer = 0, prerollSamples = 0;
   const waiters = new Set();
   const wake = () => { for (const listen of [...waiters]) listen(); };
+  const clearStallWatch = () => { if (stallTimer) { clearTimeout(stallTimer); stallTimer = 0; } };
+  const markHeard = () => { if (heardOutput) return; heardOutput = true; clearStallWatch(); };
+  const failStalled = (epoch) => {
+    if (epoch !== generation) return;
+    const error = new Error("voice_playback_stalled");
+    onMetric({ stage: "playback_stalled", state: context?.state || "missing", shared: usingShared });
+    if (usingShared) releasePrimedPlaybackContext();
+    clearStallWatch();
+    generation++;
+    paused = false;
+    node?.disconnect();
+    if (node) node.port.onmessage = null;
+    node = null;
+    const closing = owned ? context : null;
+    owned = false;
+    if (closing && closing.state !== "closed") void closing.close().catch(() => {});
+    context = null;
+    pendingByte = null;
+    heardOutput = false;
+    usingShared = false;
+    if (reject) { reject(error); reject = null; resolve = null; }
+    wake();
+    tail = Promise.reject(error);
+    tail.catch(() => {});
+  };
+  const armStallWatch = (epoch) => {
+    if (heardOutput || epoch !== generation || !node || accepted < prerollSamples) return;
+    clearStallWatch();
+    stallTimer = setTimeout(() => { try { failStalled(epoch); } catch (error) { reject?.(error); } }, PLAYBACK_STALL_MS);
+    stallTimer.unref?.();
+  };
   /**
    * The page shares one primed context. iOS interrupts it (a call, the lock
    * screen) and it never resumes on its own, so a reply that starts after that
@@ -96,7 +136,7 @@ export function createPcmStreamPlayer({ onProgress = () => {}, onMetric = () => 
         }
       } catch { /* replaced below */ }
       worklets.delete(shared);
-      if (primed === shared) primed = null;
+      if (primed === shared) releasePrimedPlaybackContext();
     }
     const fresh = new Context();
     owned = true;
@@ -114,7 +154,8 @@ export function createPcmStreamPlayer({ onProgress = () => {}, onMetric = () => 
     return { opened: fresh, shared: false };
   };
   const stop = () => {
-    generation++; paused = false; node?.disconnect(); if (node) node.port.onmessage = null; node = null;
+    generation++; paused = false; clearStallWatch(); heardOutput = false; usingShared = false;
+    node?.disconnect(); if (node) node.port.onmessage = null; node = null;
     const closing = owned ? context : null;
     owned = false;
     if (closing && closing.state !== "closed") void closing.close().catch(() => {});
@@ -128,30 +169,39 @@ export function createPcmStreamPlayer({ onProgress = () => {}, onMetric = () => 
       if (!Context || globalThis.isSecureContext === false) throw new Error(browserAudioErrorCode());
       if (channels !== 1 || encoding !== "pcm_s16le" || !Number.isInteger(sampleRate) || sampleRate < 8000 || sampleRate > 192000) throw new Error("voice_audio_format");
       rate = sampleRate;
+      prerollSamples = Math.round(sampleRate * 0.2);
       const epoch = generation;
-      const shared = primed && primed.state !== "closed" ? primed : null;
-      let opened;
-      try {
-        ({ opened } = await openContext(shared));
-        if (epoch !== generation) throw new Error("voice_cancelled");
-        onMetric({ stage: "playback_context", state: opened.state || "unknown", shared: Boolean(shared && opened === shared) });
-      } catch (error) {
-        onMetric({ stage: "playback_context", state: context?.state || "missing", shared: Boolean(shared), code: error?.message || "voice_playback_failed" });
-        if (owned && context && context.state !== "closed") void context.close?.().catch(() => {});
-        owned = false; context = null;
-        throw error;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const shared = attempt === 0 && primed && primed.state !== "closed" ? primed : null;
+        let opened;
+        try {
+          ({ opened } = await openContext(shared));
+          if (epoch !== generation) throw new Error("voice_cancelled");
+          usingShared = Boolean(shared && opened === shared);
+          onMetric({ stage: "playback_context", state: opened.state || "unknown", shared: usingShared });
+        } catch (error) {
+          onMetric({ stage: "playback_context", state: context?.state || "missing", shared: Boolean(shared), code: error?.message || "voice_playback_failed" });
+          if (owned && context && context.state !== "closed") void context.close?.().catch(() => {});
+          owned = false; context = null;
+          if (attempt === 0 && shared) { releasePrimedPlaybackContext(); continue; }
+          throw error;
+        }
+        node = new AudioWorkletNode(opened, "lares-pcm-player", {
+          processorOptions: { inputRate: sampleRate, outputRate: opened.sampleRate || sampleRate, preroll: prerollSamples, rebufferMax: Math.round(sampleRate * 0.8) },
+          numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2],
+        });
+        node.port.onmessage = ({ data }) => {
+          if (epoch !== generation) return;
+          if (data.type === "progress") { played = data.frames; markHeard(); onProgress(played); wake(); }
+          if (data.type === "started") { markHeard(); onMetric({ stage: "playback_started" }); }
+          if (data.type === "underrun") onMetric({ stage: "playback_underrun" });
+          if (data.type === "done") { settled = true; clearStallWatch(); resolve?.(); resolve = reject = null; }
+        };
+        node.connect(opened.destination);
+        commitPlaybackClock(opened);
+        return;
       }
-      node = new AudioWorkletNode(opened, "lares-pcm-player", {
-        processorOptions: { inputRate: sampleRate, outputRate: opened.sampleRate || sampleRate, preroll: Math.round(sampleRate * 0.2), rebufferMax: Math.round(sampleRate * 0.8) },
-        numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2],
-      });
-      node.port.onmessage = ({ data }) => {
-        if (epoch !== generation) return;
-        if (data.type === "progress") { played = data.frames; onProgress(played); wake(); }
-        if (data.type === "started" || data.type === "underrun") onMetric({ stage: `playback_${data.type}` });
-        if (data.type === "done") { settled = true; resolve?.(); resolve = reject = null; }
-      };
-      node.connect(opened.destination);
+      throw new Error("voice_playback_failed");
     },
     write(bytes) {
       const epoch = generation;
@@ -179,20 +229,21 @@ export function createPcmStreamPlayer({ onProgress = () => {}, onMetric = () => 
           }
           return true;
         };
-        if (pump()) return;
+        if (pump()) { armStallWatch(epoch); return; }
         // The rest of a long reply plays as the speaker catches up.
         return new Promise((done, fail) => {
           const listen = () => {
             if (epoch !== generation || !node) { waiters.delete(listen); fail(new Error("voice_cancelled")); return; }
             if (!pump()) return;
             waiters.delete(listen);
+            armStallWatch(epoch);
             done();
           };
           waiters.add(listen);
         });
       };
-      const pending = tail.then(run, run);
-      tail = pending.catch(() => {});
+      const pending = tail.then(() => run());
+      tail = pending;
       return pending;
     },
     finish() {
