@@ -3,7 +3,9 @@
  * A settled turn uses the "completed in" control. While the turn is still
  * running, the same rows sit behind one live activity line (or a finished
  * activity summary once the reply has started). The person's message and the
- * final answer stay outside. A turn that ended in error or abort stays open.
+ * final answer stay outside. That answer is the reply chrome's row only once
+ * the turn has settled; a durable assistant message mid-turn is not done yet.
+ * A turn that ended in error or abort stays open.
  */
 
 const DETAIL_LIMIT = 160;
@@ -237,6 +239,7 @@ export function transcriptBlocks(items, { running = false } = {}) {
         key: entry.row?.key || entry.row?.id || `row-${entry.index}`,
         index: entry.index,
         row: entry.row,
+        settled: closed,
       });
     }
   });

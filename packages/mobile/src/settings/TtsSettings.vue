@@ -1,6 +1,7 @@
 <template>
-  <section class="lares-tts">
+  <section class="lares-tts" :data-device="device">
     <h3>{{ t('settings.tts.title') }}</h3>
+    <div :class="isDesktop ? 'lares-tts__stack' : 'lares-tts__block'">
     <label v-if="isDesktop" class="lares-tts__field">
       <span>{{ t('settings.tts.model') }}</span>
       <LaresSelect :value="modelId" :sections="modelSections" :disabled="state.saving" @select="chooseModel" />
@@ -10,7 +11,6 @@
       :label="t('settings.tts.model')"
       :value="modelLabel"
       chevron
-      boxed
       :disabled="state.saving"
       @click="sheet = 'model'"
     />
@@ -35,7 +35,6 @@
         :label="t('tts.voice')"
         :value="voiceLabel"
         chevron
-        boxed
         :disabled="state.saving"
         @click="sheet = 'voice'"
       />
@@ -48,11 +47,15 @@
     </div>
     <p v-if="state.previewError" class="lares-tts__alert" role="alert">{{ t('tts.previewFailed') }}</p>
     <label class="lares-tts__switch">
-      <span>{{ t('settings.speak.title') }}</span>
+      <span class="lares-tts__switch-copy">
+        <span>{{ t('settings.speak.title') }}</span>
+        <span v-if="!isDesktop" class="lares-tts__hint">{{ t('settings.tts.hint') }}</span>
+      </span>
       <input type="checkbox" role="switch" :checked="view.value.config.speak === true" :disabled="Boolean(view.pending.speak)" :aria-checked="view.value.config.speak === true ? 'true' : 'false'" @change="save(preferences.patch({ speak: $event.target.checked }))" />
     </label>
-    <p class="lares-tts__hint">{{ t('settings.tts.hint') }}</p>
+    <p v-if="isDesktop" class="lares-tts__hint">{{ t('settings.tts.hint') }}</p>
     <p v-if="view.errors.speak" class="lares-tts__alert" role="alert">{{ t('settings.saveFailed') }}</p>
+    </div>
     <LaresSheet v-if="!isDesktop" :open="Boolean(sheet)" :title="sheetTitle" @close="sheet = ''">
       <LaresSettingRow
         v-for="item in sheetItems"
@@ -127,6 +130,38 @@ export default {
   color: var(--q-ink-1);
   font-size: 15px;
   line-height: 22px;
+}
+
+.lares-tts__stack,
+.lares-tts__block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.lares-tts__block {
+  gap: 0;
+  border: 1px solid var(--q-separator);
+  border-radius: 20px;
+  overflow: hidden;
+}
+
+.lares-tts__block :deep(.lares-set-row) {
+  min-height: 64px;
+}
+
+.lares-tts__block > .lares-tts__hint,
+.lares-tts__block > .lares-tts__alert,
+.lares-tts__block > .lares-tts__status {
+  padding: 0 16px 8px;
+}
+
+.lares-tts__block .lares-tts__action,
+.lares-tts__block .lares-tts__switch {
+  border: 0;
+  border-radius: 0;
+  border-top: 1px solid var(--q-separator);
 }
 
 .lares-tts h3 {
@@ -222,11 +257,19 @@ export default {
   line-height: 22px;
 }
 
-.lares-tts__switch > span {
+.lares-tts__switch-copy {
+  display: flex;
   flex: 1;
+  flex-direction: column;
+  gap: 2px;
   min-width: 0;
   font-size: 16px;
   line-height: 22px;
+}
+
+.lares-tts__switch-copy > .lares-tts__hint {
+  font-size: 13px;
+  line-height: 18px;
 }
 
 .lares-tts__switch {

@@ -146,7 +146,7 @@ export default {
 .mobile-directory__status,
 .mobile-directory__error { margin:16px 8px; color:var(--q-ink-3); font-size:15px; text-align:center; }
 .mobile-directory__error { color:var(--q-orange-default); }
-.mobile-directory__footer { display:flex; flex-direction:column; gap:10px; padding:12px 20px calc(12px + env(safe-area-inset-bottom, 0px)); border-top:1px solid var(--q-separator); }
+.mobile-directory__footer { display:flex; flex-direction:column; gap:10px; padding:12px 20px; border-top:1px solid var(--q-separator); }
 .mobile-directory__path { width:100%; margin:0; overflow:hidden; color:var(--q-ink-3); font-size:13px; text-overflow:ellipsis; white-space:nowrap; }
 .mobile-directory__tools { display:flex; flex-wrap:wrap; align-items:center; gap:10px 14px; }
 .mobile-directory__new-folder { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--q-separator); border-radius:999px; padding:0 12px; min-height:36px; background:transparent; color:var(--q-ink-2); font:inherit; font-size:14px; }

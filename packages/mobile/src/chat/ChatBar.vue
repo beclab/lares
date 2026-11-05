@@ -89,7 +89,7 @@ export default {
   gap: 8px;
   flex-shrink: 0;
   min-height: 56px;
-  padding: calc(8px + env(safe-area-inset-top, 0px)) 12px 8px;
+  padding: 8px 12px;
 }
 
 .lares-bar__icon-btn {

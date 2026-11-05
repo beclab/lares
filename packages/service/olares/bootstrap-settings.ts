@@ -26,6 +26,13 @@ const PROTOCOL = "openai-completions";
  * `thinkingFormat` — naming one would wrap the level in a vendor envelope the
  * gateway never asked for. Which models offer a level is the catalog's word,
  * carried per model in `reasoningEfforts`.
+ *
+ * Session affinity is not a field of this document. dsh withholds
+ * `sendSessionAffinityHeaders` and `sessionAffinityFormat`; declaring either
+ * one makes the settings importer reject the whole provider, so the route
+ * never registers and a model refresh has no `api` to attach. pi-ai sends
+ * `x-session-id` for provider `olares-router` itself. The shim still swaps
+ * in a Realtime session id while one drives the session.
  */
 const ROUTE_COMPAT = {
   supportsReasoningEffort: true,
@@ -34,10 +41,6 @@ const ROUTE_COMPAT = {
   // (`Unknown name "store"`) never shows up in detection. Omitting the field
   // matches OpenAI's own default of false.
   supportsStore: false,
-  // dsh session id as `x-session-id`: Router groups an Agent turn's calls by it,
-  // and the shim swaps in a Realtime session id while one drives the session.
-  sendSessionAffinityHeaders: true,
-  sessionAffinityFormat: "openrouter",
 };
 /**
  * The shim bearer's credential reference — never LARES_ROUTER_API_KEY. The
@@ -52,6 +55,8 @@ export interface LaresSettingsSeed {
   /** Last authorized catalog returned at boot. */
   catalog: RouterModelEntry[];
   catalogLoaded?: boolean;
+  /** The model Router's default-chat targets at boot; the default for new sessions follows it. */
+  defaultChat?: string | null;
   /** The local shim endpoint pi-ai calls (chat completions and /models). */
   baseURL: string;
 }
@@ -188,7 +193,7 @@ function pinDefaultModel(doc: Document, seed: LaresSettingsSeed): string | null 
     provider: readString(doc, ["agent-default-model", "provider"]) ?? PROVIDER,
     model: readString(doc, ["agent-default-model", "model"]) ?? "",
   };
-  const next = seed.catalogLoaded === false ? current : resolveDefaultSelection(current, declarableModels(seed));
+  const next = seed.catalogLoaded === false ? current : resolveDefaultSelection(current, declarableModels(seed), seed.defaultChat);
   if (next !== current) doc.setIn(["agent-default-model"], next);
   else if (!current.model) {
     doc.setIn(["agent-default-model", "provider"], current.provider);

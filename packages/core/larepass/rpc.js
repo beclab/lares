@@ -46,8 +46,12 @@ export function hostCall(method, payload = {}) {
   }
   if (endpoint === "session/list") return { endpoint, args: { _request: body } };
   // Parameterless endpoints reject even an empty `request` object.
-  if (endpoint === "session/modelCatalog" || endpoint === "settings/describe") return { endpoint, args: {} };
-  if (endpoint === "settings/update") return { endpoint, args: body };
+  if (
+    endpoint === "session/modelCatalog"
+    || endpoint === "settings/describe"
+    || endpoint === "permissionPresets/catalog"
+  ) return { endpoint, args: {} };
+  if (endpoint === "settings/update" || endpoint === "settings/mutate") return { endpoint, args: body };
   if (endpoint === "$events/result") return { endpoint, args: body };
   if (endpoint === "session/prompt") {
     return {

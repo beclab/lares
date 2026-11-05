@@ -1,6 +1,6 @@
 import { createVoiceController } from "./controller.js";
 import { createDeviceInput } from "./device-input.js";
-import { createPcmStreamPlayer } from "./pcm-player.js";
+import { createPcmStreamPlayer, releasePrimedPlaybackContext } from "./pcm-player.js";
 import { createVoiceProtocolClient } from "./protocol-client.js";
 import { createStreamingCapture } from "./stream-client.js";
 import { isTransientVoiceError, transientVoiceError } from "./errors.js";
@@ -43,8 +43,14 @@ export function createUnifiedConversation({ request, socket: openSocket = browse
   };
   const sessionBody = (sessionId) => ({ sessionId, readAloud, presentationSession, preset: onTranscript ? "dictation" : preset, backend: "pipeline" });
 
+  // A phone's playback only fails on the phone; the Host log is the one place a test can read it.
+  const report = (event) => {
+    metric(event);
+    const detail = [event.state, event.shared ? "shared" : null, event.code].filter(Boolean).join("/") || undefined;
+    void call("/session/metric", { stage: event.stage, durationMs: event.durationMs ?? 0, detail }).catch(() => {});
+  };
   // Reply playback: one PCM player per response, acknowledged back to the Host.
-  const player = createPlayer({ onProgress: (frames) => {
+  const player = createPlayer({ onMetric: report, onProgress: (frames) => {
     if (!reply || !protocol) return;
     reply.playedMs = frames / (RATE / 1000);
     if (Date.now() - (reply.reported || 0) >= PROGRESS_MS) { reply.reported = Date.now(); protocol.playbackProgress(reply.itemId, Math.round(reply.playedMs)); }
@@ -52,6 +58,7 @@ export function createUnifiedConversation({ request, socket: openSocket = browse
   const playback = {
     begin(event) {
       reply = { id: event.response?.id, itemId: null, text: "", audio: false, playedMs: 0, chain: Promise.resolve(), muted: false };
+      if (readAloud === true) controller.expectPlayback();
     },
     write(delta) {
       const current = reply;
@@ -64,8 +71,7 @@ export function createUnifiedConversation({ request, socket: openSocket = browse
         return;
       }
       if (!current.audio) { current.audio = true; current.chain = current.chain.then(() => player.start({ sampleRate: RATE, channels: 1, encoding: "pcm_s16le" })); controller.observePlayback(true); }
-      current.chain = current.chain.then(() => { if (reply === current) player.write(decodeBase64(delta)); });
-      current.chain.catch(() => {});
+      current.chain = current.chain.then(() => { if (reply === current) return player.write(decodeBase64(delta)); });
     },
     async done() {
       const current = reply;
@@ -95,7 +101,9 @@ export function createUnifiedConversation({ request, socket: openSocket = browse
     async stop() {
       const current = reply;
       reply = null;
+      const heard = current?.playedMs > 0;
       player.stop();
+      if (current?.audio && !heard) releasePrimedPlaybackContext();
       if (!current || !protocol) return;
       protocol.stopOutput();
       if (current.itemId && current.audio) protocol.truncate(current.itemId, current.playedMs);
@@ -161,9 +169,9 @@ export function createUnifiedConversation({ request, socket: openSocket = browse
   // Headset: the Host owns the microphone; the socket only opens and closes it.
   const hostInput = () => ({
     capabilities: { duplex: false, bargeIn: false, audio: "pcm16-24000" },
-    capture({ signal, onReady, onSpeech, onTranscribing }) {
+    capture({ signal, onReady, onSpeech, onDropped, onTranscribing }) {
       const current = take();
-      current.onSpeech = onSpeech; current.onTranscribing = onTranscribing;
+      current.onSpeech = onSpeech; current.onDropped = onDropped; current.onTranscribing = onTranscribing;
       let timer = null;
       const clear = () => { if (timer) { clearTimeout(timer); timer = null; } };
       return new Promise((resolve, reject) => {
@@ -195,6 +203,8 @@ export function createUnifiedConversation({ request, socket: openSocket = browse
   const onEvent = (event) => {
     switch (event.type) {
       case "input_audio_buffer.speech_started": turn?.onSpeech?.(); break;
+      // A take too short to be a phrase was dropped; the call keeps listening on the same turn.
+      case "input_audio_buffer.cleared": turn?.onDropped?.(); break;
       case "input_audio_buffer.committed": turn?.onTranscribing?.(); break;
       case "conversation.item.input_audio_transcription.delta": if (turn?.onPartial) { turn.partial = `${turn.partial || ""}${event.delta}`; turn.onPartial(turn.partial); } break;
       case "conversation.item.input_audio_transcription.completed": {
@@ -247,7 +257,7 @@ export function createUnifiedConversation({ request, socket: openSocket = browse
 
   const controller = createVoiceController({ voiceId, input, idleTimeoutMs, recoveryTimeoutMs, onExpired: () => stop(),
     onTranscript: onTranscript ? async (value) => { await onTranscript(value); if (!continuous) await stop(); } : null,
-    metric: (event) => { metric(event); void call("/session/metric", { stage: event.stage, durationMs: event.durationMs }).catch(() => {}); },
+    metric: report,
     output: { get canPause() { return !headset; }, key: () => reply?.id, pause: () => player.pause?.(), resume: () => player.resume?.(), stop: () => playback.stop() },
     agent: {
       lazy: true,
@@ -289,6 +299,7 @@ export function createUnifiedConversation({ request, socket: openSocket = browse
   const stop = async () => {
     disposed = true; clearTimeout(timer);
     player.stop(); reply = null;
+    releasePrimedPlaybackContext();
     await controller.disconnect();
     disconnectSocket();
     await call("/session/close", {}).catch(() => {});

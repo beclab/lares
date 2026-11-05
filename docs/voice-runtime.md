@@ -1,5 +1,501 @@
 # Voice runtime
 
+## Why a device Agent said "好的，我帮您关灯。" and stopped (2026-10-27)
+
+Both devices send the Agent byte-identical requests (system prompt, the nine
+`keepDeviceTools` tools, user message); Reachy only looked more reliable because
+one robot connection keeps one Agent Session for 10-28 turns, and after the first
+`skill(ha-lighting)` later light turns go straight to `bash`. Each glasses
+connection opens a new Session, so every light request is a first step.
+
+At that step Qwen3.5-9B (sglang 0.5.18, `qwen3_coder` parser, thinking off) says one
+sentence and then picks `\n\n` + `<tool_call>` or `<|im_end|>`; the raw output of a
+failed turn is the sentence and `<|im_end|>`, nothing lost by the parser. Next-token
+probabilities after the sentence, measured with the assistant prefix filled in:
+
+| Device Agent prompt | P(end) after "好的，我帮您打开灯。" | after "好的，我帮您关灯。" |
+| --- | --- | --- |
+| `SPOKEN_PROMPT` + `DEVICE_SPOKEN_PROMPT` (0.26.88-0.26.105) | 0.28 | 0.42 |
+| `SPOKEN_PROMPT` only | 0.15 | 0.15 |
+| only its "no markdown, headings, lists, links, citations, emoji" | 0.34 | 0.36 |
+| only its "no advice or follow-up offers" | 0.30 | 0.36 |
+| only "at most two short sentences", "small voice device" or units | 0.13-0.18 | 0.17-0.21 |
+
+The engine sampled at the model's default temperature 1.0 (no temperature in its
+`generation_config`, none in the Agent's request). A recorded light turn replayed
+step by step with its tool results (light set to the opposite state):
+
+| Prompt, temperature | On | Off |
+| --- | --- | --- |
+| with `DEVICE_SPOKEN_PROMPT`, 1.0 | 3/10 | — |
+| with `DEVICE_SPOKEN_PROMPT`, 0 | 10/10 | 0/5 |
+| `SPOKEN_PROMPT` only, 0.2 | 10/10 | 10/10 |
+| only the length and units sentences, 0.2 | 10/10 | 8/10 |
+
+0.26.106 gives a device's Agent `SPOKEN_PROMPT` only and temperature 0.2
+(`deviceAgentRequest`, through the shim's request rewrite). Its formatting is left
+to the device dialogue, which says a short plain result as written and turns
+anything long or formatted, now including emoji, into one sentence. A clean sglang
+restart did not change the first-step rate (1/6 executed), so engine state was not
+the cause.
+
+## Where a device lookup spends its time (2026-10-27)
+
+Reachy on 0.26.109, from the end of speech to the spoken result: a light turn about
+9 s (Agent 4.4 s over five calls), a weather turn about 12.5 s. ASR streams while the
+user speaks and TTS streams its first audio, so neither adds much after the take
+ends. The weather Agent's final call read a 30k-token prompt, about 9.4k of it the
+search result (8 sources, 15k characters with page menus), and wrote a 381-token
+markdown report the dialogue then cut to one sentence: 6.1 s.
+
+Replayed with the real search result (10 runs each, timed one at a time):
+
+| Variant | Weather | Weather after a light turn | Light on / off / colour |
+| --- | --- | --- | --- |
+| 0.26.109 | 2.3 s, 174 tokens | 3.3 s | 30/30 each |
+| + "Give only what the user asked for, in at most two short sentences." | 1.1 s | 3.0 s | on 29/30, off 27/30 |
+| Search results cut to 5 sources x 600 characters | 1.3 s | 2.5 s | unchanged |
+| Both | 0.8 s | 2.0 s | off 26/30 |
+
+The brevity sentence brought back replies that only say the action, so it was not
+kept (a next-token measurement had shown it harmless; the end-to-end replay did
+not). Tavily's basic and advanced search return the same 8 long sources, and dsh's
+`searchMaxResults` only caps the count, so 0.26.110 cuts `web_search` results in a
+device's request rewrite (`capSearchResults`): all 13 cases at their earlier rates
+over 20 runs, temperatures in every weather answer.
+
+## Weather after a light turn: the device Agent looked in Home Assistant (2026-10-27)
+
+On 0.26.108 Reachy asked for Beijing's weather after turning on the light. Its
+Agent never searched: it looked for a weather entity in Home Assistant (there is
+none), then called `weather.get_forecast` on six invented `sensor.weather_*`
+names in a cycle, 287 steps in 282 s, until Lares was restarted; a later light
+request waited behind it. Closing a voice session does not cancel a dsh turn.
+
+A local suite replays first and second turns against sglang with the 0.26.108
+Agent prompt and tools, answering tool calls from a simulated pptest03 (real
+skill files, recorded light and sensor lists, no weather entity, canned web
+results). Temperature 0.2 against 0.4-1.0 (10 runs each): 0.2 is the only one
+with every light, colour and lookup case 10/10; weather after a light turn failed
+at every temperature (0-2/10), looping at low ones and answering "install a
+weather integration" at high ones. With "Weather, news and other facts about the
+outside world come from web_search; Home Assistant only holds the user's own
+devices." in a device Agent's prompt (0.26.109), 20 runs each at 0.2:
+
+| Case | Without | With |
+| --- | --- | --- |
+| on, off, yellow, news, reminder, time, off/news after a light turn | 20/20 each | 20/20 each |
+| weather | 19/20 | 20/20 |
+| weather after a light turn | 0/20 | 20/20 |
+| is the light on | 15/20 | 13/20 |
+| air conditioner, curtains after a light turn (neither exists) | 0/20, 1/20 | 0/20, 0/20 |
+
+Still open, with or without the sentence: asked for a device that does not
+exist, the Agent guesses entity names (`climate.bedroom_1`, `_2`, ...) until its
+step limit instead of saying so, and a status check sometimes repeats the same
+query; a repeated-call guard would catch the second, not the first.
+
+## Glasses turn-offs answered "好的，关灯。" without ask_lares (2026-10-27)
+
+In one glasses Session on 0.26.107, three of four turn-off requests got "好的，关灯。"
+from the dialogue and never reached the Agent; every request that did reach it ran
+in under 2 s. Replays inside the Lares pod, with the Session's recorded replies,
+real `ask_lares` calls, task results and the host's own pending results (prompt
+2,844 tokens against 2,822 live):
+
+- The dialogue sampled at the engine's default 1.0 and missed now and then; once a
+  reply without a call was in history, the next light request copied it. With the
+  live history up to "请你关一下灯。", whose previous turn had answered "好的，关灯。",
+  it went to `ask_lares` 2/20 at 0.2 and 14/20 at 1.0.
+- Replaying the whole Session with every reply generated, 0.2 sent all seven earlier
+  light requests 8/8 (1.0 missed five times among them); the last, a repeat of a
+  turn-off that had just run, went 4/8.
+- Restored turns came back as text, so an earlier delegation read as "已请求关灯，请稍等。"
+  alone: "能帮我关下灯吗？" went 13/20 with them restored, 19/20 without.
+- Trimming past 49 messages dropped every tool call. Folding the acknowledgment into
+  the call message or leaving it out of history made no measurable difference.
+
+0.26.108: a device dialogue samples at 0.2, a trim cuts at a user turn and keeps
+whole exchanges, and a device restores a delegated turn as its `ask_lares` call,
+pending result, reply, task result and announcement. Lares's own clients keep the
+text-only restore and send no temperature.
+
+## A colour change that took 12 s: compacted skill instructions (2026-10-27)
+
+On 0.26.106 "能帮我把灯变成黄色吗" (the second turn of a glasses Session) spent 12.0 s in
+the Agent: ten wrong hass-cli commands (`--color_temp`, JSON in `--arguments`,
+`service` without `call`), then `service --help` and `service describe` before
+`hs_color` worked. Turning the light on or off in the same Session took 1.5-2 s.
+The first turn had loaded `ha-lighting`, whose examples include
+`--data '{"entity_id":…,"color_name":"yellow"}'`, but the device rewrite
+(`compactEarlierToolResults`) replaced that 3,817-character result with a one-line
+note once it fell behind the next user message. Replaying the second turn's first
+step: with the skill result kept, 5/5 wrote the skill's `color_name` command; as
+sent, 5/5 wrote `light/turn_on --entity … --color_temp 2000`. 0.26.107 keeps `skill`
+results whole; other long results are still compacted. The dsh Session log itself
+was never changed, only what each request sends.
+
+## Device session without device tools: glasses on pptest03 (2026-10-27)
+
+Glass Assistant (Rokid, or Meta glasses through the Olares Meta Voice phone app)
+reaches Lares through Router model `lares-glass/voice-assistant`. It declares no
+tools and commits each take itself (push-to-talk mode). On 0.26.102, with a key
+without `clientTools`, it got the plain dialogue prompt: "你能帮我开一下灯吗？"
+came back as "请问您需要开启的是哪个区域的灯光？" and no turn reached
+`ask_lares`, because the device rules and checks were keyed on declared tools.
+
+Now the key decides (`createVoiceDialogue({ device })` from
+`voiceCaps.clientTools`): a `clientTools` key runs Reachy's device logic unchanged,
+declared tools or not, with the same rule text. Devices differ only by profile
+(caller instructions) and declared tools; the glasses send their own profile.
+The eval table below was measured with an earlier variant (rules without the
+gesture sentences, plus "never ask which one"), which was dropped to keep one
+logic for every device.
+
+Live eval on default-chat (Qwen3.5-9B AWQ), 5 runs per case, the field history
+included (`field-*`: the session's own earlier turns):
+
+| Case | Plain prompt | Glass caller instructions only | Device key (this change) |
+| --- | --- | --- | --- |
+| Light after the field history | 4/5 | 5/5 | 5/5, 5/5 |
+| "你只有一个" after two clarifying replies | 2/5 | 2/5 | 3/5, 3/5 |
+| Unclear chatter answered in a few words | 2/5 | 5/5 | 5/5 |
+| Plain light requests (4 cases: zh ×2, a named room, en) | 20/20 | named room 3/5, en 3/5 | 17/20; the two cases that missed then 10/10 |
+| All 11 cases | 42/55 | 42/55 | 49/55 |
+
+With Reachy's rule text unchanged (0.26.105), the same 11 cases scored 48/55
+without a profile and 47/55 with the glasses' profile: every Chinese light case
+5/5, "你只有一个" after two clarifying replies 1–2/5. The device Agent can still
+stop after "好的，我帮您打开灯。" without a tool call (1 of 2 live turn-on requests
+on 2026-10-27, read-only light queries 3/3), as on the robot on 2026-10-25.
+
+The Reachy subset (nod, light-on, light-after-ack, light-still-off, light-off-en,
+3 runs) scored 13/15 with both the old and the new file, missing different cases.
+The open problem is the glasses' microphone: people talking nearby become turns.
+
+## Device voice through Router: Reachy Mini on pptest03 (2026-10-24/25)
+
+Reachy Mini talks to Lares through Router, with its own tools (head, emotions,
+dance, camera) kept as device tools and Home Assistant left to the Agent through
+`ask_lares`. Releases 0.26.65–0.26.81 on `feat/ha-connection-leaked-tool-call`
+(PR 67) were tested on the robot at pptest03; the path is:
+
+```
+Reachy conversation app (OpenAI Realtime client)
+  -> reachymini realtime-gateway, compatible profile with the `lares` dialect (beclab/olares-reachymini#1)
+  -> Router composite realtime model lares-reachy/voice-assistant (provider type openai)
+  -> Lares /api/lares/voice/realtime on the internal webhook entrance (voice key with clientTools)
+  -> dialogue on default-chat (sglang Qwen3.5-9B) + ask_lares -> dsh Agent -> hass-cli
+     ASR Qwen3-ASR 0.6B (streaming), TTS Qwen3-TTS, Silero VAD in the Lares process
+```
+
+### What a device session does (0.26.81)
+
+| Concern | Behaviour | Since |
+| --- | --- | --- |
+| Listening mode | `server_vad` without playback reports is a device; push-to-talk and hands-free keep their own rules (`core/voice/listening.js`) | 0.26.74 |
+| Is someone speaking | Silero v5 per 32 ms frame in Lares (`core/voice/silero.js`, onnxruntime-web, weights from `@ricky0123/vad-web`); loudness and Router's VAD only when the model cannot load | 0.26.78 |
+| When a take ends | 500 ms without a voice; or 1 s after streaming ASR stops finding new words; a take whose voice stays under 250 ms is dropped after 500 ms with `input_audio_buffer.cleared`; 10 s at most | 0.26.78–0.26.81 |
+| Barge-in | Speech that stands out from the reply's echo for 500 ms and that Silero hears as a voice; its first ASR words (up to 1.5 s) are compared with what the device is saying (`core/voice/echo.js`); the reply's own words are echo, anything else stops the reply | 0.26.78 |
+| ASR load | One ASR request per session (the next take buffers until the previous is read); 503/429 retried after 0.4 s and 1.2 s; a device take ASR cannot read ends with `input_audio_transcription.failed` | 0.26.75 |
+| Dialogue | `reasoning_effort: "none"`; device rules send home control, lookups and schedules to `ask_lares`; language follows the latest user message; acknowledgment before the Agent starts, in a few words; one short sentence after a device result | 0.26.70–0.26.79 |
+| Diagnostics | One `device-take` voice metric per take (gate, length, how it ended, VAD answer, chunk RMS p50/p95/max); `device-echo` for a barge-in dropped as echo | 0.26.77 |
+
+### What we learned
+
+**Loudness cannot tell a room from a voice.** Reachy sends 10 ms chunks; its room
+measured median chunk RMS 0.016, p95 0.022, peaks to 0.05. Every learned energy
+floor (1.5x the empty take's average, then 1.2x its p95) still let about one chunk
+in twenty through, and a take only ends after 500 ms without a voiced chunk, so
+the robot opened a 6–10 s take back to back and held the ASR. A floor tuned to
+one room is wrong in the next; Silero scored that room at 0.003 and speech at
+1.00, at 0.26 ms a frame on a Mac and about 0.5 s to load in the image.
+
+**A speech model hears every voice.** People talking across the room kept the
+"turn on the light" take open for the 10 s limit, and the robot's own reply came
+back through its microphone as a person. Both are settled by words, not by
+audio: ASR found no new words in the chatter, and an echo says what the reply is
+saying.
+
+**ASR busy (503 in 0 ms) is Router's gate, not the engine.** The audio engine
+reported `max_concurrency: 1`; model-console copies that onto the model card;
+Router admits against it and at width 1 refuses instead of queueing
+(`softCap(1) = 1`). Streaming and batch transcription share the slot, and a
+stream holds it until its socket closes, so the tail of one take turned the next
+take, or a batch fallback, into a 503. Audio Engines v1.1.33 reads
+`ENGINE_MAX_CONCURRENCY`; the Qwen3-ASR charts set 3 (terminus-apps #4282,
+#4283).
+
+**Capacity and launch flags do not always propagate.** After the ASR engine pod
+was replaced, model-console's capacity reporter kept the old reading (it
+re-probes on a readiness dip or an in-place relaunch, neither of which happened)
+until the app was restarted; Router then kept its own copy until Router was
+restarted, because it reads the card when an app turns running. The same shape
+hid sglang 1.0.3's thinking-off flag: `ENGINE_ARGS` only seeds model-console's
+card on first boot and the card wins after that, so upgraded installs started
+with `default_chat_template_kwargs=None`. sglang 1.0.4 sets the flag in its
+launch wrapper (terminus-apps #4284). Without it a request with no
+`reasoning_effort` spent 3.9 s reasoning and returned nothing inside 400 tokens;
+with thinking off it answers in 0.2–0.6 s.
+
+**Prompt changes need the eval, and the eval is noisy.** Measured on the live
+model: a filler-word sentence in the device rules (not-done-followup 5/5 -> 1/5),
+a language hint on every turn (clarify-answer 9/10 -> 4/10) and the brevity rule
+inside the device rules (light-off 2/5) all hurt and were dropped. What held: the
+brevity rule in the trailing reminder, the hint only when the language is at
+risk, and short cues on the turn that needs them (after a device result:
+camera-brief-zh 5/10 -> 10/10, -en 2/10 -> 9/10; after delegating: ack-brief-en
+0/5 -> 5/5). The same code scored 4/5 and 1/5 on one scenario in back-to-back
+runs, so compare at least five runs in one sitting and judge only the scenarios
+whose code path changed.
+
+**Where "turn on the light" spent 24 s** (0.26.78, before the last fixes): 8 s
+keeping the take open over background talk, 1.5 s dialogue and acknowledgment,
+14 s in the Agent (ten model calls in a row through the generic hass-cli skill,
+the first one slowed by the camera turn on the same sglang), then the
+announcement queued behind the camera reply. 0.26.79 ends such takes on settled
+words; hass-cli 0.0.2 (0.26.81) gives everyday control a two-command path and is
+not yet measured on the robot.
+
+**Measured on 0.26.83, the first run end to end** (2026-10-25 05:55, sglang
+Qwen3.5-9B with nothing else on it). Times count from the end of the take,
+which comes 500 ms after the speaker stops.
+
+| Request | ASR final | Decide to delegate | Acknowledgment | First TTS audio | Device speaks | Agent | Result heard |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| turn the light off (first task after restart) | 0.14 s | 0.45 s | 0.13 s (cached) | ~0.25 s (streamed) | ~1.0 s | 6 calls, 6.8 s | ~8.3 s |
+| turn it on | 0.2 s | 1.3 s (cache miss) | 0.18 s | ~0.25 s | ~2.0 s | 2 calls, 1.9 s | ~4.4 s |
+| make it white | 0.17 s | 0.52 s | 0.13 s | ~0.25 s | ~1.1 s | 3 calls, 3.4 s | ~5 s |
+
+The Agent loaded `ha-lighting` first with no "unknown tool" detour (the 0.0.2
+run had three). The first task still took five tool steps because the light's
+only name is "Aqara lumi.light.agl003": searches for "卧室" and "灯" found
+nothing, so it listed every light before switching it; a Chinese friendly name
+in Home Assistant would make it two. Later tasks ran with the skill already in
+the session: `service call` alone, or `state get` then `service call`.
+
+sglang prefill per call: the dialogue's ~5k-token prompt hit the cache on the
+decision and, since the acknowledgment call keeps the delegating call's tools,
+on the acknowledgment too (one decision missed after an announcement changed
+the history). The Agent's prompt is now ~13.4k tokens on a new session (35 dsh
+tools ~8.5k, system prompt ~2.7k, hass-cli 0.0.3's shorter skill list); its
+first call after the restart prefilled all of it (3.4 s), later calls hit
+13–15k cached tokens. Before these changes (0.26.82 with the 9B) the same
+requests spoke after ~2.3 s and turning the light off took ~8.9 s; at the start
+of this work it was ~2.5–3 s and ~24 s with ten Agent calls.
+
+**The camera's colours were lost in its JPEG, not its lens.** Every camera look
+came back as "too blurry", "the picture went green" or "green light and blurry
+outlines". A frame captured in the robot pod through the app's own path
+(daemon -> WebRTC -> `appsrc(BGR) -> videoconvert -> jpegenc`) looked right in
+a viewer, but its JPEG was in the RGB colour space: component ids `R`, `G`, `B`
+(82, 71, 66), 4:4:4, no JFIF marker, because jpegenc accepts BGR and nothing was
+converted. Viewers and PIL honour those ids; the vision model's decoder read the
+planes as Y, Cb, Cr, which turns the frame into a bright green field with magenta
+streaks where the lights are (reproduced by decoding it that way: 99% of pixels
+green-dominant). The same frame re-encoded as YCbCr was described correctly, so
+camera, transport and Lares (which forwards `input_image` untouched) were all
+fine. reachymini 0.1.8 (beclab/olares-reachymini `afcfe9e`, tag v0.1.8) patches
+reachy-mini 1.12.0 at build time to link videoconvert to jpegenc through
+`video/x-raw,format=I420`, so stills are YCbCr 4:2:0 and about 114 KB instead of
+270-330 KB; after it the robot named the cola bottle in the user's hand. Frames
+are still dark in a bright room: auto exposure meters on the monitor and the
+ceiling lights in view. Raising contrast to 32 and backlight compensation to 6
+made it darker, and the defaults (contrast 1, backlight 2) were restored.
+
+### Where a device turn spends its time, compared with LiveKit Agents (2026-10-25)
+
+Measured on pptest03 with sglang Qwen3.5-9B and nothing else using the GPU,
+for "turn off the light" (Lares 0.26.82; from the moment the user stops
+speaking):
+
+| Stage | Time | Running total |
+| --- | --- | --- |
+| Silence until the take ends | 0.5 s | 0.5 s |
+| ASR final result (streaming) | 0.16 s | 0.7 s |
+| Dialogue decides to delegate (5.1k-token prompt, cached) | 0.48 s | 1.2 s |
+| Dialogue words the acknowledgment (missed the cache until 0.26.83) | 0.94 s | 2.1 s |
+| TTS of the whole sentence (streamed from 0.26.83, first audio about 0.24 s) | 0.64 s | 2.8 s |
+| Agent, two model calls (first prefilled about 17.9k tokens from scratch, about 3 s) | 4.8 s | |
+| Result wording 1.1 s, its TTS 1.2 s | | about 8.9 s to the result |
+
+A chat turn skips the acknowledgment call. sglang's `Prefill batch` log lines
+(`#new-token`, `#cached-token`) show each call's prefill and cache use; the
+robot-side capture and playback latency is not measured.
+
+The same stretch in LiveKit Agents (Python `livekit-agents` at `ab7fe5b46`;
+agents-js has the same defaults), stage by stage:
+
+| Stage | LiveKit Agents | Lares device sessions |
+| --- | --- | --- |
+| End of turn | Silero plus a text end-of-turn model: waits `min_delay` 0.3 s when the model says the turn is complete, up to `max_delay` 2.5 s when not (0.5/3.0 s without the model); `dynamic` mode learns the user's pauses (`voice/turn.py`, `voice/audio_recognition.py`) | Fixed 500 ms of silence, or 1 s after ASR stops finding new words |
+| Preemptive generation | On by default: the LLM starts on each changed STT final transcript, before the end-of-turn delay; reused at commit only if transcript, chat context, tools and tool choice are unchanged; TTS and tools wait for the commit | None: the dialogue starts after the take commits |
+| LLM to TTS | Token stream into a sentence tokenizer (blingfire, `min_sentence_len` 20); the next segment's TTS starts while the previous one plays | Whole reply first, then sentence by sentence; device TTS streams from 0.26.83. With read-while-writing on a MemorySlice card, closed sentences are spoken while the dialogue writes (see item 6) |
+| Interruption | 0.5 s of speech pauses playback; with no words within `false_interruption_timeout` 2 s it resumes; interruptions ignored during `aec_warmup_duration` 3 s after the agent starts speaking; echo is left to AEC, transcripts are not compared | Speech that clears the reply's echo for 500 ms and that Silero hears as a voice, then up to 1.5 s for ASR words, compared with the reply; only then playback stops |
+| Tools | The voice LLM speaks and calls tools in one reply; tool results trigger a follow-up (`max_tool_steps` 3); optional `with_filler` and a `BackgroundAudioPlayer` thinking sound; `say(audio=...)` plays pre-synthesized audio | A separate acknowledgment call, then the dsh Agent (its own LLM and an about 18k-token prompt) |
+| Latency metrics | Per turn: `end_of_turn_delay`, `transcription_delay`, LLM `ttft`, TTS `ttfb`, `playback_latency`, `e2e_latency` | `device-take` only (take length, ending, levels) |
+| Warm-up | VAD, LLM and TTS connections prewarmed at session start | Silero loaded at session open (about 0.5 s) |
+
+Improvements, in order of value for effort (none implemented yet):
+
+1. **Per-turn latency metrics.** Record, per turn, end of speech, take commit,
+   ASR final, dialogue first token, first TTS audio and first audio sent, and
+   the end-to-end delay, after LiveKit's `MetricsReport`. Every change below is
+   judged by it.
+2. **Preemptive generation** (about 0.3–0.5 s every turn). Start the dialogue on
+   the streaming ASR text as soon as Silero hears silence; at commit reuse it if
+   the final text is unchanged, otherwise discard and restart. As in LiveKit,
+   nothing is synthesized and no tool (`ask_lares` or a device tool) runs before
+   the commit.
+3. **End of turn by completeness** (about 0.2 s on average, fewer cut
+   sentences). Cheap form: Qwen3-ASR's partials carry punctuation, so a take
+   whose text ends in 。？！ commits after 300 ms and one that does not waits up
+   to about 1 s. Full form: LiveKit's multilingual end-of-turn model (v1-mini,
+   Chinese included).
+4. **Thinking feedback** (largest perceived gain). When a take commits, the
+   device plays a short gesture or sound, like LiveKit's thinking sound.
+5. **Fixed acknowledgments with cached audio** (about 1 s on delegation). Pick a
+   short phrase per language instead of an LLM call, from pre-synthesized audio
+   (`say(audio=...)` in LiveKit).
+6. **Stream the dialogue's text into TTS** instead of waiting for the whole
+   reply; worth more as replies get longer. Implemented for device sessions
+   behind the existing read-while-writing setting (`streamingEnabled()`: saved
+   `streaming` and a MemorySlice card); on TimeSlice a device stays serial.
+   Measured on pptest03 (RTX 5090 Laptop, TimeSlice, 2026-10-25): TTS
+   overlapping decode cut Qwen3.6-35B-A3B from 159 to 15-20 tok/s, so time
+   slicing must not overlap them, while a 23-token median device reply takes
+   0.15-0.5 s to write anyway. The first sentence waits for the second or for
+   the chat call to end, and a call that starts `ask_lares` releases nothing
+   more, so words written before a delegation are not read; device calls follow
+   the first words instead of preceding them. Not yet tried on the robot.
+7. **Interruption.** Turn on the ReSpeaker's echo cancellation with the playback
+   reference, which is what LiveKit relies on and would let the 1.5 s word
+   check shrink; ignore interruptions for the first seconds of a reply, as
+   LiveKit's AEC warm-up does. Pausing and resuming playback is not possible
+   over the OpenAI Realtime protocol Reachy speaks.
+8. **One model for everyday home control** (about 4–5 s on "turn on the
+   light"). LiveKit's voice LLM calls tools itself; Lares's dialogue hands even a
+   light switch to the dsh Agent, whose first call alone costs about 3 s of
+   prefill. Giving the dialogue a direct home-control tool trades the Agent's
+   generality for speed and is a product decision. Short of that, keep the
+   Agent's prompt prefix identical across tasks (anything that changes per task
+   at the end) and smaller than its current 17.9k tokens.
+
+### Routing a device turn: three options measured (2026-10-25)
+
+The device dialogue decided between speaking and acting in free text, and
+keyword checks caught a model that said an action instead of doing it
+("能把它变成白色吗？" answered "将灯光调整为白色中。" with no ask_lares, so the
+light stayed yellow). Every new phrasing was a new gap, so three structural
+options were measured with `scripts/voice-eval/route-probe.mjs`: 26 utterances
+from field tests (follow-ups such as "调亮一点" and "Make it warmer" after a
+light turn included), each sent three times as the dialogue's own first request
+to Qwen3.5-9B (sglang, memory slicing).
+
+| Option | Correct route | Time per call | Notes |
+|---|---|---|---|
+| Today: tool_choice auto, before the keyword checks | 72/78 | median 353 ms | 5 of 6 misses are a home or device request answered in words |
+| A: every reply is a tool call (`speak` added), tool_choice `required` | 12/78 | about 9.8 s | the model keeps emitting tool calls until max_tokens; `parallel_tool_calls: false` reaches sglang and changes nothing (15/78) |
+| B: a forced `route` call (lares / camera / motion / speak), then the turn | 75/78 | median 302 ms, p90 316 ms | one of three "Turn off the lights please" routed to speak, which is the failure being removed |
+| C: B without `speak`: everything but the camera and motion goes to Lares | 77/78 | the route call, then the Agent | small talk waits for the Agent: first text 0.2–2.4 s after hand-off, median about 1.6 s |
+
+A is not usable until the engine stops a `required` call after one tool. B
+keeps small talk at about 1 s and makes a misroute either slower (sent to
+Lares) or, for a narrow speak route, rare. C cannot claim an action it did not
+take, because only the Agent can act and the dialogue no longer speaks for it;
+it costs small-talk latency and needs the device persona in the Agent's prompt.
+C shipped in 0.26.99/0.26.100 (the Agent's first sentence spoken while it
+wrote, its answer when the task ended, the device persona in its prompt) and
+was worse on the robot: "你好" came back as "我是 Lares" (the Agent's own
+identity outweighed the persona), a fresh Agent session given only the raw
+"把灯打开，然后调整成绿色" asked which light instead of listing them, and
+"我只有一盏灯" was answered "调成绿色了" with no tool call, a raw entity id and
+unasked advice. 0.26.101 ships B instead: the route call fixes the turn's tool
+choice (lares must call ask_lares, so the dialogue still writes the task from
+context; speak may call nothing; camera must call the camera), and
+acknowledgements and announcements stay with the dialogue.
+
+On the robot B routed every turn correctly, but the Agent then answered "好的，
+我来帮你把灯打开并调成绿色。" in one 13-token step with no tool call, and the
+same for the light off, although its prompt, tools, model and parameters
+matched earlier sessions that acted at once. The failure began after 15:00 UTC,
+when the probes and then every B turn sent forced (grammar-constrained) tool
+calls to the same sglang; the 0.26.98 code (repackaged as 0.26.102, a downgrade
+being refused) in a new Agent session after an sglang restart switched lights
+again. Whether constrained requests disturb other requests on sglang is not
+confirmed: replay a captured Agent request alone and beside forced tool calls
+before routing with tool_choice again. Every change after 0.26.98 was reverted;
+these notes and the probe remain.
+
+### Working on it
+
+- Eval: `node scripts/voice-eval/run.mjs --runs 5 [--only a,b] [--model <id>] [--dialogue ../../packages/core/voice/dialogue.next.js] [--json out.json]`
+  inside the Lares pod, so Router sees the same identity. It replays a device's
+  real flow, including the step after a device tool result and gesture-only
+  steps. From a workstation, `scripts/voice-eval/remote.sh <ns/pod> <out-dir>
+  base next=<dialogue.js copy> -- --runs 5 --model <id>` uploads the eval and
+  each working copy, runs the passes one after another in the pod and prints
+  `compare.mjs`'s table. Pass an explicit `--model`: `default-chat` follows
+  whichever model Router serves at the moment, and models differ — on
+  2026-10-25, Qwen3.6-35B-A3B passed 104 and Qwen3.5-9B 94 of the same 110 runs
+  with the same prompt. A 5-run pass moves by one or two runs between repeats;
+  compare candidates in the same invocation.
+- Regression: `scripts/voice-eval/regress.sh <model-id> ...` runs this checkout's
+  `dialogue.js` against `scripts/voice-eval/baselines/<model>.json` and exits 1
+  when a scenario's pass rate fell by 40 points (two of five runs), a scenario
+  disappeared, or the scenarios both ran lost more than three runs per hundred.
+  The same dialogue differs by up to three of five runs on one scenario, so a
+  flagged scenario is run again ten times and only a 30-point drop there counts.
+  Changes outside `dialogue.js` (the realtime gateway, the Agent prompt) are not
+  covered: they need a release and a field test. Run it before every
+  dialogue change ships, on each model a device may meet (today Qwen3.5-9B on a
+  memory-sliced card and Qwen3.6-35B-A3B on a time-sliced one: they fail
+  different scenarios), and refresh the baseline with `--update` after a
+  release. A new robot failure becomes a scenario first — `prelude` turns replay
+  earlier turns with real camera calls and frames — and is fixed second.
+- Field tests: `scripts/voice-eval/field/collect.sh <dir>` follows the robot's,
+  Lares's and Router's logs while someone talks to the robot;
+  `field/analyze.sh <dir> <from> [<to>]` prints one row per turn (path taken,
+  time to first audio, dialogue calls and whether the Agent was running, task
+  result, flags such as a home request not delegated). Keep the GPU mode and
+  serving model of each round next to its table: a time-sliced 35B and a
+  memory-sliced 9B differ by about 4x in time to first audio (4.9 s vs 1.2 s
+  median on 2026-10-25) and in which mistakes they make.
+- Test builds: `docker buildx build --builder desktop-linux --platform linux/amd64,linux/arm64`
+  (the QEMU builder crashed esbuild), `scripts/package-chart.sh`, then
+  `olares-cli market upload` and `market upgrade lares -s upload`. An app
+  installed from `market.test` cannot be upgraded from `upload` (HTTP 404); merge
+  its terminus-apps PR and upgrade from `market.test` once it lists the version
+  (about six minutes).
+- Logs: the robot's `reachymini` container (`role=user|assistant`, `Tool call
+  received`), Lares `[lares:voice]` metrics, and Router `http_request` lines
+  (latency and status per `/v1/audio/*` and `/v1/chat/completions` call).
+
+### Open
+
+- The Agent's first call misses sglang's cache when a task follows the previous
+  one by a minute or more (tasks 17 s apart hit 17.9k tokens); whether a
+  refreshed time or runtime snapshot or eviction by other requests on the
+  hybrid model breaks it is not confirmed. Capture two such requests to diff.
+- Every voice task still carries all 35 dsh tools (~8.5k tokens); a voice preset
+  with about ten would cut the Agent prompt roughly in half.
+- The eval's overall pass rate fell from about 91% to 80–85% after sglang 1.0.4;
+  not investigated.
+- Camera frames are dark when bright lights or a monitor are in view (auto
+  exposure); a device that only says it will look ("Let me take a look") without
+  calling the camera was seen once, in English after a restart.
+- model-console does not re-probe capacity when the engine pod is replaced, and
+  Router does not re-read a card that changes after the app turned running.
+- Router: the default-realtime category was repointed to
+  `lares-reachy/voice-assistant` automatically; Router's docs describe an
+  openai-compatible provider while its Realtime path requires type `openai`.
+- `olares-reachymini` 0.1.8 is released from main (tag v0.1.8, images built by
+  its publish workflow). Its pod adds group 0 to `supplementalGroups` to reach
+  the ReSpeaker's USB nodes; a device-specific group would be narrower.
+- PR 67 contains `f74b4bf`, the source half of the hands-free short-take fix,
+  pushed by another session under a "publish Lares 0.26.79" message; `b9e431d`
+  carries its tests and explanation.
+
 ## Voice finish and settings RPC closeout (2026-10-19)
 
 The shared panel synchronizes confirmed read-aloud preferences once per active
@@ -454,7 +950,7 @@ curl -X DELETE .../api/lares/voice/keys -d '{"id":"<id>"}'
 
 The caller is the key owner; identity headers on the request are ignored. `voice-assistant` and `voice-direct` operate the owner's Agent, so grant them only to keys whose Router side is restricted to the owner.
 
-Register in Router an OpenAI-compatible provider with base URL `https://<webhook-internal entrance host>/api/lares/voice` (the per-user namespace refuses direct Service traffic from router-shared, so Router comes through the internal entrance on 8081) and the voice key as its encrypted credential, models `voice-dictation`, `voice-chat`, `voice-assistant`, `voice-direct` with `mode=realtime` and:
+Register in Router a provider of type `openai` (Router's Realtime path accepts only that type) with base URL `https://<appid>1.<user zone>/api/lares/voice`, the `webhook-internal` app entrance (the per-user namespace refuses direct Service traffic from router-shared, so Router comes through the internal entrance on 8081), and the voice key as its encrypted credential, models `voice-dictation`, `voice-chat`, `voice-assistant`, `voice-direct` with `mode=realtime` and:
 
 ```json
 {"extensions":{"voice_service":{"protocol":"lares-realtime-v1","billing":"child-models"}}}
@@ -789,3 +1285,27 @@ the existing desktop settings RPC error remains. Automatic speech was not enable
 in each full UI, and real microphone/hardware pause/resume/phone/Bluetooth checks
 remain unexecuted. See ignored `tts-naturalness/default-enabled.json` for the
 actual scope, build/source hashes and the blind preference decision.
+
+
+### Optional browser audio prewarming (2026-10-23)
+
+Text submission may prewarm browser playback inside its user gesture, but that
+preparation is optional: missing AudioWorklet support, context construction or
+synchronous resume failures must not reject a text send. Actual PCM playback and
+capture validate the browser capabilities and report a localized secure-connection
+or unsupported-audio error. Worklet module URLs are revoked even when loading
+throws synchronously; a failed preload remains retryable on real playback.
+
+Validation: 49 focused audio/composer tests, typecheck and PC/Vue/Host builds
+passed. The final full suite passed 1056/1056. An initial Router session-affinity
+failure passed both in isolation and in the full rerun; its cause is unconfirmed.
+
+| Interface | UI acceptance | Reason |
+| --- | --- | --- |
+| Official dsh PC | Blocked | Existing local Host returns HTTP 503; configured LAN test profile is not currently logged in |
+| Vue mobile: chat and settings | Blocked | Same Host and identity prerequisites; no new build/viewport verified in-browser |
+| Vue desktop: chat and settings | Blocked | Same Host and identity prerequisites; no new build/viewport verified in-browser |
+
+No existing services, profiles or remote settings were changed. Real microphone,
+playback and physical-device checks remain unexecuted. Local acceptance details
+are in the ignored `__debug__/local-router/optional-audio-acceptance.json`.

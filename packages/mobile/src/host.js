@@ -4,6 +4,7 @@ import { commandsUrl, normalizeCommands } from "@olares/lares-core/larepass/comm
 import { normalizeReferenceCandidates, referencesUrl } from "@olares/lares-core/larepass/references";
 import { muxWsUrl, remoteStreamOpen, workspaceBaseline } from "@olares/lares-core/larepass/mux";
 import { RESPOND_PATH } from "@olares/lares-core/larepass/rpc";
+import { createPluginClient } from "@olares/lares-core/skills/client";
 import { createHostSettings } from "@olares/lares-core/larepass/settings";
 import { createVoiceKeysClient } from "@olares/lares-core/voice/keys-client";
 import {
@@ -341,6 +342,7 @@ export function createHostClient(ports = {}) {
     },
     consumeMux,
     settings: createHostSettings(request),
+    plugins: createPluginClient((path, init) => request(path, init)),
     voiceKeys: createVoiceKeysClient((path, init) => request(path, init)),
   };
 }

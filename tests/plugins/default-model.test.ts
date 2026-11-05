@@ -76,3 +76,14 @@ test("failed and audio-only catalogs cannot initialize a default; recovery can",
   await coordinator.sync(ports); assert.equal(writes, 0);
   fail = false; await coordinator.sync(ports, true); assert.equal(writes, 1); assert.equal(current.model, "first/model");
 });
+
+test("the default follows Router's default-chat while the catalog lists it", () => {
+  const current = { provider: "olares-router", model: "first/model", reasoningEffort: "none" };
+  assert.deepEqual(resolveDefaultSelection(current, models, "other/MTP"), { provider: "olares-router", model: "other/MTP" });
+  const following = { provider: "olares-router", model: "other/MTP", reasoningEffort: "high" };
+  assert.equal(resolveDefaultSelection(following, models, "other/MTP"), following);
+  // An unlisted or unknown target leaves the ordinary repair rules in charge.
+  assert.equal(resolveDefaultSelection(current, models, "gone/model"), current);
+  assert.equal(resolveDefaultSelection(current, models, null), current);
+  assert.deepEqual(resolveDefaultSelection({ provider: "olares-router", model: "gone/model" }, models, "gone/model"), { provider: "olares-router", model: "first/model" });
+});

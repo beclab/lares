@@ -46,3 +46,31 @@ test("a reasoning default change publishes a new capability version", async () =
   assert.equal(coordinator.revision, 2);
   assert.equal(coordinator.committed.rows[0].reasoningDefault, "none");
 });
+
+test("the default follows default-chat, read once per catalog TTL unless refreshed", async () => {
+  let now = 0;
+  const catalog = { data: [{ id: "big/model", mode: "chat" }, { id: "small/model", mode: "chat" }] };
+  const cache = new CatalogCache({ now: () => now, ttlMs: 1000, fetch: (async () => new Response(JSON.stringify(catalog))) as unknown as typeof fetch });
+  cache.seed(catalog);
+  const coordinator = new CatalogCoordinator(cache);
+  let target = "big/model", reads = 0;
+  let current = { provider: "olares-router", model: "big/model" };
+  const ports = {
+    mutateSettings: async () => {},
+    defaultChat: async () => { reads++; return target; },
+    defaultModel: { currentSelection: () => current, saveSelection: async (next: any) => { current = next; } },
+  };
+  await coordinator.sync(ports);
+  assert.equal(current.model, "big/model");
+  target = "small/model";
+  now = 500; await coordinator.sync(ports);
+  assert.equal(reads, 1);
+  assert.equal(current.model, "big/model");
+  now = 1500; await coordinator.sync(ports);
+  assert.equal(reads, 2);
+  assert.equal(current.model, "small/model");
+  target = "big/model";
+  await coordinator.sync(ports, true);
+  assert.equal(reads, 3);
+  assert.equal(current.model, "big/model");
+});

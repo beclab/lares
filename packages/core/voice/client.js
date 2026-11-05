@@ -75,11 +75,41 @@ export function voiceChartAction(kind, op) {
   return postInstall({ kind, op });
 }
 
-export function wavBlob(base64) {
-  const raw = atob(String(base64 ?? ""));
+function decodeBase64(value) {
+  const raw = atob(String(value ?? ""));
   const bytes = new Uint8Array(raw.length);
   for (let i = 0; i < raw.length; i += 1) bytes[i] = raw.charCodeAt(i);
-  return new Blob([bytes], { type: "audio/wav" });
+  return bytes;
+}
+
+export function wavBlob(base64) {
+  return new Blob([decodeBase64(base64)], { type: "audio/wav" });
+}
+
+function wavTag(view, offset) {
+  return String.fromCharCode(view.getUint8(offset), view.getUint8(offset + 1), view.getUint8(offset + 2), view.getUint8(offset + 3));
+}
+
+/** PCM s16le mono from a WAV file, so playback can render it on the device clock. */
+export function wavPcm(audio) {
+  const bytes = audio instanceof Uint8Array ? audio : decodeBase64(audio);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (bytes.byteLength < 12 || wavTag(view, 0) !== "RIFF" || wavTag(view, 8) !== "WAVE") throw new Error("voice_audio_format");
+  let format = null;
+  let data = null;
+  for (let offset = 12; offset + 8 <= bytes.byteLength;) {
+    const id = wavTag(view, offset);
+    const length = view.getUint32(offset + 4, true);
+    const start = offset + 8;
+    if (start + length > bytes.byteLength) throw new Error("voice_audio_format");
+    if (id === "fmt ") {
+      if (length < 16) throw new Error("voice_audio_format");
+      format = { encoding: view.getUint16(start, true), channels: view.getUint16(start + 2, true), sampleRate: view.getUint32(start + 4, true), bits: view.getUint16(start + 14, true) };
+    } else if (id === "data") data = bytes.subarray(start, start + length);
+    offset = start + length + (length % 2);
+  }
+  if (!format || format.encoding !== 1 || format.channels !== 1 || format.bits !== 16 || !Number.isInteger(format.sampleRate) || !data || data.byteLength % 2) throw new Error("voice_audio_format");
+  return { sampleRate: format.sampleRate, channels: 1, encoding: "pcm_s16le", pcm: data };
 }
 
 /** Hands over a streaming answer's text; with `part`, also returns that sentence's audio. */

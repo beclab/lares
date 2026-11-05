@@ -127,6 +127,25 @@ test("holding after the call has ended opens readout and listens again", async (
   assert.equal(h.panel.getSnapshot().visible, true);
   await h.panel.dispose();
 });
+test("a hold during a reply stops the reply before it reopens the microphone", async () => {
+  const order: string[] = [];
+  const stream = { getTracks: () => [] };
+  const preparation = { opened: async () => stream, borrow: async () => { order.push("borrow"); return stream; }, consume: async () => stream, recording() {}, rest() {}, cancel() {} };
+  const h = harness({ prepareInput: () => preparation, create: async () => {
+    let finish: any; const controller = createVoiceController({
+      input: { capture: ({ onReady }: any) => { onReady?.(); return new Promise((resolve) => { finish = resolve; }); }, stop: () => finish?.("raw words"), cancel: () => finish?.("") },
+      output: { stop: () => { order.push("stop"); } }, agent: { create: async () => "s", submit: async () => {}, running: async () => false, cancel() {} } });
+    const call = { controller, start: (value: any) => controller.start(value), stop: () => controller.disconnect(), pause: () => controller.pause() }; h.calls.push(call); return call;
+  } });
+  await h.panel.open({ mode: "continuous" });
+  await h.panel.holdStart(); await h.panel.holdEnd(true); await flush();
+  h.calls[0].controller.observePlayback(true);
+  order.length = 0;
+  await h.panel.holdStart();
+  assert.deepEqual(order.slice(0, 2), ["stop", "borrow"]);
+  await h.panel.dispose();
+});
+
 test("text send reopens readout without the voice control or the microphone", async () => {
   const h = harness({ manualTurns: false, loadConfig: async () => ({ ...config(), speak: true }) });
   await h.panel.open({ mode: "continuous" });

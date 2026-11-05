@@ -1,0 +1,27 @@
+# Morning brief topics. Copy to $LARES_WORKSPACE/briefs/topics.yaml and edit.
+# Field rules: packages/skills/lares-morning-brief/references/topics.md
+version: 1
+time_zone: Asia/Shanghai
+language: zh-CN
+topics:
+  - id: tech
+    title: 科技晨报
+    time: "07:00"
+    focus: >-
+      AI 模型与推理框架发布、开源基础设施、芯片与算力，以及与 Olares 相关的自托管动态。
+    sources:
+      - query: "AI model release"
+      - query: "open source LLM inference"
+      - url: https://news.ycombinator.com/
+    exclude: [融资传闻, 营销软文]
+    max_items: 8
+
+  - id: finance
+    title: 财经晨报
+    time: "07:05"
+    focus: >-
+      隔夜美股与 A 股开盘前要闻、主要央行动向、大宗商品与汇率变化。只陈述事实，不给投资建议。
+    sources:
+      - query: "overnight US stocks close"
+      - query: "央行 公开市场操作"
+    max_items: 6

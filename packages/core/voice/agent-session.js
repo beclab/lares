@@ -2,11 +2,25 @@ import { mintRpcId } from "../larepass/rpc.js";
 import { createSessionFollow } from "../larepass/mux.js";
 import { createInboxTracker } from "../larepass/queue.js";
 import { reduceUtterance } from "./speech.js";
+import { ROUTER_PROVIDER_ID } from "../router/models.js";
 
 export const SPOKEN_PROMPT = "This is a voice conversation. Keep user-facing answers concise and natural for speech. Do not read reasoning or tool payloads aloud. Preserve the task's factual results and use the user's language.";
+// A device's Agent gets the same spoken rule. Its formatting is left to the device's dialogue, which
+// says a short plain result as written and turns anything longer or formatted into one sentence: the
+// device rule that also banned markdown, lists, advice and offers (0.26.88-0.26.105) made Qwen3.5-9B
+// end after "好的，我帮您关灯。" instead of calling the skill (P 0.42 against 0.15 without it).
+// Asked for the weather after a light turn, a device's Agent looked for a weather entity in Home
+// Assistant, cycled through invented names for minutes at temperature 0.2, or answered that a weather
+// integration had to be installed; replayed, it searched 1-2/10 at any temperature and 10/10 with this.
+export const DEVICE_AGENT_PROMPT = "Weather, news and other facts about the outside world come from web_search; Home Assistant only holds the user's own devices.";
+
+/** The spoken-reply rule of an Agent Session: a device's adds where outside facts come from. */
+export function spokenReplyRule({ device = false, voice = false } = {}) {
+  return device ? `${DEVICE_AGENT_PROMPT} ${SPOKEN_PROMPT}` : voice ? SPOKEN_PROMPT : "";
+}
 
 /** dsh opens a turn before claiming input; rpcId associates input with that open turn. */
-export function createVoiceAgentSession(api, { sessionId = null, preset, workspaceId, restoredRequests = [], onChange = () => {}, metric = () => {} } = {}) {
+export function createVoiceAgentSession(api, { sessionId = null, preset, workspaceId, restoredRequests = [], onChange = () => {}, metric = () => {}, fallbackModel = async () => null } = {}) {
   let creating;
   let following;
   let closed = false;
@@ -127,7 +141,19 @@ export function createVoiceAgentSession(api, { sessionId = null, preset, workspa
         try {
           await ensure();
           await follow();
-          await api.prompt({ sessionId, requestId, mode: mode === "steer" ? "steer" : "queue", content: [{ type: "text", text }] }, following.signal);
+          const send = () => api.prompt({ sessionId, requestId, mode: mode === "steer" ? "steer" : "queue", content: [{ type: "text", text }] }, following.signal);
+          try {
+            await send();
+          } catch (cause) {
+            // A Session keeps the model its last request used. Once Router stops serving it (an
+            // engine stopped for a GPU-mode change), every hand-off fails until the Session moves to
+            // what Router's default-chat answers with now; the refused prompt was never recorded.
+            const model = cause?.code === "session/model-unavailable" ? await fallbackModel() : null;
+            if (!model) throw cause;
+            await api.selectModel({ sessionId, provider: ROUTER_PROVIDER_ID, model });
+            metric({ stage: "agent_model_fallback", requestId, model });
+            await send();
+          }
           return snapshot();
         } catch (cause) {
           task.status = "unknown"; task.error = "submission_outcome_unknown"; version++;

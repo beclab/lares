@@ -163,6 +163,11 @@
       name: '@lares/dsh-overlay/host/generation-guard.js'
       inject: [tools]
 
+    # A tool call written into reasoning is not an answer. Steer the same turn.
+    - id: lares-leaked-tool-call
+      name: '@lares/dsh-overlay/host/leaked-tool-call.js'
+      inject: []
+
     - id: lares-olares-identity
       name: '@lares/dsh-overlay/host/olares/olares-identity.js'
       inject: [webServer, connection]

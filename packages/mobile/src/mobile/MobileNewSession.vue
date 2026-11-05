@@ -85,7 +85,7 @@ export default {
   display: flex;
   width: 100%;
   flex-direction: column;
-  padding: 8px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+  padding: 8px 16px 12px;
 }
 
 .mobile-new-session__composer {

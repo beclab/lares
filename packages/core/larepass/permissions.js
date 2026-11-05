@@ -54,3 +54,30 @@ export function presetDescription(t, option) {
 export function permissionLine(value) {
   return `/permission ${value}`;
 }
+
+/** New sessions take this preset; it is not the open session's `/permission`. */
+export const PERMISSION_SETTINGS_NS = "permission";
+
+/**
+ * @param {unknown} described - `settings.describe` value.
+ * @param {unknown} catalog - `permissionPresets.catalog` value.
+ */
+export function permissionDefaults(described, catalog) {
+  const rows = Array.isArray(described?.namespaces) ? described.namespaces : [];
+  const section = rows.find((row) => row?.ns === PERMISSION_SETTINGS_NS);
+  const options = (Array.isArray(catalog?.defaultOptions) ? catalog.defaultOptions : [])
+    .filter((option) => option?.value && option.value !== "custom");
+  const stored = typeof section?.value?.defaultPreset === "string" ? section.value.defaultPreset : "";
+  const fallback = typeof catalog?.defaultPreset === "string" ? catalog.defaultPreset : "";
+  const current = options.some((option) => option.value === stored)
+    ? stored
+    : options.some((option) => option.value === fallback)
+      ? fallback
+      : (options[0]?.value || "");
+  return {
+    current,
+    options,
+    revision: Number.isInteger(section?.revision) ? section.revision : undefined,
+    writable: described?.writable !== false && options.length > 0,
+  };
+}

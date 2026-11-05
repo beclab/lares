@@ -1,5 +1,6 @@
 import { ttsVoiceForModel } from "./tts-voice.js";
 import { speechSegments } from "./script.js";
+import { createPlayoutClock, SOCKET_FUSE_BYTES } from "./playout-clock.js";
 import { createSynthesisRuns, utteranceKey } from "./synthesis-run.js";
 import { randomUUID } from "node:crypto";
 import { WebSocket, WebSocketServer } from "ws";
@@ -48,14 +49,15 @@ export function createAudioStreamGateway({ config, models, replies, synthesize =
       server.handleUpgrade(req, socket, head, (client) => {
         clients.add(client);
         const abort = new AbortController();
-        let upstream = null, sentFrames = 0, playedFrames = 0, rate = 0, waiter = null, outputFormat = null;
+        let upstream = null, sentFrames = 0, playedFrames = 0, rate = 0, eventWaiter = null, creditWaiter = null, outputFormat = null;
+        const clock = createPlayoutClock();
         let fileDone = null, pausedAt = 0, closing = false, ttsKey = null;
         let received = 0, committed = false, outputStarted = false;
         const started = Date.now();
         const send = (value) => { if (client.readyState === 1) client.send(JSON.stringify(value)); };
         const close = () => {
           if (closing) return;
-          closing = true; abort.abort(); waiter?.(); fileDone?.(); clearTimeout(lifetime); upstream?.terminate();
+          closing = true; abort.abort(); eventWaiter?.(); creditWaiter?.(); eventWaiter = creditWaiter = null; fileDone?.(); clearTimeout(lifetime); upstream?.terminate();
           // A consumer that disappeared stops its synthesis instead of leaving
           // the whole answer to be rendered with nobody listening.
           if (ttsKey) synthesis.release(ttsKey);
@@ -84,12 +86,14 @@ export function createAudioStreamGateway({ config, models, replies, synthesize =
             } else {
               if (binary) throw fault("voice_stream_state");
               const frame = JSON.parse(String(raw));
-              if (frame.type === "pause") { if (!pausedAt) pausedAt = Date.now(); waiter?.(); waiter = null; return; }
-              if (frame.type === "resume") { pausedAt = 0; waiter?.(); waiter = null; return; }
+              if (frame.type === "pause") { clock.pause(); if (!pausedAt) pausedAt = Date.now(); creditWaiter?.(); creditWaiter = null; return; }
+              if (frame.type === "resume") { clock.resume(); pausedAt = 0; creditWaiter?.(); creditWaiter = null; return; }
               if (frame.type === "file.done" && fileDone) { fileDone(); fileDone = null; return; }
               if (frame.type !== "progress" || !Number.isSafeInteger(frame.frames) || frame.frames < playedFrames || frame.frames > sentFrames) throw fault("voice_stream_state");
               const firstProgress = playedFrames === 0 && frame.frames > 0;
-              playedFrames = frame.frames; waiter?.(); waiter = null;
+              playedFrames = frame.frames;
+              if (rate) clock.heard(frame.frames * 1000 / rate);
+              creditWaiter?.(); creditWaiter = null;
               if (firstProgress) metric({ stage: "playback_progress", voiceId: grant.scope.id, frames: playedFrames });
             }
           } catch (cause) { error(cause); }
@@ -117,11 +121,16 @@ export function createAudioStreamGateway({ config, models, replies, synthesize =
             for (let index = 0; index < parts.length; index += 1) yield { text: parts[index], index };
           })(), { model: grant.model, voice: ttsVoiceForModel(grant.config, grant.model), voiceId: grant.scope.id });
           let cursor = 0;
-          const unsub = run.subscribe(() => { waiter?.(); waiter = null; });
+          const wakeEvent = () => { const fn = eventWaiter; eventWaiter = null; fn?.(); };
+          // New PCM must not clear the playout timer. A long answer keeps
+          // producing chunks; waking the credit wait on each one restarted the
+          // stall deadline, so a phone that had already played its buffer never
+          // received the rest and never got an error either.
+          const unsub = run.subscribe(wakeEvent);
           const waitFor = () => new Promise((resolve, reject) => {
             if (abort.signal.aborted) { reject(fault("voice_cancelled")); return; }
-            const wake = () => { abort.signal.removeEventListener("abort", wake); waiter = null; if (abort.signal.aborted) reject(fault("voice_cancelled")); else resolve(); };
-            waiter = wake;
+            const wake = () => { abort.signal.removeEventListener("abort", wake); eventWaiter = null; if (abort.signal.aborted) reject(fault("voice_cancelled")); else resolve(); };
+            eventWaiter = wake;
             abort.signal.addEventListener("abort", wake, { once: true });
           });
           let reportedWait = false;
@@ -143,21 +152,23 @@ export function createAudioStreamGateway({ config, models, replies, synthesize =
               } else if (event.type === "audio") {
                 if (!rate) throw fault("voice_audio_format", 502);
                 for (let offset = 0; offset < event.chunk.length; offset += 16384) {
-                  while (pausedAt || sentFrames - playedFrames > rate * 2 || client.bufferedAmount > 128 * 1024) {
-                    if (!reportedWait) { reportedWait = true; metric({ stage: "playback_wait", voiceId: grant.scope.id, sentFrames, playedFrames, paused: Boolean(pausedAt) }); }
-                    // A device switch or a locked screen can stop playout for a
-                    // while without the client being gone. Wait for it to come
-                    // back instead of ending the answer after ten seconds.
+                  // Stay a short lead ahead of playout. Reported frames move
+                  // the playhead; if those ticks stop, the reply still advances
+                  // with the clock. The socket buffer is only a fuse for a
+                  // client that has stopped reading.
+                  const sentMs = () => sentFrames * 1000 / rate;
+                  while (clock.paused || clock.blocked(sentMs()) || client.bufferedAmount > SOCKET_FUSE_BYTES) {
+                    if (!reportedWait) { reportedWait = true; metric({ stage: "playback_wait", voiceId: grant.scope.id, sentFrames, playedFrames, paused: clock.paused }); }
                     await new Promise((resolve, reject) => {
-                      // A locked screen or a device switch is a pause, not a
-                      // lost client: hold the answer long enough for the page
-                      // to come back before failing it.
-                      const limit = pausedAt ? Math.max(1, pauseHoldMs - (Date.now() - pausedAt)) : playbackStallMs;
-                      const timer = setTimeout(() => { waiter = null; reject(fault(pausedAt ? "voice_interruption_timeout" : "voice_audio_backpressure")); }, limit);
-                      waiter = () => { clearTimeout(timer); resolve(); };
+                      const reading = !clock.paused && client.bufferedAmount <= SOCKET_FUSE_BYTES;
+                      const limit = clock.paused ? Math.max(1, pauseHoldMs - (Date.now() - pausedAt)) : reading ? Math.max(15, Math.min(250, clock.wait(sentMs()) || 15)) : playbackStallMs;
+                      const timer = setTimeout(() => { creditWaiter = null; if (reading) resolve(); else reject(fault(clock.paused ? "voice_interruption_timeout" : "voice_audio_backpressure")); }, limit);
+                      creditWaiter = () => { clearTimeout(timer); resolve(); };
+                      if (!(clock.paused || clock.blocked(sentMs()) || client.bufferedAmount > SOCKET_FUSE_BYTES)) { clearTimeout(timer); creditWaiter = null; resolve(); }
                     });
                     if (abort.signal.aborted || client.readyState !== 1) throw fault("voice_cancelled");
                   }
+                  clock.start();
                   if (client.readyState !== 1) throw fault("voice_cancelled");
                   const part = event.chunk.subarray(offset, offset + 16384);
                   sentFrames += part.length / 2;

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createSentencePlayer, readoutState } from "../../packages/core/voice/speech.js";
 import { playAudioStream, startTranscriptionStream } from "../../packages/core/voice/stream-client.js";
-import { voiceCallFailure, voiceIndicatorPresentation, voiceInputPresentation, voicePanelPresentation, voicePlaybackChrome } from "../../packages/core/voice/presentation.js";
+import { voiceCallFailure, voiceIndicatorPresentation, voiceInputPresentation, voicePanelPresentation, voicePlaybackChrome, voiceVisibleError } from "../../packages/core/voice/presentation.js";
 import { createVoiceConversation } from "../../packages/core/voice/conversation.js";
 
 const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -394,6 +394,27 @@ test("a socket that closes on its own is still voice_disconnected when retries a
   await assert.rejects(pending, (error: Error) => error.message === "voice_disconnected");
 });
 
+test("a ticket request lost with the network is retried and the answer still finishes", async () => {
+  let calls = 0;
+  let socket: ReturnType<typeof fakeSocket> | undefined;
+  const pending = playAudioStream({
+    text: "你好",
+    reconnectDelayMs: 0,
+    metric: () => {},
+    request: async () => {
+      calls += 1;
+      if (calls === 1) throw new Error("The network connection was lost.");
+      return { ok: true, body: { supported: true, ticket: "t" } };
+    },
+    socket: () => (socket = fakeSocket()),
+  });
+  for (let i = 0; i < 20 && !socket; i += 1) await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.ok(socket);
+  assert.equal(calls, 2);
+  socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "done" }) }));
+  assert.equal(await pending, true);
+});
+
 test("a suspended answer plays again after a cancelled voice take", async () => {
   let plays = 0;
   const ends: Array<() => void> = [];
@@ -478,6 +499,65 @@ test("a dropped socket reconnects and resumes after the frames already played", 
     send(sockets[1], { type: "done" });
     assert.equal(await pending, true);
     assert.deepEqual(received, Array.from({ length: 24 }, (_, i) => (i + 1) / 32768));
+  } finally {
+    if (originalContext === undefined) delete (globalThis as any).AudioContext;
+    else (globalThis as any).AudioContext = originalContext;
+    if (originalNode === undefined) delete (globalThis as any).AudioWorkletNode;
+    else (globalThis as any).AudioWorkletNode = originalNode;
+  }
+});
+
+test("a whole-file answer plays on the PCM clock instead of a media element", async () => {
+  const { pcmToWav } = await import("@olares/lares-core/router/tts");
+  const originalContext = (globalThis as any).AudioContext;
+  const originalNode = (globalThis as any).AudioWorkletNode;
+  const received: number[] = [];
+  let outputChannels = 0;
+  class Context {
+    state = "running"; destination = {}; sampleRate = 48000;
+    audioWorklet = { addModule: async () => {} };
+    async resume() {}
+    async close() { this.state = "closed"; }
+  }
+  class Node {
+    port: { onmessage: ((event: any) => void) | null; postMessage: (data: any) => void };
+    constructor(_context: unknown, _name: string, options: { outputChannelCount: number[] }) { outputChannels = options.outputChannelCount[0]; }
+    connect() {}
+    disconnect() {}
+  }
+  Node.prototype.port = null as any;
+  (globalThis as any).AudioContext = Context;
+  (globalThis as any).AudioWorkletNode = class extends Node {
+    port = {
+      onmessage: null as ((event: any) => void) | null,
+      postMessage: (data: any) => {
+        if (data.type === "audio") received.push(...data.samples);
+        if (data.type === "finish") queueMicrotask(() => this.port.onmessage?.({ data: { type: "done" } }));
+      },
+    };
+  };
+  const pcm = Buffer.alloc(4);
+  pcm.writeInt16LE(1000, 0);
+  pcm.writeInt16LE(-1000, 2);
+  const sent: string[] = [];
+  let socket: ReturnType<typeof fakeSocket>;
+  try {
+    const pending = playAudioStream({
+      text: "整段。",
+      request: ticket,
+      socket: () => {
+        socket = fakeSocket();
+        socket.send = (value: string) => { sent.push(value); };
+        return socket;
+      },
+    });
+    await flush();
+    socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "file", audio: pcmToWav(pcm, 24000).toString("base64") }) }));
+    socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "done" }) }));
+    assert.equal(await pending, true);
+    assert.deepEqual(received, [1000 / 32768, -1000 / 32768]);
+    assert.equal(outputChannels, 2);
+    assert.equal(sent.some((value) => value.includes("file.done")), true);
   } finally {
     if (originalContext === undefined) delete (globalThis as any).AudioContext;
     else (globalThis as any).AudioContext = originalContext;
@@ -575,6 +655,7 @@ test("a dropped continuous call stays quiet; hold is the way back", () => {
     assert.equal(ui.error, null);
     assert.equal(ui.label, "dictation.hold");
     assert.equal(voiceCallFailure(view), null);
+    assert.equal(voiceVisibleError(view), null);
     assert.equal(voiceIndicatorPresentation(view).visible, false);
     assert.equal(voiceIndicatorPresentation(view).error, null);
     assert.notEqual(ui.status, "error.voice_disconnected");
@@ -592,15 +673,20 @@ test("a muted dictation disconnect does not ask the user to resume listening", (
   assert.equal(voicePanelPresentation(view).error, "voice_background");
 });
 
-test("a paused device failure can still be resumed from one banner", () => {
-  const view = { visible: true, mode: "continuous", snapshot: { connection: "paused", error: "voice_device_lost", playback: "idle" } };
-  assert.deepEqual(voiceCallFailure(view), { code: "voice_device_lost", action: "resume" });
+test("a paused device or transcription failure stays quiet; hold is the way back", () => {
+  for (const error of ["voice_device_lost", "voice_failed", "voice_timeout", "voice_no_input"]) {
+    const view = { visible: true, mode: "continuous", snapshot: { connection: "paused", error, playback: "idle" } };
+    assert.equal(voiceCallFailure(view), null);
+    assert.equal(voiceVisibleError(view), null);
+    assert.equal(voiceInputPresentation(view).label, "dictation.hold");
+  }
 });
 
 test("recovery and idle endings are quiet; hold stays the way back", () => {
   for (const error of ["voice_recovery_expired", "voice_idle_timeout"]) {
     const view = { visible: true, mode: "continuous", snapshot: { connection: "closed", error, playback: "idle" } };
     assert.equal(voiceCallFailure(view), null);
+    assert.equal(voiceVisibleError(view), null);
     assert.equal(voicePanelPresentation(view).error, null);
     assert.equal(voiceInputPresentation(view).label, "dictation.hold");
   }

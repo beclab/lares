@@ -194,3 +194,76 @@ test("a transcript that never arrives releases the take without closing the call
     assert.equal(snap.error, null);
   } finally { await f.conversation.stop(); }
 });
+
+test("a take the server dropped as too short clears the speaking state and keeps listening", async () => {
+  const f = fixture({ device: "headset", readAloud: false, preset: "direct" });
+  await f.conversation.start({ continuous: true });
+  const controller = f.conversation.controller;
+  try {
+    void controller.listen();
+    await tick();
+    f.socket.emit({ type: "input_audio_buffer.speech_started", item_id: "i1" });
+    await tick();
+    assert.equal(controller.getSnapshot().userSpeaking, true);
+    f.socket.emit({ type: "input_audio_buffer.speech_stopped", item_id: "i1" });
+    f.socket.emit({ type: "input_audio_buffer.cleared" });
+    await tick();
+    const snap = controller.getSnapshot();
+    assert.equal(snap.userSpeaking, false);
+    assert.equal(snap.capture, "recording");
+  } finally { await f.conversation.stop(); }
+});
+
+test("a reply read aloud rests the phone microphone when it is announced, before its audio starts the player", async () => {
+  // 🔴 Resting switches the iOS audio session to playback. Done at the first audio delta it lands
+  // while the player is opening its context, and iOS silences that reply. The Host announces a
+  // reply well before its first synthesized slice, so the switch belongs there.
+  const events: string[] = [];
+  const input = { capabilities: {}, capture: () => new Promise(() => {}), stop() {}, cancel() {}, rest: () => { events.push("rest"); } };
+  const f = fixture({ device: "device", readAloud: true, input });
+  await f.conversation.start({ continuous: false });
+  try {
+    const start = f.player.start;
+    f.player.start = async (format: any) => { events.push("start"); return start(format); };
+    f.socket.emit({ type: "response.created", response: { id: "r1" } });
+    f.socket.emit({ type: "response.output_item.added", item: { id: "item-1" } });
+    await tick();
+    assert.deepEqual(events, ["rest"]);
+    assert.equal(f.conversation.controller.getSnapshot().playback, "pending");
+    f.socket.emit({ type: "response.output_audio.delta", delta: Buffer.alloc(4800).toString("base64") });
+    f.socket.emit({ type: "response.done", response: { id: "r1", status: "completed" } });
+    await tick();
+    assert.deepEqual(events, ["rest", "start"]);
+    assert.equal(f.conversation.controller.getSnapshot().playback, "idle");
+  } finally { await f.conversation.stop(); }
+});
+
+test("a reply that is not read aloud leaves the microphone and the audio session alone", async () => {
+  const events: string[] = [];
+  const input = { capabilities: {}, capture: () => new Promise(() => {}), stop() {}, cancel() {}, rest: () => { events.push("rest"); } };
+  const f = fixture({ device: "device", readAloud: false, input });
+  await f.conversation.start({ continuous: false });
+  try {
+    f.socket.emit({ type: "response.created", response: { id: "r1" } });
+    f.socket.emit({ type: "response.output_text.delta", delta: "hi" });
+    f.socket.emit({ type: "response.done", response: { id: "r1", status: "completed" } });
+    await tick();
+    assert.deepEqual(events, []);
+    assert.equal(f.conversation.controller.getSnapshot().playback, "idle");
+  } finally { await f.conversation.stop(); }
+});
+
+test("the player's playback stages reach the Host log with their state", async () => {
+  let onMetric: (event: any) => void = () => {};
+  const f = fixture({ device: "device", readAloud: true, input: { capabilities: {}, capture: () => new Promise(() => {}), stop() {}, cancel() {} },
+    player: (options: any) => { onMetric = options.onMetric; return { start: async () => {}, write() {}, finish: async () => {}, stop() {}, pause() {}, resume() {} }; } });
+  await f.conversation.start({ continuous: false });
+  try {
+    onMetric({ stage: "playback_context", state: "interrupted", shared: true, code: "voice_playback_failed" });
+    onMetric({ stage: "playback_started" });
+    await tick();
+    const sent = f.calls.filter(([path]: any) => path.endsWith("/session/metric")).map(([, , body]: any) => body);
+    assert.deepEqual(sent.find((body: any) => body.stage === "playback_context"), { stage: "playback_context", durationMs: 0, detail: "interrupted/shared/voice_playback_failed" });
+    assert.deepEqual(sent.find((body: any) => body.stage === "playback_started"), { stage: "playback_started", durationMs: 0, detail: undefined });
+  } finally { await f.conversation.stop(); }
+});

@@ -144,3 +144,43 @@ test("withdraw removes a queued prompt from the dsh inbox and cancels only the r
   assert.equal(await session.withdraw("unknown"), "not_cancellable");
   await session.close();
 });
+
+test("a hand-off refused for an unavailable model moves the Session to default-chat and retries once", async () => {
+  const selected: any[] = [], prompts: string[] = [], metrics: any[] = [];
+  let refuse = 1;
+  const api = {
+    create: async () => ({ sessionId: "voice-session" }),
+    async *follow(_request: unknown, signal: AbortSignal) { yield { type: "snapshot", records: [] }; await new Promise((resolve) => signal.addEventListener("abort", resolve, { once: true })); },
+    prompt: async (request: any) => {
+      prompts.push(request.requestId);
+      if (refuse-- > 0) throw Object.assign(new Error("model gone"), { code: "session/model-unavailable" });
+      return { accepted: true };
+    },
+    selectModel: async (request: any) => { selected.push(request); return { selected: request }; },
+    cancel: async () => {},
+  };
+  const session = createVoiceAgentSession(api, { fallbackModel: async () => "Olares/small", metric: (fields: any) => metrics.push(fields) });
+  await session.submit("turn on the light", "call");
+  assert.deepEqual(prompts, ["call", "call"]);
+  assert.deepEqual(selected, [{ sessionId: "voice-session", provider: "olares-router", model: "Olares/small" }]);
+  assert.ok(metrics.some((item) => item.stage === "agent_model_fallback" && item.model === "Olares/small"));
+  await session.close();
+});
+
+test("other refusals, or no default-chat to move to, are not retried", async () => {
+  for (const [code, fallback] of [["session/model-unavailable", null], ["session/agent-busy", "Olares/small"]] as const) {
+    let prompts = 0, selects = 0;
+    const api = {
+      create: async () => ({ sessionId: "voice-session" }),
+      async *follow(_request: unknown, signal: AbortSignal) { yield { type: "snapshot", records: [] }; await new Promise((resolve) => signal.addEventListener("abort", resolve, { once: true })); },
+      prompt: async () => { prompts++; throw Object.assign(new Error("refused"), { code }); },
+      selectModel: async () => { selects++; },
+      cancel: async () => {},
+    };
+    const session = createVoiceAgentSession(api, { fallbackModel: async () => fallback });
+    await assert.rejects(session.submit("task", "call"), /refused/);
+    assert.equal(prompts, 1);
+    assert.equal(selects, 0);
+    await session.close();
+  }
+});

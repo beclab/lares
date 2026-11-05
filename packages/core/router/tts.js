@@ -87,25 +87,46 @@ export async function synthesize(request) {
 }
 
 /**
+ * How long a streamed request may go without its first audio before it is abandoned for a whole
+ * one. Qwen3-TTS (audio engines v1.1.31) yields its first chunk in about 0.24 s; an engine whose
+ * streaming generator does not yield would otherwise hold the request until it times out.
+ */
+export const STREAM_FIRST_AUDIO_MS = 3_000;
+
+/**
  * Deliver each PCM sentence as Kokoro yields it.
  * A non-stream response comes back as `{ streamed: false, audio }` instead.
+ * `stream: true` asks the engine to yield while it synthesizes, so playback starts at its first
+ * chunk instead of after the whole sentence; with no audio within STREAM_FIRST_AUDIO_MS the
+ * sentence is requested whole instead.
  *
- * @param {{ text: string, model: string, voice?: string, signal?: AbortSignal, headers?: Record<string, string> }} request
+ * @param {{ text: string, model: string, voice?: string, signal?: AbortSignal, headers?: Record<string, string>, stream?: boolean, firstAudioMs?: number }} request
  * @param {(chunk: Buffer) => Promise<void> | void} onChunk
  */
 export async function synthesizeStream(request, onChunk) {
+  if (request.stream) {
+    try {
+      return await speak(request, onChunk, { stream: true, firstAudioMs: request.firstAudioMs ?? STREAM_FIRST_AUDIO_MS });
+    } catch (err) {
+      if (!err?.firstAudioMissed || request.signal?.aborted) throw err;
+    }
+  }
+  return speak(request, onChunk, { stream: false });
+}
+
+async function speak(request, onChunk, { stream, firstAudioMs }) {
   const spoken = request.text.trim();
   if (!spoken) throw new VoiceError("voice_config_invalid", 400, "nothing to speak");
   const text = speechInput(request.model, spoken);
+  // Abandons a stream that has not started; once audio flows it may take as long as it needs.
+  const silence = new AbortController();
+  const waiting = stream ? setTimeout(() => silence.abort(), firstAudioMs) : null;
+  const missed = () => Object.assign(new VoiceError("voice_timeout", 504, "speech stream sent no audio"), { firstAudioMissed: true });
   let res;
   try {
     const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
-    const signal = request.signal
-      ? AbortSignal.any([request.signal, timeout])
-      : timeout;
-    // A complete PCM body. The Qwen speech engine's streaming generator does not
-    // yield, so `stream: true` holds the model slot until the client times out
-    // and the readout never leaves "preparing".
+    const signal = AbortSignal.any([timeout, silence.signal, ...(request.signal ? [request.signal] : [])]);
+    // A complete PCM body unless the caller asked for a stream; see synthesizeStream.
     res = await fetch(`${routerShimBaseUrl()}/audio/speech`, {
       method: "POST",
       headers: { ...request.headers, "content-type": "application/json", accept: "audio/l16,audio/wav" },
@@ -114,10 +135,13 @@ export async function synthesizeStream(request, onChunk) {
         input: text,
         response_format: "pcm",
         ...(request.voice ? { voice: request.voice } : {}),
+        ...(stream ? { stream: true } : {}),
       }),
       signal,
     });
   } catch (err) {
+    clearTimeout(waiting);
+    if (silence.signal.aborted && !request.signal?.aborted) throw missed();
     const timedOut = err?.name === "TimeoutError" || err?.name === "AbortError";
     throw new VoiceError(
       timedOut ? "voice_timeout" : "voice_failed",
@@ -126,25 +150,31 @@ export async function synthesizeStream(request, onChunk) {
     );
   }
   if (!res.ok) {
+    clearTimeout(waiting);
     const detail = (await res.text()).slice(0, 400);
     throw new VoiceError(res.status === 404 ? "voice_tts_unavailable" : "voice_failed", res.status, detail);
   }
   const type = (res.headers.get("content-type") || "").toLowerCase();
   if (!type.includes("audio/l16")) {
+    clearTimeout(waiting);
     return { streamed: false, audio: Buffer.from(await res.arrayBuffer()) };
   }
   const sampleRate = declaredPcmRate(type, res.headers.get("x-audio-sample-rate"));
-  if (sampleRate === null) throw new VoiceError("voice_audio_format", 502, "missing or invalid PCM sample rate");
+  if (sampleRate === null) { clearTimeout(waiting); throw new VoiceError("voice_audio_format", 502, "missing or invalid PCM sample rate"); }
   await request.onFormat?.({ sampleRate, channels: 1, encoding: "pcm_s16le" });
   const reader = res.body.getReader();
   let bytes = 0;
   try {
   while (true) {
-    const { done, value } = await reader.read();
+    let next;
+    try { next = await reader.read(); }
+    catch (err) { if (!bytes && silence.signal.aborted && !request.signal?.aborted) throw missed(); throw err; }
+    const { done, value } = next;
     if (done) break;
-    if (value?.byteLength) { bytes += value.byteLength; await onChunk(Buffer.from(value)); }
+    if (value?.byteLength) { if (!bytes) clearTimeout(waiting); bytes += value.byteLength; await onChunk(Buffer.from(value)); }
   }
   } finally {
+    clearTimeout(waiting);
     await reader.cancel().catch(() => {});
     reader.releaseLock();
   }

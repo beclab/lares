@@ -1,7 +1,7 @@
 import React from "react";
 import { Button, Checkbox, Input, Modal } from "@deepseek-ai/dsh-client-ui-primitives";
 import { messageFromCode } from "@olares/lares-core/i18n/t";
-import { createVoiceKeysClient, VOICE_KEY_AGENT_MODELS, VOICE_KEY_DEFAULT_MODELS, VOICE_KEY_MODELS } from "@olares/lares-core/voice/keys-client";
+import { createVoiceKeysClient, VOICE_KEY_AGENT_MODELS, VOICE_KEY_DEFAULT_MODELS, VOICE_KEY_MODELS, VOICE_KEY_TOOL_MODELS } from "@olares/lares-core/voice/keys-client";
 import { useMountedRef } from "../../../shared/client/react-lifecycle.js";
 
 const { useCallback, useEffect, useId, useState } = React;
@@ -13,6 +13,7 @@ export function VoiceKeys({ t, client: injected }) {
   const [keys, setKeys] = useState(null);
   const [name, setName] = useState("");
   const [models, setModels] = useState(() => [...VOICE_KEY_DEFAULT_MODELS]);
+  const [clientTools, setClientTools] = useState(false);
   const [issued, setIssued] = useState(null);
   const [copied, setCopied] = useState(false);
   const [revoking, setRevoking] = useState(null);
@@ -31,9 +32,9 @@ export function VoiceKeys({ t, client: injected }) {
   const issue = async () => {
     setBusy(true); setError("");
     try {
-      const record = await client.issue({ name, models });
+      const record = await client.issue({ name, models, clientTools: clientTools && toolsApply });
       if (!mounted.current) return;
-      setIssued(record); setCopied(false); setName(""); setModels([...VOICE_KEY_DEFAULT_MODELS]);
+      setIssued(record); setCopied(false); setName(""); setModels([...VOICE_KEY_DEFAULT_MODELS]); setClientTools(false);
       await load();
     } catch (err) { failed(err); }
     finally { if (mounted.current) setBusy(false); }
@@ -50,6 +51,7 @@ export function VoiceKeys({ t, client: injected }) {
   };
   const nameId = useId();
   const agentSelected = models.some((model) => VOICE_KEY_AGENT_MODELS.includes(model));
+  const toolsApply = models.some((model) => VOICE_KEY_TOOL_MODELS.includes(model));
 
   return h(React.Fragment, null,
     h("div", { className: "lares-voice-row lares-voice-keys-intro" },
@@ -59,7 +61,7 @@ export function VoiceKeys({ t, client: injected }) {
     ...(keys ?? []).map((key) => h("div", { key: key.id, className: "lares-voice-row" },
       h("div", { className: "lares-voice-row-text" },
         h("div", { className: "lares-voice-row-title" }, key.name),
-        h("div", { className: "lares-voice-hint" }, `${key.models.join(", ")} · ${t("settings.keys.created", { at: new Date(key.createdAt).toLocaleString() })}`)),
+        h("div", { className: "lares-voice-hint" }, `${key.models.join(", ")}${key.clientTools ? ` · ${t("settings.keys.clientToolsTag")}` : ""} · ${t("settings.keys.created", { at: new Date(key.createdAt).toLocaleString() })}`)),
       h(Button, { variant: "outline", size: "sm", disabled: busy, onClick: () => setRevoking(key) }, t("settings.keys.revoke")))),
     h("div", { className: "lares-voice-row" },
       h("label", { className: "lares-voice-row-text", htmlFor: nameId },
@@ -71,6 +73,10 @@ export function VoiceKeys({ t, client: injected }) {
         agentSelected ? h("div", { role: "note", className: "lares-voice-hint is-error" }, t("settings.keys.agentWarning")) : null),
       h("div", { className: "lares-voice-keys-model-list", role: "group", "aria-label": t("settings.keys.models") },
         VOICE_KEY_MODELS.map((model) => h(Checkbox, { key: model, checked: models.includes(model), disabled: busy, label: model, onChange: () => toggle(model) })))),
+    h("div", { className: "lares-voice-row lares-voice-keys-models" },
+      h("div", { className: "lares-voice-keys-models-head" },
+        h(Checkbox, { checked: clientTools && toolsApply, disabled: busy || !toolsApply, label: t("settings.keys.clientTools"), onChange: () => setClientTools((value) => !value) }),
+        h("div", { className: "lares-voice-hint" }, t("settings.keys.clientToolsHint")))),
     error ? h("p", { role: "alert", className: "lares-settings-notice is-error lares-voice-keys-error" }, error) : null,
     h("div", { className: "lares-voice-row lares-voice-keys-actions" },
       h(Button, { variant: "primary", size: "sm", disabled: busy || !name.trim() || !models.length, onClick: () => { void issue(); } }, t(busy ? "settings.keys.issuing" : "settings.keys.issue"))),

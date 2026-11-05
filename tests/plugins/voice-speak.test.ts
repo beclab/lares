@@ -612,6 +612,50 @@ test("a send tap unlocks the phone player without cutting an answer still playin
   }
 });
 
+test("the phone unlock clip uses the playback clock, not an 8 kHz silent wav", async () => {
+  const sources: string[] = [];
+  class FakeAudio {
+    paused = true;
+    src = "";
+    async play() { sources.push(this.src); this.paused = false; }
+    pause() { this.paused = true; }
+  }
+  class Context {
+    sampleRate = 48000;
+    state = "running";
+    destination = {};
+    audioWorklet = { addModule: async () => {} };
+    async resume() {}
+    async close() { this.state = "closed"; }
+  }
+  const saved = { Audio: globalThis.Audio, AudioContext: (globalThis as any).AudioContext, AudioWorkletNode: (globalThis as any).AudioWorkletNode };
+  Object.assign(globalThis, { Audio: FakeAudio, AudioContext: Context, AudioWorkletNode: class {} });
+  let primed: { sampleRate?: number, state: string, close?: () => Promise<void> } | null = null;
+  try {
+    const { createAnswerPlayer } = await import("../../packages/mobile/src/chat/playback.js");
+    const { primePlaybackContext } = await import("@olares/lares-core/voice/pcm-player");
+    primed = primePlaybackContext();
+    if (primed && primed.sampleRate !== 48000) {
+      await primed.close?.();
+      primed.state = "closed";
+      primed = primePlaybackContext();
+    }
+    assert.equal(primed?.sampleRate, 48000);
+    const player = createAnswerPlayer();
+    player.unlock();
+    const bytes = Uint8Array.from(atob(sources.at(-1)!.split(",")[1]), (char) => char.charCodeAt(0));
+    const view = new DataView(bytes.buffer);
+    assert.equal(view.getUint16(20, true), 1);
+    assert.equal(view.getUint16(22, true), 1);
+    assert.equal(view.getUint32(24, true), 48000);
+    assert.equal(view.getUint16(34, true), 16);
+    assert.ok(view.getUint32(40, true) > 0);
+  } finally {
+    await primed?.close?.();
+    Object.assign(globalThis, saved);
+  }
+});
+
 function fakeHeadset(log: string[], write: () => Promise<void> = async () => {}) {
   return {
     skipped: false,
@@ -909,4 +953,37 @@ test("model default omits the voice and each new readout binds an independent co
   resume(); await first;
   assert.deepEqual(voices, [undefined, undefined]);
   await speakFromConfig("New reply.", options); assert.equal(voices.at(-1), "next");
+});
+
+test("a streamed sentence asks the engine to yield, and a silent stream falls back to a whole one", async (t) => {
+  const bodies: any[] = [];
+  t.mock.method(globalThis, "fetch", async (_url: string, init: { body: string, signal: AbortSignal }) => {
+    const body = JSON.parse(init.body);
+    bodies.push(body);
+    const headers = { "content-type": "audio/L16", "x-audio-sample-rate": "24000" };
+    if (!body.stream) return new Response(new Uint8Array([3, 0, 4, 0]), { headers });
+    // An engine whose streaming generator never yields: headers, then nothing until aborted.
+    const stream = new ReadableStream({ start(controller) { init.signal.addEventListener("abort", () => controller.error(init.signal.reason)); } });
+    return new Response(stream, { headers });
+  });
+  const chunks: Buffer[] = [];
+  const started = Date.now();
+  const outcome = await synthesizeStream({ text: "你好", model: "qwen3-tts", stream: true, firstAudioMs: 50 }, (chunk) => { chunks.push(chunk); });
+  assert.deepEqual(bodies.map((body) => body.stream), [true, undefined]);
+  assert.deepEqual([...Buffer.concat(chunks)], [3, 0, 4, 0]);
+  assert.equal(outcome.streamed, true);
+  assert.ok(Date.now() - started < 1000);
+});
+
+test("a stream that has started speaking is not requested again when it breaks", async (t) => {
+  let calls = 0;
+  t.mock.method(globalThis, "fetch", async () => {
+    calls += 1;
+    const stream = new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array([1, 0])); setTimeout(() => controller.error(new Error("reset")), 10); } });
+    return new Response(stream, { headers: { "content-type": "audio/L16", "x-audio-sample-rate": "24000" } });
+  });
+  const chunks: Buffer[] = [];
+  await assert.rejects(synthesizeStream({ text: "你好", model: "qwen3-tts", stream: true, firstAudioMs: 50 }, (chunk) => { chunks.push(chunk); }));
+  assert.equal(calls, 1);
+  assert.equal(chunks.length, 1);
 });

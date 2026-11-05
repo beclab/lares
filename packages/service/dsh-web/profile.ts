@@ -43,6 +43,14 @@ const LOCAL_PROFILE_PACKAGES = [
 const SHELL_BUNDLES = ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app"] as const;
 
 /**
+ * Official bundles Lares mounts on every profile. dsh ships Schedule
+ * (`schedule_create`, the Automation tasks page, time context) switched off and
+ * offers it on the Plugins page, which Lares does not surface — so Lares turns
+ * it on here. It comes with the image's dsh install; nothing is downloaded.
+ */
+const OFFICIAL_BUNDLES = ["@deepseek-ai/dsh-experimental-schedule-bundle"] as const;
+
+/**
  * Lares's overlay is the LAST bundle layer, after any community bundle installed
  * into this profile. dsh composes a profile as patch layers concatenated in
  * `dsh.profile.bundles` order, and a patch may only target a row an earlier
@@ -52,7 +60,7 @@ const SHELL_BUNDLES = ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app"] as c
  */
 const LARES_BUNDLE = "@lares/dsh-overlay";
 
-const OWNED_BUNDLES: readonly string[] = [...SHELL_BUNDLES, LARES_BUNDLE];
+const OWNED_BUNDLES: readonly string[] = [...SHELL_BUNDLES, ...OFFICIAL_BUNDLES, LARES_BUNDLE];
 
 function resolveDshHome(dataDir: string): string {
   return process.env.DSH_HOME?.trim() || join(dataDir, "dsh-home");
@@ -84,7 +92,7 @@ export function ensureLaresWebProfile(dataDir: string): { dshHome: string; profi
   const extraBundles = (previous.dsh?.profile?.bundles ?? []).filter(
     (name) => !OWNED_BUNDLES.includes(name) && !name.startsWith("@lares/"),
   );
-  const bundles = [...SHELL_BUNDLES, ...extraBundles, LARES_BUNDLE];
+  const bundles = [...SHELL_BUNDLES, ...OFFICIAL_BUNDLES, ...extraBundles, LARES_BUNDLE];
 
   const manifest = {
     name: "lares-web-profile",

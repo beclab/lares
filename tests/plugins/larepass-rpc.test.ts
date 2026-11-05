@@ -17,6 +17,11 @@ test("rpc envelope uses the Host namespace/method path and args object", () => {
   assert.deepEqual(hostCall("session.list", {}).args, { _request: {} });
   assert.equal(rpcPath("session.history"), "/api/session/page");
   assert.deepEqual(hostCall("session.modelCatalog"), { endpoint: "session/modelCatalog", args: {} });
+  assert.deepEqual(hostCall("permissionPresets.catalog"), { endpoint: "permissionPresets/catalog", args: {} });
+  assert.deepEqual(hostCall("settings.mutate", { ns: "permission", ops: [], expectedRevision: 1 }), {
+    endpoint: "settings/mutate",
+    args: { ns: "permission", ops: [], expectedRevision: 1 },
+  });
   assert.deepEqual(hostCall("session.history", { sessionId: "s1", throughSeq: 4 }).args, {
     request: { address: { kind: "session", sessionId: "s1" }, throughSeq: 4 },
   });

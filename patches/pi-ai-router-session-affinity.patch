@@ -1,0 +1,15 @@
+--- a/node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js
++++ b/node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js
+@@ -1317,8 +1317,10 @@
+         supportsMidConvoSystemMessages: false,
+         supportsMidConvoToolAdditions: false,
+         cacheControlFormat,
+-        sendSessionAffinityHeaders: isOpenRouter,
+-        sessionAffinityFormat: isOpenRouter ? "openrouter" : "openai",
++        // The Lares shim is not an OpenRouter host. Router still groups a turn by x-session-id,
++        // and dsh refuses to store that switch on the route.
++        sendSessionAffinityHeaders: isOpenRouter || provider === "olares-router",
++        sessionAffinityFormat: isOpenRouter || provider === "olares-router" ? "openrouter" : "openai",
+         supportsLongCacheRetention: !(isTogether ||
+             isCloudflareWorkersAI ||
+             isCloudflareAiGateway ||
