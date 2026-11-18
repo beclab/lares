@@ -3,7 +3,7 @@
   "version": "0.15.0",
   "private": true,
   "type": "module",
-  "description": "Web search through Olares Router",
+  "description": "Web search and page extraction through Olares Router",
   "exports": {
     ".": "./host/index.js",
     "./client": "../../../dist/plugins/router-search/client.js",

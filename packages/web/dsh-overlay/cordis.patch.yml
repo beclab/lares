@@ -50,6 +50,7 @@
 - id: web
   config:
     searchProvider: lares
+    fetchProvider: lares
 
 # Read-only Loader dump: not actionable on Olares, and the Web host already
 # parks most tool rows as disabled until a session preset mounts them.

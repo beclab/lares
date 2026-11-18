@@ -93,3 +93,7 @@ olares 技能一起复制到 `$LARES_DATA_DIR/skills`，经 `DSH_BUNDLED_SKILL_D
 
 语音输入的模型 / 语言 / 市场应用改在 **设置 → 语音输入** 面板配置，持久化到
 `$DSH_HOME/voice-input/config.json`。
+
+### 网页读取
+
+`web_fetch` 通过 Router `POST /v1/scrape` 的 `default-scrape` 读取网页。请先在 Router 配置可调用的默认抓取路由；Lares 复用 `LLM_GATEWAY_URL` 和现有 Router 身份 / Key。关闭搜索不影响网页读取，抓取失败会明确报错，不回退到本地 HTTP 直连。响应上限 1 MiB，提取的 Markdown 上限 100,000 字符，支持取消与 60 秒超时。工具状态表示 Router 文档提取接口的响应状态，不代表目标网站的原始 HTTP 状态码。

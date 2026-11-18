@@ -84,3 +84,7 @@ olares-cli skills export packages/skills
 | `DSH_HOME` | `$LARES_DATA_DIR/dsh-home` | dsh profiles |
 
 Configure the voice input model, language, and Market application under **Settings → Voice Input**. Settings are persisted to `$DSH_HOME/voice-input/config.json`.
+
+### Web fetch
+
+`web_fetch` reads pages through Router `POST /v1/scrape` using `default-scrape`. Configure a callable scrape default in Router; Lares reuses `LLM_GATEWAY_URL` and its existing Router identity/key. Turning search off does not disable page reading. Fetch failures are reported without falling back to local HTTP. Responses are bounded to 1 MiB and the extracted Markdown to 100,000 characters, with cancellation and a 60-second timeout. The tool status describes Router's extracted document response, not the target website's HTTP status.

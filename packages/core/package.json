@@ -66,6 +66,7 @@
       "default": "./router/models.js"
     },
     "./router/search": "./router/search.js",
+    "./router/scrape": "./router/scrape.js",
     "./router/shim": "./router/shim.js",
     "./router/gemini-schema": "./router/gemini-schema.js",
     "./router/generation-guard": "./router/generation-guard.js",
