@@ -7,7 +7,7 @@ variable "BASE_IMAGE" {
 }
 
 variable "IMAGE" {
-  default = "docker.io/ljx1680535257/lares:dev"
+  default = "docker.io/beclab/lares:dev"
 }
 
 target "base" {
