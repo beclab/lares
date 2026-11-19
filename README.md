@@ -51,7 +51,7 @@ Hot reload is a runtime switch. The chart always mounts `devsrc` at `/devsrc`. A
 
 ## Release
 
-`docker.io/ljx1680535257/lares` is a multi-architecture image for amd64 and arm64. [`.github/workflows/image.yml`](.github/workflows/image.yml) builds it on two native runners and combines the results into a manifest list. The workflow is triggered only by pushing a `v<Chart.yaml version>` tag or by manual dispatch. Local `scripts/build-image.sh` still builds a single architecture with `--load`; test distribution uses `scripts/deploy-image.sh`.
+`docker.io/beclab/lares` is a multi-architecture image for amd64 and arm64. [`.github/workflows/image.yml`](.github/workflows/image.yml) builds it on two native runners and combines the results into a manifest list. The workflow is triggered only by pushing a `v<Chart.yaml version>` tag or by manual dispatch. Local `scripts/build-image.sh` still builds a single architecture with `--load`; test distribution uses `scripts/deploy-image.sh`.
 
 The authoritative version is `deploy/lares/Chart.yaml`. CI verifies that the image tag in `values.yaml` and the version in `OlaresManifest.yaml` match it. The base image (`beclab/lares-base`) is built only when the `image_base_tag` from `project.json` does not already exist in the registry. Remember to bump that tag after changing `Dockerfile.base`.
 

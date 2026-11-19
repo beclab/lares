@@ -49,7 +49,7 @@ scripts/dev-sync/sync.sh 1
 
 ## Release
 
-`docker.io/ljx1680535257/lares` 是多架构镜像（amd64 + arm64），由
+`docker.io/beclab/lares` 是多架构镜像（amd64 + arm64），由
 [`.github/workflows/image.yml`](.github/workflows/image.yml) 在双原生 runner 上构建后合成
 manifest list。触发只有推 `v<Chart.yaml 版本>` 标签或手动 dispatch 两种；本地
 `scripts/build-image.sh` 仍然只打单架构、只 `--load`，测试分发走
