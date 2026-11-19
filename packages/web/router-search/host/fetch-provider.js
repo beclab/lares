@@ -1,3 +1,4 @@
+import { configuredFetchModel, fetchDisabled } from "@olares/lares-core/fetch/config";
 import { WebError } from "@deepseek-ai/dsh-web";
 import { routerScrape, ScrapeError, scrapeWebErrorCode } from "@olares/lares-core/router/scrape";
 
@@ -9,10 +10,13 @@ import { routerScrape, ScrapeError, scrapeWebErrorCode } from "@olares/lares-cor
 export function createLaresFetchProvider() {
   return {
     id: "lares",
-    available() { return true; },
+    available() { return !fetchDisabled(); },
     async fetch(request, signal) {
+      if (fetchDisabled()) {
+        throw new WebError("Web fetch is turned off in Lares settings", "WEB_PROVIDER_CONFIGURED_UNAVAILABLE");
+      }
       try {
-        return await routerScrape(request.url, { signal });
+        return await routerScrape(request.url, { signal, model: configuredFetchModel() ?? undefined });
       } catch (err) {
         if (err instanceof ScrapeError) {
           throw new WebError(err.message, scrapeWebErrorCode(err.code), { cause: err });

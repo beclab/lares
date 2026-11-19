@@ -21,7 +21,10 @@ RUN mkdir -p node_modules/@olares \
 # from hass-cli (Settings → Skills), never copied from git.
 RUN olares-cli skills export packages/skills
 
-RUN npm run build \
+# Old QEMU can corrupt Go heaps during esbuild transforms (golang/go#77572).
+# Scope the workaround to compilation; do not change the runtime environment.
+ARG BUILD_GODEBUG=madvdontneed=0
+RUN GODEBUG="${BUILD_GODEBUG}" npm run build \
   && rm -rf packages/service \
   && date -u +%Y%m%d%H%M%S > .lares-image-id \
   && chown -R node:node /app

@@ -66,7 +66,7 @@ async function readRouterBody(response) {
  * HTTP status, which Router's current scrape protocol does not expose.
  * @returns {Promise<{ url: string, statusCode: number, body: { kind: "text", content: string }, truncated: boolean }>}
  * @param {string} url
- * @param {{ signal?: AbortSignal, timeoutMs?: number, maxBodyChars?: number, env?: NodeJS.ProcessEnv }} [opts]
+ * @param {{ model?: string, signal?: AbortSignal, timeoutMs?: number, maxBodyChars?: number, env?: NodeJS.ProcessEnv }} [opts]
  */
 export async function routerScrape(url, opts = {}) {
   if (opts.signal?.aborted) throw new ScrapeError("Router scrape aborted", "aborted", { cause: opts.signal.reason });
@@ -91,7 +91,7 @@ export async function routerScrape(url, opts = {}) {
       method: "POST",
       redirect: "error",
       headers: { ...routerHeaders(env), "content-type": "application/json" },
-      body: JSON.stringify({ model: ROUTER_DEFAULT_SCRAPE_ROUTE, url: target }),
+      body: JSON.stringify({ model: opts.model ?? ROUTER_DEFAULT_SCRAPE_ROUTE, url: target }),
       signal: controller.signal,
     });
     if (response.status === 401 || response.status === 403) {

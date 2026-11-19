@@ -49,7 +49,7 @@ scripts/dev-sync/sync.sh 1
 
 ## Release
 
-`docker.io/beclab/lares` 是多架构镜像（amd64 + arm64），由
+`docker.io/ljx1680535257/lares` 是多架构镜像（amd64 + arm64），由
 [`.github/workflows/image.yml`](.github/workflows/image.yml) 在双原生 runner 上构建后合成
 manifest list。触发只有推 `v<Chart.yaml 版本>` 标签或手动 dispatch 两种；本地
 `scripts/build-image.sh` 仍然只打单架构、只 `--load`，测试分发走
@@ -96,4 +96,4 @@ olares 技能一起复制到 `$LARES_DATA_DIR/skills`，经 `DSH_BUNDLED_SKILL_D
 
 ### 网页读取
 
-`web_fetch` 通过 Router `POST /v1/scrape` 的 `default-scrape` 读取网页。请先在 Router 配置可调用的默认抓取路由；Lares 复用 `LLM_GATEWAY_URL` 和现有 Router 身份 / Key。关闭搜索不影响网页读取，抓取失败会明确报错，不回退到本地 HTTP 直连。响应上限 1 MiB，提取的 Markdown 上限 100,000 字符，支持取消与 60 秒超时。工具状态表示 Router 文档提取接口的响应状态，不代表目标网站的原始 HTTP 状态码。
+`web_fetch` 通过 Router `POST /v1/scrape` 读取网页。「设置 → 网页抓取」位于网络搜索下方，可跟随 Router 默认 `default-scrape`、选择具体抓取服务或关闭抓取，并支持刷新服务列表。设置独立持久化，选定服务暂时消失不会清除选择；Lares 复用 `LLM_GATEWAY_URL` 和现有 Router 身份 / Key。关闭搜索不影响网页读取，抓取失败会明确报错，不回退到本地 HTTP 直连。响应上限 1 MiB，提取的 Markdown 上限 100,000 字符，支持取消与 60 秒超时。工具状态表示 Router 文档提取接口的响应状态，不代表目标网站的原始 HTTP 状态码。

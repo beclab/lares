@@ -51,7 +51,7 @@ Hot reload is a runtime switch. The chart always mounts `devsrc` at `/devsrc`. A
 
 ## Release
 
-`docker.io/beclab/lares` is a multi-architecture image for amd64 and arm64. [`.github/workflows/image.yml`](.github/workflows/image.yml) builds it on two native runners and combines the results into a manifest list. The workflow is triggered only by pushing a `v<Chart.yaml version>` tag or by manual dispatch. Local `scripts/build-image.sh` still builds a single architecture with `--load`; test distribution uses `scripts/deploy-image.sh`.
+`docker.io/ljx1680535257/lares` is a multi-architecture image for amd64 and arm64. [`.github/workflows/image.yml`](.github/workflows/image.yml) builds it on two native runners and combines the results into a manifest list. The workflow is triggered only by pushing a `v<Chart.yaml version>` tag or by manual dispatch. Local `scripts/build-image.sh` still builds a single architecture with `--load`; test distribution uses `scripts/deploy-image.sh`.
 
 The authoritative version is `deploy/lares/Chart.yaml`. CI verifies that the image tag in `values.yaml` and the version in `OlaresManifest.yaml` match it. The base image (`beclab/lares-base`) is built only when the `image_base_tag` from `project.json` does not already exist in the registry. Remember to bump that tag after changing `Dockerfile.base`.
 
@@ -87,4 +87,4 @@ Configure the voice input model, language, and Market application under **Settin
 
 ### Web fetch
 
-`web_fetch` reads pages through Router `POST /v1/scrape` using `default-scrape`. Configure a callable scrape default in Router; Lares reuses `LLM_GATEWAY_URL` and its existing Router identity/key. Turning search off does not disable page reading. Fetch failures are reported without falling back to local HTTP. Responses are bounded to 1 MiB and the extracted Markdown to 100,000 characters, with cancellation and a 60-second timeout. The tool status describes Router's extracted document response, not the target website's HTTP status.
+`web_fetch` settings appear directly below Web search: follow Router default, choose a scrape service, or turn fetching off. Fetch settings are persisted independently of search. `web_fetch` reads pages through Router `POST /v1/scrape` using `default-scrape`. Configure a callable scrape default in Router; Lares reuses `LLM_GATEWAY_URL` and its existing Router identity/key. Turning search off does not disable page reading. Fetch failures are reported without falling back to local HTTP. Responses are bounded to 1 MiB and the extracted Markdown to 100,000 characters, with cancellation and a 60-second timeout. The tool status describes Router's extracted document response, not the target website's HTTP status.

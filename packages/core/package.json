@@ -1,7 +1,7 @@
 {
   "name": "@olares/lares-core",
   "version": "0.15.32",
-  "description": "Lares 共享业务核心：Router、workspace、文件/媒体、Olares 身份（无 UI、无平台壳）",
+  "description": "Lares \u5171\u4eab\u4e1a\u52a1\u6838\u5fc3\uff1aRouter\u3001workspace\u3001\u6587\u4ef6/\u5a92\u4f53\u3001Olares \u8eab\u4efd\uff08\u65e0 UI\u3001\u65e0\u5e73\u53f0\u58f3\uff09",
   "type": "module",
   "repository": {
     "type": "git",
@@ -30,7 +30,8 @@
     "voice",
     "webhook",
     "workspace",
-    "skills"
+    "skills",
+    "fetch"
   ],
   "exports": {
     "./router/catalog-coordinator": "./router/catalog-coordinator.js",
@@ -228,7 +229,12 @@
       "default": "./router/default-selection.js"
     },
     "./voice/vad": "./voice/vad.js",
-    "./voice/errors": "./voice/errors.js"
+    "./voice/errors": "./voice/errors.js",
+    "./fetch/config": "./fetch/config.js",
+    "./fetch/menu": "./fetch/menu.js",
+    "./fetch/client": "./fetch/client.js",
+    "./i18n/fetch": "./i18n/fetch.js",
+    "./router/fetch": "./router/fetch.js"
   },
   "dependencies": {
     "emoji-regex": "11.0.0",
