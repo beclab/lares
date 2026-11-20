@@ -6,13 +6,13 @@ import { join } from "node:path";
 import { parse } from "yaml";
 import { bootstrapLaresSettings } from "../../packages/service/olares/bootstrap-settings.js";
 
-test("empty authorized catalogs start without declaring a placeholder or picking a model", () => {
+test("empty authorized catalogs keep only a transport placeholder without picking a model", () => {
   const dir = mkdtempSync(join(tmpdir(), "lares-no-model-"));
   try {
     const result = bootstrapLaresSettings(dir, { catalog: [], baseURL: "http://localhost/llm/v1" });
     const doc = parse(readFileSync(join(dir, "settings.yaml"), "utf8"));
     assert.equal(result.model, null);
-    assert.deepEqual(doc["llm-pi-ai"].providers["olares-router"].models, []);
+    assert.deepEqual(doc["llm-pi-ai"].providers["olares-router"].models, [{ id: "default", name: "default" }]);
     assert.equal(doc["agent-default-model"].model, "");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
@@ -27,7 +27,7 @@ test("empty success clears availability; network failure keeps last catalog and 
     assert.equal(doc["llm-pi-ai"].providers["olares-router"].models.length, 1);
     bootstrapLaresSettings(dir, { ...seed, catalogLoaded: true });
     doc = parse(readFileSync(join(dir, "settings.yaml"), "utf8"));
-    assert.deepEqual(doc["llm-pi-ai"].providers["olares-router"].models, []);
+    assert.deepEqual(doc["llm-pi-ai"].providers["olares-router"].models, [{ id: "default", name: "default" }]);
     assert.equal(doc["agent-default-model"].model, "old/model");
     assert.equal(doc["agent-default-model"].reasoningEffort, "low");
   } finally { rmSync(dir, { recursive: true, force: true }); }

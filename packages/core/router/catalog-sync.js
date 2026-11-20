@@ -30,20 +30,20 @@ export async function refreshCatalog(ports) {
  * }} ports
  */
 export async function listCatalog(ports) {
-  const provider = ports.listProviders().find((entry) => entry.id === ROUTER_PROVIDER_ID);
-  if (!provider) {
-    return { models: [], failures: unregisteredRouterFailure() };
-  }
+  let provider = ports.listProviders().find((entry) => entry.id === ROUTER_PROVIDER_ID);
   try {
+    // A refresh can recreate a route whose legacy import failed at boot.
     const authorized = await catalogCoordinator.sync(ports);
+    provider = ports.listProviders().find((entry) => entry.id === ROUTER_PROVIDER_ID);
+    if (!provider) return { models: [], failures: unregisteredRouterFailure() };
     return {
       models: listedCatalog(provider, await ports.listModels(ROUTER_PROVIDER_ID)).filter((model) => authorized.rows.some((row) => row.id === model.id)),
       failures: [],
     };
   } catch (err) {
     return {
-      models: listedCatalog(provider, catalogCoordinator.committed?.models ?? []),
-      failures: [{ provider: ROUTER_PROVIDER_ID, name: provider.name, message: messageOf(err) }],
+      models: provider ? listedCatalog(provider, catalogCoordinator.committed?.models ?? []) : [],
+      failures: [{ provider: ROUTER_PROVIDER_ID, name: provider?.name ?? "Olares Router", message: messageOf(err) }],
     };
   }
 }

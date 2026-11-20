@@ -1,6 +1,6 @@
 import { ensureDefaultSelection } from "./default-selection.js";
 import { catalogCache } from "./catalog-cache.js";
-import { chatModelsFromRouterCatalog, catalogSettingsOps, LLM_SETTINGS_NS } from "./models.js";
+import { activeRouterProfile, chatModelsFromRouterCatalog, catalogSettingsOps, LLM_SETTINGS_NS } from "./models.js";
 
 export class CatalogCoordinator {
   constructor(cache = catalogCache) {
@@ -36,7 +36,7 @@ export class CatalogCoordinator {
       const signature = JSON.stringify(next.rows);
       // Readers cannot observe new capabilities until dsh accepts the same catalog.
       if (signature !== this.signature) {
-        await ports.mutateSettings(LLM_SETTINGS_NS, catalogSettingsOps(models));
+        await ports.mutateSettings(LLM_SETTINGS_NS, catalogSettingsOps(models, ports.routerProfile?.()));
         await ensureDefaultSelection(ports.defaultModel, models);
         this.committed = { ...next, models };
         this.signature = signature;
@@ -56,5 +56,5 @@ export class CatalogCoordinator {
 export const catalogCoordinator = new CatalogCoordinator();
 
 export function synchronizeHostCatalog(ctx, refresh = false) {
-  return catalogCoordinator.sync({ mutateSettings: (ns, ops) => ctx.settings.mutate(ns, ops), defaultModel: ctx.agentDefaultModel }, refresh);
+  return catalogCoordinator.sync({ routerProfile: () => activeRouterProfile(ctx.settings), mutateSettings: (ns, ops) => ctx.settings.mutate(ns, ops), defaultModel: ctx.agentDefaultModel }, refresh);
 }

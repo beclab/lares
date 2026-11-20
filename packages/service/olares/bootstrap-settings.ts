@@ -1,3 +1,4 @@
+import { routerProviderProfile, transportModels } from "@olares/lares-core/router/models";
 import { resolveDefaultSelection } from "@olares/lares-core/router/default-selection";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -34,10 +35,6 @@ const ROUTE_COMPAT = {
   // (`Unknown name "store"`) never shows up in detection. Omitting the field
   // matches OpenAI's own default of false.
   supportsStore: false,
-  // dsh session id as `x-session-id`: Router groups an Agent turn's calls by it,
-  // and the shim swaps in a Realtime session id while one drives the session.
-  sendSessionAffinityHeaders: true,
-  sessionAffinityFormat: "openrouter",
 };
 /**
  * The shim bearer's credential reference — never LARES_ROUTER_API_KEY. The
@@ -116,7 +113,7 @@ function seedRouterRoute(doc: Document, seed: LaresSettingsSeed): boolean {
   if (doc.getIn(path) !== undefined) return false;
 
   const chat = declarableModels(seed);
-  const models = chat;
+  const models = transportModels(chat);
 
   doc.setIn(path, {
     displayName: DISPLAY_NAME,
@@ -135,15 +132,21 @@ function seedRouterRoute(doc: Document, seed: LaresSettingsSeed): boolean {
  * are derived state, not user preferences: Router alone decides which models
  * exist and which of them take an effort level, and a list written once at seed
  * time strands the picker on whatever that boot saw — a lone `default`
- * placeholder when the catalog was still unreachable. Only a failed read preserves the previous list; a successful empty list clears it.
+ * placeholder when the catalog was still unreachable. A failed read preserves
+ * the previous list. An empty catalog keeps only a transport placeholder,
+ * which the authorized model picker never offers.
  */
 function refreshRouterRoute(doc: Document, seed: LaresSettingsSeed): void {
   const path = [SETTINGS_NS, "providers", PROVIDER];
+  const defaults = routerProviderProfile([], {}, seed.baseURL);
+  for (const field of ["api", "baseURL", "apiKeyEnv"]) {
+    if (!doc.getIn([...path, field])) doc.setIn([...path, field], defaults[field]);
+  }
   doc.setIn([...path, "compat"], ROUTE_COMPAT);
   doc.setIn([...path, "retryPolicy"], structuredClone(ROUTER_RETRY_POLICY));
   const chat = declarableModels(seed);
-  if (seed.catalogLoaded === false) return;
-  doc.setIn([...path, "models"], chat);
+  if (seed.catalogLoaded === false && declaredModelCount(doc) > 0) return;
+  doc.setIn([...path, "models"], transportModels(chat));
 }
 
 interface RouteModel {

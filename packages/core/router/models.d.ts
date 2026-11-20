@@ -21,3 +21,7 @@ export function fetchRouterModels(env: {
   olaresAppId?: string | null;
   dataDir?: string | null;
 }): Promise<RouterModelEntry[]>;
+
+export const ROUTER_CREDENTIAL_REF: string;
+export function transportModels<T extends { id: string }>(models: T[]): T[] | Array<{ id: string; name: string }>;
+export function routerProviderProfile(models: Array<{ id: string }>, existing?: Record<string, unknown>, baseURL?: string): Record<string, unknown>;
