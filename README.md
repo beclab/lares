@@ -84,3 +84,7 @@ olares-cli skills export packages/skills
 | `DSH_HOME` | `$LARES_DATA_DIR/dsh-home` | dsh profiles |
 
 Configure the voice input model, language, and Market application under **Settings → Voice Input**. Settings are persisted to `$DSH_HOME/voice-input/config.json`.
+
+### Web fetch
+
+`web_fetch` settings appear directly below Web search. The initial selection is Direct: DSH fetches public HTTP(S) pages directly, without Router or a scrape service. Existing saved selections are preserved. Selecting Follow Router default or a specific service uses Router `POST /v1/scrape`, with `default-scrape` or the selected model. Lares reuses `LLM_GATEWAY_URL` and its existing Router identity/key. Settings are persisted independently of search. Router fetch failures are reported without automatically switching to HTTP. Router responses are bounded to 1 MiB and the extracted Markdown to 100,000 characters, with cancellation and a 60-second timeout. Direct uses DSH's own network policy and limits and does not render pages in a browser.

@@ -1,4 +1,5 @@
-/** Lares web-search Host: Router-backed ctx.web provider and settings routes. */
+import { FETCH_ROUTE_PREFIX, fetchSettingsHandler } from "./fetch-settings.js";
+/** Lares web Host: Router-backed search/fetch providers and search settings. */
 import { createRouteHandler, readJsonObject, sendJson } from "@olares/lares-core/tools/http";
 import {
   currentSearchConfig,
@@ -6,6 +7,7 @@ import {
   setSearchSelectionFromRequest,
 } from "@olares/lares-core/search/config";
 import { createLaresSearchProvider } from "./provider.js";
+import { createLaresFetchProvider } from "./fetch-provider.js";
 
 export const name = "lares-router-search";
 export const inject = ["web", "webServer"];
@@ -46,7 +48,9 @@ const handler = createRouteHandler({
  * @param {import('@deepseek-ai/cordis').Context} ctx
  */
 export function apply(ctx) {
+  ctx.effect(() => ctx.webServer.register({ kind: "prefix", path: FETCH_ROUTE_PREFIX, handler: fetchSettingsHandler }), "lares-router-fetch-routes");
   ctx.effect(() => ctx.web.registerSearchProvider(createLaresSearchProvider()), "lares-router-search-provider");
+  ctx.effect(() => ctx.web.registerFetchProvider(createLaresFetchProvider()), "lares-router-fetch-provider");
   ctx.effect(
     () => ctx.webServer.register({ kind: "prefix", path: ROUTE_PREFIX, handler }),
     "lares-router-search-routes",
