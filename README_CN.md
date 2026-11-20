@@ -96,4 +96,4 @@ olares 技能一起复制到 `$LARES_DATA_DIR/skills`，经 `DSH_BUNDLED_SKILL_D
 
 ### 网页读取
 
-`web_fetch` 通过 Router `POST /v1/scrape` 读取网页。「设置 → 网页抓取」位于网络搜索下方，可跟随 Router 默认 `default-scrape`、选择具体抓取服务或关闭抓取，并支持刷新服务列表。设置独立持久化，选定服务暂时消失不会清除选择；Lares 复用 `LLM_GATEWAY_URL` 和现有 Router 身份 / Key。关闭搜索不影响网页读取，抓取失败会明确报错，不回退到本地 HTTP 直连。响应上限 1 MiB，提取的 Markdown 上限 100,000 字符，支持取消与 60 秒超时。工具状态表示 Router 文档提取接口的响应状态，不代表目标网站的原始 HTTP 状态码。
+「设置 → 网页抓取」位于网络搜索下方。首次使用默认 Direct（直接抓取）：DSH 直接读取公共 HTTP(S) 网页，无需安装 Router 或配置 scrape 服务。已有保存的选择保持不变。选择「跟随 Router 默认」或具体服务后，`web_fetch` 通过 Router `POST /v1/scrape` 读取网页，分别发送 `default-scrape` 或所选模型 ID，并复用 `LLM_GATEWAY_URL` 和现有 Router 身份 / Key。设置独立持久化，关闭搜索不影响网页读取。Router 抓取失败会明确报错，不自动切换为 HTTP。Router 响应上限 1 MiB，提取的 Markdown 上限 100,000 字符，支持取消与 60 秒超时；Direct 使用 DSH 自带的网络策略与限制，不支持浏览器渲染。

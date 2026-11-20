@@ -3,7 +3,7 @@ export const FETCH_OFF = "off";
 
 /** @param {{ defaultFetchModel?: string | null, fetchOff?: boolean } | null} [config] */
 export function fetchMenuValue(config) {
-  if (config?.fetchOff) return FETCH_OFF;
+  if (!config || config.fetchOff) return FETCH_OFF;
   return config?.defaultFetchModel ?? FETCH_ROUTER_DEFAULT;
 }
 
@@ -27,7 +27,7 @@ export function fetchDefaultReady(models, config) {
  * @returns {{ ready: boolean, key: string, model?: string }}
  */
 export function fetchStatus(models, config) {
-  if (config?.fetchOff) return { ready: false, key: "settings.status.off" };
+  if (!config || config.fetchOff) return { ready: true, key: "settings.status.off" };
   const listed = Array.isArray(models) ? models : [];
   const model = config?.defaultFetchModel ?? null;
   if (model === null) {
@@ -45,7 +45,7 @@ export function fetchModelLabel(model) {
 }
 
 /**
- * Follow-Router first, then what Router serves, with off last. Router serving
+ * Follow-Router first, then what Router serves, with Direct last. Router serving
  * nothing is reported by the status line, not by hiding the choice.
  */
 export function fetchSelectorItems(models, { routerDefault, off }) {

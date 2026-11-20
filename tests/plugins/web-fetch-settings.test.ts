@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fetchModelsFromRouterCatalog } from "@olares/lares-core/router/fetch";
 import { fetchMenuValue, fetchValueFromMenu, fetchStatus } from "@olares/lares-core/fetch/menu";
-import { readConfig, setFetchSelection } from "@olares/lares-core/fetch/config";
+import { currentFetchConfig, readConfig, setFetchSelection, setFetchSelectionFromRequest } from "@olares/lares-core/fetch/config";
 import { createLaresFetchProvider } from "../../packages/web/router-search/host/fetch-provider.js";
 
 test("fetch settings show only scrape services and preserve follow/off/stale states", () => {
@@ -19,11 +19,13 @@ test("fetch settings show only scrape services and preserve follow/off/stale sta
     { id: "openai/chat", mode: "chat" },
   ] });
   assert.deepEqual(models.map((m) => m.id), ["crawl4ai/scrape", "jina/reader"]);
-  assert.equal(fetchMenuValue(null), "router-default");
+  assert.equal(fetchMenuValue(null), "off");
+  assert.equal(fetchStatus(models, null).key, "settings.status.off");
+  assert.equal(fetchMenuValue({defaultFetchModel:null, fetchOff:false}), "router-default");
   assert.deepEqual(fetchValueFromMenu("off"), { defaultFetchModel: null, fetchOff: true });
   assert.equal(fetchStatus(models, { defaultFetchModel: "gone/scrape" }).key, "settings.status.notReady");
   assert.equal(fetchStatus([], { defaultFetchModel: null }).key, "settings.status.empty");
-  assert.equal(fetchStatus(models, { fetchOff: true }).ready, false);
+  assert.equal(fetchStatus(models, { fetchOff: true }).ready, true);
 });
 
 test("persisted fetch selection controls the actual provider independently of search", async () => {
@@ -39,21 +41,43 @@ test("persisted fetch selection controls the actual provider independently of se
     return new Response(JSON.stringify({ object: "scrape", status: "ok", url: "https://example.com", markdown: "# Page" }), { status: 200 });
   };
   try {
-    const provider = createLaresFetchProvider();
-    assert.deepEqual(readConfig(), { defaultFetchModel: null, fetchOff: false });
+    const localRequests: unknown[] = [];
+    const controller = new AbortController();
+    const localResult = { url: "https://example.com", statusCode: 200, body: { kind: "html" as const, content: "<p>Local</p>" }, truncated: false };
+    const provider = createLaresFetchProvider({
+      id: "http", available: () => true,
+      async fetch(request, signal) {
+        localRequests.push(request);
+        assert.equal(signal, controller.signal);
+        return localResult;
+      },
+    });
+    assert.deepEqual(readConfig(), { defaultFetchModel: null, fetchOff: true });
+    assert.equal(createLaresFetchProvider().available(), true);
+    assert.equal(provider.available(), true);
+    assert.equal(await provider.fetch({ url: "https://example.com" } as any, controller.signal), localResult);
+    assert.equal(requests.length, 0);
     assert.throws(() => setFetchSelection({ defaultFetchModel: "missing/scrape", fetchOff: false }, []));
     setFetchSelection({ defaultFetchModel: "crawl4ai/scrape", fetchOff: false }, [{ id: "crawl4ai/scrape" }]);
     assert.equal(readConfig().defaultFetchModel, "crawl4ai/scrape");
     await provider.fetch({ url: "https://example.com" } as any);
     assert.equal(requests[0]?.model, "crawl4ai/scrape");
     setFetchSelection({ defaultFetchModel: null, fetchOff: true }, []);
-    assert.equal(provider.available(), false);
-    await assert.rejects(() => provider.fetch({ url: "https://example.com" } as any), /turned off/);
+    assert.equal(provider.available(), true);
+    assert.equal(await provider.fetch({ url: "https://example.com" } as any, controller.signal), localResult);
     assert.equal(requests.length, 1);
     setFetchSelection({ defaultFetchModel: null, fetchOff: false }, []);
     assert.equal(provider.available(), true);
     await provider.fetch({ url: "https://example.com" } as any);
     assert.equal(requests[1]?.model, "default-scrape");
+    assert.equal(localRequests.length, 2);
+    globalThis.fetch = async () => { throw new Error("Router offline"); };
+    await assert.rejects(() => provider.fetch({ url: "https://example.com" } as any), /Router scrape request failed/);
+    assert.equal(localRequests.length, 2, "Router errors must not fall back to HTTP");
+    const off = await setFetchSelectionFromRequest({ defaultFetchModel: null, fetchOff: true });
+    assert.equal(off.fetchOff, true);
+    assert.deepEqual((await currentFetchConfig({ refresh: true })).fetchModels, []);
+    assert.equal(await provider.fetch({ url: "https://example.com" } as any, controller.signal), localResult);
   } finally {
     globalThis.fetch = previousFetch;
     if (beforeHome === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = beforeHome;
@@ -84,7 +108,7 @@ test("fetch settings HTTP routes list, refresh and persist selections", async ()
   assert.equal(response.status,200);
   const config=await response.json();
   assert.deepEqual(config.fetchModels.map((m: {id:string})=>m.id),["crawl4ai/scrape"]);
-  assert.equal(config.fetchOff,false);
+  assert.equal(config.fetchOff,true);
   response=await previousFetch(`${base}/config/default`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({defaultFetchModel:"crawl4ai/scrape",fetchOff:false})});
   assert.equal(response.status,200);
   assert.equal((await response.json()).defaultFetchModel,"crawl4ai/scrape");

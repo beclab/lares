@@ -1,3 +1,7 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { setFetchSelection } from "@olares/lares-core/fetch/config";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
@@ -8,6 +12,19 @@ import { createServer } from "node:http";
 import { once } from "node:events";
 import { routerScrape, ScrapeError, scrapeWebErrorCode } from "@olares/lares-core/router/scrape";
 import { createLaresFetchProvider } from "../../packages/web/router-search/host/fetch-provider.js";
+
+const previousHome = process.env.DSH_HOME;
+let fetchTestHome: string;
+test.before(() => {
+  fetchTestHome = mkdtempSync(join(tmpdir(), "lares-fetch-enabled-"));
+  process.env.DSH_HOME = fetchTestHome;
+  setFetchSelection({ defaultFetchModel: null, fetchOff: false }, []);
+});
+test.after(() => {
+  if (previousHome === undefined) delete process.env.DSH_HOME;
+  else process.env.DSH_HOME = previousHome;
+  rmSync(fetchTestHome, { recursive: true, force: true });
+});
 
 const env = { LLM_GATEWAY_URL: "http://router.test/v1/", LARES_ROUTER_API_KEY: "router-key" };
 const doc = { object: "scrape", status: "ok", url: "https://example.com/final", markdown: "# Page\n\nContent" };

@@ -4,15 +4,14 @@ import { dshPluginConfigPath } from "../workspace/home.js";
 import { fetchRouterFetchModels } from "../router/fetch.js";
 
 /**
- * Three states, because "nobody chose yet" and "the user turned fetch off"
- * must not collapse into one value: an unset default follows Router, and an
- * automatic default must never reopen fetch the user closed.
+ * Direct uses DSH public HTTP(S) by default. Existing saved selections remain valid.
+ * The persisted fetchOff flag means Direct mode for backward compatibility.
  * @typedef {{ defaultFetchModel: string | null, fetchOff: boolean }} WebFetchConfig
  */
 
 /** @returns {WebFetchConfig} */
 function defaults() {
-  return { defaultFetchModel: null, fetchOff: false };
+  return { defaultFetchModel: null, fetchOff: true };
 }
 
 function configPath() {
@@ -58,7 +57,7 @@ function persist(config) {
  */
 export function setFetchSelection(selection, available) {
   if (selection.fetchOff) return persist({ defaultFetchModel: null, fetchOff: true });
-  if (selection.defaultFetchModel === null) return persist(defaults());
+  if (selection.defaultFetchModel === null) return persist({ defaultFetchModel: null, fetchOff: false });
   const model = modelId(selection.defaultFetchModel);
   if (!model || !available.some((item) => item.id === model)) {
     throw new HttpError("not_available", 400, "fetch service is not available from Router");
@@ -68,7 +67,10 @@ export function setFetchSelection(selection, available) {
 
 /** @param {{ refresh?: boolean }} [options] */
 export async function currentFetchConfig(options = {}) {
-  const fetchModels = await fetchRouterFetchModels(options);
+  const fetchModels = await fetchRouterFetchModels(options).catch((err) => {
+    if (fetchDisabled()) return [];
+    throw err;
+  });
   return { ...readConfig(), fetchModels };
 }
 
@@ -87,6 +89,7 @@ export function configuredFetchModel() {
   return readConfig().defaultFetchModel;
 }
 
+/** Whether Router fetching is off, not whether web_fetch is unavailable. */
 export function fetchDisabled() {
   return readConfig().fetchOff;
 }
@@ -107,6 +110,11 @@ export function fetchSelectionFromBody(body) {
 
 /** @param {WebFetchConfig} selection */
 export async function setFetchSelectionFromRequest(selection) {
+  // Switching to local HTTP must succeed even when Router is unavailable.
+  if (selection.fetchOff) {
+    setFetchSelection(selection, []);
+    return currentFetchConfig();
+  }
   const fetchModels = await fetchRouterFetchModels();
   return { ...setFetchSelection(selection, fetchModels), fetchModels };
 }
