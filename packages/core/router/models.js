@@ -23,6 +23,36 @@ export const ROUTER_RETRY_POLICY = Object.freeze({
   backoff: { initialDelayMs: 1_000, maxDelayMs: 60_000, jitterRatio: 0.1 },
 });
 
+export const ROUTER_CREDENTIAL_REF = "LARES_ROUTER_SHIM_KEY";
+
+/** Transport-only declaration required by DSH. Never offered as an authorized model. */
+export function transportModels(models) {
+  return models.length ? models : [{ id: "default", name: "default" }];
+}
+
+/** Complete route configuration for initial import and recovery of a missing provider. */
+export function routerProviderProfile(models, existing = {}, baseURL = routerShimBaseUrl()) {
+  const compat = { supportsReasoningEffort: true, supportsStore: false, ...existing.compat };
+  // These catalog-owned pi-ai fields are rejected on custom provider routes.
+  delete compat.sendSessionAffinityHeaders;
+  delete compat.sessionAffinityFormat;
+  return {
+    displayName: "Olares Router",
+    apiKeyEnv: ROUTER_CREDENTIAL_REF,
+    retryPolicy: structuredClone(ROUTER_RETRY_POLICY),
+    ...existing,
+    compat,
+    api: existing.api || "openai-completions",
+    baseURL: existing.baseURL || baseURL,
+    models: transportModels(models),
+  };
+}
+
+/** Read the active profile, preserving endpoint, headers and other user overrides. */
+export function activeRouterProfile(settings) {
+  return settings.describe?.().find(row => row.ns === LLM_SETTINGS_NS)?.value?.providers?.[ROUTER_PROVIDER_ID] ?? {};
+}
+
 export function isChatModelId(id) {
   return !NON_CHAT_HINTS.test(id);
 }
@@ -133,8 +163,8 @@ export function listedCatalogModel(provider, model) {
   };
 }
 
-export function catalogSettingsOps(models) {
-  return [{ op: "set", path: ["providers", ROUTER_PROVIDER_ID, "models"], value: models }];
+export function catalogSettingsOps(models, existing = {}) {
+  return [{ op: "set", path: ["providers", ROUTER_PROVIDER_ID], value: routerProviderProfile(models, existing) }];
 }
 
 export function unregisteredRouterFailure() {

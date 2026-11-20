@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { routerProviderProfile } from "../../packages/core/router/models.js";
 import { catalogCache } from "../../packages/core/router/catalog-cache.js";
 
 test.beforeEach(() => catalogCache.seed({ data: [{ id: "Qwen/chat", mode: "chat" }, { id: "Qwen/other", mode: "chat" }] }));
@@ -155,8 +156,8 @@ test("Router refresh repairs a missing global default for future sessions", asyn
         ops: [
           {
             op: "set",
-            path: ["providers", "olares-router", "models"],
-            value: [{ id: "Qwen/new", name: "Qwen/new" }],
+            path: ["providers", "olares-router"],
+            value: routerProviderProfile([{ id: "Qwen/new", name: "Qwen/new" }]),
           },
         ],
       },
@@ -367,4 +368,22 @@ test("a non-Router provider or placeholder cannot become the default", async () 
     (err: { code?: string; status?: number }) =>
       err.code === "model_unavailable" && err.status === 400,
   );
+});
+
+test("opening model settings recreates an unregistered Router provider before listing models", async () => {
+  const { listCatalog } = await catalogModule();
+  catalogCache.seed({ data: [{ id: "Qwen/chat", mode: "chat" }] });
+  const { catalogCoordinator } = await import("../../packages/core/router/catalog-coordinator.js");
+  catalogCoordinator.signature = null;
+  let registered = false;
+  const ctx = stubCtx({ listProviders: () => registered ? [{ id: "olares-router", name: "Olares Router" }] : [] });
+  ctx.settings.mutate = async (_ns, ops: any[]) => {
+    assert.equal(ops[0].value.api, "openai-completions");
+    assert.ok(ops[0].value.baseURL.endsWith("/llm/v1"));
+    registered = true;
+  };
+  const result = await listCatalog(ctx);
+  assert.equal(registered, true);
+  assert.deepEqual(result.failures, []);
+  assert.equal(result.models[0].id, "Qwen/chat");
 });

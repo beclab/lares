@@ -20,7 +20,7 @@ test("catalog publication waits for dsh and coalesces competing reads", async ()
   assert.equal(coordinator.committed.models[0].id, "new/model");
 });
 
-test("empty success clears dsh; a failed update preserves the committed snapshot", async () => {
+test("empty success clears authorized models; a failed update preserves the committed snapshot", async () => {
   const cache = new CatalogCache();
   const coordinator = new CatalogCoordinator(cache);
   const updates: any[] = [];
@@ -28,7 +28,8 @@ test("empty success clears dsh; a failed update preserves the committed snapshot
   cache.seed({ data: [{ id: "old/model", mode: "chat" }] });
   await coordinator.sync(ports);
   cache.seed({ data: [] }); await coordinator.sync(ports);
-  assert.deepEqual(updates[1], []);
+  assert.deepEqual(updates[1].models, [{ id: "default", name: "default" }]);
+  assert.deepEqual(coordinator.committed.models, []);
   cache.seed({ data: [{ id: "other/model", mode: "chat" }] });
   const revision = coordinator.revision;
   await assert.rejects(coordinator.sync({ mutateSettings: async () => { throw Error("write rejected"); } }));

@@ -1,4 +1,5 @@
 /** The model facts Lares's settings panel reads and writes. */
+import { activeRouterProfile } from "@olares/lares-core/router/models";
 import {
   catalogRevision,
   catalogState,
@@ -20,6 +21,7 @@ export {
 function catalogPorts(ctx) {
   return {
     defaultModel: ctx.agentDefaultModel,
+    routerProfile: () => activeRouterProfile(ctx.settings),
     mutateSettings: (ns, ops) => ctx.settings.mutate(ns, ops),
     currentSelection: () => ctx.agentDefaultModel.currentSelection(),
     saveSelection: (next) => ctx.agentDefaultModel.saveSelection(next),
